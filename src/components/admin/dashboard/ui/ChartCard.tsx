@@ -68,7 +68,6 @@ export default function ChartCard<T>({
             data={d as any}
             xKey={xKey as string}
             yKey={yKey as string}
-            height={height}
           />
         )}
       </div>

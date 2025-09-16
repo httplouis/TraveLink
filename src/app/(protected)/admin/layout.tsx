@@ -1,5 +1,5 @@
 import "@/app/globals.css";
-import "@/app/styles/admin.css";
+import "@/app/styles/admin/admin.css";
 
 import type { Metadata } from "next";
 import Topbar from "@/components/admin/nav/TopBar";

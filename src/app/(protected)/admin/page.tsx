@@ -20,7 +20,7 @@ export default async function AdminDashboardPage() {
   return (
     <section className="space-y-6">
       {/* KPI summary */}
-      <KpiRow items={kpis} />
+      <KpiRow items={kpis.map(kpi => ({ ...kpi, value: String(kpi.value) }))} />
 
       {/* Analytics Row 1 */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

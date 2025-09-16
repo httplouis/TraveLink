@@ -1,4 +1,4 @@
-===== src/components/admin/requests/containers/BulkBar.container.tsx =====
+===== containers\BulkBar.container.tsx =====
 "use client";
 import React, { forwardRef, useImperativeHandle, useMemo, useState } from "react";
 import { RequestRow } from "@/lib/admin/types";
@@ -109,7 +109,7 @@ const BulkBarContainer = forwardRef<BulkBarHandle, Props>(BulkBarContainerInner)
 export default BulkBarContainer;
 
 
-===== src/components/admin/requests/containers/FiltersBar.container.tsx =====
+===== containers\FiltersBar.container.tsx =====
 // src/components/admin/requests/containers/FiltersBar.container.tsx
 "use client";
 
@@ -257,7 +257,7 @@ function filterRows(rows: RequestRow[], f: FilterState): RequestRow[] {
 }
 
 
-===== src/components/admin/requests/filters/FilterDropdown.ui.tsx =====
+===== filters\FilterDropdown.ui.tsx =====
 // src/components/admin/requests/filters/FilterDropdown.ui.tsx
 "use client";
 import * as React from "react";
@@ -418,7 +418,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 
-===== src/components/admin/requests/filters/SavedViews.button.tsx =====
+===== filters\SavedViews.button.tsx =====
 "use client";
 import * as React from "react";
 import type { FilterState } from "@/lib/admin/types";
@@ -532,7 +532,7 @@ function defaultName(f: FilterState) {
 }
 
 
-===== src/components/admin/requests/hooks/useFilterState.ts =====
+===== hooks\useFilterState.ts =====
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import type { FilterState, RequestRow } from "@/lib/admin/types";
@@ -580,7 +580,7 @@ export const isFiltered = (f: FilterState) =>
   f.status !== "All" || f.dept !== "All" || !!f.from || !!f.to;
 
 
-===== src/components/admin/requests/hooks/useOutsideClick.ts =====
+===== hooks\useOutsideClick.ts =====
 // hooks/useOutsideClick.ts
 "use client";
 import * as React from "react";
@@ -606,7 +606,7 @@ export default function useOutsideClick<T extends HTMLElement>(
 }
 
 
-===== src/components/admin/requests/toolbar/RequestsToolbar.ui.tsx =====
+===== toolbar\RequestsToolbar.ui.tsx =====
 // src/components/admin/requests/toolbar/RequestsToolbar.ui.tsx
 "use client";
 
@@ -698,7 +698,7 @@ export default function RequestsToolbar({
 }
 
 
-===== src/components/admin/requests/ui/BulkBar.ui.tsx =====
+===== ui\BulkBar.ui.tsx =====
 "use client";
 
 import * as React from "react";
@@ -738,7 +738,7 @@ export default function BulkBarUI({
       : "No selection";
 
   return (
-    <div className="sticky top-[calc(var(--sticky-offset,56px)+4px)] z-20 flex items-center gap-3 rounded-xl border border-neutral-200 bg-white px-3 py-2 shadow-sm">
+    <div className="admin-bulkbar z-[29] flex items-center gap-3 rounded-xl border border-neutral-200 bg-white px-3 py-2 shadow-sm">
       <div className="text-sm font-medium text-neutral-700">{summary}</div>
 
       <div className="ml-auto flex flex-wrap items-center gap-2">
@@ -788,7 +788,7 @@ export default function BulkBarUI({
             <HelpCircle className="h-4 w-4" />
             Shortcuts
           </button>
-          <div className="pointer-events-none absolute right-0 top-full z-10 mt-2 hidden w-64 rounded-lg border border-neutral-200 bg-white p-3 text-xs text-neutral-700 shadow-lg group-hover:block">
+          <div className="admin-popover pointer-events-none absolute right-0 top-full mt-2 hidden w-64 rounded-lg border border-neutral-200 bg-white p-3 text-xs text-neutral-700 shadow-lg group-hover:block">
             <p className="mb-1 flex items-center justify-between">
               <span>Select all on page</span>
               <kbd className="kbd">A</kbd>
@@ -897,7 +897,7 @@ declare module "react" {
 }
 
 
-===== src/components/admin/requests/ui/Confirm.ui.tsx =====
+===== ui\Confirm.ui.tsx =====
 "use client";
 type Props = {
   open: boolean;
@@ -941,7 +941,7 @@ export default function ConfirmUI({
 }
 
 
-===== src/components/admin/requests/ui/Pagination.tsx =====
+===== ui\Pagination.tsx =====
 "use client";
 export default function Pagination({
   page, pageSize, total, onPage, onSize,
@@ -975,7 +975,7 @@ export default function Pagination({
 }
 
 
-===== src/components/admin/requests/ui/RequestDetails.ui.tsx =====
+===== ui\RequestDetails.ui.tsx =====
 "use client";
 import { RequestRow } from "@/lib/admin/types";
 
@@ -1065,7 +1065,7 @@ function statusTag(s: RequestRow["status"]) {
 }
 
 
-===== src/components/admin/requests/ui/RequestDetailsModal.ui.tsx =====
+===== ui\RequestDetailsModal.ui.tsx =====
 "use client";
 import * as React from "react";
 import { RequestRow } from "@/lib/admin/types";
@@ -1217,7 +1217,7 @@ function StatusBadge({ status }: { status: RequestRow["status"] }) {
 }
 
 
-===== src/components/admin/requests/ui/RequestsCardGrid.ui.tsx =====
+===== ui\RequestsCardGrid.ui.tsx =====
 "use client";
 
 import * as React from "react";
@@ -1486,7 +1486,7 @@ function StatusBadge({ status }: { status: RequestRow["status"] }) {
 }
 
 
-===== src/components/admin/requests/ui/RequestsSummary.ui.tsx =====
+===== ui\RequestsSummary.ui.tsx =====
 import { RequestsSummary } from "@/lib/admin/types";
 import { Clock, CheckCircle2, Flag, XCircle } from "lucide-react";
 
@@ -1560,7 +1560,7 @@ function Card({
 }
 
 
-===== src/components/admin/requests/ui/RequestsTable.ui.tsx =====
+===== ui\RequestsTable.ui.tsx =====
 // src/components/admin/requests/ui/RequestsTable.ui.tsx
 "use client";
 
@@ -1574,14 +1574,12 @@ type Props = {
   rows: RequestRow[];
   pagination: Pagination;
 
-  // header controls
   tableSearch: string;
   onTableSearch?: (q: string) => void;
   sortDir?: "asc" | "desc";
   onSortDirChange?: (d: "asc" | "desc") => void;
   onAddNew?: () => void;
 
-  // filters
   filterControls: {
     draft: FilterState;
     onDraftChange: (n: Partial<FilterState>) => void;
@@ -1589,12 +1587,10 @@ type Props = {
     onClearAll: () => void;
   };
 
-  // selection
   selectedIds?: Set<string>;
   onToggleOne: (id: string) => void;
   onToggleAllOnPage: (checked: boolean, idsOnPage: string[]) => void;
 
-  // row UX
   onRowClick?: (row: RequestRow) => void;
   onRowViewDetails?: (row: RequestRow) => void;
 
@@ -1605,33 +1601,26 @@ type Props = {
   onRejectRow?: (id: string) => Promise<void>;
 };
 
-export default function RequestsTable({
-  rows,
-  pagination,
-  tableSearch,
-  onTableSearch,
-  sortDir = "desc",
-  onSortDirChange,
-  onAddNew,
-  filterControls,
-  selectedIds,
-  onToggleOne,
-  onToggleAllOnPage,
-  onRowClick,
-  onRowViewDetails,
-  onPageChange,
-  onPageSizeChange,
-  onApproveRow,
-  onRejectRow,
-}: Props) {
+export default function RequestsTable(props: Props) {
+  const {
+    rows, pagination,
+    tableSearch, onTableSearch,
+    sortDir = "desc", onSortDirChange, onAddNew,
+    filterControls, selectedIds,
+    onToggleOne, onToggleAllOnPage,
+    onRowClick, onRowViewDetails,
+    onPageChange, onPageSizeChange,
+    onApproveRow, onRejectRow
+  } = props;
+
   const set = selectedIds ?? new Set<string>();
-  const idsOnPage = rows.map((r) => r.id);
-  const allChecked = idsOnPage.length > 0 && idsOnPage.every((id) => set.has(id));
-  const indeterminate = !allChecked && idsOnPage.some((id) => set.has(id));
+  const idsOnPage = rows.map(r => r.id);
+  const allChecked = idsOnPage.length > 0 && idsOnPage.every(id => set.has(id));
+  const indeterminate = !allChecked && idsOnPage.some(id => set.has(id));
 
   return (
     <div className="rounded-2xl border border-neutral-200 bg-white shadow-sm">
-      {/* sticky toolbar — sits under KPI */}
+      {/* Sticky toolbar — sits under KPI */}
       <div className="admin-sticky-toolbar px-3 py-2">
         <RequestsToolbar
           q={tableSearch}
@@ -1647,35 +1636,36 @@ export default function RequestsTable({
       </div>
 
       <div className="overflow-x-auto">
-        {/* border-separate + no spacing = reliable sticky TH */}
+        {/* border-separate + spacing:0 keeps columns aligned with sticky thead */}
         <table className="w-full table-fixed text-sm border-separate [border-spacing:0]">
-          {/* fixed widths to prevent column shift (no whitespace inside colgroup) */}
           <colgroup>
-            {[44, 110, 140, null, 170, 120, 120, 150].map((w, i) => (
+            {[44,110,140,null,170,120,120,150].map((w,i) => (
               <col key={i} style={w ? { width: w } : undefined} />
             ))}
           </colgroup>
 
-          <thead>
+          {/* ✅ sticky THEAD (inline top for reliability) */}
+          <thead
+            className="admin-thead-sticky sticky bg-white/90 backdrop-blur"
+            style={{ top: "var(--stack-offset)" }}
+          >
             <tr className="text-neutral-600">
-              <Th sticky>
+              <Th>
                 <input
                   aria-label="Select all on page"
                   type="checkbox"
                   checked={allChecked}
-                  ref={(el) => {
-                    if (el) el.indeterminate = indeterminate;
-                  }}
+                  ref={(el) => { if (el) el.indeterminate = indeterminate; }}
                   onChange={(e) => onToggleAllOnPage(e.currentTarget.checked, idsOnPage)}
                 />
               </Th>
-              <Th sticky>ID</Th>
-              <Th sticky>Department</Th>
-              <Th sticky className="truncate">Purpose</Th>
-              <Th sticky>Received</Th>
-              <Th sticky>Date</Th>
-              <Th sticky>Status</Th>
-              <Th sticky className="text-right">Actions</Th>
+              <Th>ID</Th>
+              <Th>Department</Th>
+              <Th className="truncate">Purpose</Th>
+              <Th>Received</Th>
+              <Th>Date</Th>
+              <Th>Status</Th>
+              <Th className="text-right">Actions</Th>
             </tr>
           </thead>
 
@@ -1697,27 +1687,20 @@ export default function RequestsTable({
 
                 <Td onClick={(e) => e.stopPropagation()}>
                   <button
-                    className="text-[13px] font-semibold text-blue-700 underline-offset-2 hover:underline"
-                    onClick={() => onRowClick?.(r)}
+                    className="text-[13px] font-semibold text-[#7a1f2a] underline-offset-2 hover:underline"
+                    onClick={() => onRowViewDetails?.(r)}
                   >
                     {r.id}
                   </button>
                 </Td>
 
                 <Td>{r.dept}</Td>
-
-                <Td className="truncate" title={r.purpose}>
-                  {r.purpose}
-                </Td>
-
+                <Td className="truncate" title={r.purpose}>{r.purpose}</Td>
                 <Td className="tabular-nums whitespace-nowrap">
                   {(r as any).receivedAt ?? (r as any).createdAt ?? "—"}
                 </Td>
                 <Td className="tabular-nums whitespace-nowrap">{r.date}</Td>
-
-                <Td>
-                  <StatusBadge status={r.status} />
-                </Td>
+                <Td><StatusBadge status={r.status} /></Td>
 
                 <Td className="text-right" onClick={(e) => e.stopPropagation()}>
                   {r.status === "Pending" ? (
@@ -1755,8 +1738,8 @@ export default function RequestsTable({
 
       <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2">
         <div className="text-xs text-neutral-500">
-          Page {pagination.page} of {Math.max(1, Math.ceil(pagination.total / pagination.pageSize))} · Showing{" "}
-          {Math.min(pagination.pageSize, rows.length)} of {pagination.total}
+          Page {pagination.page} of {Math.max(1, Math.ceil(pagination.total / pagination.pageSize))}
+          · Showing {Math.min(pagination.pageSize, rows.length)} of {pagination.total}
         </div>
         <PaginationUI
           page={pagination.page}
@@ -1770,23 +1753,10 @@ export default function RequestsTable({
   );
 }
 
-/* tiny cells */
-function Th({
-  children,
-  className = "",
-  sticky = false,
-}: {
-  children: React.ReactNode;
-  className?: string;
-  sticky?: boolean;
-}) {
-  return (
-    <th className={`px-4 py-3 text-left text-xs font-semibold ${sticky ? "admin-th-sticky" : ""} ${className}`}>
-      {children}
-    </th>
-  );
+/* cells */
+function Th({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return <th className={`px-4 py-3 text-left text-xs font-semibold ${className}`}>{children}</th>;
 }
-
 function Td({
   children,
   className = "",
@@ -1798,18 +1768,14 @@ function Td({
   colSpan?: number;
 } & React.HTMLAttributes<HTMLTableCellElement>) {
   return (
-    <td
-      className={`px-4 py-3 align-middle text-[13px] text-neutral-800 ${className}`}
-      colSpan={colSpan}
-      {...rest}
-    >
+    <td className={`px-4 py-3 align-middle text-[13px] text-neutral-800 ${className}`} colSpan={colSpan} {...rest}>
       {children}
     </td>
   );
 }
 
 
-===== src/components/admin/requests/ui/SavedViewsMenu.ui.tsx =====
+===== ui\SavedViewsMenu.ui.tsx =====
 "use client";
 import * as React from "react";
 import type { FilterState } from "@/lib/admin/types";
@@ -1860,7 +1826,7 @@ export default function SavedViewsMenu({
 }
 
 
-===== src/components/admin/requests/ui/StatusBadge.tsx =====
+===== ui\StatusBadge.tsx =====
 "use client";
 import type { RequestRow } from "@/lib/admin/types";
 
@@ -1875,7 +1841,7 @@ export default function StatusBadge({ status }: { status: RequestRow["status"] }
 }
 
 
-===== src/components/admin/requests/ui/ViewToggle.ui.tsx =====
+===== ui\ViewToggle.ui.tsx =====
 "use client";
 
 import { LayoutList, LayoutGrid } from "lucide-react";

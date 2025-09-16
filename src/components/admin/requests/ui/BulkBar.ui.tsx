@@ -37,7 +37,7 @@ export default function BulkBarUI({
       : "No selection";
 
   return (
-    <div className="sticky top-[calc(var(--sticky-offset,56px)+4px)] z-20 flex items-center gap-3 rounded-xl border border-neutral-200 bg-white px-3 py-2 shadow-sm">
+    <div className="admin-bulkbar z-[29] flex items-center gap-3 rounded-xl border border-neutral-200 bg-white px-3 py-2 shadow-sm">
       <div className="text-sm font-medium text-neutral-700">{summary}</div>
 
       <div className="ml-auto flex flex-wrap items-center gap-2">
@@ -87,7 +87,7 @@ export default function BulkBarUI({
             <HelpCircle className="h-4 w-4" />
             Shortcuts
           </button>
-          <div className="pointer-events-none absolute right-0 top-full z-10 mt-2 hidden w-64 rounded-lg border border-neutral-200 bg-white p-3 text-xs text-neutral-700 shadow-lg group-hover:block">
+          <div className="admin-popover pointer-events-none absolute right-0 top-full mt-2 hidden w-64 rounded-lg border border-neutral-200 bg-white p-3 text-xs text-neutral-700 shadow-lg group-hover:block">
             <p className="mb-1 flex items-center justify-between">
               <span>Select all on page</span>
               <kbd className="kbd">A</kbd>

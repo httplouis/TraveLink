@@ -55,7 +55,7 @@ export default function DeptUsageChart({ data }: { data: Point[] }) {
               minAngle={6}            // avoid ultra-thin slices
               paddingAngle={1.5}
               label={renderValueLabel}           // custom numeric labels
-              labelLine={{ length: 24, length2: 14 }}
+              labelLine={true}
               isAnimationActive={false}
             >
               {data.map((_, i) => (

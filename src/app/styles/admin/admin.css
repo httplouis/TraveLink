@@ -8,6 +8,8 @@
 :root {
   --admin-kpi-h: 104px;        /* KPI + view toggle height (fallback) */
   --admin-toolbar-h: 56px;     /* toolbar height (fallback) */
+  --z-popover: 60;             /* dropdowns/menus */
+  --z-tooltip: 70;             /* tooltips */
 }
 
 /* ===== Root (brand + borders) ===== */
@@ -88,6 +90,16 @@
   backdrop-filter:blur(6px);
 }
 
+/* 2.5) BULK BAR sits between KPI and Toolbar */
+[data-role="admin"] .admin-bulkbar{
+  position: sticky;
+  top: var(--rq-kpi, var(--admin-kpi-h)); /* right under KPI */
+  z-index: 29;                             /* above toolbar */
+  background: #fff;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
 /* 3) Each TH sticks below toolbar: uses both dynamic vars with global fallbacks */
 [data-role="admin"] .admin-th-sticky {
   position:sticky;
@@ -107,9 +119,7 @@
 }
 
 /* Toolbar sticks right under KPI using unified var */
-[data-role="admin"] .admin-sticky-toolbar {
-  top: var(--stack-kpi);
-}
+[data-role="admin"] .admin-sticky-toolbar { top: var(--stack-kpi); }
 
 /* NEW: make each TH sticky (this is what your component uses) */
 [data-role="admin"] .admin-th-sticky {
@@ -127,4 +137,19 @@
   position: static !important;
   top: auto !important;
   box-shadow: none !important;
+}
+
+/* ---- Popover / tooltip should float above stickies ---- */
+[data-role="admin"] [data-radix-popper-content-wrapper],
+[data-role="admin"] .dropdown-menu,
+[data-role="admin"] .menu-content,
+[data-role="admin"] .popover,
+[data-role="admin"] .admin-popover {
+  z-index: var(--z-popover) !important;
+}
+
+[data-role="admin"] [data-radix-tooltip-content],
+[data-role="admin"] .tooltip,
+[data-role="admin"] .tooltip-content {
+  z-index: var(--z-tooltip) !important;
 }

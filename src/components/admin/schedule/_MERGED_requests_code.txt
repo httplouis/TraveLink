@@ -1,0 +1,1132 @@
+===== filters\ScheduleFilterDropdown.ui.tsx =====
+"use client";
+import * as React from "react";
+import { Filter as FilterIcon, ChevronDown } from "lucide-react";
+import type { ScheduleFilterState } from "@/lib/admin/schedule/filters";
+import { ScheduleRepo } from "@/lib/admin/schedule/store";
+
+const statuses: Array<ScheduleFilterState["status"]> = [
+  "All",
+  "PLANNED",
+  "ONGOING",
+  "COMPLETED",
+  "CANCELLED",
+];
+
+// Local, tiny outside-click hook (so no missing import errors)
+function useOutsideClick(
+  ref: React.RefObject<HTMLElement | null>,
+  onClickOutside: () => void
+) {
+  React.useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      const el = ref.current;
+      if (!el) return;
+      if (!el.contains(e.target as Node)) onClickOutside();
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [ref, onClickOutside]);
+}
+
+export default function ScheduleFilterDropdownUI({
+  draft,
+  onDraftChange,
+  onApply,
+  onClearAll,
+}: {
+  draft: ScheduleFilterState;
+  onDraftChange: (n: Partial<ScheduleFilterState>) => void;
+  onApply: () => void;
+  onClearAll: () => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement | null>(null);
+  useOutsideClick(ref, () => setOpen(false));
+
+  const drivers = ScheduleRepo.constants.drivers;
+  const vehicles = ScheduleRepo.constants.vehicles;
+
+  // ✅ define as a normal function so TSX doesn’t think it’s JSX
+  function set<K extends keyof ScheduleFilterState>(
+    k: K,
+    v: ScheduleFilterState[K]
+  ) {
+    onDraftChange({ [k]: v } as Pick<ScheduleFilterState, K>);
+  }
+
+  const hasActive =
+    draft.status !== "All" ||
+    draft.driver !== "All" ||
+    draft.vehicle !== "All" ||
+    !!draft.from ||
+    !!draft.to ||
+    !!(draft.search && draft.search.trim());
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="inline-flex items-center gap-2 rounded-full border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-700 shadow-sm hover:bg-neutral-50"
+      >
+        <FilterIcon
+          className={`h-4 w-4 ${
+            hasActive ? "text-[#7a1f2a]" : "text-neutral-500"
+          }`}
+        />
+        <span>Filter</span>
+        <ChevronDown className="h-4 w-4 text-neutral-500" />
+      </button>
+
+      {open && (
+        <div
+          className="absolute left-0 z-30 mt-2 w-[340px] rounded-xl border border-neutral-200 bg-white p-3 text-sm shadow-xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Field label="Status">
+            <select
+              className="w-full rounded-lg border px-2 py-2"
+              value={draft.status}
+              onChange={(e) => set("status", e.target.value as any)}
+            >
+              {statuses.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Driver">
+            <select
+              className="w-full rounded-lg border px-2 py-2"
+              value={draft.driver}
+              onChange={(e) => set("driver", (e.target.value as any) || "All")}
+            >
+              <option value="All">All</option>
+              {drivers.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Vehicle">
+            <select
+              className="w-full rounded-lg border px-2 py-2"
+              value={draft.vehicle}
+              onChange={(e) =>
+                set("vehicle", (e.target.value as any) || "All")
+              }
+            >
+              <option value="All">All</option>
+              {vehicles.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.label} ({v.plateNo})
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="From">
+              <input
+                type="date"
+                className="w-full rounded-lg border px-2 py-2"
+                value={draft.from || ""}
+                onChange={(e) => set("from", (e.target.value as any) || "")}
+              />
+            </Field>
+            <Field label="To">
+              <input
+                type="date"
+                className="w-full rounded-lg border px-2 py-2"
+                value={draft.to || ""}
+                onChange={(e) => set("to", (e.target.value as any) || "")}
+              />
+            </Field>
+          </div>
+
+          <Field label="Mode">
+            <select
+              className="w-full rounded-lg border px-2 py-2"
+              value={draft.mode}
+              onChange={(e) => set("mode", e.target.value as any)}
+            >
+              <option value="auto">Auto (instant)</option>
+              <option value="apply">Apply (manual)</option>
+            </select>
+          </Field>
+
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <button
+              className="rounded-lg border px-3 py-2 text-sm"
+              onClick={() => {
+                onClearAll();
+                setOpen(false);
+              }}
+            >
+              Clear All
+            </button>
+            <button
+              className="rounded-lg bg-[#7a1f2a] px-3 py-2 text-sm font-medium text-white"
+              onClick={() => {
+                if (draft.mode === "apply") onApply();
+                setOpen(false);
+              }}
+            >
+              Apply
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="mb-3 space-y-1">
+      <div className="text-xs font-medium text-neutral-600">{label}</div>
+      {children}
+    </div>
+  );
+}
+
+
+===== forms\CreateScheduleDialog.ui.tsx =====
+// src/components/admin/schedule/forms/CreateScheduleDialog.ui.tsx
+"use client";
+import React from "react";
+import { ScheduleRepo } from "@/lib/admin/schedule/store";
+import type { Schedule } from "@/lib/admin/schedule/types";
+import MapPicker, { PickedPlace } from "@/components/common/MapPicker.ui";
+
+import {
+  isDriverAvailable,
+  isVehicleAvailable,
+  conflictsForDriver,
+  conflictsForVehicle,
+} from "@/lib/admin/schedule/utils";
+
+type Props = {
+  open: boolean;
+  initial?: Partial<Schedule>;
+  onClose: () => void;
+  // tripId is generated by the repo → omit it here
+  onSubmit: (data: Omit<Schedule, "id" | "createdAt" | "tripId">) => void;
+};
+
+const makeInit = (initial?: Partial<Schedule>) => {
+  const { drivers, vehicles } = ScheduleRepo.constants;
+  return {
+    requestId: initial?.requestId ?? null,
+    title: initial?.title ?? "",
+    origin: initial?.origin ?? "",
+    destination: initial?.destination ?? "",
+    date: initial?.date ?? new Date().toISOString().slice(0, 10),
+    startTime: initial?.startTime ?? "08:00",
+    endTime: initial?.endTime ?? "09:00",
+    driverId: initial?.driverId ?? drivers[0].id,
+    vehicleId: initial?.vehicleId ?? vehicles[0].id,
+    status: (initial?.status as Schedule["status"]) ?? "PLANNED",
+    notes: initial?.notes ?? "",
+  } satisfies Omit<Schedule, "id" | "createdAt" | "tripId">;
+};
+
+export default function CreateScheduleDialog({
+  open,
+  initial,
+  onClose,
+  onSubmit,
+}: Props) {
+  // keep hook order stable
+  const [form, setForm] = React.useState<
+    Omit<Schedule, "id" | "createdAt" | "tripId">
+  >(makeInit(initial));
+
+  React.useEffect(() => {
+    if (open) setForm(makeInit(initial));
+  }, [open, initial]);
+
+  // always read latest for availability checks
+  const snapshot = ScheduleRepo.list();
+  const editingId = (initial?.id as string | undefined) ?? undefined;
+
+  // Map picker state
+  const [openOriginMap, setOpenOriginMap] = React.useState(false);
+  const [openDestMap, setOpenDestMap] = React.useState(false);
+  const [originPlace, setOriginPlace] = React.useState<PickedPlace | null>(null);
+  const [destPlace, setDestPlace] = React.useState<PickedPlace | null>(null);
+
+  const probe: Schedule = {
+    id: editingId || "new",
+    createdAt: new Date().toISOString(),
+    tripId: "PREVIEW", // unused for checks
+    ...form,
+  };
+
+  const driverBusy = !isDriverAvailable(snapshot, form.driverId, probe, editingId);
+  const vehicleBusy = !isVehicleAvailable(snapshot, form.vehicleId, probe, editingId);
+  const driverConf = conflictsForDriver(snapshot, form.driverId, probe, editingId);
+  const vehicleConf = conflictsForVehicle(snapshot, form.vehicleId, probe, editingId);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
+      <div className="w-full max-w-xl rounded-xl bg-white p-4 shadow" onClick={(e)=>e.stopPropagation()}>
+        <h3 className="mb-3 text-lg font-semibold">
+          {editingId ? "Edit schedule" : "Create schedule"}
+        </h3>
+
+        <div className="grid grid-cols-2 gap-3">
+          <input
+            className="col-span-2 h-10 rounded border px-2"
+            placeholder="Title"
+            value={form.title}
+            onChange={(e) => setForm({ ...form, title: e.target.value })}
+          />
+
+          {/* Trip ID preview */}
+          <div className="col-span-2 text-xs text-gray-500">
+            Trip ID (auto):{" "}
+            <code className="rounded bg-gray-50 px-1.5 py-0.5">
+              {ScheduleRepo.peekTripId(form.date)}
+            </code>
+          </div>
+
+          {/* Origin with Map Picker */}
+          <div className="col-span-2 sm:col-span-1">
+            <div className="flex gap-2">
+              <input
+                className="h-10 w-full rounded border px-2"
+                placeholder="Origin"
+                value={form.origin}
+                onChange={(e) => setForm({ ...form, origin: e.target.value })}
+              />
+              <button
+                type="button"
+                className="h-10 rounded border px-2"
+                onClick={() => setOpenOriginMap(true)}
+                title="Pick origin on map"
+              >
+                Pick on map
+              </button>
+            </div>
+            {originPlace?.coords ? (
+              <div className="mt-1 text-xs text-gray-500">
+                lat: {originPlace.coords.lat}, lng: {originPlace.coords.lng}
+              </div>
+            ) : null}
+          </div>
+
+          {/* Destination with Map Picker */}
+          <div className="col-span-2 sm:col-span-1">
+            <div className="flex gap-2">
+              <input
+                className="h-10 w-full rounded border px-2"
+                placeholder="Destination"
+                value={form.destination}
+                onChange={(e) =>
+                  setForm({ ...form, destination: e.target.value })
+                }
+              />
+              <button
+                type="button"
+                className="h-10 rounded border px-2"
+                onClick={() => setOpenDestMap(true)}
+                title="Pick destination on map"
+              >
+                Pick on map
+              </button>
+            </div>
+            {destPlace?.coords ? (
+              <div className="mt-1 text-xs text-gray-500">
+                lat: {destPlace.coords.lat}, lng: {destPlace.coords.lng}
+              </div>
+            ) : null}
+          </div>
+
+          <input
+            type="date"
+            className="h-10 rounded border px-2"
+            value={form.date}
+            onChange={(e) => setForm({ ...form, date: e.target.value })}
+          />
+
+          <div className="flex gap-2">
+            <input
+              type="time"
+              className="h-10 w-full rounded border px-2"
+              value={form.startTime}
+              onChange={(e) => setForm({ ...form, startTime: e.target.value })}
+            />
+            <input
+              type="time"
+              className="h-10 w-full rounded border px-2"
+              value={form.endTime}
+              onChange={(e) => setForm({ ...form, endTime: e.target.value })}
+            />
+          </div>
+
+          <select
+            className="h-10 rounded border px-2"
+            value={form.driverId}
+            onChange={(e) => setForm({ ...form, driverId: e.target.value })}
+          >
+            {ScheduleRepo.constants.drivers.map((d) => {
+              const busy = !isDriverAvailable(snapshot, d.id, probe, editingId);
+              return (
+                <option key={d.id} value={d.id} disabled={busy}>
+                  {d.name}
+                  {busy ? " • busy" : ""}
+                </option>
+              );
+            })}
+          </select>
+
+          <select
+            className="h-10 rounded border px-2"
+            value={form.vehicleId}
+            onChange={(e) => setForm({ ...form, vehicleId: e.target.value })}
+          >
+            {ScheduleRepo.constants.vehicles.map((v) => {
+              const busy = !isVehicleAvailable(snapshot, v.id, probe, editingId);
+              return (
+                <option key={v.id} value={v.id} disabled={busy}>
+                  {v.label} ({v.plateNo})
+                  {busy ? " • busy" : ""}
+                </option>
+              );
+            })}
+          </select>
+
+          <select
+            className="h-10 rounded border px-2"
+            value={form.status}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                status: e.target.value as Schedule["status"],
+              })
+            }
+          >
+            <option value="PLANNED">PLANNED</option>
+            <option value="ONGOING">ONGOING</option>
+            <option value="COMPLETED">COMPLETED</option>
+            <option value="CANCELLED">CANCELLED</option>
+          </select>
+
+          <textarea
+            className="col-span-2 min-h-[80px] rounded border px-2 py-2"
+            placeholder="Notes (optional)"
+            value={form.notes}
+            onChange={(e) => setForm({ ...form, notes: e.target.value })}
+          />
+        </div>
+
+        {(driverBusy || vehicleBusy) && (
+          <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            {driverBusy && (
+              <div className="mb-1">
+                Driver is busy at this time:
+                {driverConf.map((c) => (
+                  <div key={c.id}>
+                    • {c.title} — {c.date} {c.startTime}-{c.endTime}
+                  </div>
+                ))}
+              </div>
+            )}
+            {vehicleBusy && (
+              <div>
+                Vehicle is busy at this time:
+                {vehicleConf.map((c) => (
+                  <div key={c.id}>
+                    • {c.title} — {c.date} {c.startTime}-{c.endTime}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onClose} className="h-10 rounded-md border px-4">
+            Cancel
+          </button>
+          <button
+            onClick={() => {
+              if (driverBusy || vehicleBusy) return;
+              // Send structured locations along with form.
+              // If your Schedule type already has originPlace/destinationPlace, this matches it.
+              // If not yet, this still works at runtime; TS is relaxed via `as any`.
+              const payload = {
+                ...form,
+                originPlace: originPlace ?? null,
+                destinationPlace: destPlace ?? null,
+              } as any;
+              onSubmit(payload);
+            }}
+            disabled={driverBusy || vehicleBusy}
+            className="h-10 rounded-md bg-[#7A0010] px-4 text-white disabled:opacity-50"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+
+      {/* Map pickers */}
+      <MapPicker
+        open={openOriginMap}
+        initial={originPlace}
+        onClose={() => setOpenOriginMap(false)}
+        onPick={(p) => {
+          setOriginPlace(p);
+          setForm({ ...form, origin: p.address });
+          setOpenOriginMap(false);
+        }}
+      />
+      <MapPicker
+        open={openDestMap}
+        initial={destPlace}
+        onClose={() => setOpenDestMap(false)}
+        onPick={(p) => {
+          setDestPlace(p);
+          setForm({ ...form, destination: p.address });
+          setOpenDestMap(false);
+        }}
+      />
+    </div>
+  );
+}
+
+
+===== hooks\useScheduleFilters.ts =====
+"use client";
+import * as React from "react";
+import {
+  DEFAULT_SCH_FILTERS,
+  type ScheduleFilterState,
+} from "@/lib/admin/schedule/filters";
+
+export function useScheduleFilters(
+  initial: ScheduleFilterState = DEFAULT_SCH_FILTERS
+) {
+  const [applied, setApplied] =
+    React.useState<ScheduleFilterState>(initial);
+  const [draft, setDraft] =
+    React.useState<ScheduleFilterState>(initial);
+
+  const update = React.useCallback(
+    (next: Partial<ScheduleFilterState>) => {
+      const n = { ...draft, ...next };
+      setDraft(n);
+      if (n.mode === "auto") setApplied(n);
+    },
+    [draft]
+  );
+
+  const apply = React.useCallback(() => setApplied(draft), [draft]);
+  const clearAll = React.useCallback(() => {
+    setDraft(DEFAULT_SCH_FILTERS);
+    setApplied(DEFAULT_SCH_FILTERS);
+  }, []);
+
+  return { draft, applied, update, apply, clearAll, setDraft };
+}
+
+
+===== kpi\useScheduleKpis.ts =====
+"use client";
+import * as React from "react";
+import { ScheduleRepo } from "@/lib/admin/schedule/store";
+import type { Schedule } from "@/lib/admin/schedule/types";
+
+function startOfWeek(d = new Date()) {
+  const x = new Date(d); const day = (x.getDay() + 6) % 7; // Mon=0
+  x.setHours(0,0,0,0); x.setDate(x.getDate() - day); return x;
+}
+function endOfWeek(d = new Date()) {
+  const s = startOfWeek(d); const e = new Date(s); e.setDate(s.getDate()+6); e.setHours(23,59,59,999); return e;
+}
+function within(dateStr: string, a: Date, b: Date) {
+  const d = new Date(dateStr + "T00:00:00"); return d >= a && d <= b;
+}
+function inNextDays(dateStr: string, days: number) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const end = new Date(today); end.setDate(end.getDate()+days);
+  return within(dateStr, today, end);
+}
+function inPrevDays(dateStr: string, days: number) {
+  const end = new Date(); end.setHours(23,59,59,999);
+  const start = new Date(end); start.setDate(end.getDate()-days);
+  return within(dateStr, start, end);
+}
+
+export function useScheduleKpis() {
+  const [rows, setRows] = React.useState<Schedule[]>(() => ScheduleRepo.list());
+
+  const refresh = React.useCallback(() => setRows(ScheduleRepo.list()), []);
+  // Let callers trigger refresh after mutations
+  const kpis = React.useMemo(() => {
+    const weekStart = startOfWeek();
+    const weekEnd = endOfWeek();
+
+    const thisWeek = rows.filter(r => within(r.date, weekStart, weekEnd)).length;
+
+    const todayStr = new Date().toISOString().slice(0,10);
+    const today = rows.filter(r => r.date === todayStr).length;
+    const ongoingNow = 0; // simplified; status badge already shows ongoing
+
+    const last7Total = rows.filter(r => inPrevDays(r.date, 7)).length;
+    const last7Done = rows.filter(r => inPrevDays(r.date, 7) && r.status === "COMPLETED").length;
+    const completionRate = last7Total ? Math.round((last7Done / last7Total) * 100) : 0;
+
+    const upcoming7 = rows.filter(r => inNextDays(r.date, 7) && (r.status === "PLANNED" || r.status === "ONGOING")).length;
+
+    const drivers = ScheduleRepo.constants.drivers;
+    const usedDrivers = new Set(
+      rows.filter(r => inPrevDays(r.date, 7) || inNextDays(r.date, 7))
+          .map(r => r.driverId)
+    ).size;
+    const driverUtilPct = drivers.length ? Math.round((usedDrivers / drivers.length) * 100) : 0;
+
+    return {
+      thisWeek,
+      today,
+      ongoingNow,
+      completionRate,
+      last7Done,
+      last7Total,
+      upcoming7,
+      driverUtilPct,
+      usedDrivers,
+      totalDrivers: drivers.length,
+    };
+  }, [rows]);
+
+  return { kpis, refresh };
+}
+
+
+===== toolbar\ScheduleToolbar.ui.tsx =====
+"use client";
+import * as React from "react";
+import { SortAsc, SortDesc, Plus, Filter } from "lucide-react";
+import type { ScheduleFilterState } from "@/lib/admin/schedule/filters";
+import ScheduleFilterDropdownUI from "../filters/ScheduleFilterDropdown.ui";
+
+type Sort = "newest" | "oldest";
+
+export default function ScheduleToolbar({
+  q, onQChange,
+  sort, onSortChange,
+  onAddNew,
+  draft, onDraftChange, onApply, onClearAll,
+}: {
+  q: string; onQChange: (v: string)=>void;
+  sort: Sort; onSortChange: (s: Sort)=>void;
+  onAddNew: () => void;
+  draft: ScheduleFilterState;
+  onDraftChange: (n: Partial<ScheduleFilterState>) => void;
+  onApply: () => void;
+  onClearAll: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-center gap-2">
+        <div className="relative">
+          <input
+            value={q}
+            onChange={(e) => onQChange(e.target.value)}
+            placeholder="Search schedules (Trip ID, title, origin, destination)…"
+            className="h-9 w-[320px] rounded-md border border-neutral-300 bg-white pl-3 pr-9 text-sm outline-none focus:ring-2 focus:ring-[#7a1f2a]/40"
+          />
+          <Filter size={16} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400" />
+        </div>
+
+        <ScheduleFilterDropdownUI
+          draft={draft}
+          onDraftChange={onDraftChange}
+          onApply={onApply}
+          onClearAll={onClearAll}
+        />
+      </div>
+
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => onSortChange(sort === "newest" ? "oldest" : "newest")}
+          className="inline-flex items-center gap-1 rounded-full border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-700 shadow-sm hover:bg-neutral-50"
+        >
+          {sort === "newest" ? <SortDesc size={16} /> : <SortAsc size={16} />}
+          {sort === "newest" ? "Newest first" : "Oldest first"}
+        </button>
+
+        <button
+          type="button"
+          onClick={onAddNew}
+          className="inline-flex items-center gap-2 rounded-md bg-[#7a1f2a] px-3 py-2 text-sm font-medium text-white hover:opacity-95"
+        >
+          <Plus size={16} />
+          Add schedule
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
+===== ui\KpiGrid.ui.tsx =====
+"use client";
+import * as React from "react";
+
+export default function KpiGrid({
+  kpis,
+}: {
+  kpis: {
+    thisWeek: number;
+    today: number;
+    ongoingNow: number;
+    completionRate: number;
+    last7Done: number;
+    last7Total: number;
+    upcoming7: number;
+    driverUtilPct: number;
+    usedDrivers: number;
+    totalDrivers: number;
+  };
+}) {
+  const Card = ({
+    title,
+    value,
+    sub,
+  }: {
+    title: string;
+    value: React.ReactNode;
+    sub?: React.ReactNode;
+  }) => (
+    <div className="rounded-xl border border-neutral-200 bg-white px-4 py-3">
+      <div className="text-xs font-medium text-neutral-500">{title}</div>
+      <div className="mt-1 text-2xl font-semibold">{value}</div>
+      {sub ? <div className="mt-1 text-xs text-neutral-500">{sub}</div> : null}
+    </div>
+  );
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <Card title="This Week (total)" value={kpis.thisWeek} />
+      <Card title="Today" value={kpis.today} sub={`${kpis.ongoingNow} ongoing now`} />
+      <Card
+        title="Completion Rate (7d)"
+        value={`${kpis.completionRate}%`}
+        sub={`${kpis.last7Done}/${kpis.last7Total} done`}
+      />
+      <Card title="Upcoming (7d)" value={kpis.upcoming7} />
+      <Card
+        title="Driver Utilization (7d)"
+        value={`${kpis.driverUtilPct}%`}
+        sub={`${kpis.usedDrivers}/${kpis.totalDrivers} drivers`}
+      />
+    </div>
+  );
+}
+
+
+===== ui\ScheduleDetailsModal.ui.tsx =====
+"use client";
+import React from "react";
+import type { Schedule } from "@/lib/admin/schedule/types";
+import { ScheduleRepo } from "@/lib/admin/schedule/store";
+import StatusBadge from "./StatusBadge";
+
+type Props = {
+  open: boolean;
+  data?: Schedule | null;
+  onClose: () => void;
+};
+
+export default function ScheduleDetailsModal({ open, data, onClose }: Props) {
+  const drivers = ScheduleRepo.constants.drivers;
+  const vehicles = ScheduleRepo.constants.vehicles;
+
+  // keep hooks order stable
+  const driverName =
+    drivers.find((d) => d.id === data?.driverId)?.name ?? "—";
+  const vehicle =
+    vehicles.find((v) => v.id === data?.vehicleId)?.label ?? "—";
+  const plate =
+    vehicles.find((v) => v.id === data?.vehicleId)?.plateNo ?? "—";
+
+  if (!open || !data) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4"
+      onKeyDown={(e) => e.key === "Escape" && onClose()}
+    >
+      <div
+        className="w-full max-w-2xl rounded-xl bg-white shadow"
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between border-b px-5 py-4">
+          <div>
+            <h3 className="text-lg font-semibold">{data.title}</h3>
+            <div className="mt-1 text-xs text-gray-500">
+              Created {new Date(data.createdAt).toLocaleString()}
+              {data.requestId ? ` • Request #${data.requestId}` : ""}
+            </div>
+          </div>
+          <StatusBadge status={data.status} />
+        </div>
+
+        <div className="grid gap-4 px-5 py-4 sm:grid-cols-2">
+          <Field label="Date">
+            {data.date} ({data.startTime}–{data.endTime})
+          </Field>
+          <Field label="Driver">{driverName}</Field>
+
+          <Field label="Origin">{data.origin}</Field>
+          <Field label="Vehicle">
+            {vehicle} <span className="text-gray-500">({plate})</span>
+          </Field>
+
+          <Field label="Destination" className="sm:col-span-2">
+            {data.destination}
+          </Field>
+
+          <Field label="Notes" className="sm:col-span-2">
+            {data.notes?.trim() ? data.notes : <span className="text-gray-400">—</span>}
+          </Field>
+        </div>
+        <div className="mt-1 text-xs text-gray-500 flex items-center gap-2">
+  <span>Trip ID:</span>
+  <code className="rounded bg-gray-50 px-1.5 py-0.5">{data.tripId}</code>
+  <button
+    onClick={() => navigator.clipboard?.writeText(data.tripId)}
+    className="rounded border px-1.5 py-0.5 text-xs"
+    title="Copy Trip ID"
+  >
+    Copy
+  </button>
+  <span className="ml-2">Created {new Date(data.createdAt).toLocaleString()}</span>
+  {data.requestId ? <span> • Request #{data.requestId}</span> : null}
+</div>
+
+
+        <div className="flex justify-end gap-2 border-t px-5 py-3">
+          <button
+            onClick={onClose}
+            className="h-10 rounded-md border px-4"
+            aria-label="Close details"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+      
+
+      {/* click outside to close */}
+      <button
+        className="fixed inset-0 cursor-default"
+        aria-hidden
+        onClick={onClose}
+      />
+    </div>
+  );
+}
+
+function Field({
+  label,
+  children,
+  className = "",
+}: {
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={className}>
+      <div className="text-xs font-semibold text-gray-500">{label}</div>
+      <div className="mt-1 text-sm text-gray-900">{children}</div>
+    </div>
+  );
+}
+
+
+===== ui\ScheduleTable.ui.tsx =====
+// src/components/admin/schedule/ui/ScheduleTable.ui.tsx
+"use client";
+import React from "react";
+import type { Pagination, Schedule } from "@/lib/admin/schedule/types";
+import StatusBadge from "./StatusBadge";
+import { ScheduleRepo } from "@/lib/admin/schedule/store";
+import { canStart, canComplete, canCancel, canReopen } from "@/lib/admin/schedule/utils";
+
+type Props = {
+  rows: Schedule[];
+  pagination: Pagination;
+  selected: Set<string>;
+  onToggleOne: (id: string, checked: boolean) => void;
+  onToggleAll: (checked: boolean) => void;
+  onEdit: (row: Schedule) => void;
+  onDeleteMany: (ids: string[]) => void;
+  onSetStatus: (id: string, s: Schedule["status"]) => void;
+  onPageChange: (p: number) => void;
+  onView: (row: Schedule) => void;
+  toolbar: React.ReactNode;
+};
+
+export default function ScheduleTable({
+  rows,
+  pagination,
+  selected,
+  onToggleOne,
+  onToggleAll,
+  onEdit,
+  onDeleteMany,
+  onSetStatus,
+  onPageChange,
+  onView,
+  toolbar,
+}: Props) {
+  const allOnPage = rows.map((r) => r.id);
+  const allChecked =
+    allOnPage.length > 0 && allOnPage.every((id) => selected.has(id));
+
+  return (
+    <div className="rounded-2xl border border-neutral-200 bg-white shadow-sm">
+      {/* sticky toolbar area */}
+      <div className="admin-sticky-toolbar px-3 py-2">{toolbar}</div>
+
+      {/* bulk + count */}
+      <div className="flex items-center justify-between px-3 py-2">
+        <div className="text-sm text-gray-600">{pagination.total} total</div>
+        {selected.size > 0 && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onDeleteMany(Array.from(selected))}
+              className="h-9 rounded-md border px-3"
+            >
+              Delete
+            </button>
+          </div>
+        )}
+      </div>
+
+      <table className="w-full text-sm">
+        <thead className="bg-gray-50">
+          <tr className="text-left">
+            <th className="px-3 py-2">
+              <input
+                type="checkbox"
+                checked={allChecked}
+                onChange={(e) => onToggleAll(e.target.checked)}
+              />
+            </th>
+            <th className="px-3 py-2">Trip ID</th>
+            <th className="px-3 py-2">Title</th>
+            <th className="px-3 py-2">When</th>
+            <th className="px-3 py-2">Driver</th>
+            <th className="px-3 py-2">Vehicle</th>
+            <th className="px-3 py-2">Status</th>
+            <th className="px-3 py-2" />
+          </tr>
+        </thead>
+
+        <tbody>
+          {rows.map((r) => {
+            const driver =
+              ScheduleRepo.constants.drivers.find((d) => d.id === r.driverId)
+                ?.name ?? "—";
+            const vehicle =
+              ScheduleRepo.constants.vehicles.find((v) => v.id === r.vehicleId)
+                ?.label ?? "—";
+
+            const sStart = canStart(r);
+            const sComplete = canComplete(r);
+            const sCancel = canCancel(r);
+            const sReopen = canReopen(r);
+
+            return (
+              <tr key={r.id} className="border-t">
+                <td className="px-3 py-2">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(r.id)}
+                    onChange={(e) => onToggleOne(r.id, e.target.checked)}
+                  />
+                </td>
+
+                <td className="px-3 py-2">
+                  <code className="rounded bg-gray-50 px-1.5 py-0.5">
+                    {r.tripId}
+                  </code>
+                </td>
+
+                <td className="px-3 py-2 font-medium">
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    className="cursor-pointer underline-offset-2 hover:underline"
+                    onClick={() => onView(r)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") onView(r);
+                    }}
+                    title="View details"
+                  >
+                    {r.title}
+                  </span>
+                </td>
+
+                <td className="px-3 py-2">
+                  {r.date} {r.startTime}-{r.endTime}
+                </td>
+
+                <td className="px-3 py-2">{driver}</td>
+                <td className="px-3 py-2">{vehicle}</td>
+
+                <td className="px-3 py-2">
+                  <StatusBadge status={r.status} />
+                </td>
+
+                <td className="px-3 py-2">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => onView(r)}
+                      className="rounded border px-2 py-1"
+                    >
+                      View
+                    </button>
+
+                    <button
+                      disabled={!sStart}
+                      onClick={() => onSetStatus(r.id, "ONGOING")}
+                      className="rounded border px-2 py-1 disabled:opacity-50"
+                    >
+                      Start
+                    </button>
+
+                    <button
+                      disabled={!sComplete}
+                      onClick={() => onSetStatus(r.id, "COMPLETED")}
+                      className="rounded border px-2 py-1 disabled:opacity-50"
+                    >
+                      Complete
+                    </button>
+
+                    <button
+                      disabled={r.status !== "ONGOING"}
+                      onClick={() => onSetStatus(r.id, "PLANNED" as any)}
+                      className="rounded border px-2 py-1 disabled:opacity-50"
+                    >
+                      Stop
+                    </button>
+
+                    <button
+                      disabled={!sCancel}
+                      onClick={() => onSetStatus(r.id, "CANCELLED")}
+                      className="rounded border px-2 py-1 disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+
+                    <button
+                      disabled={!sReopen}
+                      onClick={() => onSetStatus(r.id, "PLANNED" as any)}
+                      className="rounded border px-2 py-1 disabled:opacity-50"
+                    >
+                      Reopen
+                    </button>
+
+                    <button
+                      onClick={() => onEdit(r)}
+                      className="rounded border px-2 py-1"
+                    >
+                      Edit
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+
+          {rows.length === 0 && (
+            <tr>
+              <td
+                colSpan={8}
+                className="px-3 py-8 text-center text-gray-500"
+              >
+                No schedules
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+
+      <div className="flex items-center justify-between px-3 py-2">
+        <div className="text-sm">
+          Page {pagination.page} of{" "}
+          {Math.ceil(pagination.total / pagination.pageSize)}
+        </div>
+        <div className="flex gap-2">
+          <button
+            disabled={pagination.page <= 1}
+            onClick={() => onPageChange(pagination.page - 1)}
+            className="h-9 rounded-md border px-3 disabled:opacity-50"
+          >
+            Prev
+          </button>
+          <button
+            disabled={
+              pagination.page * pagination.pageSize >= pagination.total
+            }
+            onClick={() => onPageChange(pagination.page + 1)}
+            className="h-9 rounded-md border px-3 disabled:opacity-50"
+          >
+            Next
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+===== ui\StatusBadge.tsx =====
+// src/components/admin/schedule/ui/StatusBadge.tsx
+"use client";
+import React from "react";
+import type { ScheduleStatus } from "@/lib/admin/schedule/types";
+
+export default function StatusBadge({ status }: { status: ScheduleStatus }) {
+  const fmt: Record<ScheduleStatus, string> = {
+    PLANNED: "bg-amber-50 text-amber-700 border-amber-200",
+    ONGOING: "bg-blue-50 text-blue-700 border-blue-200",
+    COMPLETED: "bg-green-50 text-green-700 border-green-200",
+    CANCELLED: "bg-rose-50 text-rose-700 border-rose-200",
+  };
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium ${fmt[status]}`}>
+      {status}
+    </span>
+  );
+}
+
+

@@ -3,6 +3,8 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+@import "leaflet/dist/leaflet.css";
+
 
 /* ========== Shared tokens ========== */
 :root {
@@ -83,4 +85,19 @@ html, body {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 6px;
+}
+
+
+/* Make Leaflet controls sit above the map but below our dropdown */
+.leaflet-container {
+  z-index: 0;
+}
+.leaflet-control {
+  z-index: 1;
+}
+
+/* A simple portal root (optional – created on demand in code if missing) */
+#travilink-portal-root {
+  position: relative;
+  z-index: 9999;
 }
