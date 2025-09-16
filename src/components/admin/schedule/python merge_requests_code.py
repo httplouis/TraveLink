@@ -1,6 +1,7 @@
 import os
 
 ROOT_FOLDER = "."
+
 OUTPUT_FILE = os.path.join(ROOT_FOLDER, "_MERGED_requests_code.txt")
 INCLUDE_EXTS = {".tsx", ".ts"}
 EXCLUDE_NAMES = {".next", "node_modules", "dist", "build"}
