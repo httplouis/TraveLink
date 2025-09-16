@@ -1,7 +1,130 @@
-/* Admin-only custom tweaks (most styling is Tailwind) */
-[data-role="admin"] .hide-print { display: none; }
+/* Admin-only theme */
+@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-@media (max-width: 640px) {
-  .admin-edge-fade-left { background: linear-gradient(90deg, #fafafa, transparent); }
-  .admin-edge-fade-right { background: linear-gradient(270deg, #fafafa, transparent); }
+/* GLOBAL fallbacks so sticky works even before JS runs */
+:root {
+  --admin-kpi-h: 104px;        /* KPI + view toggle height (fallback) */
+  --admin-toolbar-h: 56px;     /* toolbar height (fallback) */
+}
+
+/* ===== Root (brand + borders) ===== */
+[data-role="admin"] {
+  --admin-brand: #7a0019;
+  --admin-line: #e5e7eb;
+}
+
+/* ===== Topbar ===== */
+[data-role="admin"] .tl-topbar {
+  background: var(--admin-brand);
+  color: #fff;
+  border-bottom: 1px solid rgba(0,0,0,.15);
+  box-shadow: inset 0 -1px 0 rgba(255,255,255,.12);
+}
+
+/* ===== Shell ===== */
+[data-role="admin"] .tl-shell { display:flex; height:calc(100dvh - 56px); overflow:hidden; }
+[data-role="admin"] .tl-leftnav { background:#fff; border-right:1px solid var(--admin-line); min-width:0; overflow-y:auto; }
+
+/* Main is the ONLY vertical scroller */
+[data-role="admin"] .tl-main {
+  min-width:0;
+  background:#f6f6f6;
+  overflow-y:auto;             /* IMPORTANT: vertical scroll happens here */
+  overflow-x:hidden;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-gutter:stable both-edges;
+}
+@supports not (scrollbar-gutter:stable) {
+  [data-role="admin"] .tl-main { overflow-y:scroll; }
+}
+
+/* Helpers */
+.no-scrollbar::-webkit-scrollbar { display:none; }
+.no-scrollbar { scrollbar-width:none; }
+
+/* Cards */
+[data-role="admin"] .kpi-tile,
+[data-role="admin"] .tl-card {
+  border:1px solid var(--admin-line);
+  border-radius:.75rem;
+  background:#fff;
+}
+[data-role="admin"] .tl-card { box-shadow:0 6px 18px rgba(17,24,39,.06); }
+
+/* Print */
+@media print {
+  [data-role="admin"] .tl-leftnav,
+  [data-role="admin"] .tl-topbar { display:none !important; }
+  [data-role="admin"] .tl-shell { height:auto !important; }
+  [data-role="admin"] .tl-main { overflow:visible !important; background:#fff !important; }
+  table { page-break-inside:auto; }
+  tr, td, th { page-break-inside:avoid; page-break-after:auto; }
+}
+
+/* --- Sticky stack --- */
+
+/* 1) KPI + view toggle sticks first */
+[data-role="admin"] .admin-sticky-kpi {
+  position:sticky;
+  top:0;
+  z-index:30;
+  background:#f6f6f6;
+  -webkit-backdrop-filter:blur(6px);
+  backdrop-filter:blur(6px);
+}
+
+/* 2) Toolbar sits below KPI: uses dynamic --rq-kpi, falls back to --admin-kpi-h */
+[data-role="admin"] .admin-sticky-toolbar {
+  position:sticky;
+  top:var(--rq-kpi, var(--admin-kpi-h));
+  z-index:25;
+  background:#fff;
+  border-bottom:1px solid var(--admin-line);
+  -webkit-backdrop-filter:blur(6px);
+  backdrop-filter:blur(6px);
+}
+
+/* 3) Each TH sticks below toolbar: uses both dynamic vars with global fallbacks */
+[data-role="admin"] .admin-th-sticky {
+  position:sticky;
+  top:calc(var(--rq-kpi, var(--admin-kpi-h)) + var(--rq-toolbar, var(--admin-toolbar-h)));
+  z-index:21;
+  background:rgba(250,250,250,.9);
+  -webkit-backdrop-filter:blur(6px);
+  backdrop-filter:blur(6px);
+  border-bottom:1px solid var(--admin-line);
+}
+
+/* ---- unify measured heights vs defaults ---- */
+[data-role="admin"] {
+  /* Prefer JS-measured --rq-*; fall back to static --admin-* */
+  --stack-kpi: var(--rq-kpi, var(--admin-kpi-h));
+  --stack-toolbar: var(--rq-toolbar, var(--admin-toolbar-h));
+}
+
+/* Toolbar sticks right under KPI using unified var */
+[data-role="admin"] .admin-sticky-toolbar {
+  top: var(--stack-kpi);
+}
+
+/* NEW: make each TH sticky (this is what your component uses) */
+[data-role="admin"] .admin-th-sticky {
+  position: sticky;
+  top: calc(var(--stack-kpi) + var(--stack-toolbar));
+  z-index: 20;                      /* above rows */
+  background: #fff;                 /* avoid see-through when scrolling */
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 1px 0 var(--admin-line); /* subtle divider under header */
+}
+
+/* (Optional) patayin kung may naiwan */
+[data-role="admin"] thead.admin-thead-sticky {
+  position: static !important;
+  top: auto !important;
+  box-shadow: none !important;
 }

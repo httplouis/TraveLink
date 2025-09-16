@@ -3,9 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
-type CalEvent = { date: string; type: "trip" | "maintenance"; label?: string };
+type CalEvent = { date: string; type: "trip"; label?: string };
 
-const MAINT_KEY = "travilink_maintenance";
 const TRIPS_KEY = "travilink_trips";
 
 // helpers – local YYYY-MM-DD (no UTC conversion)
@@ -20,23 +19,6 @@ export default function MiniCalendar() {
 
   function loadEvents() {
     const all: CalEvent[] = [];
-
-    // maintenance
-    try {
-      const rawM = localStorage.getItem(MAINT_KEY);
-      if (rawM) {
-        const list = JSON.parse(rawM) as { date: string; vehicle: string; type: string }[];
-        all.push(
-          ...list.map((i) => ({
-            date: i.date.slice(0, 10), // normalize
-            type: "maintenance" as const,
-            label: `${i.vehicle.replace("-", " ").toUpperCase()} — ${i.type}`,
-          }))
-        );
-      }
-    } catch {}
-
-    // trips
     try {
       const rawT = localStorage.getItem(TRIPS_KEY);
       if (rawT) {
@@ -50,14 +32,13 @@ export default function MiniCalendar() {
         );
       }
     } catch {}
-
     setEvents(all);
   }
 
   useEffect(() => {
     loadEvents();
     const onStorage = (e: StorageEvent) => {
-      if (e.key === MAINT_KEY || e.key === TRIPS_KEY) loadEvents();
+      if (e.key === TRIPS_KEY) loadEvents();
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
@@ -84,7 +65,6 @@ export default function MiniCalendar() {
     setView((v) => (v.m === 11 ? { y: v.y + 1, m: 0 } : { y: v.y, m: v.m + 1 }));
   }
 
-  // ✅ compare using local YYYY-MM-DD, not toISOString()
   function eventsFor(d: Date) {
     const key = ymdLocal(d);
     return events.filter((e) => e.date === key);
@@ -115,7 +95,7 @@ export default function MiniCalendar() {
           const inMonth = d.getMonth() === view.m;
           const isToday = ymdLocal(d) === todayKey;
           const evts = eventsFor(d);
-          const title = evts.map((e) => e.label || (e.type === "trip" ? "Trip" : "Maintenance")).join("\n");
+          const title = evts.map((e) => e.label || "Trip").join("\n");
 
           return (
             <div
@@ -130,7 +110,6 @@ export default function MiniCalendar() {
               {d.getDate()}
               <div className="absolute left-1.5 bottom-1.5 flex gap-1">
                 {evts.some((e) => e.type === "trip") && <span className="h-2 w-2 rounded-full bg-green-600" />}
-                {evts.some((e) => e.type === "maintenance") && <span className="h-2 w-2 rounded-full bg-rose-600" />}
               </div>
             </div>
           );
@@ -140,7 +119,6 @@ export default function MiniCalendar() {
       <div className="flex items-center justify-between px-3 py-2 border-t border-neutral-200/80 text-[11px]">
         <div className="flex items-center gap-3">
           <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-green-600" /> Trips</span>
-          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-rose-600" /> Maintenance</span>
         </div>
         <a href="/driver/schedule" className="text-[#7a0019] hover:underline">full calendar</a>
       </div>

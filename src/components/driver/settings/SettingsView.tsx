@@ -59,14 +59,6 @@ export default function SettingsView({
                 />
                 Changes & cancellations
               </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={settings.notifyMaintenance}
-                  onChange={(e) => onChange("notifyMaintenance", e.target.checked)}
-                />
-                Maintenance reminders
-              </label>
               <div>
                 <div className={label}>Reminder lead time</div>
                 <select

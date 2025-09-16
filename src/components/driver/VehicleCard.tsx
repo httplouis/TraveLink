@@ -1,14 +1,17 @@
 "use client";
-import { ClipboardList, Info, Wrench } from "lucide-react";
-import type { Vehicle } from "@/app/lib/mock";
+import { ClipboardList, Info } from "lucide-react";
 
-function StatusPill({ s }: { s: Vehicle["status"] }) {
-  const map = {
+/** Local minimal types so we don't depend on '@/app/lib/mock' */
+type VehicleStatus = "available" | "offline" | "maintenance";
+type Vehicle = { id: string; name: string; type: string; status: VehicleStatus };
+
+function StatusPill({ s }: { s: VehicleStatus }) {
+  const map: Record<VehicleStatus, string> = {
     available: "bg-green-50 text-green-700 border-green-200",
-    maintenance: "bg-amber-50 text-amber-700 border-amber-200",
+    maintenance: "bg-gray-100 text-gray-700 border-gray-200",
     offline: "bg-gray-100 text-gray-700 border-gray-200",
   };
-  const label = s === "maintenance" ? "Maintenance" : s === "available" ? "Available" : "Offline";
+  const label = s === "available" ? "Available" : "Unavailable";
   return <span className={`pill ${map[s]}`}>{label}</span>;
 }
 
@@ -33,9 +36,6 @@ export default function VehicleCard({ v }: { v: Vehicle }) {
         </button>
         <button className="btn">
           <Info size={16} /> Details
-        </button>
-        <button className="btn" disabled={v.status !== "maintenance"}>
-          <Wrench size={16} /> Fix log
         </button>
       </div>
     </div>
