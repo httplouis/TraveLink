@@ -1,36 +1,56 @@
-export type DriverStatus = "active" | "suspended" | "archived" | "pending_verification";
+// File: src/lib/admin/drivers/types.ts
 
-export type LicenseInfo = {
-  number: string;
-  category: string; // e.g. "A","B","C"
-  expiry: string;   // ISO date
-};
+// Expanded Driver statuses
+export type DriverStatus =
+  | "active"
+  | "on_trip"
+  | "off_duty"
+  | "suspended"
+  | "pending_verification"
+  | "archived";
 
-export type Requirements = {
-  medicalClearanceExpiry?: string;
-  drugTestExpiry?: string;
-  safetyTrainingExpiry?: string;
-};
+export type LicenseClass = "A" | "B" | "C" | "D" | "E";
 
-export type Driver = {
+export interface Driver {
   id: string;
-  employeeNo: string;
+  code: string;
   firstName: string;
   lastName: string;
-  email: string;
-  phone: string;
+  phone?: string;
+  email?: string;
+
   status: DriverStatus;
-  photoUrl?: string;
-  hiredAt: string;
-  license: LicenseInfo;
-  requirements?: Requirements;
-  primaryVehicleId?: string | null;
-  allowedVehicleTypes?: string[];
+  hireDate?: string; // ISO date
+
+  licenseNo: string;
+  licenseClass: LicenseClass;
+  licenseExpiryISO: string;
+
+  assignedVehicleId?: string;
+  lastCheckIn?: string;
+  rating?: number; // 0–5
   notes?: string;
+
+  avatarUrl?: string;
+  docLicenseUrl?: string;
+  docGovtIdUrl?: string;
+
   createdAt: string;
   updatedAt: string;
-  lastEditedBy?: string;
-};
+}
 
-export type DriverCreate = Omit<Driver, "id" | "createdAt" | "updatedAt" | "lastEditedBy">;
-export type DriverUpdate = Partial<Omit<Driver, "id" | "createdAt">> & { id: string };
+export interface DriverFilters {
+  search?: string;
+  status?: DriverStatus;
+  licenseClass?: LicenseClass;
+}
+
+export type DriverTab =
+  | "all"
+  | "available"
+  | "on_trip"
+  | "off_duty"
+  | "suspended"
+  | "expired_license"
+  | "pending_verification"
+  | "archived";

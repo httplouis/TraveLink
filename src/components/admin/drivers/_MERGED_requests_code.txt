@@ -1,0 +1,1726 @@
+===== containers\DriversPageClient.tsx =====
+"use client";
+import * as React from "react";
+
+// top bars
+import { DriversHeader } from "../filters/DriversHeader.ui";
+import { DriversFilterBar } from "../filters/DriversFilterBar.ui";
+import { DriversBulkBar } from "../toolbar/DriversBulkBar.ui";
+
+// main views
+import { DriversGrid } from "../ui/DriversGrid.ui";
+import { DriversTable } from "../ui/DriversTable.ui";
+import { DriverDetailsModal } from "../ui/DriverDetailsModal.ui";
+import { DriverFormModal } from "../forms/DriverFormModal.ui";
+
+// state
+import { useDriversScreen } from "../hooks/useDriversScreen";
+
+// repo, utils
+import { DriversRepo } from "@/lib/admin/drivers/store";
+import { toCSV } from "@/lib/admin/drivers/utils";
+
+// common confirm
+import { useConfirm } from "@/components/common/hooks/useConfirm";
+
+export default function DriversPageClient() {
+  const {
+    filters, setFilters,
+    rows, selection, setSelection,
+    form, setForm,
+    view, setView,
+    tab, setTab,
+    refresh,
+  } = useDriversScreen();
+
+  const [openDetails, setOpenDetails] = React.useState<string | null>(null);
+  const current = openDetails ? DriversRepo.get(openDetails) : null;
+
+  // hydrate localStorage data after mount to avoid SSR mismatch
+  React.useEffect(() => {
+    if (DriversRepo.hydrateFromStorage?.()) {
+      refresh();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const { ask, ui: confirmUI } = useConfirm();
+
+  const onClear = () => setFilters({});
+  const onEdit = (id: string) => setForm({ mode: "edit", id });
+
+  const onDelete = async (id: string) => {
+    const d = DriversRepo.get(id);
+    const ok = await ask(
+      "Delete driver?",
+      `Are you sure you want to delete ${d ? `${d.firstName} ${d.lastName}` : "this driver"}? This action cannot be undone.`,
+      "Delete"
+    );
+    if (!ok) return;
+    DriversRepo.remove(id);
+    refresh();
+  };
+
+  const onDeleteSelected = async () => {
+    if (selection.length === 0) return;
+    const ok = await ask(
+      "Delete selected drivers?",
+      `This will delete ${selection.length} driver(s). This action cannot be undone.`,
+      "Delete"
+    );
+    if (!ok) return;
+    selection.forEach(DriversRepo.remove);
+    setSelection([]);
+    refresh();
+  };
+
+  const onExportCSV = () => {
+    const blob = new Blob([toCSV(rows)], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "drivers.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // counts for header tabs
+  const counts = React.useMemo(() => {
+    const all = DriversRepo.list({}).length;
+    const available = DriversRepo.list({}).filter((d) => d.status === "active" && !d.assignedVehicleId).length;
+    const on_trip = DriversRepo.list({}).filter((d) => d.status === "on_trip").length;
+    const off_duty = DriversRepo.list({}).filter((d) => d.status === "off_duty").length;
+    const suspended = DriversRepo.list({}).filter((d) => d.status === "suspended").length;
+
+    const todayISO = new Date().toISOString().slice(0, 10);
+    const expired_license = DriversRepo.list({}).filter((d) => (d.licenseExpiryISO ?? "") < todayISO).length;
+
+    return { all, available, on_trip, off_duty, suspended, expired_license };
+  }, [rows]);
+
+  // (DEV only) reset to sample
+  const handleResetSample = () => {
+    DriversRepo.resetToSample();
+    setSelection([]);
+    setFilters({});
+    refresh();
+  };
+
+  return (
+    <div className="space-y-4 p-4">
+      {/* global confirm dialog portal */}
+      {confirmUI}
+
+      <DriversHeader
+        counts={counts as any}
+        tab={tab}
+        onTab={(t) => setTab(t)}
+        view={view}
+        onView={setView}
+        onCreate={() => setForm({ mode: "create" })}
+        onReset={handleResetSample}
+      />
+
+      <DriversFilterBar value={filters} onChange={setFilters} onClear={onClear} />
+
+      <div className="flex flex-col gap-3">
+        {view === "table" ? (
+          <>
+            <DriversBulkBar
+              selection={selection}
+              rows={rows}
+              onDeleteSelected={onDeleteSelected}
+              onExportCSV={onExportCSV}
+            />
+            <DriversTable
+              rows={rows}
+              selection={selection}
+              setSelection={setSelection}
+              onEdit={onEdit}
+              onDelete={onDelete}
+            />
+          </>
+        ) : (
+          <DriversGrid
+            rows={rows}
+            onEdit={onEdit}
+            onDelete={onDelete}
+            onOpenDetails={(id) => setOpenDetails(id)}
+          />
+        )}
+      </div>
+
+      {/* Create/Edit modal */}
+      {form && (
+        <DriverFormModal
+          open={!!form}
+          initial={form.mode === "edit" ? DriversRepo.get(form.id) ?? undefined : undefined}
+          onCancel={() => setForm(null)}
+          onSubmit={(data) => {
+            if (form.mode === "create") DriversRepo.create(data as any);
+            else DriversRepo.update(form.id, data as any);
+            setForm(null);
+            refresh();
+          }}
+        />
+      )}
+
+      {/* Details modal */}
+      <DriverDetailsModal open={!!openDetails} onClose={() => setOpenDetails(null)} d={current as any} />
+    </div>
+  );
+}
+
+
+===== filters\ComplianceDropdown.ui.tsx =====
+"use client";
+import * as React from "react";
+
+export default function ComplianceDropdown({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <select className="rounded border px-3 py-2" value={value} onChange={(e)=>onChange(e.target.value)}>
+      <option value="">Compliance: All</option>
+      <option value="ok">Compliant</option>
+      <option value="warn">Expiring soon</option>
+      <option value="bad">Expired / missing</option>
+    </select>
+  );
+}
+
+
+===== filters\DriverStatusDropdown.ui.tsx =====
+"use client";
+import * as React from "react";
+
+export default function DriverStatusDropdown({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <select className="rounded border px-3 py-2" value={value} onChange={(e)=>onChange(e.target.value)}>
+      <option value="">Status: All</option>
+      <option value="active">Active</option>
+      <option value="suspended">Suspended</option>
+      <option value="archived">Archived</option>
+      <option value="pending_verification">Pending verification</option>
+    </select>
+  );
+}
+
+
+===== filters\DriversFilterBar.ui.tsx =====
+"use client";
+import * as React from "react";
+import { Search, X } from "lucide-react";
+import type { DriverFilters } from "@/lib/admin/drivers/types";
+import { DriversRepo } from "@/lib/admin/drivers/store";
+
+export function DriversFilterBar({
+  value,
+  onChange,
+  onClear,
+}: {
+  value: DriverFilters;
+  onChange: (v: DriverFilters) => void;
+  onClear: () => void;
+}) {
+  const hasFilters = !!(value.search || value.status || value.licenseClass);
+
+  // debounced search
+  const [search, setSearch] = React.useState(value.search ?? "");
+  React.useEffect(() => setSearch(value.search ?? ""), [value.search]);
+  React.useEffect(() => {
+    const t = setTimeout(() => {
+      if ((value.search ?? "") !== search) onChange({ ...value, search });
+    }, 250);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
+  const selectCls =
+    "rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 " +
+    "hover:bg-gray-50 focus:outline-none focus:ring-0 focus:border-gray-400";
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-xl bg-white/90 p-2 ring-1 ring-gray-200 shadow-sm">
+      {/* Search pill */}
+      <label className="flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700">
+        <Search size={16} className="opacity-60" />
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search name, code, phone, email…"
+          className="w-56 sm:w-72 bg-transparent outline-none"
+        />
+        {search ? (
+          <button
+            type="button"
+            onClick={() => setSearch("")}
+            className="rounded-full p-0.5 text-gray-500 hover:bg-gray-100"
+            title="Clear search"
+          >
+            <X size={14} />
+          </button>
+        ) : null}
+      </label>
+
+      {/* Status */}
+      <select
+        className={selectCls}
+        value={value.status ?? ""}
+        onChange={(e) => onChange({ ...value, status: e.target.value as any })}
+      >
+        <option value="">All Status</option>
+        {DriversRepo.constants.statuses.map((s) => (
+          <option key={s} value={s}>
+            {s}
+          </option>
+        ))}
+      </select>
+
+      {/* License class */}
+      <select
+        className={selectCls}
+        value={value.licenseClass ?? ""}
+        onChange={(e) =>
+          onChange({ ...value, licenseClass: e.target.value as any })
+        }
+      >
+        <option value="">All License Classes</option>
+        {DriversRepo.constants.licenseClasses.map((c) => (
+          <option key={c} value={c}>
+            {c}
+          </option>
+        ))}
+      </select>
+
+      <div className="ms-auto" />
+
+      {/* Clear link */}
+      <button
+        type="button"
+        onClick={onClear}
+        disabled={!hasFilters}
+        className="rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-transparent"
+        title="Clear filters"
+      >
+        Clear
+      </button>
+    </div>
+  );
+}
+
+
+===== filters\DriversHeader.ui.tsx =====
+"use client";
+import * as React from "react";
+import { LayoutGrid, Rows3, Plus } from "lucide-react";
+import type { DriverTab } from "@/lib/admin/drivers/types";
+
+const BRAND = "#7a0019";
+
+export function DriversHeader({
+  counts,
+  tab,
+  onTab,
+  view,
+  onView,
+  onCreate,
+  onReset, // optional dev helper
+}: {
+  counts: {
+    all: number;
+    available: number;
+    on_trip: number;
+    off_duty: number;
+    suspended: number;
+    expired_license: number;
+  };
+  tab: DriverTab;
+  onTab: (t: DriverTab) => void;
+  view: "grid" | "table";
+  onView: (v: "grid" | "table") => void;
+  onCreate: () => void;
+  onReset?: () => void;
+}) {
+  const tabs: { key: DriverTab; label: string; count: number }[] = [
+    { key: "all", label: "All", count: counts.all },
+    { key: "available", label: "Available", count: counts.available },
+    { key: "on_trip", label: "On Trip", count: counts.on_trip },
+    { key: "off_duty", label: "Off Duty", count: counts.off_duty },
+    { key: "suspended", label: "Suspended", count: counts.suspended },
+    { key: "expired_license", label: "Expired License", count: counts.expired_license },
+  ];
+
+  return (
+    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      {/* Title + Tabs */}
+      <div className="min-w-0">
+        <div className="text-xl font-semibold tracking-tight">Drivers</div>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {tabs.map((t) => {
+            const active = tab === t.key;
+            return (
+              <button
+                key={t.key}
+                onClick={() => onTab(t.key)}
+                className={`px-3 py-2 rounded-lg text-sm transition ${
+                  active
+                    ? "bg-gray-900 text-white"
+                    : "bg-white ring-1 ring-gray-200 hover:bg-gray-50"
+                }`}
+              >
+                {t.label}
+                <span
+                  className={`ml-1 rounded-full px-1.5 py-0.5 text-xs ${
+                    active ? "bg-white/20 text-white" : "bg-gray-100 text-gray-700"
+                  }`}
+                >
+                  {t.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center gap-2">
+        <div className="hidden md:flex rounded-lg bg-white ring-1 ring-gray-200 p-1">
+          <button
+            onClick={() => onView("grid")}
+            className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm ${
+              view === "grid" ? "bg-gray-900 text-white" : "hover:bg-gray-100"
+            }`}
+            title="Grid view"
+          >
+            <LayoutGrid size={16} /> Grid
+          </button>
+          <button
+            onClick={() => onView("table")}
+            className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm ${
+              view === "table" ? "bg-gray-900 text-white" : "hover:bg-gray-100"
+            }`}
+            title="Table view"
+          >
+            <Rows3 size={16} /> Table
+          </button>
+        </div>
+
+        <button
+          onClick={onCreate}
+          className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-white shadow-sm transition"
+          style={{ background: BRAND }}
+        >
+          <Plus size={16} /> Add Driver
+        </button>
+
+        {onReset && (
+          <button
+            onClick={onReset}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
+            title="Reset sample data (dev)"
+          >
+            Reset
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+===== forms\DriverFormModal.ui.tsx =====
+"use client";
+import * as React from "react";
+import type { Driver } from "@/lib/admin/drivers/types";
+import { DriversRepo } from "@/lib/admin/drivers/store";
+import { validate } from "@/lib/admin/drivers/utils";
+
+// common inputs (reuse your shared components)
+import { TextInput } from "@/components/common/inputs/TextInput.ui";
+import { DateInput } from "@/components/common/inputs/DateInput.ui";
+import { Select } from "@/components/common/inputs/Select.ui";
+import { FileUpload } from "@/components/common/file_upload/FileUpload.ui";
+
+const BRAND = "#7a0019";
+
+type FormShape = Omit<Driver, "id" | "createdAt" | "updatedAt">;
+
+export function DriverFormModal({
+  open,
+  initial,
+  onCancel,
+  onSubmit,
+}: {
+  open: boolean;
+  initial?: Partial<Driver>;
+  onCancel: () => void;
+  onSubmit: (data: FormShape) => void;
+}) {
+  const [form, setForm] = React.useState<FormShape>(() => ({
+    code: initial?.code ?? "",
+    firstName: initial?.firstName ?? "",
+    lastName: initial?.lastName ?? "",
+    phone: initial?.phone ?? "",
+    email: initial?.email ?? "",
+
+    status: (initial?.status as any) ?? DriversRepo.constants.statuses[0],
+    hireDate: initial?.hireDate ?? "",
+
+    licenseNo: initial?.licenseNo ?? "",
+    licenseClass: (initial?.licenseClass as any) ?? DriversRepo.constants.licenseClasses[0],
+    licenseExpiryISO: initial?.licenseExpiryISO ?? new Date().toISOString().slice(0, 10),
+
+    assignedVehicleId: initial?.assignedVehicleId ?? "",
+    lastCheckIn: initial?.lastCheckIn ?? "",
+    rating: initial?.rating ?? undefined,
+    notes: initial?.notes ?? "",
+
+    avatarUrl: initial?.avatarUrl ?? "",
+    docLicenseUrl: initial?.docLicenseUrl ?? "",
+    docGovtIdUrl: initial?.docGovtIdUrl ?? "",
+  }));
+  const [err, setErr] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    setForm({
+      code: initial?.code ?? "",
+      firstName: initial?.firstName ?? "",
+      lastName: initial?.lastName ?? "",
+      phone: initial?.phone ?? "",
+      email: initial?.email ?? "",
+
+      status: (initial?.status as any) ?? DriversRepo.constants.statuses[0],
+      hireDate: initial?.hireDate ?? "",
+
+      licenseNo: initial?.licenseNo ?? "",
+      licenseClass: (initial?.licenseClass as any) ?? DriversRepo.constants.licenseClasses[0],
+      licenseExpiryISO: initial?.licenseExpiryISO ?? new Date().toISOString().slice(0, 10),
+
+      assignedVehicleId: initial?.assignedVehicleId ?? "",
+      lastCheckIn: initial?.lastCheckIn ?? "",
+      rating: initial?.rating ?? undefined,
+      notes: initial?.notes ?? "",
+
+      avatarUrl: initial?.avatarUrl ?? "",
+      docLicenseUrl: initial?.docLicenseUrl ?? "",
+      docGovtIdUrl: initial?.docGovtIdUrl ?? "",
+    });
+    setErr(null);
+  }, [open, initial]);
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const v = validate(form as any);
+    if (v) {
+      setErr(v);
+      return;
+    }
+    onSubmit(form);
+  };
+
+  // file upload handlers (local preview via blob url)
+  const handleAvatar = (_file: File | null, url?: string) =>
+    setForm((f) => ({ ...f, avatarUrl: url ?? "" }));
+  const handleLicenseDoc = (_file: File | null, url?: string) =>
+    setForm((f) => ({ ...f, docLicenseUrl: url ?? "" }));
+  const handleGovtIdDoc = (_file: File | null, url?: string) =>
+    setForm((f) => ({ ...f, docGovtIdUrl: url ?? "" }));
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b px-4 py-3">
+          <h2 className="text-lg font-semibold">
+            {initial ? "Edit Driver" : "Add Driver"}
+          </h2>
+          <button
+            onClick={onCancel}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm hover:bg-gray-50"
+          >
+            Close
+          </button>
+        </div>
+
+        {/* Form */}
+        <form onSubmit={submit} className="grid gap-4 p-4">
+          {err && (
+            <div className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">
+              {err}
+            </div>
+          )}
+
+          {/* Avatar */}
+          <div className="grid gap-2">
+            <FileUpload label="Avatar" preview={form.avatarUrl || undefined} onChange={handleAvatar} />
+          </div>
+
+          {/* Basic */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TextInput
+              label="First name"
+              value={form.firstName}
+              onChange={(v) => setForm((f) => ({ ...f, firstName: v }))}
+            />
+            <TextInput
+              label="Last name"
+              value={form.lastName}
+              onChange={(v) => setForm((f) => ({ ...f, lastName: v }))}
+            />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TextInput
+              label="Driver code"
+              value={form.code}
+              onChange={(v) => setForm((f) => ({ ...f, code: v }))}
+            />
+            <Select
+              label="Status"
+              value={form.status as any}
+              options={DriversRepo.constants.statuses as any}
+              onChange={(v) => setForm((f) => ({ ...f, status: v as any }))}
+            />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TextInput
+              label="Phone"
+              value={form.phone ?? ""}
+              onChange={(v) => setForm((f) => ({ ...f, phone: v }))}
+            />
+            <TextInput
+              label="Email"
+              value={form.email ?? ""}
+              onChange={(v) => setForm((f) => ({ ...f, email: v }))}
+            />
+          </div>
+
+          {/* License */}
+          <div className="grid gap-3 sm:grid-cols-3">
+            <TextInput
+              label="License No."
+              value={form.licenseNo}
+              onChange={(v) => setForm((f) => ({ ...f, licenseNo: v }))}
+            />
+            <Select
+              label="Class"
+              value={form.licenseClass as any}
+              options={DriversRepo.constants.licenseClasses as any}
+              onChange={(v) => setForm((f) => ({ ...f, licenseClass: v as any }))}
+            />
+            <DateInput
+              label="Expiry"
+              value={form.licenseExpiryISO}
+              onChange={(v) => setForm((f) => ({ ...f, licenseExpiryISO: v }))}
+            />
+          </div>
+
+          {/* Employment / Ops */}
+          <div className="grid gap-3 sm:grid-cols-3">
+            <DateInput
+              label="Hire date"
+              value={form.hireDate ?? ""}
+              onChange={(v) => setForm((f) => ({ ...f, hireDate: v }))}
+            />
+            <TextInput
+              label="Assigned vehicle (ID)"
+              value={form.assignedVehicleId ?? ""}
+              onChange={(v) => setForm((f) => ({ ...f, assignedVehicleId: v }))}
+            />
+            <TextInput
+              label="Rating (0-5)"
+              value={form.rating != null ? String(form.rating) : ""}
+              onChange={(v) =>
+                setForm((f) => ({
+                  ...f,
+                  rating: v === "" ? undefined : Number(v),
+                }))
+              }
+            />
+          </div>
+
+          <TextInput
+            label="Notes"
+            value={form.notes ?? ""}
+            onChange={(v) => setForm((f) => ({ ...f, notes: v }))}
+          />
+
+          {/* Docs */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FileUpload
+              label="License document"
+              preview={form.docLicenseUrl || undefined}
+              onChange={handleLicenseDoc}
+              accept="application/pdf,image/*"
+            />
+            <FileUpload
+              label="Government ID"
+              preview={form.docGovtIdUrl || undefined}
+              onChange={handleGovtIdDoc}
+              accept="application/pdf,image/*"
+            />
+          </div>
+
+          {/* Actions */}
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="rounded-md border bg-white px-3 py-1.5"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="rounded-md px-3 py-1.5 text-white"
+              style={{ background: BRAND }}
+            >
+              Save
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+
+===== forms\DriverFormSections.ui.tsx =====
+// Placeholder for splitting DriverForm into smaller chunks later.
+// For now the single DriverForm.ui.tsx handles the layout.
+export {};
+
+
+===== hooks\useDriversScreen.ts =====
+"use client";
+import * as React from "react";
+import type { Driver, DriverFilters, DriverTab } from "@/lib/admin/drivers/types";
+import { DriversRepo } from "@/lib/admin/drivers/store";
+
+type FormState =
+  | null
+  | { mode: "create" }
+  | { mode: "edit"; id: string };
+
+type ViewMode = "grid" | "table";
+
+/** Central page state for Drivers: filters, view, tab, selection, rows */
+export function useDriversScreen() {
+  const [filters, setFilters] = React.useState<DriverFilters>({});
+  const [tab, setTab] = React.useState<DriverTab>("all");
+  const [view, setView] = React.useState<ViewMode>("grid");
+  const [selection, setSelection] = React.useState<string[]>([]);
+  const [form, setForm] = React.useState<FormState>(null);
+
+  const [rows, setRows] = React.useState<Driver[]>(() => DriversRepo.list({}));
+
+  const refresh = React.useCallback(() => {
+    const base = DriversRepo.list(filters);
+    setRows(applyTab(base, tab));
+  }, [filters, tab]);
+
+  React.useEffect(() => {
+    refresh();
+  }, [filters, tab, refresh]);
+
+  return {
+    filters,
+    setFilters,
+    tab,
+    setTab,
+    view,
+    setView,
+    selection,
+    setSelection,
+    form,
+    setForm,
+    rows,
+    refresh,
+  };
+}
+
+function applyTab(base: Driver[], tab: DriverTab) {
+  if (tab === "all") return base;
+  const todayISO = new Date().toISOString().slice(0, 10);
+  switch (tab) {
+    case "available":
+      return base.filter((d) => d.status === "active" && !d.assignedVehicleId);
+    case "on_trip":
+      return base.filter((d) => d.status === "on_trip");
+    case "off_duty":
+      return base.filter((d) => d.status === "off_duty");
+    case "suspended":
+      return base.filter((d) => d.status === "suspended");
+    case "expired_license":
+      return base.filter((d) => (d.licenseExpiryISO ?? "") < todayISO);
+    default:
+      return base;
+  }
+}
+
+
+===== toolbar\DriversBulkBar.ui.tsx =====
+"use client";
+import * as React from "react";
+import { Download, Trash2 } from "lucide-react";
+import type { Driver } from "@/lib/admin/drivers/types";
+
+export function DriversBulkBar({
+  selection,
+  rows,
+  onDeleteSelected,
+  onExportCSV,
+}: {
+  selection: string[];
+  rows: Driver[];
+  onDeleteSelected: () => void;
+  onExportCSV: () => void;
+}) {
+  const any = selection.length > 0;
+
+  return (
+    <div className="flex items-center justify-between rounded-lg border bg-gray-50 px-4 py-2 shadow-sm">
+      <div className="flex items-center gap-2">
+        <button
+          disabled={!any}
+          onClick={onDeleteSelected}
+          className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-red-300"
+          title="Delete selected"
+        >
+          <Trash2 size={16} /> Delete
+        </button>
+
+        <button
+          onClick={onExportCSV}
+          className="inline-flex items-center gap-1.5 rounded-md bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm transition hover:bg-gray-100 border"
+        >
+          <Download size={16} /> Export CSV
+        </button>
+      </div>
+
+      <span className="text-sm text-gray-600">
+        Showing <b>{rows.length}</b> driver{rows.length !== 1 && "s"}
+        {any && (
+          <span className="ml-2 text-gray-700">
+            • <b>{selection.length}</b> selected
+          </span>
+        )}
+      </span>
+    </div>
+  );
+}
+
+
+===== ui\BulkBar.ui.tsx =====
+"use client";
+import * as React from "react";
+
+type Props = {
+  count: number;
+  onSuspend: () => void;
+  onActivate: () => void;
+  onArchive: () => void;
+  onExport: () => void;
+  onClear: () => void;
+};
+
+export default function BulkBar({ count, onSuspend, onActivate, onArchive, onExport, onClear }: Props) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg border bg-amber-50 p-3 text-sm">
+      <div className="font-medium">{count} selected</div>
+      <div className="ml-auto flex items-center gap-2">
+        <button className="rounded border px-3 py-1.5 hover:bg-gray-50" onClick={onActivate}>Activate</button>
+        <button className="rounded border px-3 py-1.5 hover:bg-gray-50" onClick={onSuspend}>Suspend</button>
+        <button className="rounded border px-3 py-1.5 hover:bg-gray-50" onClick={onArchive}>Archive</button>
+        <button className="rounded border px-3 py-1.5 hover:bg-gray-50" onClick={onExport}>Export CSV</button>
+        <button className="rounded bg-gray-900 px-3 py-1.5 text-white hover:opacity-90" onClick={onClear}>Clear</button>
+      </div>
+    </div>
+  );
+}
+
+
+===== ui\DriverDetailsModal.ui.tsx =====
+"use client";
+import * as React from "react";
+import type { Driver } from "@/lib/admin/drivers/types";
+import { Mail, Phone, IdCard } from "lucide-react";
+import { StatusBadge } from "@/components/common/StatusBadge.ui";
+
+export function DriverDetailsModal({
+  open,
+  onClose,
+  d,
+}: {
+  open: boolean;
+  onClose: () => void;
+  d: (Driver & {
+    documents?: { label: string; url?: string }[];
+  }) | null;
+}) {
+  if (!open || !d) return null;
+
+  const sections = [
+    {
+      key: "Profile",
+      content: (
+        <div className="grid gap-2 text-sm">
+          <Row label="Code" value={d.code} />
+          <Row label="Status" value={<StatusBadge value={d.status} />} />
+          <Row label="Hire date" value={d.hireDate ?? "—"} />
+          <Row label="Rating" value={d.rating?.toFixed(1) ?? "—"} />
+          <Row label="Last check-in/out" value={d.lastCheckIn ?? "—"} />
+        </div>
+      ),
+    },
+    {
+      key: "License",
+      content: (
+        <div className="grid gap-2 text-sm">
+          <Row label="License No." value={d.licenseNo} />
+          <Row label="Class" value={d.licenseClass} />
+          <Row label="Expiry" value={d.licenseExpiryISO} />
+        </div>
+      ),
+    },
+    {
+      key: "Assignment",
+      content: (
+        <div className="text-sm">
+          <Row label="Assigned vehicle" value={d.assignedVehicleId ?? "—"} />
+        </div>
+      ),
+    },
+    {
+      key: "Documents",
+      content: (
+        <div className="rounded-xl border bg-white p-3 text-sm">
+          <div className="font-medium">Documents</div>
+          <div className="mt-2 grid gap-2">
+            {[
+              { label: "License scan", url: d.docLicenseUrl },
+              { label: "Government ID", url: d.docGovtIdUrl },
+              ...(d.documents ?? []),
+            ].map((doc) => (
+              <div key={doc.label} className="flex items-center justify-between">
+                <span>{doc.label}</span>
+                {doc.url ? (
+                  <a
+                    className="text-blue-600 hover:underline"
+                    href={doc.url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    View
+                  </a>
+                ) : (
+                  <span className="text-gray-400">—</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "Notes",
+      content: <div className="text-sm whitespace-pre-wrap">{d.notes ?? "—"}</div>,
+    },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+      <div className="max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-2xl bg-white shadow-xl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b p-4">
+          <div className="flex items-center gap-3">
+            <div className="size-12 overflow-hidden rounded-full bg-gray-100">
+              {d.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={d.avatarUrl} alt="" className="h-full w-full object-cover" />
+              ) : null}
+            </div>
+            <div>
+              <div className="text-lg font-semibold">
+                {d.firstName} {d.lastName}
+              </div>
+              <div className="text-sm text-gray-500">{d.code}</div>
+            </div>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="rounded-lg bg-red-600 px-3 py-1.5 text-sm text-white shadow hover:bg-red-700 focus:outline-none"
+          >
+            Close
+          </button>
+        </div>
+
+        {/* Body (scrollable) */}
+        <div className="grid max-h-[calc(90vh-56px)] grid-cols-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[340px,1fr]">
+          {/* Left */}
+          <div className="space-y-3">
+            <div className="overflow-hidden rounded-xl border bg-white">
+              {d.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={d.avatarUrl} alt="" className="w-full object-cover" />
+              ) : (
+                <div className="h-48" />
+              )}
+            </div>
+
+            <div className="rounded-xl border bg-white p-3 text-sm">
+              <div className="font-medium">Contact</div>
+              <div className="mt-2 grid gap-2">
+                <ContactRow icon={<Phone size={16} />} value={d.phone ?? "—"} />
+                <ContactRow icon={<Mail size={16} />} value={d.email ?? "—"} />
+              </div>
+            </div>
+          </div>
+
+          {/* Right */}
+          <div className="space-y-4">
+            {/* Faux tabs */}
+            <div className="flex gap-3 border-b">
+              {sections.map((s) => (
+                <span key={s.key} className="px-2 py-2 text-sm font-medium">
+                  {s.key}
+                </span>
+              ))}
+            </div>
+
+            <div className="space-y-4">
+              {sections.map((s) => (
+                <div key={s.key} className="rounded-xl border bg-white p-4">
+                  {s.content}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Row({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex justify-between gap-4">
+      <span className="text-gray-600">{label}</span>
+      <span className="text-gray-900">{value}</span>
+    </div>
+  );
+}
+function ContactRow({ icon, value }: { icon: React.ReactNode; value: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-2 text-gray-700">
+      <span className="inline-flex items-center gap-2 text-gray-600">{icon}</span>
+      <span className="truncate">{value}</span>
+    </div>
+  );
+}
+
+
+===== ui\DriverForm.ui.tsx =====
+"use client";
+import * as React from "react";
+import type { Driver, DriverCreate } from "@/lib/admin/drivers/types";
+import { todayISO } from "@/lib/admin/drivers/utils";
+
+// If you already have a shared FileUpload component, uncomment this:
+// import { FileUpload } from "@/components/common/file_upload/FileUpload.ui";
+
+type Props = {
+  mode: "create" | "edit";
+  driver?: Driver;
+  onClose: () => void;
+  onSubmit: (data: DriverCreate | Partial<Driver>) => void;
+};
+
+const BRAND = "#7a0019";
+
+export default function DriverForm({ mode, driver, onClose, onSubmit }: Props) {
+  const [form, setForm] = React.useState<DriverCreate>(() => ({
+    employeeNo: driver?.employeeNo ?? "",
+    firstName: driver?.firstName ?? "",
+    lastName: driver?.lastName ?? "",
+    email: driver?.email ?? "",
+    phone: driver?.phone ?? "",
+    status: (driver?.status as any) ?? "active",
+    photoUrl: driver?.photoUrl,
+    hiredAt: driver?.hiredAt ?? todayISO(),
+    license: driver?.license ?? { number: "", category: "B", expiry: todayISO() },
+    requirements: driver?.requirements,
+    primaryVehicleId: driver?.primaryVehicleId ?? null,
+    allowedVehicleTypes: driver?.allowedVehicleTypes ?? ["van", "bus", "car"],
+    notes: driver?.notes ?? "",
+  }));
+
+  const [filePreview, setFilePreview] = React.useState<string | undefined>(
+    driver?.photoUrl ?? undefined
+  );
+
+  // defensive helper so nested updates don't crash if license is temporarily undefined
+  const setLicense = (patch: Partial<NonNullable<DriverCreate["license"]>>) =>
+    setForm((s) => ({
+      ...s,
+      license: { number: "", category: "B", expiry: todayISO(), ...(s.license ?? {}), ...patch },
+    }));
+
+  const handle = <K extends keyof DriverCreate>(k: K, v: DriverCreate[K]) =>
+    setForm((s) => ({ ...s, [k]: v }));
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    // Minimal guardrails (keep your real validation in repo/utils if you have one)
+    if (!form.employeeNo.trim()) return alert("Employee # is required.");
+    if (!form.firstName.trim()) return alert("First name is required.");
+    if (!form.lastName.trim()) return alert("Last name is required.");
+    if (!form.email.trim()) return alert("Email is required.");
+    if (!form.license?.number.trim()) return alert("License number is required.");
+    if (!form.license?.expiry) return alert("License expiry is required.");
+    onSubmit(mode === "create" ? form : { ...form });
+  };
+
+  // Close on ESC
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  // Image upload (fallback impl). If you have <FileUpload />, replace this block with it.
+  const onPhotoChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      setFilePreview(undefined);
+      handle("photoUrl", undefined);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setFilePreview(url);
+    handle("photoUrl", url);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4"
+      onMouseDown={(e) => {
+        // overlay click to close (but not when clicking inside the card)
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b px-4 py-3">
+          <h2 className="text-lg font-semibold">
+            {mode === "create" ? "Add Driver" : "Edit Driver"}
+          </h2>
+          <button
+            className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm hover:bg-gray-50"
+            onClick={onClose}
+          >
+            Close
+          </button>
+        </div>
+
+        {/* Body (scrollable) */}
+        <form
+          onSubmit={submit}
+          className="grid max-h-[75vh] grid-cols-1 gap-4 overflow-y-auto p-4"
+        >
+          {/* Photo */}
+          <section className="grid gap-2">
+            <div className="text-sm font-medium text-gray-800">Photo</div>
+
+            {/* If you have a shared FileUpload, use this instead:
+            <FileUpload label="Photo" preview={filePreview} onChange={(_, url) => { setFilePreview(url); handle("photoUrl", url); }} />
+            */}
+
+            {filePreview ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={filePreview}
+                alt="Preview"
+                className="h-40 w-full rounded-xl object-cover ring-1 ring-gray-200"
+              />
+            ) : (
+              <div className="flex h-40 items-center justify-center rounded-xl border border-dashed text-gray-400">
+                No photo
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <input type="file" accept="image/*" onChange={onPhotoChange} />
+              {filePreview && (
+                <button
+                  type="button"
+                  className="rounded-md border bg-white px-3 py-1.5 text-sm hover:bg-gray-50"
+                  onClick={() => {
+                    setFilePreview(undefined);
+                    handle("photoUrl", undefined);
+                  }}
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          </section>
+
+          {/* Identity */}
+          <section className="grid gap-3">
+            <div className="text-sm font-medium text-gray-800">Identity</div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <LabeledInput
+                label="Employee #"
+                value={form.employeeNo}
+                onChange={(v) => handle("employeeNo", v)}
+                required
+              />
+              <LabeledSelect
+                label="Status"
+                value={form.status}
+                onChange={(v) => handle("status", v as any)}
+                options={[
+                  "active",
+                  "suspended",
+                  "archived",
+                  "pending_verification",
+                ]}
+              />
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <LabeledInput
+                label="First name"
+                value={form.firstName}
+                onChange={(v) => handle("firstName", v)}
+                required
+              />
+              <LabeledInput
+                label="Last name"
+                value={form.lastName}
+                onChange={(v) => handle("lastName", v)}
+                required
+              />
+            </div>
+          </section>
+
+          {/* Contact */}
+          <section className="grid gap-3">
+            <div className="text-sm font-medium text-gray-800">Contact</div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <LabeledInput
+                label="Email"
+                type="email"
+                value={form.email}
+                onChange={(v) => handle("email", v)}
+                required
+              />
+              <LabeledInput
+                label="Phone"
+                value={form.phone ?? ""}
+                onChange={(v) => handle("phone", v)}
+              />
+            </div>
+          </section>
+
+          {/* Employment */}
+          <section className="grid gap-3">
+            <div className="text-sm font-medium text-gray-800">Employment</div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <LabeledInput
+                label="Hired at"
+                type="date"
+                value={form.hiredAt}
+                onChange={(v) => handle("hiredAt", v)}
+              />
+              <LabeledInput
+                label="Primary vehicle ID"
+                value={form.primaryVehicleId ?? ""}
+                onChange={(v) =>
+                  handle("primaryVehicleId", v === "" ? null : v)
+                }
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <span className="text-xs text-gray-600">Allowed vehicle types</span>
+              <div className="flex flex-wrap gap-2">
+                {["van", "bus", "car", "suv", "motorcycle"].map((t) => {
+                  const active = form.allowedVehicleTypes?.includes(t);
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => {
+                        handle(
+                          "allowedVehicleTypes",
+                          active
+                            ? (form.allowedVehicleTypes ?? []).filter((x) => x !== t)
+                            : [...(form.allowedVehicleTypes ?? []), t]
+                        );
+                      }}
+                      className={`rounded-full px-3 py-1 text-sm ring-1 transition ${
+                        active
+                          ? "bg-gray-900 text-white ring-gray-900"
+                          : "bg-white text-gray-800 ring-gray-300 hover:bg-gray-50"
+                      }`}
+                    >
+                      {t}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+
+          {/* License */}
+          <section className="grid gap-3">
+            <div className="text-sm font-medium text-gray-800">License</div>
+            <div className="grid gap-3 md:grid-cols-3">
+              <LabeledInput
+                label="License number"
+                value={form.license?.number ?? ""}
+                onChange={(v) => setLicense({ number: v })}
+                required
+              />
+              <LabeledInput
+                label="Category"
+                value={form.license?.category ?? "B"}
+                onChange={(v) => setLicense({ category: v })}
+              />
+              <LabeledInput
+                label="Expiry"
+                type="date"
+                value={form.license?.expiry ?? todayISO()}
+                onChange={(v) => setLicense({ expiry: v })}
+                required
+              />
+            </div>
+          </section>
+
+          {/* Notes */}
+          <section className="grid gap-2">
+            <span className="text-sm font-medium text-gray-800">Notes</span>
+            <textarea
+              className="min-h-[88px] rounded-xl border border-gray-300 px-3 py-2 text-sm outline-none transition placeholder:text-gray-400 hover:border-gray-400 focus:border-gray-500"
+              value={form.notes}
+              onChange={(e) => handle("notes", e.target.value)}
+              placeholder="Additional remarks…"
+              rows={4}
+            />
+          </section>
+
+          {/* Actions */}
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <button
+              type="button"
+              className="rounded-md border border-gray-200 bg-white px-4 py-2 text-sm hover:bg-gray-50"
+              onClick={onClose}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="rounded-md px-4 py-2 text-sm text-white shadow-sm transition"
+              style={{ background: BRAND }}
+            >
+              {mode === "create" ? "Create" : "Save"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- tiny UI atoms local to this file (swap with your shared components anytime) ---------- */
+function LabeledInput({
+  label,
+  value,
+  onChange,
+  type = "text",
+  required,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  type?: React.HTMLInputTypeAttribute;
+  required?: boolean;
+}) {
+  return (
+    <label className="grid gap-1">
+      <span className="text-xs text-gray-600">{label}</span>
+      <input
+        type={type}
+        className="rounded-xl border border-gray-300 px-3 py-2 text-sm outline-none transition placeholder:text-gray-400 hover:border-gray-400 focus:border-gray-500"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        required={required}
+      />
+    </label>
+  );
+}
+
+function LabeledSelect({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+}) {
+  return (
+    <label className="grid gap-1">
+      <span className="text-xs text-gray-600">{label}</span>
+      <select
+        className="rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm outline-none transition hover:border-gray-400 focus:border-gray-500"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {options.map((o) => (
+          <option key={o} value={o}>
+            {o}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+
+===== ui\DriverProfile.ui.tsx =====
+"use client";
+import * as React from "react";
+import type { Driver } from "@/lib/admin/drivers/types";
+import { complianceInfo } from "@/lib/admin/drivers/utils";
+
+export default function DriverProfile({ driver }: { driver: Driver }) {
+  const initials = `${driver.firstName?.[0] ?? ""}${driver.lastName?.[0] ?? ""}`;
+  const c = complianceInfo(driver); // { state, className, label }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="grid h-14 w-14 place-items-center rounded-full bg-gray-200 text-sm font-medium">
+          {initials}
+        </div>
+        <div>
+          <div className="text-lg font-semibold">
+            {driver.firstName} {driver.lastName}
+          </div>
+          <div className="text-sm text-gray-500">{driver.email}</div>
+        </div>
+        <div className="ml-auto">
+          <span className={`rounded px-2 py-1 text-xs ${c.className}`}>{c.label}</span>
+        </div>
+      </div>
+      {/* Extend with tabs: Overview | Documents | Assignments | Activity */}
+    </div>
+  );
+}
+
+
+===== ui\DriverRowActions.ui.tsx =====
+"use client";
+import * as React from "react";
+
+export default function DriverRowActions({ onEdit }: { onEdit: () => void }) {
+  return (
+    <div className="flex items-center justify-end gap-2">
+      <button className="rounded border px-2 py-1 text-xs hover:bg-gray-50" onClick={onEdit}>Edit</button>
+      {/* extend: View, Suspend, Reset Access */}
+    </div>
+  );
+}
+
+
+===== ui\DriversGrid.ui.tsx =====
+"use client";
+import * as React from "react";
+import type { Driver } from "@/lib/admin/drivers/types";
+import { Edit, Trash2, ChevronRight, Phone, Mail, IdCard } from "lucide-react";
+import { StatusBadge } from "@/components/common/StatusBadge.ui";
+
+const BRAND = "#7a0019";
+
+export function DriversGrid({
+  rows,
+  onEdit,
+  onDelete,
+  onOpenDetails,
+}: {
+  rows: Driver[];
+  onEdit: (id: string) => void;
+  onDelete: (id: string) => void;
+  onOpenDetails: (id: string) => void;
+}) {
+  if (rows.length === 0) {
+    return (
+      <div className="rounded-xl border bg-white p-8 text-center text-gray-500">
+        No drivers match your filters.
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {rows.map((d) => (
+        <div
+          key={d.id}
+          className="group rounded-2xl bg-white ring-1 ring-gray-200 shadow-sm transition hover:shadow-md hover:ring-gray-300"
+        >
+          {/* Media */}
+          <div className="relative overflow-hidden rounded-t-2xl">
+            <div className="aspect-[16/7] bg-gray-50">
+              {d.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={d.avatarUrl}
+                  alt={`${d.firstName} ${d.lastName}`}
+                  className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-sm text-gray-400">
+                  No avatar
+                </div>
+              )}
+            </div>
+
+            {/* Status */}
+            <div className="absolute left-3 top-3">
+              <StatusBadge value={d.status} />
+            </div>
+          </div>
+
+          {/* Header */}
+          <div className="px-3 pt-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="truncate text-[13px] text-gray-500">
+                  {d.code}
+                </div>
+                <div className="truncate text-base font-semibold tracking-tight">
+                  {d.firstName} {d.lastName}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Meta */}
+          <div className="px-3 pt-2">
+            <div className="grid gap-1.5 text-sm text-gray-700">
+              <MetaRow icon={<Phone size={16} className="opacity-70" />} value={d.phone ?? "—"} />
+              <MetaRow icon={<Mail size={16} className="opacity-70" />} value={d.email ?? "—"} />
+              <MetaRow
+                icon={<IdCard size={16} className="opacity-70" />}
+                value={`Lic. ${d.licenseClass} • ${d.licenseNo}`}
+              />
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="mt-3 flex items-center justify-between px-3 pb-3">
+            <button
+              onClick={() => onOpenDetails(d.id)}
+              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-white shadow-sm transition"
+              style={{ background: BRAND }}
+            >
+              View details <ChevronRight size={16} />
+            </button>
+
+            <div className="flex items-center gap-1.5">
+              <IconBtn title="Edit" onClick={() => onEdit(d.id)} icon={<Edit size={16} />} />
+              <IconBtn title="Delete" onClick={() => onDelete(d.id)} icon={<Trash2 size={16} />} />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MetaRow({ icon, value }: { icon: React.ReactNode; value: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <div className="flex min-w-0 items-center gap-2 text-gray-600">
+        {icon}
+      </div>
+      <span className="truncate text-gray-900">{value}</span>
+    </div>
+  );
+}
+
+function IconBtn({
+  title,
+  onClick,
+  icon,
+}: {
+  title: string;
+  onClick: () => void;
+  icon: React.ReactNode;
+}) {
+  return (
+    <button
+      title={title}
+      onClick={onClick}
+      className="rounded-xl border border-gray-200 bg-white p-1.5 text-gray-700 shadow-sm transition hover:bg-gray-50"
+    >
+      {icon}
+    </button>
+  );
+}
+
+
+===== ui\DriversTable.ui.tsx =====
+"use client";
+import * as React from "react";
+import { Edit, Trash2 } from "lucide-react";
+import type { Driver } from "@/lib/admin/drivers/types";
+import { StatusBadge } from "@/components/common/StatusBadge.ui";
+
+export function DriversTable({
+  rows,
+  selection,
+  setSelection,
+  onEdit,
+  onDelete,
+}: {
+  rows: Driver[];
+  selection: string[];
+  setSelection: (ids: string[]) => void;
+  onEdit: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const allChecked = rows.length > 0 && selection.length === rows.length;
+  const toggleAll = () => setSelection(allChecked ? [] : rows.map((r) => r.id));
+  const toggleOne = (id: string) =>
+    setSelection(
+      selection.includes(id)
+        ? selection.filter((x) => x !== id)
+        : [...selection, id]
+    );
+
+  return (
+    <div className="overflow-x-auto rounded-lg border bg-white">
+      <table className="min-w-[1000px] w-full text-sm">
+        <thead className="bg-gray-50 text-gray-600">
+          <tr>
+            <th className="w-10 p-2 text-left">
+              <input type="checkbox" checked={allChecked} onChange={toggleAll} />
+            </th>
+            <th className="p-2 text-left">Name</th>
+            <th className="p-2 text-left">Code</th>
+            <th className="p-2 text-left">Status</th>
+            <th className="p-2 text-left">License</th>
+            <th className="p-2 text-left">Phone</th>
+            <th className="p-2 text-left">Email</th>
+            <th className="p-2 text-left">Assigned Vehicle</th>
+            <th className="p-2"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((d) => (
+            <tr key={d.id} className="border-t">
+              <td className="p-2">
+                <input
+                  type="checkbox"
+                  checked={selection.includes(d.id)}
+                  onChange={() => toggleOne(d.id)}
+                />
+              </td>
+              <td className="p-2 font-medium">
+                {d.firstName} {d.lastName}
+              </td>
+              <td className="p-2">{d.code}</td>
+              <td className="p-2">
+                <StatusBadge value={d.status} />
+              </td>
+              <td className="p-2">
+                {d.licenseClass} • {d.licenseNo} &nbsp;({d.licenseExpiryISO})
+              </td>
+              <td className="p-2">{d.phone ?? "—"}</td>
+              <td className="p-2">{d.email ?? "—"}</td>
+              <td className="p-2">{d.assignedVehicleId ?? "—"}</td>
+              <td className="p-2">
+                <div className="flex justify-end gap-1.5">
+                  <button
+                    onClick={() => onEdit(d.id)}
+                    className="p-1.5 rounded-md border hover:bg-gray-50"
+                    title="Edit"
+                  >
+                    <Edit size={16} />
+                  </button>
+                  <button
+                    onClick={() => onDelete(d.id)}
+                    className="p-1.5 rounded-md border hover:bg-gray-50"
+                    title="Delete"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+          {rows.length === 0 && (
+            <tr>
+              <td className="p-6 text-center text-gray-500" colSpan={9}>
+                No drivers match your filters.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+
+===== ui\FiltersBar.ui.tsx =====
+"use client";
+import * as React from "react";
+import DriverStatusDropdown from "../filters/DriverStatusDropdown.ui";
+import ComplianceDropdown from "../filters/ComplianceDropdown.ui";
+
+type Filters = { search?: string; status?: string; compliant?: "ok"|"warn"|"bad"|"" };
+type Props = {
+  value: Filters;
+  onChange: (v: Filters) => void;
+  onAdd: () => void;
+};
+
+export default function FiltersBar({ value, onChange, onAdd }: Props) {
+  const set = (patch: Partial<Filters>) => onChange({ ...value, ...patch });
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-white p-3">
+      <input
+        placeholder="Search name, employee #, license #"
+        className="min-w-[260px] flex-1 rounded border px-3 py-2"
+        value={value.search ?? ""}
+        onChange={(e)=>set({ search: e.target.value })}
+      />
+      <DriverStatusDropdown value={value.status ?? ""} onChange={(v)=>set({ status: v })} />
+      <ComplianceDropdown value={value.compliant ?? ""} onChange={(v)=>set({ compliant: v as any })} />
+      <button className="ml-auto rounded bg-[#7a1f2a] px-3 py-2 text-white hover:opacity-90" onClick={onAdd}>
+        Add Driver
+      </button>
+      <button className="rounded border px-3 py-2 hover:bg-gray-50" onClick={()=>onChange({})}>Clear</button>
+    </div>
+  );
+}
+
+
+===== ui\index.ts =====
+export { default as DriversTable } from "./DriversTable.ui";
+export { default as DriverRowActions } from "./DriverRowActions.ui";
+export { default as DriverForm } from "./DriverForm.ui";
+export { default as DriverProfile } from "./DriverProfile.ui";
+export { default as FiltersBar } from "./FiltersBar.ui";
+export { default as BulkBar } from "./BulkBar.ui";
+
+

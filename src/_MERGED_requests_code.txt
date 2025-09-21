@@ -427,6 +427,75 @@ import Client from "./page.client";
 export default function Page(){ return <Client/>; }
 
 
+===== app\(protected)\admin\report\page.tsx =====
+"use client";
+
+import * as React from "react";
+import { ReportFilterBar } from "@/components/admin/report/ui/ReportFilterBar.ui";
+import { ReportTable } from "@/components/admin/report/ui/ReportTable.ui";
+import { ExportBar } from "@/components/admin/report/ui/ExportBar.ui";
+import type { ReportFilters, TripRow } from "@/lib/admin/report/types";
+import { queryReport } from "@/lib/admin/report/store";
+
+export default function ReportPage() {
+  const [filters, setFilters] = React.useState<ReportFilters>({});
+  const [page, setPage] = React.useState(1);
+  const [pageSize] = React.useState(10);
+  const [data, setData] = React.useState<{ rows: TripRow[]; total: number }>({ rows: [], total: 0 });
+
+  const load = React.useCallback(async () => {
+    const res = await queryReport(filters, page, pageSize);
+    setData({ rows: res.rows, total: res.total });
+  }, [filters, page, pageSize]);
+
+  React.useEffect(() => { load(); }, [load]);
+
+  const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
+  const tableId = "report-table";
+
+  return (
+    <div className="p-4 space-y-4">
+      <h1 className="text-xl font-semibold">Report / Exports</h1>
+
+      <ReportFilterBar
+        value={filters}
+        onChange={(v) => { setPage(1); setFilters(v); }}
+        onClear={() => { setPage(1); setFilters({}); }}
+      />
+
+      <ExportBar rows={data.rows} tableId={tableId} />
+
+      <ReportTable rows={data.rows} tableId={tableId} />
+
+      <div className="flex items-center justify-between">
+        <div className="text-sm opacity-70">
+          Showing {(data.rows.length && (page - 1) * pageSize + 1) || 0}
+          {"–"}
+          {(page - 1) * pageSize + data.rows.length} of {data.total}
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page === 1}
+          >
+            Prev
+          </button>
+          <span className="text-sm">Page {page} / {totalPages}</span>
+          <button
+            className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages}
+          >
+            Next
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 ===== app\(protected)\admin\requests\page.tsx =====
 "use client";
 
@@ -1167,7 +1236,7 @@ import Sidebar from "@/components/driver/Sidebar";              // container (be
 import Topbar from "@/components/driver/Topbar";
 import ProfilePanel from "@/components/driver/ProfilePanel";
 import MiniCalendar from "@/components/driver/MiniCalendar";
-import "@/app/styles/driver.css";
+import "@/app/styles/driver/driver.css";
 
 const TOPBAR_H = 64; // adjust if your Topbar is not h-16
 
@@ -5037,10 +5106,437 @@ export default function DriverStatusDropdown({ value, onChange }: { value: strin
 }
 
 
+===== components\admin\drivers\filters\DriversFilterBar.ui.tsx =====
+"use client";
+import * as React from "react";
+import { Search, X } from "lucide-react";
+import type { DriverFilters } from "@/lib/admin/drivers/types";
+import { DriversRepo } from "@/lib/admin/drivers/store";
+
+export function DriversFilterBar({
+  value,
+  onChange,
+  onClear,
+}: {
+  value: DriverFilters;
+  onChange: (v: DriverFilters) => void;
+  onClear: () => void;
+}) {
+  const hasFilters = !!(value.search || value.status || value.licenseClass);
+
+  // debounced search
+  const [search, setSearch] = React.useState(value.search ?? "");
+  React.useEffect(() => setSearch(value.search ?? ""), [value.search]);
+  React.useEffect(() => {
+    const t = setTimeout(() => {
+      if ((value.search ?? "") !== search) onChange({ ...value, search });
+    }, 250);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
+  const selectCls =
+    "rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 " +
+    "hover:bg-gray-50 focus:outline-none focus:ring-0 focus:border-gray-400";
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-xl bg-white/90 p-2 ring-1 ring-gray-200 shadow-sm">
+      {/* Search pill */}
+      <label className="flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700">
+        <Search size={16} className="opacity-60" />
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search name, code, phone, email…"
+          className="w-56 sm:w-72 bg-transparent outline-none"
+        />
+        {search ? (
+          <button
+            type="button"
+            onClick={() => setSearch("")}
+            className="rounded-full p-0.5 text-gray-500 hover:bg-gray-100"
+            title="Clear search"
+          >
+            <X size={14} />
+          </button>
+        ) : null}
+      </label>
+
+      {/* Status */}
+      <select
+        className={selectCls}
+        value={value.status ?? ""}
+        onChange={(e) => onChange({ ...value, status: e.target.value as any })}
+      >
+        <option value="">All Status</option>
+        {DriversRepo.constants.statuses.map((s) => (
+          <option key={s} value={s}>
+            {s}
+          </option>
+        ))}
+      </select>
+
+      {/* License class */}
+      <select
+        className={selectCls}
+        value={value.licenseClass ?? ""}
+        onChange={(e) =>
+          onChange({ ...value, licenseClass: e.target.value as any })
+        }
+      >
+        <option value="">All License Classes</option>
+        {DriversRepo.constants.licenseClasses.map((c) => (
+          <option key={c} value={c}>
+            {c}
+          </option>
+        ))}
+      </select>
+
+      <div className="ms-auto" />
+
+      {/* Clear link */}
+      <button
+        type="button"
+        onClick={onClear}
+        disabled={!hasFilters}
+        className="rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-transparent"
+        title="Clear filters"
+      >
+        Clear
+      </button>
+    </div>
+  );
+}
+
+
+===== components\admin\drivers\filters\DriversHeader.ui.tsx =====
+"use client";
+import * as React from "react";
+import { LayoutGrid, Rows3, Plus } from "lucide-react";
+import type { DriverTab } from "@/lib/admin/drivers/types";
+
+const BRAND = "#7a0019";
+
+export function DriversHeader({
+  counts,
+  tab,
+  onTab,
+  view,
+  onView,
+  onCreate,
+  onReset, // optional dev helper
+}: {
+  counts: {
+    all: number;
+    available: number;
+    on_trip: number;
+    off_duty: number;
+    suspended: number;
+    expired_license: number;
+  };
+  tab: DriverTab;
+  onTab: (t: DriverTab) => void;
+  view: "grid" | "table";
+  onView: (v: "grid" | "table") => void;
+  onCreate: () => void;
+  onReset?: () => void;
+}) {
+  const tabs: { key: DriverTab; label: string; count: number }[] = [
+    { key: "all", label: "All", count: counts.all },
+    { key: "available", label: "Available", count: counts.available },
+    { key: "on_trip", label: "On Trip", count: counts.on_trip },
+    { key: "off_duty", label: "Off Duty", count: counts.off_duty },
+    { key: "suspended", label: "Suspended", count: counts.suspended },
+    { key: "expired_license", label: "Expired License", count: counts.expired_license },
+  ];
+
+  return (
+    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      {/* Title + Tabs */}
+      <div className="min-w-0">
+        <div className="text-xl font-semibold tracking-tight">Drivers</div>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {tabs.map((t) => {
+            const active = tab === t.key;
+            return (
+              <button
+                key={t.key}
+                onClick={() => onTab(t.key)}
+                className={`px-3 py-2 rounded-lg text-sm transition ${
+                  active
+                    ? "bg-gray-900 text-white"
+                    : "bg-white ring-1 ring-gray-200 hover:bg-gray-50"
+                }`}
+              >
+                {t.label}
+                <span
+                  className={`ml-1 rounded-full px-1.5 py-0.5 text-xs ${
+                    active ? "bg-white/20 text-white" : "bg-gray-100 text-gray-700"
+                  }`}
+                >
+                  {t.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center gap-2">
+        <div className="hidden md:flex rounded-lg bg-white ring-1 ring-gray-200 p-1">
+          <button
+            onClick={() => onView("grid")}
+            className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm ${
+              view === "grid" ? "bg-gray-900 text-white" : "hover:bg-gray-100"
+            }`}
+            title="Grid view"
+          >
+            <LayoutGrid size={16} /> Grid
+          </button>
+          <button
+            onClick={() => onView("table")}
+            className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm ${
+              view === "table" ? "bg-gray-900 text-white" : "hover:bg-gray-100"
+            }`}
+            title="Table view"
+          >
+            <Rows3 size={16} /> Table
+          </button>
+        </div>
+
+        <button
+          onClick={onCreate}
+          className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-white shadow-sm transition"
+          style={{ background: BRAND }}
+        >
+          <Plus size={16} /> Add Driver
+        </button>
+
+        {onReset && (
+          <button
+            onClick={onReset}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
+            title="Reset sample data (dev)"
+          >
+            Reset
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+===== components\admin\drivers\forms\DriverFormModal.ui.tsx =====
+"use client";
+import * as React from "react";
+import type { Driver } from "@/lib/admin/drivers/types";
+import { DriversRepo } from "@/lib/admin/drivers/store";
+import { validate } from "@/lib/admin/drivers/utils";
+
+import { Modal } from "@/components/common/Modal.ui";
+import { FormSection } from "@/components/common/forms/FormSection.ui";
+import { FormActions } from "@/components/common/forms/FormActions.ui";
+import { TextInput } from "@/components/common/inputs/TextInput.ui";
+import { NumberInput } from "@/components/common/inputs/NumberInput.ui";
+import { DateInput } from "@/components/common/inputs/DateInput.ui";
+import { Select } from "@/components/common/inputs/Select.ui";
+import { FileUpload } from "@/components/common/file_upload/FileUpload.ui";
+
+type FormShape = Omit<Driver, "id" | "createdAt" | "updatedAt">;
+
+export function DriverFormModal({
+  open,
+  initial,
+  onCancel,
+  onSubmit,
+}: {
+  open: boolean;
+  initial?: Partial<Driver>;
+  onCancel: () => void;
+  onSubmit: (data: FormShape) => void;
+}) {
+  const [form, setForm] = React.useState<FormShape>(() => ({
+    code: initial?.code ?? "",
+    firstName: initial?.firstName ?? "",
+    lastName: initial?.lastName ?? "",
+    phone: initial?.phone ?? "",
+    email: initial?.email ?? "",
+    status: (initial?.status as any) ?? DriversRepo.constants.statuses[0],
+    hireDate: initial?.hireDate ?? "",
+    licenseNo: initial?.licenseNo ?? "",
+    licenseClass: (initial?.licenseClass as any) ?? DriversRepo.constants.licenseClasses[0],
+    licenseExpiryISO: initial?.licenseExpiryISO ?? new Date().toISOString().slice(0, 10),
+    assignedVehicleId: initial?.assignedVehicleId ?? "",
+    lastCheckIn: initial?.lastCheckIn ?? "",
+    rating: initial?.rating ?? 0,
+    notes: initial?.notes ?? "",
+    avatarUrl: (initial as any)?.avatarUrl ?? "",
+    docLicenseUrl: (initial as any)?.docLicenseUrl ?? "",
+    docGovtIdUrl: (initial as any)?.docGovtIdUrl ?? "",
+  }));
+  const [err, setErr] = React.useState<string | null>(null);
+  const [avatarPreview, setAvatarPreview] = React.useState<string | undefined>((initial as any)?.avatarUrl);
+
+  React.useEffect(() => {
+    if (!open) return;
+    setForm({
+      code: initial?.code ?? "",
+      firstName: initial?.firstName ?? "",
+      lastName: initial?.lastName ?? "",
+      phone: initial?.phone ?? "",
+      email: initial?.email ?? "",
+      status: (initial?.status as any) ?? DriversRepo.constants.statuses[0],
+      hireDate: initial?.hireDate ?? "",
+      licenseNo: initial?.licenseNo ?? "",
+      licenseClass: (initial?.licenseClass as any) ?? DriversRepo.constants.licenseClasses[0],
+      licenseExpiryISO: initial?.licenseExpiryISO ?? new Date().toISOString().slice(0, 10),
+      assignedVehicleId: initial?.assignedVehicleId ?? "",
+      lastCheckIn: initial?.lastCheckIn ?? "",
+      rating: initial?.rating ?? 0,
+      notes: initial?.notes ?? "",
+      avatarUrl: (initial as any)?.avatarUrl ?? "",
+      docLicenseUrl: (initial as any)?.docLicenseUrl ?? "",
+      docGovtIdUrl: (initial as any)?.docGovtIdUrl ?? "",
+    });
+    setAvatarPreview((initial as any)?.avatarUrl || undefined);
+    setErr(null);
+  }, [open, initial]);
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const msg = validate(form as any);
+    if (msg) {
+      setErr(msg);
+      return;
+    }
+
+
 ===== components\admin\drivers\forms\DriverFormSections.ui.tsx =====
 // Placeholder for splitting DriverForm into smaller chunks later.
 // For now the single DriverForm.ui.tsx handles the layout.
 export {};
+
+
+===== components\admin\drivers\hooks\useDriversScreen.ts =====
+"use client";
+import * as React from "react";
+import type { Driver, DriverFilters, DriverTab } from "@/lib/admin/drivers/types";
+import { DriversRepo } from "@/lib/admin/drivers/store";
+
+type FormState =
+  | null
+  | { mode: "create" }
+  | { mode: "edit"; id: string };
+
+type ViewMode = "grid" | "table";
+
+/** Central page state for Drivers: filters, view, tab, selection, rows */
+export function useDriversScreen() {
+  const [filters, setFilters] = React.useState<DriverFilters>({});
+  const [tab, setTab] = React.useState<DriverTab>("all");
+  const [view, setView] = React.useState<ViewMode>("grid");
+  const [selection, setSelection] = React.useState<string[]>([]);
+  const [form, setForm] = React.useState<FormState>(null);
+
+  const [rows, setRows] = React.useState<Driver[]>(() => DriversRepo.list({}));
+
+  const refresh = React.useCallback(() => {
+    const base = DriversRepo.list(filters);
+    setRows(applyTab(base, tab));
+  }, [filters, tab]);
+
+  React.useEffect(() => {
+    refresh();
+  }, [filters, tab, refresh]);
+
+  return {
+    filters,
+    setFilters,
+    tab,
+    setTab,
+    view,
+    setView,
+    selection,
+    setSelection,
+    form,
+    setForm,
+    rows,
+    refresh,
+  };
+}
+
+function applyTab(base: Driver[], tab: DriverTab) {
+  if (tab === "all") return base;
+  const todayISO = new Date().toISOString().slice(0, 10);
+  switch (tab) {
+    case "available":
+      return base.filter((d) => d.status === "active" && !d.assignedVehicleId);
+    case "on_trip":
+      return base.filter((d) => d.status === "on_trip");
+    case "off_duty":
+      return base.filter((d) => d.status === "off_duty");
+    case "suspended":
+      return base.filter((d) => d.status === "suspended");
+    case "expired_license":
+      return base.filter((d) => (d.licenseExpiryISO ?? "") < todayISO);
+    default:
+      return base;
+  }
+}
+
+
+===== components\admin\drivers\toolbar\DriversBulkBar.ui.tsx =====
+"use client";
+import * as React from "react";
+import { Download, Trash2 } from "lucide-react";
+import type { Driver } from "@/lib/admin/drivers/types";
+
+export function DriversBulkBar({
+  selection,
+  rows,
+  onDeleteSelected,
+  onExportCSV,
+}: {
+  selection: string[];
+  rows: Driver[];
+  onDeleteSelected: () => void;
+  onExportCSV: () => void;
+}) {
+  const any = selection.length > 0;
+
+  return (
+    <div className="flex items-center justify-between rounded-lg border bg-gray-50 px-4 py-2 shadow-sm">
+      <div className="flex items-center gap-2">
+        <button
+          disabled={!any}
+          onClick={onDeleteSelected}
+          className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-red-300"
+          title="Delete selected"
+        >
+          <Trash2 size={16} /> Delete
+        </button>
+
+        <button
+          onClick={onExportCSV}
+          className="inline-flex items-center gap-1.5 rounded-md bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm transition hover:bg-gray-100 border"
+        >
+          <Download size={16} /> Export CSV
+        </button>
+      </div>
+
+      <span className="text-sm text-gray-600">
+        Showing <b>{rows.length}</b> driver{rows.length !== 1 && "s"}
+        {any && (
+          <span className="ml-2 text-gray-700">
+            • <b>{selection.length}</b> selected
+          </span>
+        )}
+      </span>
+    </div>
+  );
+}
 
 
 ===== components\admin\drivers\ui\BulkBar.ui.tsx =====
@@ -5067,6 +5563,187 @@ export default function BulkBar({ count, onSuspend, onActivate, onArchive, onExp
         <button className="rounded border px-3 py-1.5 hover:bg-gray-50" onClick={onExport}>Export CSV</button>
         <button className="rounded bg-gray-900 px-3 py-1.5 text-white hover:opacity-90" onClick={onClear}>Clear</button>
       </div>
+    </div>
+  );
+}
+
+
+===== components\admin\drivers\ui\DriverDetailsModal.ui.tsx =====
+"use client";
+import * as React from "react";
+import type { Driver } from "@/lib/admin/drivers/types";
+import { Mail, Phone, IdCard } from "lucide-react";
+import { StatusBadge } from "@/components/common/StatusBadge.ui";
+
+export function DriverDetailsModal({
+  open,
+  onClose,
+  d,
+}: {
+  open: boolean;
+  onClose: () => void;
+  d: (Driver & {
+    documents?: { label: string; url?: string }[];
+  }) | null;
+}) {
+  if (!open || !d) return null;
+
+  const sections = [
+    {
+      key: "Profile",
+      content: (
+        <div className="grid gap-2 text-sm">
+          <Row label="Code" value={d.code} />
+          <Row label="Status" value={<StatusBadge value={d.status} />} />
+          <Row label="Hire date" value={d.hireDate ?? "—"} />
+          <Row label="Rating" value={d.rating?.toFixed(1) ?? "—"} />
+          <Row label="Last check-in/out" value={d.lastCheckIn ?? "—"} />
+        </div>
+      ),
+    },
+    {
+      key: "License",
+      content: (
+        <div className="grid gap-2 text-sm">
+          <Row label="License No." value={d.licenseNo} />
+          <Row label="Class" value={d.licenseClass} />
+          <Row label="Expiry" value={d.licenseExpiryISO} />
+        </div>
+      ),
+    },
+    {
+      key: "Assignment",
+      content: (
+        <div className="text-sm">
+          <Row label="Assigned vehicle" value={d.assignedVehicleId ?? "—"} />
+        </div>
+      ),
+    },
+    {
+      key: "Documents",
+      content: (
+        <div className="rounded-xl border bg-white p-3 text-sm">
+          <div className="font-medium">Documents</div>
+          <div className="mt-2 grid gap-2">
+            {[
+              { label: "License scan", url: d.docLicenseUrl },
+              { label: "Government ID", url: d.docGovtIdUrl },
+              ...(d.documents ?? []),
+            ].map((doc) => (
+              <div key={doc.label} className="flex items-center justify-between">
+                <span>{doc.label}</span>
+                {doc.url ? (
+                  <a
+                    className="text-blue-600 hover:underline"
+                    href={doc.url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    View
+                  </a>
+                ) : (
+                  <span className="text-gray-400">—</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "Notes",
+      content: <div className="text-sm whitespace-pre-wrap">{d.notes ?? "—"}</div>,
+    },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+      <div className="max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-2xl bg-white shadow-xl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b p-4">
+          <div className="flex items-center gap-3">
+            <div className="size-12 overflow-hidden rounded-full bg-gray-100">
+              {d.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={d.avatarUrl} alt="" className="h-full w-full object-cover" />
+              ) : null}
+            </div>
+            <div>
+              <div className="text-lg font-semibold">
+                {d.firstName} {d.lastName}
+              </div>
+              <div className="text-sm text-gray-500">{d.code}</div>
+            </div>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="rounded-lg bg-red-600 px-3 py-1.5 text-sm text-white shadow hover:bg-red-700 focus:outline-none"
+          >
+            Close
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="grid gap-4 p-4 lg:grid-cols-[340px,1fr]">
+          {/* Left */}
+          <div className="space-y-3">
+            <div className="overflow-hidden rounded-xl border bg-white">
+              {d.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={d.avatarUrl} alt="" className="w-full object-cover" />
+              ) : (
+                <div className="h-48" />
+              )}
+            </div>
+
+            <div className="rounded-xl border bg-white p-3 text-sm">
+              <div className="font-medium">Contact</div>
+              <div className="mt-2 grid gap-2">
+                <ContactRow icon={<Phone size={16} />} value={d.phone ?? "—"} />
+                <ContactRow icon={<Mail size={16} />} value={d.email ?? "—"} />
+              </div>
+            </div>
+          </div>
+
+          {/* Right */}
+          <div className="space-y-4">
+            {/* Faux tabs */}
+            <div className="flex gap-3 border-b">
+              {sections.map((s) => (
+                <span key={s.key} className="px-2 py-2 text-sm font-medium">
+                  {s.key}
+                </span>
+              ))}
+            </div>
+
+            <div className="space-y-4">
+              {sections.map((s) => (
+                <div key={s.key} className="rounded-xl border bg-white p-4">
+                  {s.content}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Row({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex justify-between gap-4">
+      <span className="text-gray-600">{label}</span>
+      <span className="text-gray-900">{value}</span>
+    </div>
+  );
+}
+function ContactRow({ icon, value }: { icon: React.ReactNode; value: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-2 text-gray-700">
+      <span className="inline-flex items-center gap-2 text-gray-600">{icon}</span>
+      <span className="truncate">{value}</span>
     </div>
   );
 }
@@ -5230,125 +5907,238 @@ export default function DriverRowActions({ onEdit }: { onEdit: () => void }) {
 }
 
 
+===== components\admin\drivers\ui\DriversGrid.ui.tsx =====
+"use client";
+import * as React from "react";
+import type { Driver } from "@/lib/admin/drivers/types";
+import { Edit, Trash2, ChevronRight, Phone, Mail, IdCard } from "lucide-react";
+import { StatusBadge } from "@/components/common/StatusBadge.ui";
+
+const BRAND = "#7a0019";
+
+export function DriversGrid({
+  rows,
+  onEdit,
+  onDelete,
+  onOpenDetails,
+}: {
+  rows: Driver[];
+  onEdit: (id: string) => void;
+  onDelete: (id: string) => void;
+  onOpenDetails: (id: string) => void;
+}) {
+  if (rows.length === 0) {
+    return (
+      <div className="rounded-xl border bg-white p-8 text-center text-gray-500">
+        No drivers match your filters.
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {rows.map((d) => (
+        <div
+          key={d.id}
+          className="group rounded-2xl bg-white ring-1 ring-gray-200 shadow-sm transition hover:shadow-md hover:ring-gray-300"
+        >
+          {/* Media */}
+          <div className="relative overflow-hidden rounded-t-2xl">
+            <div className="aspect-[16/7] bg-gray-50">
+              {d.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={d.avatarUrl}
+                  alt={`${d.firstName} ${d.lastName}`}
+                  className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-sm text-gray-400">
+                  No avatar
+                </div>
+              )}
+            </div>
+
+            {/* Status */}
+            <div className="absolute left-3 top-3">
+              <StatusBadge value={d.status} />
+            </div>
+          </div>
+
+          {/* Header */}
+          <div className="px-3 pt-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="truncate text-[13px] text-gray-500">
+                  {d.code}
+                </div>
+                <div className="truncate text-base font-semibold tracking-tight">
+                  {d.firstName} {d.lastName}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Meta */}
+          <div className="px-3 pt-2">
+            <div className="grid gap-1.5 text-sm text-gray-700">
+              <MetaRow icon={<Phone size={16} className="opacity-70" />} value={d.phone ?? "—"} />
+              <MetaRow icon={<Mail size={16} className="opacity-70" />} value={d.email ?? "—"} />
+              <MetaRow
+                icon={<IdCard size={16} className="opacity-70" />}
+                value={`Lic. ${d.licenseClass} • ${d.licenseNo}`}
+              />
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="mt-3 flex items-center justify-between px-3 pb-3">
+            <button
+              onClick={() => onOpenDetails(d.id)}
+              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-white shadow-sm transition"
+              style={{ background: BRAND }}
+            >
+              View details <ChevronRight size={16} />
+            </button>
+
+            <div className="flex items-center gap-1.5">
+              <IconBtn title="Edit" onClick={() => onEdit(d.id)} icon={<Edit size={16} />} />
+              <IconBtn title="Delete" onClick={() => onDelete(d.id)} icon={<Trash2 size={16} />} />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MetaRow({ icon, value }: { icon: React.ReactNode; value: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <div className="flex min-w-0 items-center gap-2 text-gray-600">
+        {icon}
+      </div>
+      <span className="truncate text-gray-900">{value}</span>
+    </div>
+  );
+}
+
+function IconBtn({
+  title,
+  onClick,
+  icon,
+}: {
+  title: string;
+  onClick: () => void;
+  icon: React.ReactNode;
+}) {
+  return (
+    <button
+      title={title}
+      onClick={onClick}
+      className="rounded-xl border border-gray-200 bg-white p-1.5 text-gray-700 shadow-sm transition hover:bg-gray-50"
+    >
+      {icon}
+    </button>
+  );
+}
+
+
 ===== components\admin\drivers\ui\DriversTable.ui.tsx =====
 "use client";
 import * as React from "react";
 import type { Driver } from "@/lib/admin/drivers/types";
-import { complianceInfo } from "@/lib/admin/drivers/utils";
-import DriverRowActions from "./DriverRowActions.ui";
+import { Edit, Trash2 } from "lucide-react";
+import { StatusBadge } from "@/components/common/StatusBadge.ui";
 
-type Props = {
-  rows: Driver[];
-  selected: string[];
-  onSelectedChange: (ids: string[]) => void;
-  onEdit: (id: string) => void;
-};
-
-export default function DriversTable({
+export function DriversTable({
   rows,
-  selected,
-  onSelectedChange,
+  selection,
+  setSelection,
   onEdit,
-}: Props) {
-  const allChecked = rows.length > 0 && selected.length === rows.length;
-  const toggleAll = () =>
-    onSelectedChange(allChecked ? [] : rows.map((r) => r.id));
+  onDelete,
+}: {
+  rows: Driver[];
+  selection: string[];
+  setSelection: (ids: string[]) => void;
+  onEdit: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const allChecked = rows.length > 0 && selection.length === rows.length;
+  const toggleAll = () => setSelection(allChecked ? [] : rows.map((r) => r.id));
   const toggleOne = (id: string) =>
-    onSelectedChange(
-      selected.includes(id)
-        ? selected.filter((x) => x !== id)
-        : [...selected, id]
+    setSelection(
+      selection.includes(id)
+        ? selection.filter((x) => x !== id)
+        : [...selection, id]
     );
 
   return (
-    <div className="overflow-auto rounded-lg border bg-white">
-      <table className="min-w-full text-sm">
-        <thead className="bg-gray-50 text-xs uppercase text-gray-600">
+    <div className="overflow-x-auto rounded-lg border bg-white">
+      <table className="min-w-[1000px] w-full text-sm">
+        <thead className="bg-gray-50 text-gray-600">
           <tr>
-            <th className="p-3">
-              <input
-                type="checkbox"
-                checked={allChecked}
-                onChange={toggleAll}
-              />
+            <th className="w-10 p-2 text-left">
+              <input type="checkbox" checked={allChecked} onChange={toggleAll} />
             </th>
-            <th className="p-3 text-left">Driver</th>
-            <th className="p-3 text-left">Employee #</th>
-            <th className="p-3 text-left">Status</th>
-            <th className="p-3 text-left">License</th>
-            <th className="p-3 text-left">Compliance</th>
-            <th className="p-3 text-left">Primary Vehicle</th>
-            <th className="p-3">Actions</th>
+            <th className="p-2 text-left">Name</th>
+            <th className="p-2 text-left">Code</th>
+            <th className="p-2 text-left">Status</th>
+            <th className="p-2 text-left">License</th>
+            <th className="p-2 text-left">Phone</th>
+            <th className="p-2 text-left">Email</th>
+            <th className="p-2 text-left">Assigned Vehicle</th>
+            <th className="p-2"></th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
-            <tr key={r.id} className="border-t hover:bg-gray-50">
-              <td className="p-3">
+          {rows.map((d) => (
+            <tr key={d.id} className="border-t">
+              <td className="p-2">
                 <input
                   type="checkbox"
-                  checked={selected.includes(r.id)}
-                  onChange={() => toggleOne(r.id)}
+                  checked={selection.includes(d.id)}
+                  onChange={() => toggleOne(d.id)}
                 />
               </td>
-              <td className="p-3">
-                <div className="flex items-center gap-2">
-                  <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center">
-                    <span className="text-xs font-medium">
-                      {r.firstName[0]}
-                      {r.lastName[0]}
-                    </span>
-                  </div>
-                  <div>
-                    <div className="font-medium">
-                      {r.firstName} {r.lastName}
-                    </div>
-                    <div className="text-xs text-gray-500">{r.email}</div>
-                  </div>
+              <td className="p-2 font-medium">
+                {d.firstName} {d.lastName}
+              </td>
+              <td className="p-2">{d.code}</td>
+              <td className="p-2">
+                <StatusBadge value={d.status} />
+              </td>
+              <td className="p-2">
+                {d.licenseClass} • {d.licenseNo} &nbsp;(
+                {d.licenseExpiryISO})
+              </td>
+              <td className="p-2">{d.phone ?? "—"}</td>
+              <td className="p-2">{d.email ?? "—"}</td>
+              <td className="p-2">{d.assignedVehicleId ?? "—"}</td>
+              <td className="p-2">
+                <div className="flex justify-end gap-1.5">
+                  <button
+                    onClick={() => onEdit(d.id)}
+                    className="p-1.5 rounded-md border hover:bg-gray-50"
+                    title="Edit"
+                  >
+                    <Edit size={16} />
+                  </button>
+                  <button
+                    onClick={() => onDelete(d.id)}
+                    className="p-1.5 rounded-md border hover:bg-gray-50"
+                    title="Delete"
+                  >
+                    <Trash2 size={16} />
+                  </button>
                 </div>
-              </td>
-              <td className="p-3">{r.employeeNo}</td>
-              <td className="p-3">
-                <span
-                  className={`rounded px-2 py-1 text-xs ${
-                    r.status === "active"
-                      ? "bg-green-100 text-green-700"
-                      : r.status === "suspended"
-                      ? "bg-yellow-100 text-yellow-700"
-                      : "bg-gray-200 text-gray-700"
-                  }`}
-                >
-                  {r.status}
-                </span>
-              </td>
-              <td className="p-3">
-                {r.license.category} · {r.license.number}
-                <div className="text-xs text-gray-500">
-                  exp {r.license.expiry}
-                </div>
-              </td>
-              <td className="p-3">
-                {(() => {
-                  const c = complianceInfo(r);
-                  return (
-                    <span
-                      className={`rounded px-2 py-1 text-xs ${c.className}`}
-                    >
-                      {c.label}
-                    </span>
-                  );
-                })()}
-              </td>
-              <td className="p-3">{r.primaryVehicleId ?? "—"}</td>
-              <td className="p-3">
-                <DriverRowActions onEdit={() => onEdit(r.id)} />
               </td>
             </tr>
           ))}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={8} className="p-10 text-center text-gray-500">
-                No drivers found.
+              <td className="p-6 text-center text-gray-500" colSpan={9}>
+                No drivers match your filters.
               </td>
             </tr>
           )}
@@ -6172,7 +6962,7 @@ const NAV: Item[] = [
   { href: "/admin/maintenance", label: "Maintenance", Icon: Wrench },
   { href: "/admin/track", label: "Track / Live", Icon: MapPin },
   { href: "/admin/history", label: "History / Logs", Icon: History },
-  { href: "/admin/reports", label: "Reports / Exports", Icon: FileBarChart },
+  { href: "/admin/report", label: "Reports / Exports", Icon: FileBarChart },
   { href: "/admin/settings", label: "Settings", Icon: Settings },
 ];
 
@@ -6603,6 +7393,192 @@ export default function TopBar() {
         </div>
       </div>
     </header>
+  );
+}
+
+
+===== components\admin\report\ui\ExportBar.ui.tsx =====
+"use client";
+import * as React from "react";
+import type { TripRow } from "@/lib/admin/report/types";
+import { downloadCSV, getHistory, printElementById } from "@/lib/admin/report/export";
+import { FileDown, Printer } from "lucide-react";
+
+export function ExportBar({
+  rows,
+  tableId,
+}: {
+  rows: TripRow[];
+  tableId: string;
+}) {
+  const [history, setHistory] = React.useState(getHistory());
+
+  const handleCSV = () => {
+    downloadCSV(rows);
+    setHistory(getHistory());
+  };
+  const handlePrint = () => {
+    printElementById(tableId);
+    setHistory(getHistory());
+  };
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleCSV}
+          className="flex items-center gap-2 rounded-md bg-[#7A0010] text-white px-3 py-2 text-sm hover:opacity-90"
+        >
+          <FileDown size={16} /> Export CSV
+        </button>
+        <button
+          onClick={handlePrint}
+          className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-gray-50"
+        >
+          <Printer size={16} /> Print
+        </button>
+      </div>
+
+      <div className="flex-1" />
+
+      <div className="rounded-md border bg-white p-2">
+        <div className="text-xs font-medium mb-1">Recent Exports</div>
+        <ul className="max-h-24 overflow-auto text-xs leading-5 pr-1">
+          {history.length === 0 && <li className="opacity-60">No export activity yet.</li>}
+          {history.map((h, i) => (
+            <li key={i} className="flex items-center justify-between gap-4">
+              <span>{h.type}</span>
+              <span className="opacity-70">{new Date(h.at).toLocaleString()}</span>
+              <span className="opacity-70">{h.count} rows</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+
+===== components\admin\report\ui\ReportFilterBar.ui.tsx =====
+// src/components/admin/report/ui/ReportFilterBar.ui.tsx
+"use client";
+import * as React from "react";
+import type { ReportFilters } from "@/lib/admin/report/types";
+import { DEPARTMENTS } from "@/lib/admin/report/types";
+import { Search } from "lucide-react";
+
+export function ReportFilterBar({
+  value,
+  onChange,
+  onClear,
+}: {
+  value: ReportFilters;
+  onChange: (v: ReportFilters) => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border p-3 bg-white">
+      <div className="flex items-center gap-2 px-3 py-2 rounded-md border">
+        <Search size={16} className="opacity-60" />
+        <input
+          className="outline-none text-sm"
+          placeholder="Search id, purpose, vehicle, driver, department…"
+          value={value.search ?? ""}
+          onChange={(e) => onChange({ ...value, search: e.target.value })}
+        />
+      </div>
+
+      <select
+        className="rounded-md border px-3 py-2 text-sm bg-white max-w-[360px]"
+        value={value.department ?? ""}
+        onChange={(e) => onChange({ ...value, department: e.target.value as any })}
+      >
+        <option value="">All Departments</option>
+        {DEPARTMENTS.map((d) => (
+          <option key={d} value={d}>{d}</option>
+        ))}
+      </select>
+
+      <select
+        className="rounded-md border px-3 py-2 text-sm bg-white"
+        value={value.status ?? ""}
+        onChange={(e) => onChange({ ...value, status: e.target.value as any })}
+      >
+        <option value="">All Status</option>
+        <option>Pending</option><option>Approved</option>
+        <option>Completed</option><option>Rejected</option>
+      </select>
+
+      <input
+        type="date"
+        className="rounded-md border px-3 py-2 text-sm bg-white"
+        value={value.from ?? ""}
+        onChange={(e) => onChange({ ...value, from: e.target.value })}
+      />
+      <span className="text-sm opacity-70">to</span>
+      <input
+        type="date"
+        className="rounded-md border px-3 py-2 text-sm bg-white"
+        value={value.to ?? ""}
+        onChange={(e) => onChange({ ...value, to: e.target.value })}
+      />
+
+      <button
+        className="ml-auto rounded-md border px-3 py-2 text-sm hover:bg-gray-50"
+        onClick={onClear}
+      >
+        Clear
+      </button>
+    </div>
+  );
+}
+
+
+===== components\admin\report\ui\ReportTable.ui.tsx =====
+"use client";
+import * as React from "react";
+import type { TripRow } from "@/lib/admin/report/types";
+
+export function ReportTable({
+  rows,
+  tableId = "report-table",
+}: {
+  rows: TripRow[];
+  tableId?: string;
+}) {
+  return (
+    <div className="overflow-auto rounded-lg border bg-white">
+      <table id={tableId} className="min-w-full">
+        <thead className="bg-gray-50 text-sm">
+          <tr>
+            {["ID","Department","Purpose","Date","Status","Vehicle","Driver","KM"].map((h) => (
+              <th key={h} className="px-3 py-2 text-left font-semibold">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="text-sm">
+          {rows.map((r) => (
+            <tr key={r.id} className="border-t hover:bg-gray-50">
+              <td className="px-3 py-2">{r.id}</td>
+              <td className="px-3 py-2">{r.department}</td>
+              <td className="px-3 py-2">{r.purpose}</td>
+              <td className="px-3 py-2">{r.date}</td>
+              <td className="px-3 py-2">{r.status}</td>
+              <td className="px-3 py-2">{r.vehicleCode}</td>
+              <td className="px-3 py-2">{r.driver}</td>
+              <td className="px-3 py-2">{r.km}</td>
+            </tr>
+          ))}
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={8} className="px-3 py-6 text-center text-sm opacity-60">
+                No records found.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -17203,6 +18179,127 @@ export const resetAccess = async (email: string) => {
 };
 
 
+===== lib\admin\drivers\data.ts =====
+import type { Driver } from "./types";
+
+export const sampleDrivers: Driver[] = [
+  {
+    id: "d1",
+    code: "DRV-001",
+    firstName: "Marco",
+    lastName: "Reyes",
+    phone: "+63 917 555 1001",
+    email: "marco.reyes@example.com",
+    status: "active",
+    hireDate: "2023-04-10",
+    licenseNo: "N12-3456-7890",
+    licenseClass: "B",
+    licenseExpiryISO: "2026-07-20",
+    assignedVehicleId: "v2",
+    lastCheckIn: "2025-09-18 17:22",
+    rating: 4.7,
+    notes: "Punctual; prefers AM shifts.",
+    avatarUrl: "/images/drivers/driver1.jpg",
+    docLicenseUrl: "/docs/drivers/driver1-license.pdf",
+    docGovtIdUrl: "/docs/drivers/driver1-id.pdf",
+    createdAt: "2023-04-10T03:00:00.000Z",
+    updatedAt: "2025-09-10T09:00:00.000Z",
+  },
+  {
+    id: "d2",
+    code: "DRV-002",
+    firstName: "Janel",
+    lastName: "Santos",
+    phone: "+63 917 555 1002",
+    email: "janel.santos@example.com",
+    status: "on_trip",
+    hireDate: "2022-11-01",
+    licenseNo: "N98-7654-3210",
+    licenseClass: "C",
+    licenseExpiryISO: "2027-05-12",
+    assignedVehicleId: "v5",
+    lastCheckIn: "2025-09-19 08:10",
+    rating: 4.6,
+    notes: "Long-haul specialist.",
+    avatarUrl: "/images/drivers/driver2.jpg",
+    createdAt: "2022-11-01T03:00:00.000Z",
+    updatedAt: "2025-09-10T09:00:00.000Z",
+  },
+  {
+    id: "d3",
+    code: "DRV-003",
+    firstName: "Karlo",
+    lastName: "Diaz",
+    status: "off_duty",
+    phone: "+63 917 555 1003",
+    email: "karlo.diaz@example.com",
+    hireDate: "2024-01-15",
+    licenseNo: "N22-3344-5566",
+    licenseClass: "B",
+    licenseExpiryISO: "2025-10-05",
+    rating: 4.2,
+    notes: "Part-time weekends.",
+    avatarUrl: "/images/drivers/driver3.jpg",
+    createdAt: "2024-01-15T03:00:00.000Z",
+    updatedAt: "2025-09-10T09:00:00.000Z",
+  },
+  {
+    id: "d4",
+    code: "DRV-004",
+    firstName: "Aida",
+    lastName: "Lopez",
+    status: "suspended",
+    phone: "+63 917 555 1004",
+    email: "aida.lopez@example.com",
+    hireDate: "2021-03-02",
+    licenseNo: "N55-6677-8899",
+    licenseClass: "D",
+    licenseExpiryISO: "2026-01-22",
+    rating: 4.1,
+    notes: "Pending HR review.",
+    avatarUrl: "/images/drivers/driver4.jpg",
+    createdAt: "2021-03-02T03:00:00.000Z",
+    updatedAt: "2025-09-10T09:00:00.000Z",
+  },
+  {
+    id: "d5",
+    code: "DRV-005",
+    firstName: "Lance",
+    lastName: "Garcia",
+    status: "active",
+    phone: "+63 917 555 1005",
+    email: "lance.garcia@example.com",
+    hireDate: "2020-07-19",
+    licenseNo: "N77-8888-9999",
+    licenseClass: "C",
+    licenseExpiryISO: "2024-12-15", // almost expired or expired soon (example)
+    rating: 4.9,
+    notes: "Mentor driver.",
+    avatarUrl: "/images/drivers/driver5.jpg",
+    createdAt: "2020-07-19T03:00:00.000Z",
+    updatedAt: "2025-09-10T09:00:00.000Z",
+  },
+  {
+    id: "d6",
+    code: "DRV-006",
+    firstName: "Mika",
+    lastName: "Tan",
+    status: "active",
+    phone: "+63 917 555 1006",
+    email: "mika.tan@example.com",
+    hireDate: "2024-06-08",
+    licenseNo: "N99-0001-2345",
+    licenseClass: "B",
+    licenseExpiryISO: "2025-09-10", // expired example
+    rating: 4.3,
+    notes: "New hire; needs refresher route.",
+    avatarUrl: "/images/drivers/driver6.jpg",
+    createdAt: "2024-06-08T03:00:00.000Z",
+    updatedAt: "2025-09-10T09:00:00.000Z",
+  },
+];
+
+
 ===== lib\admin\drivers\index.ts =====
 export * from "./types";
 export * from "./store";
@@ -17212,193 +18309,233 @@ export * from "./actions";
 
 
 ===== lib\admin\drivers\store.ts =====
-"use client";
-import type { Driver, DriverCreate, DriverUpdate } from "./types";
-import { validateDriver } from "./validators";
-import { todayISO } from "./utils";
+import type { Driver, DriverFilters, DriverStatus, LicenseClass } from "./types";
+import { sampleDrivers } from "./data";
 
-const KEY = "tl::drivers";
+/**
+ * SSR-safe store:
+ * - Initialize with sampleDrivers for both server & client (to prevent hydration mismatch)
+ * - After mount, call DriversRepo.hydrateFromStorage() to replace with persisted client data.
+ */
 
-const now = () => new Date().toISOString();
+let db: Driver[] = sampleDrivers.map(d => ({ ...d }));
 
-const safeLoad = (): Driver[] => {
-  if (typeof window === "undefined") return [];
-  try { return JSON.parse(window.localStorage.getItem(KEY) || "[]"); }
-  catch { return []; }
-};
-const safeSave = (rows: Driver[]) => { if (typeof window !== "undefined") window.localStorage.setItem(KEY, JSON.stringify(rows)); };
+const LS_KEY = "travilink_drivers";
+const canStorage = () => typeof window !== "undefined" && !!window.localStorage;
 
-function seedIfEmpty() {
-  const rows = safeLoad();
-  if (rows.length) return;
-  const demo: Driver[] = [
-    {
-      id: crypto.randomUUID(),
-      employeeNo: "DRV-0001",
-      firstName: "Mario",
-      lastName: "Santos",
-      email: "mario.santos@mseuf.edu.ph",
-      phone: "09171234567",
-      status: "active",
-      hiredAt: todayISO(),
-      photoUrl: "",
-      license: { number: "ABC12345", category: "B", expiry: todayISO() },
-      requirements: {},
-      primaryVehicleId: null,
-      allowedVehicleTypes: ["van", "bus", "car"],
-      notes: "",
-      createdAt: now(),
-      updatedAt: now(),
-    },
-  ];
-  safeSave(demo);
+function saveToStorage(rows: Driver[]) {
+  if (!canStorage()) return;
+  try { localStorage.setItem(LS_KEY, JSON.stringify(rows)); } catch {}
 }
-seedIfEmpty();
+
+function hydrateFromStorage(): boolean {
+  if (!canStorage()) return false;
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return false;
+    db = JSON.parse(raw) as Driver[];
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function matches(d: Driver, f: DriverFilters) {
+  const s = (f.search ?? "").toLowerCase();
+  const okSearch =
+    !s ||
+    [
+      d.firstName,
+      d.lastName,
+      d.code,
+      d.phone ?? "",
+      d.email ?? "",
+      d.licenseNo,
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(s);
+  const okStatus = !f.status || d.status === f.status;
+  const okClass = !f.licenseClass || d.licenseClass === f.licenseClass;
+  return okSearch && okStatus && okClass;
+}
 
 export const DriversRepo = {
-  list(query?: { search?: string; status?: string; compliant?: "ok"|"warn"|"bad"|"" }) {
-    let rows = safeLoad();
-    if (query?.search) {
-      const q = query.search.toLowerCase();
-      rows = rows.filter(r =>
-        `${r.firstName} ${r.lastName}`.toLowerCase().includes(q) ||
-        r.employeeNo.toLowerCase().includes(q) ||
-        r.license.number.toLowerCase().includes(q)
-      );
-    }
-    if (query?.status) rows = rows.filter(r => r.status === query.status);
-    if (query?.compliant) {
-      const { complianceState } = require("./utils");
-      rows = rows.filter(r => complianceState(r) === query.compliant);
-    }
-    return rows.sort((a,b)=>a.lastName.localeCompare(b.lastName));
+  hydrateFromStorage,
+
+  constants: {
+    statuses: ["active", "on_trip", "off_duty", "suspended"] as readonly DriverStatus[],
+    licenseClasses: ["A", "B", "C", "D", "E"] as readonly LicenseClass[],
   },
 
-  create(input: DriverCreate): Driver {
-    validateDriver(input);
-    const rows = safeLoad();
+  list(filters: DriverFilters = {}) {
+    return db.filter(d => matches(d, filters));
+  },
+  get(id: string) {
+    return db.find(d => d.id === id) ?? null;
+  },
+  create(data: Omit<Driver, "id" | "createdAt" | "updatedAt">) {
+    const now = new Date().toISOString();
     const d: Driver = {
-      ...input,
+      ...data,
       id: crypto.randomUUID(),
-      createdAt: now(),
-      updatedAt: now(),
+      createdAt: now,
+      updatedAt: now,
     };
-    rows.push(d);
-    safeSave(rows);
-    return d;
+    db.push(d);
+    saveToStorage(db);
+    return d.id;
   },
-
-  update(patch: DriverUpdate): Driver {
-    const rows = safeLoad();
-    const i = rows.findIndex(r => r.id === patch.id);
-    if (i < 0) throw new Error("Driver not found");
-    const next = { ...rows[i], ...patch, updatedAt: now() };
-    rows[i] = next;
-    safeSave(rows);
-    return next;
+  update(id: string, patch: Partial<Driver>) {
+    const i = db.findIndex(d => d.id === id);
+    if (i >= 0) {
+      db[i] = { ...db[i], ...patch, updatedAt: new Date().toISOString() };
+      saveToStorage(db);
+    }
   },
-
   remove(id: string) {
-    const rows = safeLoad().filter(r => r.id !== id);
-    safeSave(rows);
+    const i = db.findIndex(d => d.id === id);
+    if (i >= 0) {
+      db.splice(i, 1);
+      saveToStorage(db);
+    }
   },
-
-  bulkUpdate(ids: string[], patch: Partial<Driver>) {
-    const rows = safeLoad().map(r => ids.includes(r.id) ? { ...r, ...patch, updatedAt: now() } : r);
-    safeSave(rows);
+  resetToSample() {
+    db = sampleDrivers.map(d => ({ ...d }));
+    saveToStorage(db);
   },
-
-  exportCsv(rows: Driver[]) {
-    const header = ["employeeNo","firstName","lastName","email","phone","status","licenseNumber","licenseCategory","licenseExpiry"];
-    const lines = rows.map(r => [
-      r.employeeNo, r.firstName, r.lastName, r.email, r.phone, r.status,
-      r.license.number, r.license.category, r.license.expiry
-    ].map(v => `"${(v ?? "").toString().replace(/"/g,'""')}"`).join(","));
-    const csv = [header.join(","), ...lines].join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `drivers-${new Date().toISOString().slice(0,10)}.csv`;
-    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-  }
 };
 
 
 ===== lib\admin\drivers\types.ts =====
-export type DriverStatus = "active" | "suspended" | "archived" | "pending_verification";
+export type DriverStatus = "active" | "on_trip" | "off_duty" | "suspended";
+export type LicenseClass = "A" | "B" | "C" | "D" | "E";
 
-export type LicenseInfo = {
-  number: string;
-  category: string; // e.g. "A","B","C"
-  expiry: string;   // ISO date
-};
-
-export type Requirements = {
-  medicalClearanceExpiry?: string;
-  drugTestExpiry?: string;
-  safetyTrainingExpiry?: string;
-};
-
-export type Driver = {
+export interface Driver {
   id: string;
-  employeeNo: string;
+  code: string;
   firstName: string;
   lastName: string;
-  email: string;
-  phone: string;
+  phone?: string;
+  email?: string;
+
   status: DriverStatus;
-  photoUrl?: string;
-  hiredAt: string;
-  license: LicenseInfo;
-  requirements?: Requirements;
-  primaryVehicleId?: string | null;
-  allowedVehicleTypes?: string[];
+  hireDate?: string;
+
+  licenseNo: string;
+  licenseClass: LicenseClass;
+  licenseExpiryISO: string;
+
+  assignedVehicleId?: string;
+  lastCheckIn?: string;
+  rating?: number; // 0-5
   notes?: string;
+
+  avatarUrl?: string;
+  docLicenseUrl?: string;
+  docGovtIdUrl?: string;
+
   createdAt: string;
   updatedAt: string;
-  lastEditedBy?: string;
-};
+}
 
-export type DriverCreate = Omit<Driver, "id" | "createdAt" | "updatedAt" | "lastEditedBy">;
-export type DriverUpdate = Partial<Omit<Driver, "id" | "createdAt">> & { id: string };
+export interface DriverFilters {
+  search?: string;
+  status?: DriverStatus;
+  licenseClass?: LicenseClass;
+}
+
+export type DriverTab =
+  | "all"
+  | "available"
+  | "on_trip"
+  | "off_duty"
+  | "suspended"
+  | "expired_license";
 
 
 ===== lib\admin\drivers\utils.ts =====
 import type { Driver } from "./types";
 
-export const todayISO = () => new Date().toISOString().slice(0, 10);
+export function toCSV(rows: Driver[]) {
+  const headers = [
+    "id",
+    "code",
+    "firstName",
+    "lastName",
+    "phone",
+    "email",
+    "status",
+    "hireDate",
+    "licenseNo",
+    "licenseClass",
+    "licenseExpiryISO",
+    "assignedVehicleId",
+    "lastCheckIn",
+    "rating",
+    "notes",
+    "createdAt",
+    "updatedAt",
+  ];
+  const escape = (v: any) => {
+    if (v == null) return "";
+    const s = String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const lines = [
+    headers.join(","),
+    ...rows.map((r) => headers.map((h) => escape((r as any)[h])).join(",")),
+  ];
+  return lines.join("\n");
+}
 
-export const isExpired = (iso: string) => {
-  if (!iso) return true;
-  const d = new Date(iso + "T00:00:00");
-  const t = new Date(todayISO() + "T00:00:00");
-  return d.getTime() < t.getTime();
-};
+export function validate(d: Partial<Driver>): string | null {
+  if (!d.firstName) return "First name is required.";
+  if (!d.lastName) return "Last name is required.";
+  if (!d.code) return "Driver code is required.";
+  if (!d.licenseNo) return "License number is required.";
+  if (!d.licenseClass) return "License class is required.";
+  if (!d.licenseExpiryISO) return "License expiry date is required.";
 
-export const daysUntil = (iso: string) => {
-  const t = new Date(todayISO() + "T00:00:00").getTime();
-  const d = new Date(iso + "T00:00:00").getTime();
-  return Math.ceil((d - t) / (1000 * 60 * 60 * 24));
-};
+  // simple expiry check
+  try {
+    const exp = new Date(d.licenseExpiryISO);
+    const today = new Date();
+    if (isNaN(exp.getTime())) return "License expiry date is invalid.";
+    // allow same-day; only error if clearly in the past by date
+    const expDate = new Date(exp.toISOString().slice(0, 10));
+    const todayDate = new Date(today.toISOString().slice(0, 10));
+    if (expDate < todayDate) {
+      // still allow saving; just return null—your UI can show warnings instead
+      // return "License already expired.";
+    }
+  } catch {}
 
-export const complianceState = (d: Driver): "ok" | "warn" | "bad" => {
-  const licenseDays = daysUntil(d.license.expiry);
-  if (licenseDays < 0) return "bad";
-  if (licenseDays <= 30) return "warn";
-  return "ok";
-};
+  // basic email/phone checks (optional)
+  if (d.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email)) return "Invalid email.";
+  if (d.phone && !/^[0-9+\-\s()]+$/.test(d.phone)) return "Invalid phone number.";
 
-export const complianceInfo = (d: import("./types").Driver) => {
-  const state = complianceState(d); // "ok" | "warn" | "bad"
-  const className =
-    state === "ok"
-      ? "bg-green-100 text-green-700"
-      : state === "warn"
-      ? "bg-yellow-100 text-yellow-700"
-      : "bg-red-100 text-red-700";
-  const label = state === "ok" ? "Compliant" : state === "warn" ? "Expiring soon" : "Expired";
-  return { state, className, label };
-};
+  return null;
+}
+
+export function isLicenseExpired(iso: string) {
+  const exp = new Date(iso);
+  const today = new Date();
+  const expDate = new Date(exp.toISOString().slice(0, 10));
+  const todayDate = new Date(today.toISOString().slice(0, 10));
+  return expDate < todayDate;
+}
+
+export function isLicenseExpiringSoon(iso: string, days = 30) {
+  const exp = new Date(iso);
+  const today = new Date();
+  const soon = new Date(today);
+  soon.setDate(soon.getDate() + days);
+  const expDate = new Date(exp.toISOString().slice(0, 10));
+  const soonDate = new Date(soon.toISOString().slice(0, 10));
+  return expDate >= today && expDate <= soonDate;
+}
+
 
 ===== lib\admin\drivers\validators.ts =====
 import type { DriverCreate } from "./types";
@@ -17791,6 +18928,221 @@ export type MaintFilters = {
   search?: string;
   type?: "" | MaintType;
   status?: "" | MaintStatus;
+};
+
+
+===== lib\admin\report\export.ts =====
+"use client";
+
+import type { TripRow } from "./types";
+
+export function toCSV(rows: TripRow[]) {
+  const header = ["ID","Department","Purpose","Date","Status","Vehicle","Driver","KM"];
+  const body = rows.map(r => [
+    r.id, r.department, r.purpose, r.date, r.status, r.vehicleCode, r.driver, String(r.km)
+  ]);
+  const csv = [header, ...body]
+    .map(a => a.map(s => `"${String(s).replace(/"/g, '""')}"`).join(","))
+    .join("\n");
+  return new Blob([csv], { type: "text/csv;charset=utf-8" });
+}
+
+export function downloadCSV(rows: TripRow[], filename = "travilink-report.csv") {
+  const blob = toCSV(rows);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  saveHistory({ type: "CSV", at: new Date().toISOString(), count: rows.length, filename });
+}
+
+export function printElementById(id: string) {
+  const node = document.getElementById(id);
+  if (!node) return;
+  const w = window.open("", "_blank", "width=1024,height=768");
+  if (!w) return;
+  w.document.write(`<html><head><title>Print</title>
+  <style>
+    body{font-family: ui-sans-serif, system-ui; padding:16px;}
+    table{width:100%; border-collapse: collapse;}
+    th,td{border:1px solid #ddd; padding:8px; font-size:12px;}
+    th{background:#f7f7f7; text-align:left;}
+  </style>
+  </head><body>${node.outerHTML}</body></html>`);
+  w.document.close();
+  w.focus();
+  w.print();
+  w.close();
+  saveHistory({ type: "Print", at: new Date().toISOString(), count: node.querySelectorAll("tbody tr").length });
+}
+
+type ExportHistory = { type: "CSV" | "Print"; at: string; count: number; filename?: string };
+
+const KEY = "travilink_report_exports";
+
+export function getHistory(): ExportHistory[] {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(localStorage.getItem(KEY) || "[]");
+  } catch { return []; }
+}
+
+export function saveHistory(entry: ExportHistory) {
+  try {
+    const current = getHistory();
+    localStorage.setItem(KEY, JSON.stringify([entry, ...current].slice(0, 25)));
+  } catch {}
+}
+
+
+===== lib\admin\report\mock.ts =====
+import type { TripRow } from "./types";
+
+const d = {
+  CCMS: "College of Computing and Multimedia Studies (CCMS)",
+  FIN: "Finance Office",
+  HR: "Human Resources",
+  REG: "Registrar",
+} as const;
+
+const make = (p: Partial<TripRow>, i: number): TripRow => ({
+  id: `T-${1000 + i}`,
+  department: d.CCMS,
+  purpose: "Faculty transport",
+  date: "2025-09-12",
+  status: "Approved",
+  vehicleCode: "VAN-12",
+  driver: "Dela Cruz",
+  km: 8,
+  ...p,
+});
+
+export const MOCK_TRIPS: TripRow[] = [
+  make({ department: d.CCMS, purpose: "Lab visit", date: "2025-09-08", status: "Pending", vehicleCode: "VAN-12", km: 6 }, 1),
+  make({ department: d.FIN, purpose: "Bank run", date: "2025-09-09", status: "Approved", vehicleCode: "VAN-03", km: 11 }, 2),
+  make({ department: "College of Engineering (CENG)", purpose: "Equipment delivery", date: "2025-09-10", status: "Completed", vehicleCode: "BUS-01", km: 22 }, 3),
+  make({ department: d.REG, purpose: "Records pickup", date: "2025-09-11", status: "Rejected", vehicleCode: "VAN-03", km: 3 }, 4),
+  make({ department: "College of Arts and Sciences (CAS)", purpose: "Seminar", date: "2025-09-12", status: "Approved", vehicleCode: "VAN-12", km: 7 }, 5),
+];
+
+
+===== lib\admin\report\store.ts =====
+"use server";
+
+import { MOCK_TRIPS } from "./mock";
+import type { Paged, ReportFilters, TripRow } from "./types";
+
+const within = (d: string, from?: string, to?: string) => {
+  if (from && d < from) return false;
+  if (to && d > to) return false;
+  return true;
+};
+
+export async function queryReport(
+  filters: ReportFilters,
+  page = 1,
+  pageSize = 10
+): Promise<Paged<TripRow>> {
+  const q = (filters.search ?? "").toLowerCase().trim();
+
+  const filtered = MOCK_TRIPS.filter((r) => {
+    const matchQ =
+      !q ||
+      r.id.toLowerCase().includes(q) ||
+      r.purpose.toLowerCase().includes(q) ||
+      r.vehicleCode.toLowerCase().includes(q) ||
+      r.driver.toLowerCase().includes(q) ||
+      r.department.toLowerCase().includes(q);
+    const matchDept = !filters.department || r.department === filters.department;
+    const matchStatus = !filters.status || r.status === filters.status;
+    const matchDate = within(r.date, filters.from, filters.to);
+    return matchQ && matchDept && matchStatus && matchDate;
+  });
+
+  const total = filtered.length;
+  const start = (page - 1) * pageSize;
+  const rows = filtered.slice(start, start + pageSize);
+
+  return { rows, total, page, pageSize };
+}
+
+
+===== lib\admin\report\types.ts =====
+// src/lib/admin/report/types.ts
+
+export type ReportStatus = "Pending" | "Approved" | "Completed" | "Rejected";
+
+/** Full department labels as shown in your list */
+export type DepartmentName =
+  | "College of Computing and Multimedia Studies (CCMS)"
+  | "College of Criminal Justice and Criminology (CCJC)"
+  | "College of Nursing and Allied Health Sciences (CNAHS)"
+  | "College of International Hospitality and Tourism Management (CIHTM)"
+  | "College of Architecture and Fine Arts (CAFA)"
+  | "College of Maritime Education (CME)"
+  | "College of Business and Accountancy (CBA)"
+  | "College of Arts and Sciences (CAS)"
+  | "College of Education (CED)"
+  | "College of Engineering (CENG)"
+  | "Enverga Law School (ELS)"
+  | "Institute of Graduate Studies and Research (IGSR)"
+  | "Basic Education Department (BED)"
+  | "Treasury Office"
+  | "Alumni Affairs Office"
+  | "Registrar"
+  | "Human Resources"
+  | "Finance Office";
+
+/** Reusable list for dropdowns */
+export const DEPARTMENTS: DepartmentName[] = [
+  "College of Computing and Multimedia Studies (CCMS)",
+  "College of Criminal Justice and Criminology (CCJC)",
+  "College of Nursing and Allied Health Sciences (CNAHS)",
+  "College of International Hospitality and Tourism Management (CIHTM)",
+  "College of Architecture and Fine Arts (CAFA)",
+  "College of Maritime Education (CME)",
+  "College of Business and Accountancy (CBA)",
+  "College of Arts and Sciences (CAS)",
+  "College of Education (CED)",
+  "College of Engineering (CENG)",
+  "Enverga Law School (ELS)",
+  "Institute of Graduate Studies and Research (IGSR)",
+  "Basic Education Department (BED)",
+  "Treasury Office",
+  "Alumni Affairs Office",
+  "Registrar",
+  "Human Resources",
+  "Finance Office",
+];
+
+export type TripRow = {
+  id: string;
+  department: DepartmentName; // updated
+  purpose: string;
+  date: string; // ISO
+  status: ReportStatus;
+  vehicleCode: string;
+  driver: string;
+  km: number;
+};
+
+export type ReportFilters = {
+  search?: string;
+  department?: DepartmentName | "";
+  status?: ReportStatus | "";
+  from?: string; // "YYYY-MM-DD"
+  to?: string;   // "YYYY-MM-DD"
+};
+
+export type Paged<T> = {
+  rows: T[];
+  total: number;
+  page: number;
+  pageSize: number;
 };
 
 

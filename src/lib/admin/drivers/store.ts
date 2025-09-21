@@ -1,110 +1,96 @@
-"use client";
-import type { Driver, DriverCreate, DriverUpdate } from "./types";
-import { validateDriver } from "./validators";
-import { todayISO } from "./utils";
+import type { Driver, DriverFilters, DriverStatus, LicenseClass } from "./types";
+import { sampleDrivers } from "./data";
 
-const KEY = "tl::drivers";
+/**
+ * SSR-safe store:
+ * - Initialize with sampleDrivers for both server & client (to prevent hydration mismatch)
+ * - After mount, call DriversRepo.hydrateFromStorage() to replace with persisted client data.
+ */
 
-const now = () => new Date().toISOString();
+let db: Driver[] = sampleDrivers.map(d => ({ ...d }));
 
-const safeLoad = (): Driver[] => {
-  if (typeof window === "undefined") return [];
-  try { return JSON.parse(window.localStorage.getItem(KEY) || "[]"); }
-  catch { return []; }
-};
-const safeSave = (rows: Driver[]) => { if (typeof window !== "undefined") window.localStorage.setItem(KEY, JSON.stringify(rows)); };
+const LS_KEY = "travilink_drivers";
+const canStorage = () => typeof window !== "undefined" && !!window.localStorage;
 
-function seedIfEmpty() {
-  const rows = safeLoad();
-  if (rows.length) return;
-  const demo: Driver[] = [
-    {
-      id: crypto.randomUUID(),
-      employeeNo: "DRV-0001",
-      firstName: "Mario",
-      lastName: "Santos",
-      email: "mario.santos@mseuf.edu.ph",
-      phone: "09171234567",
-      status: "active",
-      hiredAt: todayISO(),
-      photoUrl: "",
-      license: { number: "ABC12345", category: "B", expiry: todayISO() },
-      requirements: {},
-      primaryVehicleId: null,
-      allowedVehicleTypes: ["van", "bus", "car"],
-      notes: "",
-      createdAt: now(),
-      updatedAt: now(),
-    },
-  ];
-  safeSave(demo);
+function saveToStorage(rows: Driver[]) {
+  if (!canStorage()) return;
+  try { localStorage.setItem(LS_KEY, JSON.stringify(rows)); } catch {}
 }
-seedIfEmpty();
+
+function hydrateFromStorage(): boolean {
+  if (!canStorage()) return false;
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return false;
+    db = JSON.parse(raw) as Driver[];
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function matches(d: Driver, f: DriverFilters) {
+  const s = (f.search ?? "").toLowerCase();
+  const okSearch =
+    !s ||
+    [
+      d.firstName,
+      d.lastName,
+      d.code,
+      d.phone ?? "",
+      d.email ?? "",
+      d.licenseNo,
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(s);
+  const okStatus = !f.status || d.status === f.status;
+  const okClass = !f.licenseClass || d.licenseClass === f.licenseClass;
+  return okSearch && okStatus && okClass;
+}
 
 export const DriversRepo = {
-  list(query?: { search?: string; status?: string; compliant?: "ok"|"warn"|"bad"|"" }) {
-    let rows = safeLoad();
-    if (query?.search) {
-      const q = query.search.toLowerCase();
-      rows = rows.filter(r =>
-        `${r.firstName} ${r.lastName}`.toLowerCase().includes(q) ||
-        r.employeeNo.toLowerCase().includes(q) ||
-        r.license.number.toLowerCase().includes(q)
-      );
-    }
-    if (query?.status) rows = rows.filter(r => r.status === query.status);
-    if (query?.compliant) {
-      const { complianceState } = require("./utils");
-      rows = rows.filter(r => complianceState(r) === query.compliant);
-    }
-    return rows.sort((a,b)=>a.lastName.localeCompare(b.lastName));
+  hydrateFromStorage,
+
+  constants: {
+    statuses: ["active", "on_trip", "off_duty", "suspended"] as readonly DriverStatus[],
+    licenseClasses: ["A", "B", "C", "D", "E"] as readonly LicenseClass[],
   },
 
-  create(input: DriverCreate): Driver {
-    validateDriver(input);
-    const rows = safeLoad();
+  list(filters: DriverFilters = {}) {
+    return db.filter(d => matches(d, filters));
+  },
+  get(id: string) {
+    return db.find(d => d.id === id) ?? null;
+  },
+  create(data: Omit<Driver, "id" | "createdAt" | "updatedAt">) {
+    const now = new Date().toISOString();
     const d: Driver = {
-      ...input,
+      ...data,
       id: crypto.randomUUID(),
-      createdAt: now(),
-      updatedAt: now(),
+      createdAt: now,
+      updatedAt: now,
     };
-    rows.push(d);
-    safeSave(rows);
-    return d;
+    db.push(d);
+    saveToStorage(db);
+    return d.id;
   },
-
-  update(patch: DriverUpdate): Driver {
-    const rows = safeLoad();
-    const i = rows.findIndex(r => r.id === patch.id);
-    if (i < 0) throw new Error("Driver not found");
-    const next = { ...rows[i], ...patch, updatedAt: now() };
-    rows[i] = next;
-    safeSave(rows);
-    return next;
+  update(id: string, patch: Partial<Driver>) {
+    const i = db.findIndex(d => d.id === id);
+    if (i >= 0) {
+      db[i] = { ...db[i], ...patch, updatedAt: new Date().toISOString() };
+      saveToStorage(db);
+    }
   },
-
   remove(id: string) {
-    const rows = safeLoad().filter(r => r.id !== id);
-    safeSave(rows);
+    const i = db.findIndex(d => d.id === id);
+    if (i >= 0) {
+      db.splice(i, 1);
+      saveToStorage(db);
+    }
   },
-
-  bulkUpdate(ids: string[], patch: Partial<Driver>) {
-    const rows = safeLoad().map(r => ids.includes(r.id) ? { ...r, ...patch, updatedAt: now() } : r);
-    safeSave(rows);
+  resetToSample() {
+    db = sampleDrivers.map(d => ({ ...d }));
+    saveToStorage(db);
   },
-
-  exportCsv(rows: Driver[]) {
-    const header = ["employeeNo","firstName","lastName","email","phone","status","licenseNumber","licenseCategory","licenseExpiry"];
-    const lines = rows.map(r => [
-      r.employeeNo, r.firstName, r.lastName, r.email, r.phone, r.status,
-      r.license.number, r.license.category, r.license.expiry
-    ].map(v => `"${(v ?? "").toString().replace(/"/g,'""')}"`).join(","));
-    const csv = [header.join(","), ...lines].join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `drivers-${new Date().toISOString().slice(0,10)}.csv`;
-    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-  }
 };
