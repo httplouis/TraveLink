@@ -1,7 +1,11 @@
 // src/components/admin/schedule/forms/CreateScheduleDialogs.container.tsx
 "use client";
 import * as React from "react";
-import CreateScheduleDialogUI, { CreateForm, DriverOption, VehicleOption } from "./CreateScheduleDialog.ui";
+import CreateScheduleDialogUI, {
+  CreateForm,
+  DriverOption,
+  VehicleOption,
+} from "./CreateScheduleDialog.ui";
 import { ScheduleRepo } from "@/lib/admin/schedule/store";
 import type { Schedule } from "@/lib/admin/schedule/types";
 import {
@@ -30,7 +34,7 @@ const makeInit = (initial?: Partial<Schedule>): CreateForm => {
     endTime: initial?.endTime ?? "09:00",
     driverId: initial?.driverId ?? (drivers[0]?.id ?? ""),
     vehicleId: initial?.vehicleId ?? (vehicles[0]?.id ?? ""),
-    status: (initial?.status as Schedule["status"]) ?? "PLANNED",
+    status: (initial?.status as CreateForm["status"]) ?? "PLANNED",
     notes: initial?.notes ?? "",
     originPlace: null,
     destinationPlace: null,
@@ -50,17 +54,26 @@ export default function CreateScheduleDialog({
   }, [open, initial]);
 
   const snapshot = ScheduleRepo.list();
-  const editingId = initial?.id as string | undefined;
+  const editingId = (initial?.id as string) || undefined;
 
-  // probe event with current form to evaluate conflicts
+  // Probe event with current form (used by availability/conflict utils)
   const probe: Schedule = {
     id: editingId || "new",
     createdAt: new Date().toISOString(),
     tripId: "PREVIEW",
-    ...form,
+    title: form.title,
+    origin: form.origin,
+    destination: form.destination,
+    date: form.date,
+    startTime: form.startTime,
+    endTime: form.endTime,
+    driverId: form.driverId,
+    vehicleId: form.vehicleId,
+    status: form.status,
+    notes: form.notes,
   };
 
-  // options (mark busy)
+  // Build options w/ busy flag
   const drivers: DriverOption[] = ScheduleRepo.constants.drivers.map((d) => ({
     id: d.id,
     name: d.name,
@@ -74,6 +87,7 @@ export default function CreateScheduleDialog({
     busy: !isVehicleAvailable(snapshot, v.id, probe, editingId),
   }));
 
+  // Conflicts for the selected driver/vehicle (to show details + disable save)
   const driverConflicts = conflictsForDriver(snapshot, form.driverId, probe, editingId);
   const vehicleConflicts = conflictsForVehicle(snapshot, form.vehicleId, probe, editingId);
   const disableSave = driverConflicts.length > 0 || vehicleConflicts.length > 0;

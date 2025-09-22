@@ -4,6 +4,7 @@
 import * as React from "react";
 import { ScheduleRepo } from "@/lib/admin/schedule/store";
 import type { Schedule } from "@/lib/admin/schedule/types";
+import { useHotkeys } from "@/lib/common/useHotkeys";
 
 /* UI */
 import ScheduleTable from "@/components/admin/schedule/ui/ScheduleTable.ui";
@@ -11,7 +12,7 @@ import ScheduleToolbar from "@/components/admin/schedule/toolbar/ScheduleToolbar
 import ScheduleDetailsModal from "@/components/admin/schedule/ui/ScheduleDetailsModal.ui";
 import KpiGrid from "@/components/admin/schedule/ui/KpiGrid.ui";
 
-/* Filters / KPIs (original hooks) */
+/* Filters / KPIs */
 import { useScheduleFilters } from "@/components/admin/schedule/hooks/useScheduleFilters";
 import { DEFAULT_SCH_FILTERS, filterSchedules } from "@/lib/admin/schedule/filters";
 import { useScheduleKpis } from "@/components/admin/schedule/kpi/useScheduleKpis";
@@ -19,11 +20,11 @@ import { useScheduleKpis } from "@/components/admin/schedule/kpi/useScheduleKpis
 /* Create/Edit dialog — container only */
 import CreateScheduleDialog from "@/components/admin/schedule/forms/CreateScheduleDialogs.container";
 
-/* URL sync for q + sort only */
-import ScheduleURLSync from "@/app/(protected)/admin/schedule/ScheduleURLSync";
+/* URL sync */
+import ScheduleURLSync from "./ScheduleURLSync"; // q + sort only
+import ScheduleFiltersURLSync from "@/components/admin/schedule/ScheduleFiltersURLSync"; // status/dept/from/to/mode
 
 export default function SchedulePageClient() {
-  // Avoid SSR/CSR mismatch for anything touching localStorage
   const [hydrated, setHydrated] = React.useState(false);
   React.useEffect(() => setHydrated(true), []);
 
@@ -40,6 +41,11 @@ export default function SchedulePageClient() {
 
   const filters = useScheduleFilters(DEFAULT_SCH_FILTERS);
   const { kpis, refresh: refreshKpis } = useScheduleKpis();
+   React.useEffect(() => {
+    if (filters.draft.mode === "auto") {
+      filters.apply();
+    }
+  }, [filters.draft, filters]);
 
   // Load repo after mount
   React.useEffect(() => {
@@ -59,12 +65,41 @@ export default function SchedulePageClient() {
     return [...base].sort((a, b) => {
       const tA = `${a.date}T${a.startTime}`;
       const tB = `${b.date}T${b.startTime}`;
-      return sort === "newest" ? (tA < tB ? 1 : -1) : (tA > tB ? 1 : -1);
+      return sort === "newest" ? (tA < tB ? 1 : -1) : tA > tB ? 1 : -1;
     });
   }, [hydrated, rows, filters.applied, q, sort]);
 
   const total = filtered.length;
   const pageRows = filtered.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
+  const maxPage = React.useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [total, pageSize]);
+
+  useHotkeys(
+    [
+      { key: "n", handler: () => { setEditRow(null); setOpen(true); } },
+      {
+        key: "Delete",
+        handler: () => {
+          if (!selected.size) return;
+          ScheduleRepo.removeMany([...selected]);
+          setSelected(new Set());
+          refresh();
+        },
+      },
+      { key: "x", handler: () => setSelected(new Set()) },
+      {
+        key: "a",
+        handler: () => {
+          const next = new Set<string>(selected);
+          pageRows.forEach((r) => next.add(r.id));
+          setSelected(next);
+        },
+      },
+      { key: "ArrowLeft", handler: () => setPage((p) => Math.max(1, p - 1)) },
+      { key: "ArrowRight", handler: () => setPage((p) => Math.min(maxPage, p + 1)) },
+      { key: "t", handler: () => setSort((s) => (s === "newest" ? "oldest" : "newest")) },
+    ],
+    { ignoreWhileTyping: true }
+  );
 
   const onToggleOne = (id: string, checked: boolean) =>
     setSelected((p) => {
@@ -80,7 +115,6 @@ export default function SchedulePageClient() {
       return n;
     });
 
-  // Skeleton while hydrating
   if (!hydrated) {
     return (
       <div className="space-y-3">
@@ -102,10 +136,12 @@ export default function SchedulePageClient() {
 
   return (
     <div className="space-y-3">
-      {/* URL sync for q/sort only (no filter-draft types touched) */}
+      {/* URL sync for q/sort */}
       <ScheduleURLSync q={q} sort={sort} onQ={setQ} onSort={setSort} />
+      {/* URL sync for filters (status/dept/from/to/mode) */}
+      <ScheduleFiltersURLSync draft={filters.draft} onDraftChange={(patch) => filters.update(patch)} />
 
-      {/* KPI cards — uses your hook shape */}
+      {/* KPI cards */}
       <KpiGrid kpis={kpis} />
 
       <ScheduleTable
@@ -166,7 +202,6 @@ export default function SchedulePageClient() {
         }
       />
 
-      {/* Create/Edit dialog — container only */}
       <CreateScheduleDialog
         open={open}
         initial={editRow ?? undefined}
@@ -186,7 +221,6 @@ export default function SchedulePageClient() {
         }}
       />
 
-      {/* Details modal — correct prop is `data`, not `row` */}
       <ScheduleDetailsModal
         open={!!viewRow}
         data={viewRow || undefined}

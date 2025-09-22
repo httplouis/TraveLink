@@ -25,7 +25,7 @@ export type VehicleOption = { id: string; label: string; plateNo: string; busy?:
 type Props = {
   open: boolean;
   tripIdPreview?: string;
-  form?: CreateForm; // ← tolerant
+  form?: CreateForm;
   drivers?: DriverOption[];
   vehicles?: VehicleOption[];
   driverConflicts?: Array<{ id: string; title: string; date: string; startTime: string; endTime: string }>;
@@ -46,7 +46,6 @@ export default function CreateScheduleDialogUI(props: Props) {
     onChange = () => {},
   } = props;
 
-  // Safe defaults if anything is missing
   const form: CreateForm = {
     requestId: props.form?.requestId ?? null,
     title: props.form?.title ?? "",
@@ -189,11 +188,19 @@ export default function CreateScheduleDialogUI(props: Props) {
             >
               {!drivers.length && <option value="">No drivers configured</option>}
               {drivers.map((d) => (
-                <option key={d.id} value={d.id} disabled={d.busy}>
-                  {d.name} {d.busy ? " • busy" : ""}
+                <option
+                  key={d.id}
+                  value={d.id}
+                  disabled={d.busy}
+                  title={d.busy ? "Driver is busy for the selected time window" : ""}
+                >
+                  {d.name} {d.busy ? "• busy" : ""}
                 </option>
               ))}
             </select>
+            <p className="mt-1 text-[11px] text-neutral-500">
+              Items marked <span className="font-medium">busy</span> are unavailable for the selected time.
+            </p>
           </div>
 
           {/* Vehicle */}
@@ -206,8 +213,13 @@ export default function CreateScheduleDialogUI(props: Props) {
             >
               {!vehicles.length && <option value="">No vehicles configured</option>}
               {vehicles.map((v) => (
-                <option key={v.id} value={v.id} disabled={v.busy}>
-                  {v.label} ({v.plateNo}) {v.busy ? " • busy" : ""}
+                <option
+                  key={v.id}
+                  value={v.id}
+                  disabled={v.busy}
+                  title={v.busy ? "Vehicle is busy for the selected time window" : ""}
+                >
+                  {v.label} ({v.plateNo}) {v.busy ? "• busy" : ""}
                 </option>
               ))}
             </select>
