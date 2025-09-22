@@ -1,0 +1,1271 @@
+===== Card.tsx =====
+"use client";
+
+export default function Card({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-2xl border border-neutral-200 bg-white p-5 md:p-6 shadow-sm">
+      <h2 className="text-[15px] md:text-base font-semibold mb-3 md:mb-4">{title}</h2>
+      <div className="min-w-0">{children}</div>
+    </section>
+  );
+}
+
+
+===== ConfirmDialog.ui.tsx =====
+"use client";
+export function ConfirmDialog({
+  open,
+  title,
+  message,
+  confirmText = "Confirm",
+  cancelText = "Cancel",
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  title: string;
+  message: string | React.ReactNode;
+  confirmText?: string;
+  cancelText?: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="border-b px-4 py-3 text-sm font-semibold">{title}</div>
+        <div className="px-4 py-4 text-sm text-gray-700">{message}</div>
+        <div className="flex justify-end gap-2 border-t px-4 py-3">
+          <button
+            onClick={onCancel}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm hover:bg-gray-50"
+          >
+            {cancelText}
+          </button>
+          <button
+            onClick={onConfirm}
+            className="rounded-lg bg-red-600 px-3 py-1.5 text-sm text-white shadow hover:bg-red-700"
+          >
+            {confirmText}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+===== Header.tsx =====
+"use client";
+import React from "react";
+import { IconBell, IconSearch } from "@/components/ui/Icons";
+
+export default function Header({
+  onToggleNotifs,
+  unread,
+  notifOpen,
+}: {
+  onToggleNotifs: () => void;
+  unread: number;
+  notifOpen: boolean;
+}) {
+  return (
+    <header className="bg-gradient-to-b from-[#7A0010] to-[#4E0009] text-white border-b border-black/10">
+      <div className="w-full px-2 sm:px-4 py-2 flex items-center gap-3">
+        <h1 className="text-sm sm:text-base font-semibold text-white">
+          <span className="text-white">Admin</span> · <span className="text-white">TraviLink</span>
+        </h1>
+
+        <div className="ml-auto flex items-center gap-2 sm:gap-3">
+          <div className="relative text-neutral-500">
+            <IconSearch />
+            <input
+              placeholder="Search schedules, vehicles, drivers…"
+              className="h-9 w-[58vw] md:w-[46vw] 2xl:w-[720px] rounded-md border border-white/20 bg-white/95 pl-8 pr-3 text-sm text-neutral-900 placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-white transition-shadow hover:shadow-sm"
+            />
+          </div>
+          <button
+            aria-label="Notifications"
+            aria-expanded={notifOpen}
+            onClick={onToggleNotifs}
+            className={`relative grid place-items-center h-9 w-9 rounded-md border transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-white/80 focus-visible:ring-offset-2 focus-visible:ring-offset-[#7A0010] ${
+              notifOpen ? "border-white/50 bg-white/15" : "border-white/30 bg-white/10 hover:bg-white/15 hover:-translate-y-0.5"
+            } text-white`}
+          >
+            {unread > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full bg-rose-600 text-white text-[10px] leading-[18px] grid place-items-center px-1 shadow">
+                {unread > 99 ? "99+" : unread}
+              </span>
+            )}
+            <IconBell />
+          </button>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+
+===== MapPicker.ui.tsx =====
+"use client";
+
+import * as React from "react";
+import { createPortal } from "react-dom";
+import dynamic from "next/dynamic";
+import type { PickedPlace } from "./MapPickerLeafletImpl";
+
+// Dynamically import the Leaflet impl (client only)
+const MapPickerLeaflet = dynamic(() => import("./MapPickerLeafletImpl"), {
+  ssr: false,
+  loading: () => null,
+});
+
+export type { PickedPlace };
+
+function usePortalTarget() {
+  const [el, setEl] = React.useState<HTMLElement | null>(null);
+
+  React.useEffect(() => {
+    let target = document.getElementById("travilink-portal-root") as HTMLElement | null;
+    if (!target) {
+      target = document.createElement("div");
+      target.id = "travilink-portal-root";
+      document.body.appendChild(target);
+    }
+    setEl(target);
+    return () => {
+      // keep the portal for reuse; don’t remove
+    };
+  }, []);
+
+  return el;
+}
+
+export default function MapPicker(props: {
+  open: boolean;
+  onClose: () => void;
+  onPick: (p: PickedPlace) => void;
+  initial?: PickedPlace | null;
+}) {
+  // Guard SSR
+  if (typeof window === "undefined") return null;
+  const target = usePortalTarget();
+  if (!target || !props.open) return null;
+
+  return createPortal(
+    // Backdrop + centered card, isolated from the dialog’s stacking context
+    <div
+      className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/50"
+      onClick={props.onClose}
+    >
+      <div
+        className="mx-3 w-[min(1000px,calc(100vw-1.5rem))] rounded-2xl bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <MapPickerLeaflet {...props} />
+      </div>
+    </div>,
+    target
+  );
+}
+
+
+===== MapPickerLeafletImpl.tsx =====
+// src/components/common/MapPickerLeafletImpl.tsx
+"use client";
+
+import * as React from "react";
+import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
+import L from "leaflet";
+
+//
+// Default marker icons — copy these files to:
+//   /public/leaflet/marker-icon.png
+//   /public/leaflet/marker-icon-2x.png
+//   /public/leaflet/marker-shadow.png
+//
+L.Icon.Default.mergeOptions({
+  iconUrl: "/leaflet/marker-icon.png",
+  iconRetinaUrl: "/leaflet/marker-icon-2x.png",
+  shadowUrl: "/leaflet/marker-shadow.png",
+});
+
+export type PickedPlace = {
+  lat: number;
+  lng: number;
+  address: string;
+};
+
+type Props = {
+  open: boolean;                 // (kept for API symmetry; not used here)
+  onClose: () => void;
+  onPick: (p: PickedPlace) => void;
+  initial?: PickedPlace | null;
+};
+
+type NominatimHit = {
+  display_name: string;
+  lat: string;
+  lon: string;
+};
+
+// tiny debounce so we don't spam Nominatim when typing
+function useDebounced<T extends (...args: any[]) => void>(fn: T, delay = 400) {
+  const t = React.useRef<number | null>(null);
+  return React.useCallback(
+    (...args: Parameters<T>) => {
+      if (t.current) window.clearTimeout(t.current);
+      t.current = window.setTimeout(() => fn(...args), delay);
+    },
+    [fn, delay]
+  );
+}
+
+async function nominatimSearch(q: string) {
+  const params = new URLSearchParams({
+    q,
+    format: "jsonv2",
+    limit: "8",
+    dedupe: "1",
+    addressdetails: "1",
+    autocomplete: "1",
+    countrycodes: "ph", // bias to PH; remove if you want global
+  });
+  const url = `https://nominatim.openstreetmap.org/search?${params.toString()}`;
+  const res = await fetch(url);
+  if (!res.ok) return [];
+  return (await res.json()) as NominatimHit[];
+}
+
+async function nominatimReverse(lat: number, lon: number) {
+  const params = new URLSearchParams({
+    format: "jsonv2",
+    lat: String(lat),
+    lon: String(lon),
+    addressdetails: "1",
+  });
+  const url = `https://nominatim.openstreetmap.org/reverse?${params.toString()}`;
+  const res = await fetch(url);
+  if (!res.ok) return null;
+  return await res.json();
+}
+
+function ClickPicker({ onPickPos }: { onPickPos: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click(e) {
+      onPickPos(e.latlng.lat, e.latlng.lng);
+    },
+  });
+  return null;
+}
+
+export default function MapPickerLeafletImpl({ onClose, onPick, initial }: Props) {
+  const [query, setQuery] = React.useState("");
+  const [results, setResults] = React.useState<NominatimHit[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [chosen, setChosen] = React.useState<PickedPlace | null>(initial ?? null);
+
+  const center = chosen
+    ? ([chosen.lat, chosen.lng] as [number, number])
+    : ([14.5995, 120.9842] as [number, number]); // Manila default
+
+  const runSearch = useDebounced(async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      setResults([]);
+      return;
+    }
+    setLoading(true);
+    try {
+      const hits = await nominatimSearch(trimmed);
+      setResults(hits);
+    } catch {
+      setResults([]);
+    } finally {
+      setLoading(false);
+    }
+  }, 450);
+
+  function onQueryChange(v: string) {
+    setQuery(v);
+    runSearch(v);
+  }
+
+  function selectResult(hit: NominatimHit) {
+    const lat = parseFloat(hit.lat);
+    const lng = parseFloat(hit.lon);
+    setChosen({ lat, lng, address: hit.display_name });
+    setResults([]);
+    setQuery(hit.display_name);
+  }
+
+  async function handleMapClick(lat: number, lng: number) {
+    try {
+      const rev = await nominatimReverse(lat, lng);
+      const addr =
+        rev?.display_name ?? `lat: ${lat.toFixed(6)}, lng: ${lng.toFixed(6)}`;
+      setChosen({ lat, lng, address: addr });
+      setQuery(addr);
+      setResults([]);
+    } catch {
+      setChosen({
+        lat,
+        lng,
+        address: `lat: ${lat.toFixed(6)}, lng: ${lng.toFixed(6)}`,
+      });
+    }
+  }
+
+  function useThisLocation() {
+    if (!chosen) return;
+    onPick(chosen);
+  }
+
+  return (
+    <div className="flex flex-col gap-0">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b px-4 py-3">
+        <div className="text-base font-semibold">Pick location</div>
+        <button
+          onClick={onClose}
+          className="rounded-lg border px-3 py-1.5 text-sm hover:bg-neutral-50"
+        >
+          Close
+        </button>
+      </div>
+
+      {/* Search */}
+      <div className="relative p-3">
+        <input
+          value={query}
+          onChange={(e) => onQueryChange(e.target.value)}
+          className="h-11 w-full rounded-lg border px-3"
+          placeholder="Search address or place (Nominatim)"
+        />
+        {query && (results.length > 0 || loading) && (
+          <div className="absolute left-3 right-3 top-[3.25rem] z-[2] max-h-64 overflow-auto rounded-lg border bg-white shadow-lg">
+            {loading && (
+              <div className="px-3 py-2 text-sm text-neutral-500">Searching…</div>
+            )}
+            {results.map((r, i) => (
+              <button
+                key={`${r.lat}-${r.lon}-${i}`}
+                onClick={() => selectResult(r)}
+                className="block w-full px-3 py-2 text-left text-sm hover:bg-neutral-50"
+              >
+                {r.display_name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Map */}
+      <div className="px-3 pb-3">
+        <div className="h-[60vh] w-full overflow-hidden rounded-xl border">
+          <MapContainer center={center} zoom={13} style={{ height: "100%", width: "100%" }}>
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/">OSM</a> contributors'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
+            <ClickPicker onPickPos={handleMapClick} />
+            {chosen && <Marker position={[chosen.lat, chosen.lng]} />}
+          </MapContainer>
+        </div>
+
+        {/* Chosen preview */}
+        <div className="mt-2 rounded-md border bg-neutral-50 px-3 py-2 text-xs text-neutral-700">
+          <div className="font-medium">Chosen:</div>
+          <div className="truncate">{chosen?.address ?? "—"}</div>
+          <div>
+            lat: {chosen?.lat?.toFixed(6) ?? "—"}, lng: {chosen?.lng?.toFixed(6) ?? "—"}
+          </div>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center justify-end gap-2 border-t px-4 py-3">
+        <button onClick={onClose} className="h-10 rounded-lg border px-4">
+          Cancel
+        </button>
+        <button
+          onClick={useThisLocation}
+          disabled={!chosen}
+          className="h-10 rounded-lg bg-[#7A0010] px-4 text-white disabled:opacity-50"
+        >
+          Use this location
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
+===== Modal.ui.tsx =====
+// components/common/Modal.ui.tsx
+"use client";
+import * as React from "react";
+export function Modal({
+  open, title, onClose, children, maxWidth="max-w-2xl",
+}: {
+  open: boolean; title: string; onClose: ()=>void; children: React.ReactNode; maxWidth?: string;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className={`w-full ${maxWidth} overflow-hidden rounded-2xl bg-white shadow-xl`}>
+        <div className="flex items-center justify-between border-b px-4 py-3">
+          <h2 className="text-lg font-semibold">{title}</h2>
+          <button onClick={onClose} className="rounded-lg bg-red-600 px-3 py-1.5 text-sm text-white shadow hover:bg-red-700">
+            Close
+          </button>
+        </div>
+        <div className="max-h-[75vh] overflow-y-auto p-4">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+
+===== Page.tsx =====
+"use client";
+
+import React, { ReactNode } from "react";
+
+/** Root page wrapper */
+export function Page({
+  children,
+  className = "",
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`min-h-screen bg-neutral-50 text-neutral-900 ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * PageHeader
+ * - Defaults to contained layout with a bottom border (like Gab's)
+ * - Can mimic the simpler header (your version) by turning off `bordered`
+ *   and adjusting outer margins via `className`.
+ */
+export function PageHeader({
+  title,
+  description,
+  actions,
+  bordered = true,
+  className = "",
+}: {
+  title: string;
+  description?: string;
+  actions?: ReactNode;
+  /** show bottom border line under the header */
+  bordered?: boolean;
+  className?: string;
+}) {
+  return (
+    <div className={`bg-transparent ${className}`}>
+      <div className="mx-auto max-w-[1400px] px-4 md:px-6 py-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold">{title}</h1>
+          {description ? (
+            <p className="text-sm text-neutral-600">{description}</p>
+          ) : null}
+        </div>
+        {actions ? <div className="flex gap-2">{actions}</div> : null}
+      </div>
+      {bordered && <div className="border-b" />}
+    </div>
+  );
+}
+
+/**
+ * PageBody
+ * - Default is contained (max width + paddings) like Gab’s
+ * - Set `contained={false}` to use simple stacked spacing (your version)
+ */
+export function PageBody({
+  children,
+  contained = true,
+  className = "",
+}: {
+  children: ReactNode;
+  /** if false, renders simple vertical spacing instead of container */
+  contained?: boolean;
+  className?: string;
+}) {
+  if (!contained) {
+    return <div className={`space-y-4 ${className}`}>{children}</div>;
+  }
+  return (
+    <div className={`mx-auto max-w-[1400px] px-4 md:px-6 py-5 ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+
+===== ReasonModal.ui.tsx =====
+// src/components/admin/common/ReasonModal.ui.tsx
+"use client";
+import React from "react";
+
+export default function ReasonModalUI({
+  open, title = "Reject request?", placeholder = "Reason…", onCancel, onConfirm,
+}: {
+  open: boolean;
+  title?: string;
+  placeholder?: string;
+  onCancel: () => void;
+  onConfirm: (reason: string) => void;
+}) {
+  const [val, setVal] = React.useState("");
+  React.useEffect(() => { if (!open) setVal(""); }, [open]);
+
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40">
+      <div className="w-full max-w-sm rounded-lg bg-white p-4 shadow-xl">
+        <h3 className="mb-2 text-sm font-semibold">{title}</h3>
+        <textarea
+          className="mb-3 w-full rounded border p-2 text-sm"
+          rows={4}
+          value={val}
+          placeholder={placeholder}
+          onChange={(e) => setVal(e.target.value)}
+        />
+        <div className="flex justify-end gap-2">
+          <button className="rounded border px-3 py-1 text-sm" onClick={onCancel}>Cancel</button>
+          <button
+            className="rounded bg-red-600 px-3 py-1 text-sm text-white disabled:opacity-50"
+            disabled={!val.trim()}
+            onClick={() => onConfirm(val.trim())}
+          >
+            Reject
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+===== StatusBadge.ui.tsx =====
+"use client";
+import * as React from "react";
+
+export function StatusBadge({ value }: { value: string }) {
+  const cls =
+    value === "active"
+      ? "bg-green-100 text-green-700"
+      : value === "suspended"
+      ? "bg-amber-100 text-amber-700"
+      : value === "pending_verification"
+      ? "bg-blue-100 text-blue-700" // <— color for pending
+      : "bg-gray-200 text-gray-700"; // archived / others
+
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-xs capitalize ${cls}`}>
+      {value.replaceAll("_", " ")}
+    </span>
+  );
+}
+
+
+===== StatusChip.tsx =====
+export default function StatusChip({ status }: { status: string }) {
+  const color =
+    status === "Available"
+      ? "bg-[var(--color-accent)] text-white"
+      : status === "Maintenance"
+      ? "bg-[var(--color-warning)] text-white"
+      : status === "On Trip"
+      ? "bg-blue-600 text-white"
+      : "bg-neutral-400 text-white";
+
+  return (
+    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${color}`}>
+      {status}
+    </span>
+  );
+}
+
+
+===== ToastProvider.tsx =====
+"use client";
+import React from "react";
+
+type Toast = {
+  id: string;
+  title?: string;
+  message: string;
+  kind?: "success" | "error" | "info";
+  ms?: number;
+};
+
+type Ctx = {
+  toast: (t: Omit<Toast, "id">) => void;
+};
+
+const ToastContext = React.createContext<Ctx | null>(null);
+
+export function useToast() {
+  const ctx = React.useContext(ToastContext);
+  if (!ctx) throw new Error("useToast must be used within <ToastProvider />");
+  return ctx.toast;
+}
+
+export default function ToastProvider({ children }: { children: React.ReactNode }) {
+  const [toasts, setToasts] = React.useState<Toast[]>([]);
+
+  const toast = React.useCallback((t: Omit<Toast, "id">) => {
+    const id = crypto.randomUUID();
+    const ms = t.ms ?? 4000;
+    const next: Toast = { id, kind: "info", ...t };
+    setToasts((prev) => [next, ...prev]);
+    window.setTimeout(() => {
+      setToasts((prev) => prev.filter((x) => x.id !== id));
+    }, ms);
+  }, []);
+
+  return (
+    <ToastContext.Provider value={{ toast }}>
+      {children}
+      {/* container */}
+      <div className="pointer-events-none fixed right-4 top-4 z-[9999] flex w-[360px] max-w-[90vw] flex-col gap-2">
+        {toasts.map((t) => (
+          <div
+            key={t.id}
+            className={`pointer-events-auto rounded-md border p-3 shadow ${
+              t.kind === "success"
+                ? "border-green-200 bg-green-50 text-green-900"
+                : t.kind === "error"
+                ? "border-red-200 bg-red-50 text-red-900"
+                : "border-neutral-200 bg-white text-neutral-900"
+            }`}
+          >
+            {t.title && <div className="mb-1 text-sm font-medium">{t.title}</div>}
+            <div className="text-sm">{t.message}</div>
+          </div>
+        ))}
+      </div>
+    </ToastContext.Provider>
+  );
+}
+
+
+===== Modal\Modal.tsx =====
+// src/components/common/Modal/Modal.tsx
+"use client";
+import * as React from "react";
+import { useEscapeToClose } from "@/lib/common/useEscapeToClose";
+
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+  maxWidth?: number | string;
+  ariaLabel?: string;
+};
+
+export default function Modal({ open, onClose, children, maxWidth = 760, ariaLabel = "Dialog" }: Props) {
+  useEscapeToClose(open, onClose);
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/40"
+      role="dialog"
+      aria-modal="true"
+      aria-label={ariaLabel}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose(); // backdrop click
+      }}
+    >
+      <div
+        className="max-h-[90vh] w-[min(96vw,var(--mw))] overflow-auto rounded-xl bg-white p-4 shadow-xl"
+        style={{ ["--mw" as any]: typeof maxWidth === "number" ? `${maxWidth}px` : maxWidth }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+
+===== file_upload\FileUpload.ui.tsx =====
+"use client";
+import * as React from "react";
+import { FileUploadDropzone } from "./FileUploadDropzone.ui";
+import { UploadList, UploadItem } from "./UploadList.ui";
+
+export function FileUpload({
+  label = "Upload files",
+  helper = "Choose a file or drag and drop",
+  accept = "*/*",
+  multiple = false,
+  maxSizeMB = 50,
+  accent = "#7a0019",      // maroon
+  autoStart = true,
+  preview,                  // backward compat (single)
+  onChange,                 // single
+  onChangeMany,             // multiple
+  simulateErrors = false,   // demo only
+}: {
+  label?: string;
+  helper?: string;
+  accept?: string;
+  multiple?: boolean;
+  maxSizeMB?: number;
+  accent?: string;
+  autoStart?: boolean;
+  preview?: string;
+  onChange?: (file: File | null, url?: string) => void;
+  onChangeMany?: (items: UploadItem[]) => void;
+  simulateErrors?: boolean;
+}) {
+  const [items, setItems] = React.useState<UploadItem[]>([]);
+  const timers = React.useRef<Record<string, number>>({});
+
+  // support initial preview for single image
+  React.useEffect(() => {
+    if (!multiple && preview && items.length === 0) {
+      setItems([{
+        id: "preview",
+        file: new File([], "preview"),
+        name: "preview",
+        size: 0,
+        url: preview,
+        progress: 100,
+        status: "done",
+      } as UploadItem]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preview, multiple]);
+
+  // notify parent
+  React.useEffect(() => {
+    if (multiple) onChangeMany?.(items);
+    else {
+      const firstDone = items.find(i => i.status === "done" && i.url);
+      onChange?.(firstDone?.file ?? null, firstDone?.url);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items]);
+
+  const clearTimer = (id: string) => {
+    const t = timers.current[id];
+    if (t) { window.clearInterval(t); delete timers.current[id]; }
+  };
+
+  const startUpload = (id: string) => {
+    setItems(prev => prev.map(i => i.id === id ? { ...i, status: "uploading", progress: 0, error: undefined } : i));
+    const t = window.setInterval(() => {
+      setItems(prev => {
+        const cur = prev.find(i => i.id === id);
+        if (!cur) { clearTimer(id); return prev; }
+        const next = Math.min(100, cur.progress + Math.floor(10 + Math.random() * 18));
+        const fail = simulateErrors && Math.random() < 0.2;
+        if (next >= 100) {
+          clearTimer(id);
+          return prev.map(i => i.id === id ? {
+            ...i,
+            progress: 100,
+            status: fail ? "error" : "done",
+            error: fail ? "Network error. Please retry." : undefined,
+            url: fail ? i.url : (i.url ?? URL.createObjectURL(i.file)),
+          } : i);
+        }
+        return prev.map(i => i.id === id ? { ...i, progress: next } : i);
+      });
+    }, 180);
+    timers.current[id] = t;
+  };
+
+  const addFiles = (files: FileList | File[]) => {
+    const max = maxSizeMB * 1024 * 1024;
+    const fresh: UploadItem[] = Array.from(files).map((f) => ({
+      id: crypto.randomUUID(),
+      file: f,
+      name: f.name,
+      size: f.size,
+      url: undefined,
+      progress: 0,
+      status: f.size > max ? "error" : "idle",
+      error: f.size > max ? `Exceeds ${maxSizeMB}MB` : undefined,
+    }));
+    setItems(prev => {
+      const next = multiple ? [...prev.filter(i => i.id !== "preview"), ...fresh] : [fresh[0]];
+      if (autoStart) next.forEach(i => { if (i.status === "idle") startUpload(i.id); });
+      return next;
+    });
+  };
+
+  const retry = (id: string) => startUpload(id);
+  const remove = (id: string) => { clearTimer(id); setItems(prev => prev.filter(i => i.id !== id)); };
+  const cancelAll = () => {
+    Object.keys(timers.current).forEach(clearTimer);
+    setItems(prev => prev.map(i => (i.status === "uploading" ? { ...i, status: "error", error: "Canceled" } : i)));
+  };
+
+  return (
+    <div className="grid gap-4">
+      {/* Dropzone always visible */}
+      <FileUploadDropzone
+        label={label}
+        helper={helper}
+        accept={accept}
+        multiple={multiple}
+        accent={accent}
+        onFiles={addFiles}
+      />
+
+      {/* List appears ONLY when there are files */}
+      <UploadList
+        items={items}
+        accent={accent}
+        onRetry={retry}
+        onRemove={remove}
+        onCancelAll={cancelAll}
+      />
+    </div>
+  );
+}
+
+
+===== file_upload\FileUploadDropzone.ui.tsx =====
+"use client";
+import * as React from "react";
+
+export function FileUploadDropzone({
+  label = "Upload",
+  helper = "Choose a file or drag and drop",
+  accept = "*/*",
+  multiple = false,
+  accent = "#7a0019",
+  onFiles,
+}: {
+  label?: string;
+  helper?: string;
+  accept?: string;
+  multiple?: boolean;
+  accent?: string;             // maroon
+  onFiles: (files: FileList | File[]) => void;
+}) {
+  const [dragOver, setDragOver] = React.useState(false);
+
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+    if (e.dataTransfer.files?.length) onFiles(e.dataTransfer.files);
+  };
+
+  return (
+    <div className="rounded-2xl border bg-white p-4 shadow-sm">
+      <div className="text-sm font-medium text-gray-900">{label}</div>
+      <div
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={onDrop}
+        className={`mt-3 flex h-44 items-center justify-center rounded-xl border-2 border-dashed transition`}
+        style={{
+          borderColor: dragOver ? accent : "#d1d5db",
+          backgroundColor: dragOver ? "#f8f0f2" : "white",
+        }}
+      >
+        <div className="text-center">
+          <div className="mb-1 text-sm text-gray-600">{helper}</div>
+          <label
+            className="inline-flex cursor-pointer items-center justify-center rounded-md px-3 py-1.5 text-white"
+            style={{ background: accent }}
+          >
+            Browse file
+            <input
+              type="file"
+              accept={accept}
+              multiple={multiple}
+              onChange={(e) => {
+                if (e.target.files?.length) onFiles(e.target.files);
+                e.currentTarget.value = "";
+              }}
+              className="hidden"
+            />
+          </label>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+===== file_upload\UploadList.ui.tsx =====
+"use client";
+import * as React from "react";
+
+export type UploadStatus = "idle" | "uploading" | "done" | "error";
+
+export type UploadItem = {
+  id: string;
+  file: File;
+  name: string;
+  size: number;
+  url?: string;
+  progress: number;
+  status: UploadStatus;
+  error?: string;
+};
+
+const fmt = (b: number) =>
+  b < 1024 ? `${b}B` : b < 1024 * 1024 ? `${(b / 1024).toFixed(0)}KB` : `${(b / 1048576).toFixed(1)} MB`;
+
+export function UploadList({
+  items,
+  accent = "#7a0019",
+  onRetry,
+  onRemove,
+  onCancelAll,
+}: {
+  items: UploadItem[];
+  accent?: string; // maroon
+  onRetry: (id: string) => void;
+  onRemove: (id: string) => void;
+  onCancelAll: () => void;
+}) {
+  if (items.length === 0) return null;
+
+  const uploading = items.some(i => i.status === "uploading");
+
+  return (
+    <div className="rounded-2xl border bg-white p-4 shadow-sm">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="text-sm font-medium text-gray-900">
+          {uploading ? "Uploading…" : "Uploads"}
+        </div>
+        {uploading && (
+          <button
+            type="button"
+            onClick={onCancelAll}
+            className="rounded-md border px-3 py-1.5 text-sm hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+        )}
+      </div>
+
+      <div className="grid gap-2">
+        {items.map((it) => (
+          <div key={it.id} className="rounded-lg border p-2">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded bg-gray-100">
+                {it.url && it.file.type.startsWith("image/")
+                  ? /* eslint-disable-next-line @next/next/no-img-element */
+                    <img src={it.url} alt="" className="h-full w-full object-cover" />
+                  : <span className="text-xs text-gray-500">FILE</span>}
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="truncate text-sm font-medium">{it.name}</div>
+                  <div className="whitespace-nowrap text-xs text-gray-500">{fmt(it.size)}</div>
+                </div>
+
+                <div className="mt-1 flex items-center gap-2">
+                  <div className="h-2 w-full overflow-hidden rounded bg-gray-100">
+                    <div
+                      className="h-full"
+                      style={{
+                        width: `${it.status === "done" ? 100 : it.progress}%`,
+                        background: it.status === "error" ? "#ef4444" : accent,
+                      }}
+                    />
+                  </div>
+                  <div className="w-16 text-right text-xs text-gray-500">
+                    {it.status === "done" ? "Completed" : it.status === "error" ? "Error" : `${Math.min(it.progress, 99)}%`}
+                  </div>
+                </div>
+
+                {it.status === "error" && (
+                  <div className="mt-1 text-xs text-rose-600">{it.error ?? "Upload failed."}</div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1">
+                {it.status === "error" && (
+                  <button
+                    type="button"
+                    onClick={() => onRetry(it.id)}
+                    className="rounded-md border px-2 py-1 text-xs hover:bg-gray-50"
+                  >
+                    Retry
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => onRemove(it.id)}
+                  className="rounded-md border px-2 py-1 text-xs hover:bg-gray-50"
+                  title="Remove"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
+===== forms\FormActions.ui.tsx =====
+// components/common/form/FormActions.ui.tsx
+"use client";
+export function FormActions({
+  onCancel, submitLabel="Save", brand="#7a0019",
+}: { onCancel: ()=>void; submitLabel?: string; brand?: string }) {
+  return (
+    <div className="flex justify-end gap-2 pt-2">
+      <button type="button" onClick={onCancel}
+        className="rounded-md border bg-white px-3 py-1.5">Cancel</button>
+      <button type="submit"
+        className="rounded-md px-3 py-1.5 text-white" style={{ background: brand }}>
+        {submitLabel}
+      </button>
+    </div>
+  );
+}
+
+
+===== forms\FormSection.ui.tsx =====
+// components/common/form/FormSection.ui.tsx
+"use client";
+export function FormSection({
+  title, children,
+}: { title?: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-xl bg-white p-4 ring-1 ring-gray-200 shadow-sm">
+      {title && <div className="mb-3 text-sm font-semibold">{title}</div>}
+      <div className="grid gap-3">{children}</div>
+    </section>
+  );
+}
+
+
+===== forms\Inputs.tsx =====
+"use client";
+import * as React from "react";
+
+export function TextInput({
+  label, value, onChange, placeholder
+}: {
+  label: string; value: string; onChange: (v: string) => void; placeholder?: string;
+}) {
+  return (
+    <label className="grid gap-1 text-sm">
+      <span className="text-gray-700">{label}</span>
+      <input
+        className="rounded-md border px-3 py-2"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+      />
+    </label>
+  );
+}
+
+export function NumberInput({
+  label, value, onChange, min = 0
+}: {
+  label: string; value: number; onChange: (v: number) => void; min?: number;
+}) {
+  return (
+    <label className="grid gap-1 text-sm">
+      <span className="text-gray-700">{label}</span>
+      <input
+        type="number"
+        min={min}
+        className="rounded-md border px-3 py-2"
+        value={value}
+        onChange={e => onChange(Number(e.target.value))}
+      />
+    </label>
+  );
+}
+
+export function DateInput({
+  label, value, onChange
+}: {
+  label: string; value: string; onChange: (v: string) => void;
+}) {
+  return (
+    <label className="grid gap-1 text-sm">
+      <span className="text-gray-700">{label}</span>
+      <input
+        type="date"
+        className="rounded-md border px-3 py-2"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+      />
+    </label>
+  );
+}
+
+export function SelectInput<T extends string>({
+  label, value, options, onChange
+}: {
+  label: string; value: T; options: readonly T[]; onChange: (v: T) => void;
+}) {
+  return (
+    <label className="grid gap-1 text-sm">
+      <span className="text-gray-700">{label}</span>
+      <select
+        className="rounded-md border px-3 py-2 bg-white"
+        value={value}
+        onChange={e => onChange(e.target.value as T)}
+      >
+        {options.map(o => (
+          <option key={o} value={o}>{o}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+
+===== hooks\useConfirm.tsx =====
+"use client";
+import * as React from "react";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog.ui";
+
+export function useConfirm() {
+  const [state, setState] = React.useState<null | {
+    title: string;
+    message: string | React.ReactNode;
+    confirmText?: string;
+    cancelText?: string;
+    resolve: (v: boolean) => void;
+  }>(null);
+
+  const ask = (
+    title: string,
+    message: string | React.ReactNode,
+    confirmText = "Confirm",
+    cancelText = "Cancel"
+  ) =>
+    new Promise<boolean>((resolve) =>
+      setState({ title, message, confirmText, cancelText, resolve })
+    );
+
+  const ui = state ? (
+    <ConfirmDialog
+      open
+      title={state.title}
+      message={state.message}
+      confirmText={state.confirmText}
+      cancelText={state.cancelText}
+      onCancel={() => {
+        state.resolve(false);
+        setState(null);
+      }}
+      onConfirm={() => {
+        state.resolve(true);
+        setState(null);
+      }}
+    />
+  ) : null;
+
+  return { ask, ui };
+}
+
+
+===== inputs\DateInput.ui.tsx =====
+// components/common/inputs/DateInput.ui.tsx
+"use client";
+import * as React from "react";
+export function DateInput({
+  label, value, onChange,
+}: { label: string; value: string; onChange:(v:string)=>void }) {
+  return (
+    <label className="grid gap-1 text-sm">
+      <span className="text-gray-700">{label}</span>
+      <input
+        type="date" className="rounded-md border px-3 py-2"
+        value={value} onChange={e=>onChange(e.target.value)}
+      />
+    </label>
+  );
+}
+
+
+===== inputs\NumberInput.ui.tsx =====
+// components/common/inputs/NumberInput.ui.tsx
+"use client";
+import * as React from "react";
+export function NumberInput({
+  label, value, onChange, min = 0, step = 1,
+}: { label: string; value: number; onChange: (v:number)=>void; min?: number; step?: number; }) {
+  return (
+    <label className="grid gap-1 text-sm">
+      <span className="text-gray-700">{label}</span>
+      <input
+        type="number" min={min} step={step}
+        className="rounded-md border px-3 py-2"
+        value={value} onChange={e => onChange(Number(e.target.value))}
+      />
+    </label>
+  );
+}
+
+
+===== inputs\Select.ui.tsx =====
+// components/common/inputs/Select.ui.tsx
+"use client";
+import * as React from "react";
+export function Select<T extends string>({
+  label, value, options, onChange,
+}: {
+  label: string; value: T; options: readonly T[]; onChange:(v:T)=>void;
+}) {
+  return (
+    <label className="grid gap-1 text-sm">
+      <span className="text-gray-700">{label}</span>
+      <select
+        className="rounded-md border px-3 py-2 bg-white"
+        value={value} onChange={e=>onChange(e.target.value as T)}
+      >
+        {options.map(o => <option key={o} value={o}>{o}</option>)}
+      </select>
+    </label>
+  );
+}
+
+
+===== inputs\TextInput.ui.tsx =====
+// components/common/inputs/TextInput.ui.tsx
+"use client";
+import * as React from "react";
+export function TextInput({
+  label, value, onChange, placeholder, required, disabled,
+}: {
+  label: string; value: string; onChange: (v: string)=>void;
+  placeholder?: string; required?: boolean; disabled?: boolean;
+}) {
+  return (
+    <label className="grid gap-1 text-sm">
+      <span className="text-gray-700">{label}{required ? " *" : ""}</span>
+      <input
+        className="rounded-md border px-3 py-2 disabled:opacity-50"
+        value={value} onChange={e => onChange(e.target.value)}
+        placeholder={placeholder} disabled={disabled}
+      />
+    </label>
+  );
+}
+
+

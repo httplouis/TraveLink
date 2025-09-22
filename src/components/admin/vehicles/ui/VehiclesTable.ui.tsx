@@ -2,7 +2,7 @@
 import * as React from "react";
 import { Edit, Trash2 } from "lucide-react";
 import type { Vehicle } from "@/lib/admin/vehicles/types";
-import { StatusBadge } from "@/components/common/StatusBadge.ui";
+import { StatusBadge } from "@/components/common/ui/StatusBadge.ui";
 
 export function VehiclesTable({
   rows,

@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import type { PickedPlace } from "./MapPickerLeafletImpl";
 
-// Dynamically import the Leaflet impl (client only)
+// Client-only import of the Leaflet implementation
 const MapPickerLeaflet = dynamic(() => import("./MapPickerLeafletImpl"), {
   ssr: false,
   loading: () => null,
@@ -24,38 +24,40 @@ function usePortalTarget() {
       document.body.appendChild(target);
     }
     setEl(target);
-    return () => {
-      // keep the portal for reuse; don’t remove
-    };
+    // do not remove on unmount so it can be reused
   }, []);
 
   return el;
 }
 
-export default function MapPicker(props: {
+type Props = {
   open: boolean;
   onClose: () => void;
   onPick: (p: PickedPlace) => void;
   initial?: PickedPlace | null;
-}) {
+};
+
+export default function MapPicker({ open, onClose, onPick, initial }: Props) {
   // Guard SSR
   if (typeof window === "undefined") return null;
-  const target = usePortalTarget();
-  if (!target || !props.open) return null;
+
+  const portalTarget = usePortalTarget();
+  if (!portalTarget || !open) return null;
 
   return createPortal(
-    // Backdrop + centered card, isolated from the dialog’s stacking context
     <div
       className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/50"
-      onClick={props.onClose}
+      onClick={onClose}
+      aria-modal="true"
+      role="dialog"
     >
       <div
-        className="mx-3 w-[min(1000px,calc(100vw-1.5rem))] rounded-2xl bg-white shadow-2xl"
+        className="mx-3 w-[min(1000px,calc(100vw-1.5rem))] overflow-hidden rounded-2xl bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <MapPickerLeaflet {...props} />
+        <MapPickerLeaflet open onClose={onClose} onPick={onPick} initial={initial ?? null} />
       </div>
     </div>,
-    target
+    portalTarget
   );
 }

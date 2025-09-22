@@ -7,6 +7,10 @@ import { ExportBar } from "@/components/admin/report/ui/ExportBar.ui";
 import type { ReportFilters, TripRow } from "@/lib/admin/report/types";
 import { queryReport } from "@/lib/admin/report/store";
 
+/* 🔁 Shared primitives */
+import { useHotkeys } from "@/lib/common/useHotkeys";
+import { downloadCsv } from "@/lib/common/csv";
+
 export default function ReportPage() {
   const [filters, setFilters] = React.useState<ReportFilters>({});
   const [page, setPage] = React.useState(1);
@@ -18,10 +22,31 @@ export default function ReportPage() {
     setData({ rows: res.rows, total: res.total });
   }, [filters, page, pageSize]);
 
-  React.useEffect(() => { load(); }, [load]);
+  React.useEffect(() => {
+    load();
+  }, [load]);
 
   const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
   const tableId = "report-table";
+
+  /* Export helper (current page rows) */
+  const onExportCurrent = React.useCallback(() => {
+    if (!data.rows.length) return;
+    downloadCsv("report-export.csv", data.rows);
+  }, [data.rows]);
+
+  /* ⌨️ Hotkeys
+     - Ctrl+Enter = Export current page
+     - ArrowLeft/Right = pagination
+  */
+  useHotkeys(
+    [
+      { key: "Enter", ctrl: true, handler: onExportCurrent },
+      { key: "ArrowLeft", handler: () => setPage((p) => Math.max(1, p - 1)) },
+      { key: "ArrowRight", handler: () => setPage((p) => Math.min(totalPages, p + 1)) },
+    ],
+    { ignoreWhileTyping: true }
+  );
 
   return (
     <div className="p-4 space-y-4">
@@ -29,10 +54,17 @@ export default function ReportPage() {
 
       <ReportFilterBar
         value={filters}
-        onChange={(v) => { setPage(1); setFilters(v); }}
-        onClear={() => { setPage(1); setFilters({}); }}
+        onChange={(v) => {
+          setPage(1);
+          setFilters(v);
+        }}
+        onClear={() => {
+          setPage(1);
+          setFilters({});
+        }}
       />
 
+      {/* Keep your existing ExportBar for full dataset export; add our hotkey export for quick current-page CSV */}
       <ExportBar rows={data.rows} tableId={tableId} />
 
       <ReportTable rows={data.rows} tableId={tableId} />
@@ -48,14 +80,18 @@ export default function ReportPage() {
             className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
+            title="ArrowLeft"
           >
             Prev
           </button>
-          <span className="text-sm">Page {page} / {totalPages}</span>
+          <span className="text-sm">
+            Page {page} / {totalPages}
+          </span>
           <button
             className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page >= totalPages}
+            title="ArrowRight"
           >
             Next
           </button>

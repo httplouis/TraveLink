@@ -5,11 +5,12 @@ import * as React from "react";
 import { DriversHeader } from "../filters/DriversHeader.ui";
 import { DriversFilterBar } from "../filters/DriversFilterBar.ui";
 import { DriversBulkBar } from "../toolbar/DriversBulkBar.ui";
+import DriversURLSync from "@/components/admin/drivers/DriversURLSync";
 
 // main views
 import { DriversGrid } from "../ui/DriversGrid.ui";
 import { DriversTable } from "../ui/DriversTable.ui";
-import  DriverDetailsModal  from "../ui/DriverDetailsModal.ui";
+import DriverDetailsModal from "../ui/DriverDetailsModal.ui";
 import { DriverFormModal } from "../forms/DriverFormModal.ui";
 
 // state
@@ -24,11 +25,17 @@ import { useConfirm } from "@/components/common/hooks/useConfirm";
 
 export default function DriversPageClient() {
   const {
-    filters, setFilters,
-    rows, selection, setSelection,
-    form, setForm,
-    view, setView,
-    tab, setTab,
+    filters,
+    setFilters,
+    rows,
+    selection,
+    setSelection,
+    form,
+    setForm,
+    view,
+    setView,
+    tab,
+    setTab,
     refresh,
   } = useDriversScreen();
 
@@ -83,16 +90,17 @@ export default function DriversPageClient() {
     URL.revokeObjectURL(url);
   };
 
-  // counts for header tabs
+  // counts for header tabs (derive once per rows refresh)
   const counts = React.useMemo(() => {
-    const all = DriversRepo.list({}).length;
-    const available = DriversRepo.list({}).filter((d) => d.status === "active" && !d.assignedVehicleId).length;
-    const on_trip = DriversRepo.list({}).filter((d) => d.status === "on_trip").length;
-    const off_duty = DriversRepo.list({}).filter((d) => d.status === "off_duty").length;
-    const suspended = DriversRepo.list({}).filter((d) => d.status === "suspended").length;
+    const list = DriversRepo.list({});
+    const all = list.length;
+    const available = list.filter((d) => d.status === "active" && !d.assignedVehicleId).length;
+    const on_trip = list.filter((d) => d.status === "on_trip").length;
+    const off_duty = list.filter((d) => d.status === "off_duty").length;
+    const suspended = list.filter((d) => d.status === "suspended").length;
 
     const todayISO = new Date().toISOString().slice(0, 10);
-    const expired_license = DriversRepo.list({}).filter((d) => (d.licenseExpiryISO ?? "") < todayISO).length;
+    const expired_license = list.filter((d) => (d.licenseExpiryISO ?? "") < todayISO).length;
 
     return { all, available, on_trip, off_duty, suspended, expired_license };
   }, [rows]);
@@ -120,7 +128,11 @@ export default function DriversPageClient() {
         onReset={handleResetSample}
       />
 
+      {/* Filters UI */}
       <DriversFilterBar value={filters} onChange={setFilters} onClear={onClear} />
+
+      {/* Filters-only URL sync (keeps URL shareable without touching q/sort) */}
+      <DriversURLSync draft={filters as any} onDraftChange={setFilters as any} />
 
       <div className="flex flex-col gap-3">
         {view === "table" ? (

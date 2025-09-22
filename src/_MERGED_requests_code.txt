@@ -1,9 +1,7 @@
 ===== app\layout.tsx =====
 // src/app/layout.tsx
 import "./globals.css";
-import type { Metadata } from "next";
-<link rel="preconnect" href={process.env.NEXT_PUBLIC_SUPABASE_URL} crossOrigin="" />
-
+import type { Metadata, Viewport } from "next";
 
 export const metadata: Metadata = {
   title: { default: "TraviLink", template: "%s • TraviLink" },
@@ -16,19 +14,27 @@ export const metadata: Metadata = {
     ],
     apple: [{ url: "/apple-touch-icon.png" }],
   },
-  manifest: "/site.webmanifest",      
-  themeColor: "#7f1d1d",            
+  // If /public/site.webmanifest doesn't exist yet, comment this out to avoid 404 spam.
+  manifest: "/site.webmanifest",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+// themeColor must live in `viewport` (not `metadata`)
+export const viewport: Viewport = {
+  themeColor: "#7f1d1d",
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+
   return (
-    <html lang="en">
-      {/* globals.css sets background/text + dark mode; keep body clean */}
-      <body className="min-h-dvh antialiased">{children}</body>
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Valid place for preconnect. Safe if env is empty. */}
+        {supabaseUrl && <link rel="preconnect" href={supabaseUrl} crossOrigin="" />}
+      </head>
+      <body className="min-h-dvh antialiased" suppressHydrationWarning>
+        {children}
+      </body>
     </html>
   );
 }
@@ -177,74 +183,12 @@ export default async function AdminDashboardPage() {
 }
 
 
-===== app\(protected)\admin\drivers\DriversPageClient.tsx =====
-"use client";
-
-import * as React from "react";
-import type { Driver } from "@/lib/admin/drivers/types";
-import { DriversRepo } from "@/lib/admin/drivers/store";
-import DriversTable from "@/components/admin/drivers/ui/DriversTable.ui";
-import DriverForm from "@/components/admin/drivers/ui/DriverForm.ui";
-import FiltersBar from "@/components/admin/drivers/ui/FiltersBar.ui";
-import BulkBar from "@/components/admin/drivers/ui/BulkBar.ui";
-
-
-export default function DriversPageClient() {
-  const [rows, setRows] = React.useState<Driver[]>([]);
-  const [filters, setFilters] = React.useState<{ search?: string; status?: string; compliant?: "ok" | "warn" | "bad" | "" }>({});
-  const [selection, setSelection] = React.useState<string[]>([]);
-  const [form, setForm] = React.useState<null | { mode: "create" } | { mode: "edit"; id: string }>(null);
-
-  const refresh = React.useCallback(() => setRows(DriversRepo.list(filters)), [filters]);
-  React.useEffect(() => { refresh(); }, [refresh]);
-
-  return (
-    <div className="space-y-4 p-4">
-      <FiltersBar
-        value={filters}
-        onChange={(v) => { setSelection([]); setFilters(v); }}
-        onAdd={() => setForm({ mode: "create" })}
-      />
-
-      {selection.length > 0 && (
-        <BulkBar
-          count={selection.length}
-          onSuspend={() => { DriversRepo.bulkUpdate(selection, { status: "suspended" }); setSelection([]); refresh(); }}
-          onActivate={() => { DriversRepo.bulkUpdate(selection, { status: "active" }); setSelection([]); refresh(); }}
-          onArchive={() => { DriversRepo.bulkUpdate(selection, { status: "archived" }); setSelection([]); refresh(); }}
-          onExport={() => DriversRepo.exportCsv(selection.length ? rows.filter(r => selection.includes(r.id)) : rows)}
-          onClear={() => setSelection([])}
-        />
-      )}
-
-      <DriversTable
-        rows={rows}
-        selected={selection}
-        onSelectedChange={setSelection}
-        onEdit={(id) => setForm({ mode: "edit", id })}
-      />
-
-      {form && (
-        <DriverForm
-          mode={form.mode}
-          driver={form.mode === "edit" ? rows.find(r => r.id === (form as any).id) : undefined}
-          onClose={() => setForm(null)}
-          onSubmit={(data) => {
-            if (form.mode === "create") DriversRepo.create(data as any);
-            else DriversRepo.update({ id: (form as any).id, ...(data as any) });
-            setForm(null);
-            refresh();
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-
 ===== app\(protected)\admin\drivers\page.tsx =====
-import DriversPageClient from "./DriversPageClient";
-export default function Page() { return <DriversPageClient />; }
+import DriversPageClient from "@/components/admin/drivers/containers/DriversPage.client";
+
+export default function Page() {
+  return <DriversPageClient />;
+}
 
 
 ===== app\(protected)\admin\history\page.client.tsx =====
@@ -339,84 +283,172 @@ export default function Page(){ return <Client/>; }
 
 
 ===== app\(protected)\admin\maintenance\page.client.tsx =====
+// src/app/(protected)/admin/maintenance/page.client.tsx
 "use client";
 import * as React from "react";
 import type { Maintenance, MaintFilters } from "@/lib/admin/maintenance/types";
-import { MaintForm } from "@/components/admin/maintenance/MaintForm.ui";
-import { MaintTable } from "@/components/admin/maintenance/MaintTable.ui";
-import { MaintFiltersBar } from "@/components/admin/maintenance/FiltersBar.ui";
-import {
-  loadMaintenance, getMaintenance, createMaintenance, updateMaintenance,
-  deleteMaintenance, deleteManyMaintenance, exportMaintenanceCSV
-} from "@/lib/admin/maintenance/handlers";
-import { Plus, Download, Trash2 } from "lucide-react";
 
-export default function MaintenancePageClient(){
+/* UI */
+import { MaintForm } from "@/components/admin/maintenance/forms/MaintForm.ui";
+import { MaintFiltersBar } from "@/components/admin/maintenance/filters/FiltersBar.ui";
+import Table, { MaintTableHandle } from "@/components/admin/maintenance/table";
+
+/* Logic/Handlers */
+import {
+  loadMaintenance,
+  getMaintenance,
+  createMaintenance,
+  updateMaintenance,
+  deleteMaintenance,
+  deleteManyMaintenance,
+  exportMaintenanceCSV,
+} from "@/lib/admin/maintenance/handlers";
+
+/* Common primitives */
+import Modal from "@/components/common/Modal/Modal";
+import { useConfirm } from "@/components/common/hooks/useConfirm";
+import { useHotkeys } from "@/lib/common/useHotkeys";
+
+export default function MaintenancePageClient() {
+  // filters + data
   const [filters, setFilters] = React.useState<MaintFilters>({});
   const [rows, setRows] = React.useState<Maintenance[]>([]);
+  const [loading, setLoading] = React.useState<boolean>(true);
+
+  const refresh = React.useCallback(() => {
+    setLoading(true);
+    const data = loadMaintenance(filters);
+    setRows(data);
+    setLoading(false);
+  }, [filters]);
+
+  React.useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  // selection + modal
   const [selection, setSelection] = React.useState<string[]>([]);
-  const [form, setForm] = React.useState<null | {mode:"create"} | {mode:"edit"; id:string}>(null);
+  const [form, setForm] =
+    React.useState<null | { mode: "create" } | { mode: "edit"; id: string }>(null);
 
-  const refresh = React.useCallback(() => setRows(loadMaintenance(filters)), [filters]);
-  React.useEffect(() => { refresh(); }, [refresh]);
+  // table ref for page-visible IDs
+  const tableRef = React.useRef<MaintTableHandle>(null);
 
-  const onCreate = (data: Omit<Maintenance,"id"|"createdAt"|"updatedAt">) => { createMaintenance(data); setForm(null); refresh(); };
-  const onUpdate = (id: string, data: Omit<Maintenance,"id"|"createdAt"|"updatedAt">) => { updateMaintenance(id, data); setForm(null); refresh(); };
-  const onDelete = (id: string) => { if(confirm("Delete record?")) { deleteMaintenance(id); refresh(); } };
-  const onDeleteSelected = () => { if(selection.length && confirm(`Delete ${selection.length} selected?`)){ deleteManyMaintenance(selection); setSelection([]); refresh(); } };
-  const onExport = () => {
-    const blob = exportMaintenanceCSV(rows);
-    const url = URL.createObjectURL(blob); const a = document.createElement("a");
-    a.href = url; a.download = "maintenance.csv"; a.click(); URL.revokeObjectURL(url);
+  // confirm dialog (common)
+  const { ask, ui: confirmUI } = useConfirm();
+
+  // CRUD handlers
+  const onCreate = async (data: Omit<Maintenance, "id" | "createdAt" | "updatedAt">) => {
+    createMaintenance(data);
+    setForm(null);
+    refresh();
   };
 
-  const current = form && form.mode==="edit" ? getMaintenance(form.id) ?? undefined : undefined;
+  const onUpdate = async (
+    id: string,
+    data: Omit<Maintenance, "id" | "createdAt" | "updatedAt">
+  ) => {
+    updateMaintenance(id, data);
+    setForm(null);
+    refresh();
+  };
+
+  const onDelete = async (id: string) => {
+    if (await ask("Delete record", "Are you sure you want to delete this record?")) {
+      deleteMaintenance(id);
+      refresh();
+    }
+  };
+
+  const onDeleteSelected = async () => {
+    if (!selection.length) return;
+    if (await ask("Delete selected", `Delete ${selection.length} selected records?`)) {
+      deleteManyMaintenance(selection);
+      setSelection([]);
+      refresh();
+    }
+  };
+
+  const onExport = () => {
+    const blob = exportMaintenanceCSV(rows);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "maintenance.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const current =
+    form && form.mode === "edit" ? getMaintenance(form.id) ?? undefined : undefined;
+
+  /* Hotkeys */
+  useHotkeys(
+    [
+      { key: "n", alt: true, handler: () => setForm({ mode: "create" }) },
+      { key: "n", handler: () => setForm({ mode: "create" }) },
+      { key: "Enter", ctrl: true, handler: onExport },
+      { key: "Delete", handler: onDeleteSelected },
+      {
+        key: "a",
+        handler: () => {
+          const ids = tableRef.current?.getVisibleIds() ?? rows.map((r: any) => r.id);
+          setSelection(ids);
+        },
+      },
+      { key: "x", handler: () => setSelection([]) },
+    ],
+    { ignoreWhileTyping: true }
+  );
 
   return (
     <div className="p-4 space-y-4">
-      {/* header actions */}
-      <div className="flex items-center gap-2">
-        <h1 className="text-xl font-semibold">Maintenance</h1>
-        <div className="ml-auto flex items-center gap-2">
-          <button onClick={onExport} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border bg-white">
-            <Download size={16}/> Export CSV
-          </button>
-          <button disabled={!selection.length} onClick={onDeleteSelected} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border bg-white disabled:opacity-50">
-            <Trash2 size={16}/> Delete Selected
-          </button>
-          <button onClick={()=>setForm({mode:"create"})} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-white" style={{background:"#7a0019"}}>
-            <Plus size={16}/> Add Record
-          </button>
-        </div>
-      </div>
+      <MaintFiltersBar value={filters} onChange={setFilters} onClear={() => setFilters({})} />
 
-      <MaintFiltersBar value={filters} onChange={setFilters} onClear={()=>setFilters({})} />
-
-      <MaintTable
+      <Table
+        ref={tableRef}
+        loading={loading}
         rows={rows}
         selection={selection}
         setSelection={setSelection}
-        onEdit={(id)=>setForm({mode:"edit", id})}
+        onEdit={(id) => setForm({ mode: "edit", id })}
         onDelete={onDelete}
+        onExport={onExport}
+        onDeleteSelected={onDeleteSelected}
+        onAdd={() => setForm({ mode: "create" })}
+        pageSize={10}
       />
 
-      {form && (
-        <div className="fixed inset-0 bg-black/40 grid place-items-center z-50">
-          <div className="w-[min(760px,96vw)] max-h-[90vh] overflow-auto bg-white rounded-xl p-4 shadow-xl">
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="text-lg font-semibold">
-                {form.mode==="create" ? "Add Maintenance" : `Edit ${current?.vehicleCode}`}
-              </h2>
-              <button onClick={()=>setForm(null)} className="border rounded-md px-2 py-1 bg-white">Close</button>
-            </div>
-            <MaintForm
-              initial={current}
-              onCancel={()=>setForm(null)}
-              onSubmit={(data)=> form.mode==="create" ? onCreate(data) : onUpdate((form as any).id, data)}
-            />
-          </div>
+      <Modal
+        open={!!form}
+        onClose={() => setForm(null)}
+        ariaLabel="Maintenance Form"
+        maxWidth={760}
+      >
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-lg font-semibold">
+            {form?.mode === "create" ? "Add Maintenance" : `Edit ${current?.vehicleCode ?? ""}`}
+          </h2>
+          <button
+            onClick={() => setForm(null)}
+            className="border rounded-md px-2 py-1 bg-white"
+          >
+            Close
+          </button>
         </div>
-      )}
+        <MaintForm
+          initial={current}
+          onCancel={() => setForm(null)}
+          onSubmit={(data) =>
+            form?.mode === "create"
+              ? onCreate(data)
+              : onUpdate((form as any).id, data)
+          }
+        />
+      </Modal>
+
+      {/* Mount confirm dialog UI */}
+      {confirmUI}
     </div>
   );
 }
@@ -424,7 +456,9 @@ export default function MaintenancePageClient(){
 
 ===== app\(protected)\admin\maintenance\page.tsx =====
 import Client from "./page.client";
-export default function Page(){ return <Client/>; }
+export default function Page() {
+  return <Client />;
+}
 
 
 ===== app\(protected)\admin\report\page.tsx =====
@@ -437,6 +471,10 @@ import { ExportBar } from "@/components/admin/report/ui/ExportBar.ui";
 import type { ReportFilters, TripRow } from "@/lib/admin/report/types";
 import { queryReport } from "@/lib/admin/report/store";
 
+/* 🔁 Shared primitives */
+import { useHotkeys } from "@/lib/common/useHotkeys";
+import { downloadCsv } from "@/lib/common/csv";
+
 export default function ReportPage() {
   const [filters, setFilters] = React.useState<ReportFilters>({});
   const [page, setPage] = React.useState(1);
@@ -448,10 +486,31 @@ export default function ReportPage() {
     setData({ rows: res.rows, total: res.total });
   }, [filters, page, pageSize]);
 
-  React.useEffect(() => { load(); }, [load]);
+  React.useEffect(() => {
+    load();
+  }, [load]);
 
   const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
   const tableId = "report-table";
+
+  /* Export helper (current page rows) */
+  const onExportCurrent = React.useCallback(() => {
+    if (!data.rows.length) return;
+    downloadCsv("report-export.csv", data.rows);
+  }, [data.rows]);
+
+  /* ⌨️ Hotkeys
+     - Ctrl+Enter = Export current page
+     - ArrowLeft/Right = pagination
+  */
+  useHotkeys(
+    [
+      { key: "Enter", ctrl: true, handler: onExportCurrent },
+      { key: "ArrowLeft", handler: () => setPage((p) => Math.max(1, p - 1)) },
+      { key: "ArrowRight", handler: () => setPage((p) => Math.min(totalPages, p + 1)) },
+    ],
+    { ignoreWhileTyping: true }
+  );
 
   return (
     <div className="p-4 space-y-4">
@@ -459,10 +518,17 @@ export default function ReportPage() {
 
       <ReportFilterBar
         value={filters}
-        onChange={(v) => { setPage(1); setFilters(v); }}
-        onClear={() => { setPage(1); setFilters({}); }}
+        onChange={(v) => {
+          setPage(1);
+          setFilters(v);
+        }}
+        onClear={() => {
+          setPage(1);
+          setFilters({});
+        }}
       />
 
+      {/* Keep your existing ExportBar for full dataset export; add our hotkey export for quick current-page CSV */}
       <ExportBar rows={data.rows} tableId={tableId} />
 
       <ReportTable rows={data.rows} tableId={tableId} />
@@ -478,14 +544,18 @@ export default function ReportPage() {
             className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
+            title="ArrowLeft"
           >
             Prev
           </button>
-          <span className="text-sm">Page {page} / {totalPages}</span>
+          <span className="text-sm">
+            Page {page} / {totalPages}
+          </span>
           <button
             className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page >= totalPages}
+            title="ArrowRight"
           >
             Next
           </button>
@@ -496,121 +566,151 @@ export default function ReportPage() {
 }
 
 
-===== app\(protected)\admin\requests\page.tsx =====
+===== app\(protected)\admin\requests\RequestsURLSync.tsx =====
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { RequestRow, Pagination } from "@/lib/admin/types";
-
-import ToastProvider, { useToast } from "@/components/common/ToastProvider";
-import RequestsSummaryUI from "@/components/admin/requests/ui/RequestsSummary.ui";
-import FiltersBarContainer from "@/components/admin/requests/containers/FiltersBar.container";
-import BulkBarContainer, { BulkBarHandle } from "@/components/admin/requests/containers/BulkBar.container";
-
-import RequestsTableUI from "@/components/admin/requests/ui/RequestsTable.ui";
-import RequestsCardGridUI from "@/components/admin/requests/ui/RequestsCardGrid.ui";
-import ViewToggleUI from "@/components/admin/requests/ui/ViewToggle.ui";
-
-import RequestDetailsModalUI from "@/components/admin/requests/ui/RequestDetailsModal.ui";
-import ConfirmUI from "@/components/admin/requests/ui/Confirm.ui";
-
-import { exportRequestsCsv } from "@/lib/admin/export";
-import { approveRequests, rejectRequests, deleteRequests } from "@/lib/admin/requests/action";
-import { REQUESTS } from "@/lib/admin/requests/data";
-
+import * as React from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import type { FilterState } from "@/lib/admin/types";
 
-/* ---------- tiny debounce hook ---------- */
-function useDebouncedValue<T>(value: T, delay = 300) {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const id = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(id);
-  }, [value, delay]);
-  return debounced;
+/** Type guards to safely narrow string → your unions */
+const STATUS_VALUES = ["All", "Pending", "Approved", "Completed", "Rejected"] as const;
+const DEPT_VALUES = ["All", "CCMS", "HR", "Registrar", "Finance"] as const;
+const MODE_VALUES = ["auto", "apply"] as const;
+
+function isStatus(v: string): v is FilterState["status"] {
+  return (STATUS_VALUES as readonly string[]).includes(v);
+}
+function isDept(v: string): v is FilterState["dept"] {
+  return (DEPT_VALUES as readonly string[]).includes(v);
+}
+function isMode(v: string): v is FilterState["mode"] {
+  return (MODE_VALUES as readonly string[]).includes(v);
 }
 
-/* ---------- URL <-> UI sync (search, filters, sort) ---------- */
-function URLSync({
-  draft,
-  onDraftChange,
-  tableSearch,
-  setTableSearch,
-  sortDir,
-  setSortDir,
-}: {
-  draft: any;
-  onDraftChange: (n: Partial<any>) => void;
-  tableSearch: string;
-  setTableSearch: (v: string) => void;
-  sortDir: "asc" | "desc";
-  setSortDir: (v: "asc" | "desc") => void;
-}) {
+type Props = {
+  draft: FilterState; // status, dept, from, to, mode ("auto" | "apply")
+  onDraftChange: (next: Partial<FilterState>) => void;
+};
+
+/** Filter-only URL sync (does NOT touch q/sort) */
+export function RequestsURLSync({ draft, onDraftChange }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const didInit = useRef(false);
+  const lastRef = React.useRef<string>("");
 
-  // On mount: read URL -> state
-  useEffect(() => {
-    const p = new URLSearchParams(searchParams.toString());
+  // Read once on mount (filters only)
+  React.useEffect(() => {
+    const sp = searchParams ?? new URLSearchParams();
+    const next: Partial<FilterState> = {};
+    const statusRaw = sp.get("status") || undefined;
+    const deptRaw = sp.get("dept") || undefined;
+    const from = sp.get("from") || undefined;
+    const to = sp.get("to") || undefined;
+    const modeRaw = sp.get("mode") || undefined;
 
-    const q = p.get("q") ?? "";
-    const status = (p.get("status") as any) || undefined;
-    const dept = (p.get("dept") as any) || undefined;
-    const from = p.get("from") || "";
-    const to = p.get("to") || "";
-    const mode = (p.get("mode") as "auto" | "apply") || undefined;
-    const sd = p.get("sort");
+    if (statusRaw && isStatus(statusRaw)) next.status = statusRaw;
+    if (deptRaw && isDept(deptRaw)) next.dept = deptRaw;
+    if (from) next.from = from;
+    if (to) next.to = to;
+    if (modeRaw && isMode(modeRaw)) next.mode = modeRaw;
 
-    if (q) setTableSearch(q);
+    if (Object.keys(next).length) onDraftChange(next);
 
-    const patch: Record<string, any> = {};
-    if (status) patch.status = status;
-    if (dept) patch.dept = dept;
-    if (from) patch.from = from;
-    if (to) patch.to = to;
-    if (mode) patch.mode = mode;
-    if (Object.keys(patch).length) onDraftChange(patch);
-
-    if (sd === "asc" || sd === "desc") setSortDir(sd);
-
-    didInit.current = true;
+    // snapshot current (same shape used in writer)
+    const initPayload = {
+      status: next.status ?? "",
+      dept: next.dept ?? "",
+      from: next.from ?? "",
+      to: next.to ?? "",
+      mode: next.mode ?? "",
+    };
+    lastRef.current = JSON.stringify(initPayload);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // On state change: write state -> URL (omit defaults)
-  useEffect(() => {
-    if (!didInit.current) return;
+  // Write when draft changes (guarded)
+  React.useEffect(() => {
+    const payload = {
+      status: draft.status ?? "",
+      dept: draft.dept ?? "",
+      from: draft.from ?? "",
+      to: draft.to ?? "",
+      mode: draft.mode ?? "",
+    };
+    const nextStr = JSON.stringify(payload);
+    if (nextStr === lastRef.current) return;
 
-    const params = new URLSearchParams();
-    if (tableSearch.trim()) params.set("q", tableSearch.trim());
-    if (draft.status && draft.status !== "All") params.set("status", String(draft.status));
-    if (draft.dept && draft.dept !== "All") params.set("dept", String(draft.dept));
-    if (draft.from) params.set("from", String(draft.from));
-    if (draft.to) params.set("to", String(draft.to));
-    if (draft.mode && draft.mode !== "auto") params.set("mode", String(draft.mode));
-    if (sortDir === "asc") params.set("sort", "asc"); // default is 'desc'
+    const base = searchParams?.toString() ?? "";
+    const sp = new URLSearchParams(base);
 
-    const qs = params.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-  }, [draft, tableSearch, sortDir, pathname, router]);
+    // Only write normalized values
+    payload.status ? sp.set("status", payload.status) : sp.delete("status");
+    payload.dept ? sp.set("dept", payload.dept) : sp.delete("dept");
+    payload.from ? sp.set("from", payload.from) : sp.delete("from");
+    payload.to ? sp.set("to", payload.to) : sp.delete("to");
+    payload.mode ? sp.set("mode", payload.mode) : sp.delete("mode");
+
+    lastRef.current = nextStr;
+    router.replace(`${pathname}?${sp.toString()}`);
+  }, [draft, pathname, router, searchParams]);
 
   return null;
 }
+
+
+===== app\(protected)\admin\requests\page.tsx =====
+"use client";
+
+import React, { useEffect, useMemo, useRef, useState } from "react";
+
+/* UI */
+import ToastProvider, { useToast } from "@/components/common/ui/ToastProvider.ui";
+import ConfirmUI from "@/components/admin/requests/ui/Confirm.ui";
+import RequestsSummaryUI from "@/components/admin/requests/ui/RequestsSummary.ui";
+import RequestsTableUI from "@/components/admin/requests/ui/RequestsTable.ui";
+import RequestsCardGridUI from "@/components/admin/requests/ui/RequestsCardGrid.ui";
+import RequestDetailsModalUI from "@/components/admin/requests/ui/RequestDetailsModal.ui";
+import ViewToggleUI from "@/components/admin/requests/ui/ViewToggle.ui";
+
+/* Containers */
+import FiltersBarContainer from "@/components/admin/requests/containers/FiltersBar.container";
+import BulkBarContainer, { BulkBarHandle } from "@/components/admin/requests/containers/BulkBar.container";
+
+/* URL-sync (filters-only, named export) */
+import { RequestsURLSync } from "./RequestsURLSync";
+
+/* Logic & utils */
+import { useHotkeys } from "@/lib/common/useHotkeys";
+import { clampPage } from "@/lib/common/pagination";
+import { useDebouncedValue } from "@/lib/common/useDebouncedValue";
+import { toggleAllOnPage as selToggleAllOnPage, clearSelection as selClear } from "@/lib/common/selection";
+
+/* Data + Actions */
+import { REQUESTS } from "@/lib/admin/requests/data";
+import { approveRequests, rejectRequests, deleteRequests } from "@/lib/admin/requests/action";
+import { exportRequestsCsv } from "@/lib/admin/export";
+
+/* Types */
+import type { RequestRow, Pagination as Pg } from "@/lib/admin/types";
+
+/* ======================================================================= */
+/* =========================== INNER PAGE LOGIC =========================== */
+/* ======================================================================= */
 
 function PageInner() {
   const toast = useToast();
   const bulkRef = useRef<BulkBarHandle>(null);
 
-  /* SOURCE rows (mock) */
+  // SOURCE rows (mock)
   const [allRows, setAllRows] = useState<RequestRow[]>(() => [...REQUESTS]);
 
-  /* FILTERED rows (from FiltersBarContainer) */
+  // FILTERED rows (from FiltersBarContainer)
   const [filteredRows, setFilteredRows] = useState<RequestRow[]>(() => allRows);
   useEffect(() => setFilteredRows(allRows), [allRows]);
 
-  /* LOCAL table/card search + sort (applied after Filters) */
+  // LOCAL table/card search + sort (applied after Filters)
   const [tableSearch, setTableSearch] = useState("");
   const debouncedQ = useDebouncedValue(tableSearch, 300);
   const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
@@ -631,16 +731,16 @@ function PageInner() {
     );
   }, [filteredRows, debouncedQ, sortDir]);
 
-  /* VIEW TOGGLE */
+  // VIEW TOGGLE
   const [view, setView] = useState<"table" | "card">("table");
 
-  /* SELECTION (shared across views) */
+  // SELECTION (shared across views)
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const clearSelection = () => setSelected(new Set());
+  const clearSelection = () => selClear(setSelected);
 
-  /* PAGINATION (table 15/page; card 9/page) */
+  // PAGINATION (table 15/page; card 9/page)
   const PAGE_SIZES = { table: 15, card: 9 } as const;
-  const [pagination, setPagination] = useState<Pagination>({
+  const [pagination, setPagination] = useState<Pg>({
     page: 1,
     pageSize: PAGE_SIZES.table,
     total: postFilterRows.length,
@@ -662,44 +762,12 @@ function PageInner() {
     clearSelection();
   }, [postFilterRows]);
 
-  // measure sticky offsets → CSS vars
-  useEffect(() => {
-  const selKpi = '[data-role="admin"] .admin-sticky-kpi';
-  const selTb  = '[data-role="admin"] .admin-sticky-toolbar';
-
-  function update() {
-    const kpi = document.querySelector(selKpi) as HTMLElement | null;
-    const tb  = document.querySelector(selTb)  as HTMLElement | null;
-
-    const kpiH = kpi?.offsetHeight ?? 0;
-    const tbH  = tb?.offsetHeight ?? 0;
-
-    const root = document.querySelector('[data-role="admin"]') as HTMLElement | null;
-    if (root) {
-      root.style.setProperty("--rq-kpi", `${kpiH}px`);
-      root.style.setProperty("--rq-toolbar", `${tbH}px`);
-      root.style.setProperty("--rq-offset", `${kpiH + tbH}px`);
-    }
-  }
-
-  update();
-  window.addEventListener("resize", update);
-
-  const obs = new MutationObserver(update);
-  const kpiNode = document.querySelector(selKpi);
-  const tbNode  = document.querySelector(selTb);
-  if (kpiNode) obs.observe(kpiNode, { childList: true, subtree: true, attributes: true });
-  if (tbNode)  obs.observe(tbNode,  { childList: true, subtree: true, attributes: true });
-
-  return () => { window.removeEventListener("resize", update); obs.disconnect(); };
-}, []);
-
   const pageRows = useMemo(() => {
     const start = (pagination.page - 1) * pagination.pageSize;
     return postFilterRows.slice(start, start + pagination.pageSize);
   }, [postFilterRows, pagination.page, pagination.pageSize]);
 
-  /* DETAILS + CONFIRM */
+  // DETAILS + CONFIRM
   const [openDetails, setOpenDetails] = useState(false);
   const [activeRow, setActiveRow] = useState<RequestRow | undefined>();
   const openRow = (r: RequestRow) => {
@@ -709,10 +777,14 @@ function PageInner() {
 
   const [confirm, setConfirm] = useState<{ open: boolean; kind?: "approve" | "reject"; id?: string }>({ open: false });
 
-  /* ---------- PATCH HELPERS (optimistic) ---------- */
+  // ---------- PATCH HELPERS (optimistic) ----------
   function patchStatus(ids: string[], status?: "Approved" | "Rejected") {
-    setAllRows((prev) => (status ? prev.map((r) => (ids.includes(r.id) ? { ...r, status } : r)) : prev.filter((r) => !ids.includes(r.id))));
-    setFilteredRows((prev) => (status ? prev.map((r) => (ids.includes(r.id) ? { ...r, status } : r)) : prev.filter((r) => !ids.includes(r.id))));
+    setAllRows((prev) =>
+      status ? prev.map((r) => (ids.includes(r.id) ? { ...r, status } : r)) : prev.filter((r) => !ids.includes(r.id))
+    );
+    setFilteredRows((prev) =>
+      status ? prev.map((r) => (ids.includes(r.id) ? { ...r, status } : r)) : prev.filter((r) => !ids.includes(r.id))
+    );
   }
 
   async function approveOne(id: string) {
@@ -751,7 +823,7 @@ function PageInner() {
     setOpenDetails(false);
   };
 
-  /* ---------- BULK ---------- */
+  // ---------- BULK ----------
   async function bulkApprove(ids: string[]) {
     if (!ids.length) return;
     const snapAll = [...allRows];
@@ -806,58 +878,36 @@ function PageInner() {
     }
   }
 
-  /* ---------- Keyboard shortcuts (with typing guard) ---------- */
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      const t = e.target as HTMLElement | null;
-      const tag = t?.tagName?.toLowerCase();
-      const typing =
-        (t && (t as HTMLElement).isContentEditable) ||
-        tag === "input" ||
-        tag === "textarea" ||
-        tag === "select";
-      if (typing) return;
+  // ---------- Keyboard shortcuts ----------
+  useHotkeys(
+    [
+      { key: "Enter", ctrl: true, handler: () => bulkRef.current?.approveSelected() },
+      {
+        key: "a",
+        handler: () =>
+          setSelected((prev) => {
+            const next = new Set(prev);
+            pageRows.forEach((r) => next.add(r.id));
+            return next;
+          }),
+      },
+      { key: "x", handler: () => selClear(setSelected) },
+      { key: "ArrowLeft", handler: () => setPagination((p) => ({ ...p, page: Math.max(1, p.page - 1) })) },
+      {
+        key: "ArrowRight",
+        handler: () =>
+          setPagination((p) => ({
+            ...p,
+            page: clampPage(p.total, p.pageSize, p.page + 1),
+          })),
+      },
+      { key: "t", handler: () => setView("table") },
+      { key: "c", handler: () => setView("card") },
+    ],
+    { ignoreWhileTyping: true }
+  );
 
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "enter") {
-        e.preventDefault();
-        bulkRef.current?.approveSelected();
-        return;
-      }
-      if (!e.ctrlKey && !e.metaKey && e.key.toLowerCase() === "a") {
-        e.preventDefault();
-        setSelected((prev) => new Set([...prev, ...pageRows.map((r) => r.id)]));
-        return;
-      }
-      if (e.key.toLowerCase() === "x") {
-        e.preventDefault();
-        clearSelection();
-        return;
-      }
-      if (e.key === "ArrowLeft") {
-        setPagination((p) => ({ ...p, page: Math.max(1, p.page - 1) }));
-        return;
-      }
-      if (e.key === "ArrowRight") {
-        setPagination((p) => ({
-          ...p,
-          page: Math.min(Math.ceil(p.total / p.pageSize) || 1, p.page + 1),
-        }));
-        return;
-      }
-      if (e.key.toLowerCase() === "t") {
-        setView("table");
-        return;
-      }
-      if (e.key.toLowerCase() === "c") {
-        setView("card");
-        return;
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [pageRows]);
-
-  /* KPI summary uses filteredRows (pre-search) */
+  // KPI summary uses filteredRows (pre-search)
   const summary = useMemo(
     () => ({
       pending: filteredRows.filter((r) => r.status === "Pending").length,
@@ -871,30 +921,21 @@ function PageInner() {
   return (
     <div className="space-y-4">
       {/* Sticky KPI + View toggle */}
-<div className="admin-sticky-kpi">
-  {/* stack the cards and the toggle with spacing + a bit of right padding */}
-  <div className="space-y-2 pr-2">
-    <RequestsSummaryUI summary={summary} />
-    <div className="flex justify-end">
-      <ViewToggleUI view={view} onChange={setView} />
-    </div>
-  </div>
-</div>
-
+      <div className="admin-sticky-kpi">
+        <div className="space-y-2 pr-2">
+          <RequestsSummaryUI summary={summary} />
+          <div className="flex justify-end">
+            <ViewToggleUI view={view} onChange={setView} />
+          </div>
+        </div>
+      </div>
 
       {/* Filters container provides filtering logic to both views */}
       <FiltersBarContainer rows={allRows} onFiltered={setFilteredRows}>
         {(controls) => (
           <>
-            {/* URL sync */}
-            <URLSync
-              draft={controls.draft}
-              onDraftChange={controls.onDraftChange}
-              tableSearch={tableSearch}
-              setTableSearch={setTableSearch}
-              sortDir={sortDir}
-              setSortDir={setSortDir}
-            />
+            {/* Filters URL sync (filters only) */}
+            <RequestsURLSync draft={controls.draft} onDraftChange={controls.onDraftChange} />
 
             {/* Bulk bar */}
             {selected.size > 0 && (
@@ -934,13 +975,7 @@ function PageInner() {
                     return next;
                   })
                 }
-                onToggleAllOnPage={(checked, idsOnPage) =>
-                  setSelected((prev) => {
-                    const next = new Set(prev);
-                    idsOnPage.forEach((id) => (checked ? next.add(id) : next.delete(id)));
-                    return next;
-                  })
-                }
+                onToggleAllOnPage={(checked, idsOnPage) => selToggleAllOnPage(setSelected, idsOnPage, checked)}
                 onRowClick={openRow}
                 onRowViewDetails={(row) => openRow(row)}
                 onPageChange={(page) => setPagination((p) => ({ ...p, page }))}
@@ -996,6 +1031,10 @@ function PageInner() {
   );
 }
 
+/* ======================================================================= */
+/* ============================== PAGE WRAP =============================== */
+/* ======================================================================= */
+
 export default function AdminRequestsPage() {
   return (
     <ToastProvider>
@@ -1021,190 +1060,189 @@ export default function ClientWrapper() {
 
 
 ===== app\(protected)\admin\schedule\SchedulePageClient.tsx =====
-// src/app/(protected)/admin/schedule/SchedulePageClient.tsx
 "use client";
 
 import * as React from "react";
+
+/* common */
+import { useDebouncedValue } from "@/lib/common/useDebouncedValue";
+import { useQS } from "@/lib/common/useQS";
+import { clampPage } from "@/lib/common/pagination";
+import { clearSelection as selClear } from "@/lib/common/selection";
+
+/* schedule domain */
+import type { Schedule, ScheduleStatus } from "@/lib/admin/schedule/types";
 import { ScheduleRepo } from "@/lib/admin/schedule/store";
-import type { Schedule } from "@/lib/admin/schedule/types";
+import { filterSchedules, DEFAULT_SCH_FILTERS, type ScheduleFilterState } from "@/lib/admin/schedule/filters";
+import { computeKpis } from "@/lib/admin/schedule/stats";
 
-import ScheduleTable from "@/components/admin/schedule/ui/ScheduleTable.ui";
-import ScheduleToolbar from "@/components/admin/schedule/toolbar/ScheduleToolbar.ui";
-import ScheduleDetailsModal from "@/components/admin/schedule/ui/ScheduleDetailsModal.ui";
-
-import { useScheduleFilters } from "@/components/admin/schedule/hooks/useScheduleFilters";
-import { DEFAULT_SCH_FILTERS, filterSchedules } from "@/lib/admin/schedule/filters";
-
-import { useScheduleKpis } from "@/components/admin/schedule/kpi/useScheduleKpis";
+/* UI */
 import KpiGrid from "@/components/admin/schedule/ui/KpiGrid.ui";
+import ScheduleToolbar from "@/components/admin/schedule/toolbar/ScheduleToolbar.ui";
+import ScheduleTable from "@/components/admin/schedule/ui/ScheduleTable.ui";
+import ScheduleDetailsModal from "@/components/admin/schedule/ui/ScheduleDetailsModal.ui";
+import ScheduleURLSync from "@/components/admin/schedule/ScheduleURLSync";
 
-// ✅ Use ONLY the container (it manages form state + validation)
+/* Create/Edit dialog (container) */
 import CreateScheduleDialog from "@/components/admin/schedule/forms/CreateScheduleDialogs.container";
 
+/** Toolbar sort shape */
+type Sort = "newest" | "oldest";
+
 export default function SchedulePageClient() {
-  // Avoid SSR/CSR mismatch for anything touching localStorage
-  const [hydrated, setHydrated] = React.useState(false);
-  React.useEffect(() => setHydrated(true), []);
+  /* ---------- source of truth ---------- */
+  const [allRows, setAllRows] = React.useState<Schedule[]>(() => ScheduleRepo.list());
 
-  // State
-  const [rows, setRows] = React.useState<Schedule[]>([]);
+  /* ---------- filters + search ---------- */
+  const [draft, setDraft] = React.useState<ScheduleFilterState>({ ...DEFAULT_SCH_FILTERS });
+
+  /** Toolbar sort (newest/oldest) */
+  const [sort, setSort] = React.useState<Sort>("newest");
+
+  /** Map Sort <-> "asc" | "desc" for URL syncing */
+  const sortDir: "asc" | "desc" = sort === "oldest" ? "asc" : "desc";
+  const mapSetSortFromDir = (dir: "asc" | "desc") => setSort(dir === "asc" ? "oldest" : "newest");
+
+  // Keep ?q=&sort= in the URL
+  useQS(draft.search, sortDir, (v) => setDraft((d) => ({ ...d, search: v })), mapSetSortFromDir);
+
+  const debouncedQ = useDebouncedValue(draft.search, 250);
+
+  /* ---------- derived rows ---------- */
+  const filteredRows = React.useMemo(() => {
+    const f = { ...draft, search: debouncedQ };
+    let rows = filterSchedules(allRows, f);
+    // sort by date+time using mapped sortDir
+    rows = [...rows].sort((a, b) => {
+      const av = a.date + a.startTime;
+      const bv = b.date + b.startTime;
+      return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+    });
+    return rows;
+  }, [allRows, draft, debouncedQ, sortDir]);
+
+  /* ---------- pagination + selection ---------- */
+  const pageSize = 15;
   const [page, setPage] = React.useState(1);
-  const [pageSize] = React.useState(15);
-  const [q, setQ] = React.useState("");
-  const [sort, setSort] = React.useState<"newest" | "oldest">("newest");
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
-  const [open, setOpen] = React.useState(false);
-  const [editRow, setEditRow] = React.useState<Schedule | null>(null);
-  const [viewRow, setViewRow] = React.useState<Schedule | null>(null);
+  const clearSelection = () => selClear(setSelected);
 
-  const filters = useScheduleFilters(DEFAULT_SCH_FILTERS);
-  const { kpis, refresh: refreshKpis } = useScheduleKpis();
-
-  // Load repo after mount
   React.useEffect(() => {
-    if (!hydrated) return;
-    setRows(ScheduleRepo.list());
-    refreshKpis();
-  }, [hydrated, refreshKpis]);
+    setPage((p) => clampPage(filteredRows.length, pageSize, p));
+  }, [filteredRows.length]);
 
-  function refresh() {
-    setRows(ScheduleRepo.list());
-    refreshKpis();
-  }
+  const start = (page - 1) * pageSize;
+  const pageRows = React.useMemo(() => filteredRows.slice(start, start + pageSize), [filteredRows, start]);
+  const idsOnPage = React.useMemo(() => pageRows.map((r) => r.id), [pageRows]);
 
-  const filtered = React.useMemo(() => {
-    if (!hydrated) return [] as Schedule[];
-    const base = filterSchedules(rows, { ...filters.applied, search: q });
-    return [...base].sort((a, b) => {
-      const tA = `${a.date}T${a.startTime}`;
-      const tB = `${b.date}T${b.startTime}`;
-      return sort === "newest" ? (tA < tB ? 1 : -1) : (tA > tB ? 1 : -1);
+  const onToggleOne = (id: string, checked: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      checked ? next.add(id) : next.delete(id);
+      return next;
     });
-  }, [hydrated, rows, filters.applied, q, sort]);
-
-  const total = filtered.length;
-  const pageRows = filtered.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
-
-  const onToggleOne = (id: string, checked: boolean) =>
-    setSelected((p) => {
-      const n = new Set(p);
-      checked ? n.add(id) : n.delete(id);
-      return n;
+  };
+  const onToggleAll = (checked: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) idsOnPage.forEach((id) => next.add(id));
+      else idsOnPage.forEach((id) => next.delete(id));
+      return next;
     });
+  };
 
-  const onToggleAll = (checked: boolean) =>
-    setSelected((p) => {
-      const n = new Set(p);
-      pageRows.forEach((r) => (checked ? n.add(r.id) : n.delete(r.id)));
-      return n;
-    });
+  /* ---------- repo-backed ops ---------- */
+  const reload = () => setAllRows(ScheduleRepo.list());
 
-  // Skeleton while hydrating
-  if (!hydrated) {
-    return (
-      <div className="space-y-3">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="rounded-xl border bg-white p-4">
-              <div className="h-4 w-28 animate-pulse rounded bg-neutral-200" />
-              <div className="mt-2 h-8 w-12 animate-pulse rounded bg-neutral-200" />
-            </div>
-          ))}
-        </div>
-        <div className="rounded-2xl border bg-white p-4">
-          <div className="mb-3 h-6 w-40 animate-pulse rounded bg-neutral-200" />
-          <div className="h-48 animate-pulse rounded bg-neutral-100" />
-        </div>
-      </div>
-    );
-  }
+  const onSetStatus = async (id: string, status: ScheduleStatus) => {
+    ScheduleRepo.setStatus(id, status);
+    reload();
+  };
+  const onDeleteMany = async (ids: string[]) => {
+    if (!ids.length) return;
+    ScheduleRepo.removeMany(ids);
+    clearSelection();
+    reload();
+  };
+
+  /* ---------- create/edit dialogs ---------- */
+  const [createOpen, setCreateOpen] = React.useState(false);
+  const [editInitial, setEditInitial] = React.useState<Partial<Schedule> | null>(null);
+
+  const handleAddNew = () => {
+    setEditInitial(null);
+    setCreateOpen(true);
+  };
+  const handleEdit = (row: Schedule) => {
+    setEditInitial(row);
+    setCreateOpen(true);
+  };
+  const handleSubmit = (data: Omit<Schedule, "id" | "createdAt" | "tripId">) => {
+    try {
+      if (editInitial?.id) {
+        ScheduleRepo.update(editInitial.id as string, data);
+      } else {
+        ScheduleRepo.create(data);
+      }
+      setCreateOpen(false);
+      reload();
+    } catch (e: any) {
+      alert(e?.message ?? "Failed to save schedule");
+    }
+  };
+
+  /* ---------- details modal ---------- */
+  const [detailsId, setDetailsId] = React.useState<string | null>(null);
+  const current = detailsId ? allRows.find((r) => r.id === detailsId) ?? null : null;
+
+  /* ---------- KPIs ---------- */
+  const kpis = React.useMemo(() => computeKpis(allRows), [allRows]);
+
+  /* ---------- toolbar node ---------- */
+  const toolbar = (
+    <ScheduleToolbar
+      q={draft.search}
+      onQChange={(v) => setDraft((d) => ({ ...d, search: v }))}
+      sort={sort}
+      onSortChange={setSort}              // ✅ expects Sort
+      onAddNew={handleAddNew}
+      draft={draft}
+      onDraftChange={(patch) => setDraft((d) => ({ ...d, ...patch }))}
+      onApply={() => {}}
+      onClearAll={() => setDraft({ ...DEFAULT_SCH_FILTERS })}
+    />
+  );
 
   return (
-    <div className="space-y-3">
-      <KpiGrid kpis={kpis} />
+    <div className="space-y-4 p-4">
+      <KpiGrid kpis={kpis as any} />
+      <ScheduleURLSync draft={draft as any} onDraftChange={setDraft as any} />
 
       <ScheduleTable
         rows={pageRows}
-        pagination={{ page, pageSize, total }}
+        pagination={{ page, pageSize, total: filteredRows.length } as any}
         selected={selected}
         onToggleOne={onToggleOne}
         onToggleAll={onToggleAll}
-        onEdit={(r) => {
-          setEditRow(r);
-          setOpen(true);
-        }}
-        onDeleteMany={(ids) => {
-          ScheduleRepo.removeMany(ids);
-          setSelected(new Set());
-          refresh();
-        }}
-        onSetStatus={(id, s) => {
-          try {
-            ScheduleRepo.setStatus(id, s);
-            refresh();
-          } catch (e: any) {
-            alert(e?.message || "Cannot change status");
-          }
-        }}
-        onPageChange={setPage}
-        onView={(r) => setViewRow(r)}
-        toolbar={
-          <ScheduleToolbar
-            q={q}
-            onQChange={(v) => {
-              setQ(v);
-              setPage(1);
-            }}
-            sort={sort}
-            onSortChange={(s) => {
-              setSort(s);
-              setPage(1);
-            }}
-            onAddNew={() => {
-              setEditRow(null);
-              setOpen(true);
-            }}
-            draft={filters.draft}
-            onDraftChange={(n) => {
-              filters.update(n);
-              setPage(1);
-            }}
-            onApply={() => {
-              filters.apply();
-              setPage(1);
-            }}
-            onClearAll={() => {
-              filters.clearAll();
-              setPage(1);
-            }}
-          />
-        }
-      />
-
-      {/* ✅ Only the container dialog here */}
-      <CreateScheduleDialog
-        open={open}
-        initial={editRow ?? undefined}
-        onClose={() => setOpen(false)}
-        onSubmit={(data) => {
-          try {
-            if (editRow) {
-              ScheduleRepo.update(editRow.id, data);
-            } else {
-              ScheduleRepo.create(data);
-            }
-            setOpen(false);
-            refresh();
-          } catch (err: any) {
-            alert(err?.message || "Cannot save schedule.");
-          }
-        }}
+        onEdit={handleEdit}
+        onDeleteMany={onDeleteMany}
+        onSetStatus={onSetStatus}
+        onPageChange={(next) => setPage((p) => clampPage(filteredRows.length, pageSize, next))}
+        onView={(row) => setDetailsId(row.id)}
+        toolbar={toolbar}
       />
 
       <ScheduleDetailsModal
-        open={!!viewRow}
-        data={viewRow || undefined}
-        onClose={() => setViewRow(null)}
+        open={!!detailsId}
+        onClose={() => setDetailsId(null)}
+        {...({ row: current, schedule: current, id: detailsId ?? "" } as any)}
+      />
+
+      <CreateScheduleDialog
+        open={createOpen}
+        initial={editInitial ?? undefined}
+        onClose={() => setCreateOpen(false)}
+        onSubmit={handleSubmit}
       />
     </div>
   );
@@ -1212,11 +1250,16 @@ export default function SchedulePageClient() {
 
 
 ===== app\(protected)\admin\schedule\page.tsx =====
-// Server Component (default)
-import ClientWrapper from "./ClientWrapper";
+"use client";
+import ToastProvider from "@/components/common/ui/ToastProvider.ui";
+import SchedulePageClient from "@/app/(protected)/admin/schedule/SchedulePageClient";
 
-export default function Page() {
-  return <ClientWrapper />;
+export default function AdminSchedulePage() {
+  return (
+    <ToastProvider>
+      <SchedulePageClient />
+    </ToastProvider>
+  );
 }
 
 
@@ -1226,7 +1269,18 @@ import VehiclesPageClient from "@/components/admin/vehicles/containers/VehiclesP
 export function VehiclesPage() { return <VehiclesPageClient />; }
 
 ===== app\(protected)\admin\vehicles\page.tsx =====
-export { VehiclesPage as default } from "./VehiclesPage";
+"use client";
+import ToastProvider from "@/components/common/ui/ToastProvider.ui";
+import VehiclesPageClient from "@/components/admin/vehicles/containers/VehiclesPage.client";
+
+export default function AdminVehiclesPage() {
+  return (
+    <ToastProvider>
+      <VehiclesPageClient />
+    </ToastProvider>
+  );
+}
+
 
 ===== app\(protected)\driver\layout.tsx =====
 "use client";
@@ -5073,6 +5127,277 @@ export default function RechartsBridge({
 }
 
 
+===== components\admin\drivers\DriversURLSync.tsx =====
+"use client";
+import * as React from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+
+type DriversFilterDraft = {
+  status?: "All" | "Pending" | "Approved" | "Completed" | "Rejected";
+  dept?: "All" | "CCMS" | "HR" | "Registrar" | "Finance";
+  from?: string;
+  to?: string;
+  mode?: "auto" | "apply";
+};
+
+const STATUS = ["All","Pending","Approved","Completed","Rejected"] as const;
+const DEPT   = ["All","CCMS","HR","Registrar","Finance"] as const;
+const MODE   = ["auto","apply"] as const;
+const isIn = <T extends readonly string[]>(vs: T, v: string): v is T[number] => (vs as readonly string[]).includes(v);
+
+type Props = {
+  draft: DriversFilterDraft;
+  onDraftChange: (next: Partial<DriversFilterDraft>) => void;
+};
+
+export default function DriversURLSync({ draft, onDraftChange }: Props) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const lastRef = React.useRef<string>("");
+
+  React.useEffect(() => {
+    const sp = searchParams ?? new URLSearchParams();
+    const next: Partial<DriversFilterDraft> = {};
+    const status = sp.get("status") || undefined;
+    const dept   = sp.get("dept") || undefined;
+    const from   = sp.get("from") || undefined;
+    const to     = sp.get("to") || undefined;
+    const mode   = sp.get("mode") || undefined;
+
+    if (status && isIn(STATUS, status)) next.status = status;
+    if (dept && isIn(DEPT, dept)) next.dept = dept;
+    if (from) next.from = from;
+    if (to) next.to = to;
+    if (mode && isIn(MODE, mode)) next.mode = mode;
+
+    if (Object.keys(next).length) onDraftChange(next);
+
+    const initPayload = {
+      status: next.status ?? "",
+      dept: next.dept ?? "",
+      from: next.from ?? "",
+      to: next.to ?? "",
+      mode: next.mode ?? "",
+    };
+    lastRef.current = JSON.stringify(initPayload);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  React.useEffect(() => {
+    const payload = {
+      status: draft.status ?? "",
+      dept: draft.dept ?? "",
+      from: draft.from ?? "",
+      to: draft.to ?? "",
+      mode: draft.mode ?? "",
+    };
+    const nextStr = JSON.stringify(payload);
+    if (nextStr === lastRef.current) return;
+
+    const base = searchParams?.toString() ?? "";
+    const sp = new URLSearchParams(base);
+
+    payload.status ? sp.set("status", payload.status) : sp.delete("status");
+    payload.dept ? sp.set("dept", payload.dept) : sp.delete("dept");
+    payload.from ? sp.set("from", payload.from) : sp.delete("from");
+    payload.to ? sp.set("to", payload.to) : sp.delete("to");
+    payload.mode ? sp.set("mode", payload.mode) : sp.delete("mode");
+
+    lastRef.current = nextStr;
+    router.replace(`${pathname}?${sp.toString()}`);
+  }, [draft, pathname, router, searchParams]);
+
+  return null;
+}
+
+
+===== components\admin\drivers\containers\DriversPage.client.tsx =====
+"use client";
+import * as React from "react";
+
+// top bars
+import { DriversHeader } from "../filters/DriversHeader.ui";
+import { DriversFilterBar } from "../filters/DriversFilterBar.ui";
+import { DriversBulkBar } from "../toolbar/DriversBulkBar.ui";
+import DriversURLSync from "@/components/admin/drivers/DriversURLSync";
+
+// main views
+import { DriversGrid } from "../ui/DriversGrid.ui";
+import { DriversTable } from "../ui/DriversTable.ui";
+import DriverDetailsModal from "../ui/DriverDetailsModal.ui";
+import { DriverFormModal } from "../forms/DriverFormModal.ui";
+
+// state
+import { useDriversScreen } from "../hooks/useDriversScreen";
+
+// repo, utils
+import { DriversRepo } from "@/lib/admin/drivers/store";
+import { toCSV } from "@/lib/admin/drivers/utils";
+
+// common confirm
+import { useConfirm } from "@/components/common/hooks/useConfirm";
+
+export default function DriversPageClient() {
+  const {
+    filters,
+    setFilters,
+    rows,
+    selection,
+    setSelection,
+    form,
+    setForm,
+    view,
+    setView,
+    tab,
+    setTab,
+    refresh,
+  } = useDriversScreen();
+
+  const [openDetails, setOpenDetails] = React.useState<string | null>(null);
+  const current = openDetails ? DriversRepo.get(openDetails) : null;
+
+  // hydrate localStorage data after mount to avoid SSR mismatch
+  React.useEffect(() => {
+    if (DriversRepo.hydrateFromStorage?.()) {
+      refresh();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const { ask, ui: confirmUI } = useConfirm();
+
+  const onClear = () => setFilters({});
+  const onEdit = (id: string) => setForm({ mode: "edit", id });
+
+  const onDelete = async (id: string) => {
+    const d = DriversRepo.get(id);
+    const ok = await ask(
+      "Delete driver?",
+      `Are you sure you want to delete ${d ? `${d.firstName} ${d.lastName}` : "this driver"}? This action cannot be undone.`,
+      "Delete"
+    );
+    if (!ok) return;
+    DriversRepo.remove(id);
+    refresh();
+  };
+
+  const onDeleteSelected = async () => {
+    if (selection.length === 0) return;
+    const ok = await ask(
+      "Delete selected drivers?",
+      `This will delete ${selection.length} driver(s). This action cannot be undone.`,
+      "Delete"
+    );
+    if (!ok) return;
+    selection.forEach(DriversRepo.remove);
+    setSelection([]);
+    refresh();
+  };
+
+  const onExportCSV = () => {
+    const blob = new Blob([toCSV(rows)], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "drivers.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // counts for header tabs (derive once per rows refresh)
+  const counts = React.useMemo(() => {
+    const list = DriversRepo.list({});
+    const all = list.length;
+    const available = list.filter((d) => d.status === "active" && !d.assignedVehicleId).length;
+    const on_trip = list.filter((d) => d.status === "on_trip").length;
+    const off_duty = list.filter((d) => d.status === "off_duty").length;
+    const suspended = list.filter((d) => d.status === "suspended").length;
+
+    const todayISO = new Date().toISOString().slice(0, 10);
+    const expired_license = list.filter((d) => (d.licenseExpiryISO ?? "") < todayISO).length;
+
+    return { all, available, on_trip, off_duty, suspended, expired_license };
+  }, [rows]);
+
+  // (DEV only) reset to sample
+  const handleResetSample = () => {
+    DriversRepo.resetToSample();
+    setSelection([]);
+    setFilters({});
+    refresh();
+  };
+
+  return (
+    <div className="space-y-4 p-4">
+      {/* global confirm dialog portal */}
+      {confirmUI}
+
+      <DriversHeader
+        counts={counts as any}
+        tab={tab}
+        onTab={(t) => setTab(t)}
+        view={view}
+        onView={setView}
+        onCreate={() => setForm({ mode: "create" })}
+        onReset={handleResetSample}
+      />
+
+      {/* Filters UI */}
+      <DriversFilterBar value={filters} onChange={setFilters} onClear={onClear} />
+
+      {/* Filters-only URL sync (keeps URL shareable without touching q/sort) */}
+      <DriversURLSync draft={filters as any} onDraftChange={setFilters as any} />
+
+      <div className="flex flex-col gap-3">
+        {view === "table" ? (
+          <>
+            <DriversBulkBar
+              selection={selection}
+              rows={rows}
+              onDeleteSelected={onDeleteSelected}
+              onExportCSV={onExportCSV}
+            />
+            <DriversTable
+              rows={rows}
+              selection={selection}
+              setSelection={setSelection}
+              onEdit={onEdit}
+              onDelete={onDelete}
+            />
+          </>
+        ) : (
+          <DriversGrid
+            rows={rows}
+            onEdit={onEdit}
+            onDelete={onDelete}
+            onOpenDetails={(id) => setOpenDetails(id)}
+          />
+        )}
+      </div>
+
+      {/* Create/Edit modal */}
+      {form && (
+        <DriverFormModal
+          open={!!form}
+          initial={form.mode === "edit" ? DriversRepo.get(form.id) ?? undefined : undefined}
+          onCancel={() => setForm(null)}
+          onSubmit={(data) => {
+            if (form.mode === "create") DriversRepo.create(data as any);
+            else DriversRepo.update(form.id, data as any);
+            setForm(null);
+            refresh();
+          }}
+        />
+      )}
+
+      {/* Details modal */}
+      <DriverDetailsModal open={!!openDetails} onClose={() => setOpenDetails(null)} d={current as any} />
+    </div>
+  );
+}
+
+
 ===== components\admin\drivers\filters\ComplianceDropdown.ui.tsx =====
 "use client";
 import * as React from "react";
@@ -5329,21 +5654,19 @@ export function DriversHeader({
 
 
 ===== components\admin\drivers\forms\DriverFormModal.ui.tsx =====
+// File: src/components/admin/drivers/forms/DriverFormModal.ui.tsx
 "use client";
 import * as React from "react";
 import type { Driver } from "@/lib/admin/drivers/types";
 import { DriversRepo } from "@/lib/admin/drivers/store";
 import { validate } from "@/lib/admin/drivers/utils";
 
-import { Modal } from "@/components/common/Modal.ui";
-import { FormSection } from "@/components/common/forms/FormSection.ui";
-import { FormActions } from "@/components/common/forms/FormActions.ui";
 import { TextInput } from "@/components/common/inputs/TextInput.ui";
-import { NumberInput } from "@/components/common/inputs/NumberInput.ui";
 import { DateInput } from "@/components/common/inputs/DateInput.ui";
 import { Select } from "@/components/common/inputs/Select.ui";
 import { FileUpload } from "@/components/common/file_upload/FileUpload.ui";
 
+const BRAND = "#7a0019";
 type FormShape = Omit<Driver, "id" | "createdAt" | "updatedAt">;
 
 export function DriverFormModal({
@@ -5366,18 +5689,19 @@ export function DriverFormModal({
     status: (initial?.status as any) ?? DriversRepo.constants.statuses[0],
     hireDate: initial?.hireDate ?? "",
     licenseNo: initial?.licenseNo ?? "",
-    licenseClass: (initial?.licenseClass as any) ?? DriversRepo.constants.licenseClasses[0],
-    licenseExpiryISO: initial?.licenseExpiryISO ?? new Date().toISOString().slice(0, 10),
+    licenseClass:
+      (initial?.licenseClass as any) ?? DriversRepo.constants.licenseClasses[0],
+    licenseExpiryISO:
+      initial?.licenseExpiryISO ?? new Date().toISOString().slice(0, 10),
     assignedVehicleId: initial?.assignedVehicleId ?? "",
     lastCheckIn: initial?.lastCheckIn ?? "",
-    rating: initial?.rating ?? 0,
+    rating: initial?.rating ?? undefined,
     notes: initial?.notes ?? "",
-    avatarUrl: (initial as any)?.avatarUrl ?? "",
-    docLicenseUrl: (initial as any)?.docLicenseUrl ?? "",
-    docGovtIdUrl: (initial as any)?.docGovtIdUrl ?? "",
+    avatarUrl: initial?.avatarUrl ?? "",
+    docLicenseUrl: initial?.docLicenseUrl ?? "",
+    docGovtIdUrl: initial?.docGovtIdUrl ?? "",
   }));
   const [err, setErr] = React.useState<string | null>(null);
-  const [avatarPreview, setAvatarPreview] = React.useState<string | undefined>((initial as any)?.avatarUrl);
 
   React.useEffect(() => {
     if (!open) return;
@@ -5390,27 +5714,219 @@ export function DriverFormModal({
       status: (initial?.status as any) ?? DriversRepo.constants.statuses[0],
       hireDate: initial?.hireDate ?? "",
       licenseNo: initial?.licenseNo ?? "",
-      licenseClass: (initial?.licenseClass as any) ?? DriversRepo.constants.licenseClasses[0],
-      licenseExpiryISO: initial?.licenseExpiryISO ?? new Date().toISOString().slice(0, 10),
+      licenseClass:
+        (initial?.licenseClass as any) ?? DriversRepo.constants.licenseClasses[0],
+      licenseExpiryISO:
+        initial?.licenseExpiryISO ?? new Date().toISOString().slice(0, 10),
       assignedVehicleId: initial?.assignedVehicleId ?? "",
       lastCheckIn: initial?.lastCheckIn ?? "",
-      rating: initial?.rating ?? 0,
+      rating: initial?.rating ?? undefined,
       notes: initial?.notes ?? "",
-      avatarUrl: (initial as any)?.avatarUrl ?? "",
-      docLicenseUrl: (initial as any)?.docLicenseUrl ?? "",
-      docGovtIdUrl: (initial as any)?.docGovtIdUrl ?? "",
+      avatarUrl: initial?.avatarUrl ?? "",
+      docLicenseUrl: initial?.docLicenseUrl ?? "",
+      docGovtIdUrl: initial?.docGovtIdUrl ?? "",
     });
-    setAvatarPreview((initial as any)?.avatarUrl || undefined);
     setErr(null);
   }, [open, initial]);
 
+  // close on ESC + lock background scroll while open
+  React.useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCancel();
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open, onCancel]);
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    const msg = validate(form as any);
-    if (msg) {
-      setErr(msg);
-      return;
-    }
+    const v = validate(form as any);
+    if (v) return setErr(v);
+    onSubmit(form);
+  };
+
+  const handleAvatar = (_: File | null, url?: string) =>
+    setForm((f) => ({ ...f, avatarUrl: url ?? "" }));
+  const handleLicenseDoc = (_: File | null, url?: string) =>
+    setForm((f) => ({ ...f, docLicenseUrl: url ?? "" }));
+  const handleGovtIdDoc = (_: File | null, url?: string) =>
+    setForm((f) => ({ ...f, docGovtIdUrl: url ?? "" }));
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] bg-black/40 p-4"
+      onMouseDown={(e) => e.target === e.currentTarget && onCancel()}
+    >
+      {/* wrapper is a column with sticky header and scrollable body */}
+      <div
+        className="mx-auto flex h-full w-full max-w-3xl max-h-[90vh] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        {/* sticky header */}
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-white px-4 py-3">
+          <h2 className="text-lg font-semibold">
+            {initial ? "Edit Driver" : "Add Driver"}
+          </h2>
+          <button
+            onClick={onCancel}
+            className="rounded-lg bg-red-600 px-3 py-1.5 text-sm text-white shadow hover:bg-red-700 focus:outline-none"
+          >
+            Close
+          </button>
+        </div>
+
+        {/* scrollable body */}
+        <div className="flex-1 overflow-y-auto p-4">
+          <form onSubmit={submit} className="grid gap-4">
+            {err && (
+              <div className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                {err}
+              </div>
+            )}
+
+            <FileUpload
+              label="Avatar"
+              preview={form.avatarUrl || undefined}
+              onChange={handleAvatar}
+            />
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <TextInput
+                label="First name"
+                value={form.firstName}
+                onChange={(v) => setForm((f) => ({ ...f, firstName: v }))}
+              />
+              <TextInput
+                label="Last name"
+                value={form.lastName}
+                onChange={(v) => setForm((f) => ({ ...f, lastName: v }))}
+              />
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <TextInput
+                label="Driver code"
+                value={form.code}
+                onChange={(v) => setForm((f) => ({ ...f, code: v }))}
+              />
+              <Select
+                label="Status"
+                value={form.status as any}
+                options={DriversRepo.constants.statuses as any}
+                onChange={(v) => setForm((f) => ({ ...f, status: v as any }))}
+              />
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <TextInput
+                label="Phone"
+                value={form.phone ?? ""}
+                onChange={(v) => setForm((f) => ({ ...f, phone: v }))}
+              />
+              <TextInput
+                label="Email"
+                value={form.email ?? ""}
+                onChange={(v) => setForm((f) => ({ ...f, email: v }))}
+              />
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <TextInput
+                label="License No."
+                value={form.licenseNo}
+                onChange={(v) => setForm((f) => ({ ...f, licenseNo: v }))}
+              />
+              <Select
+                label="Class"
+                value={form.licenseClass as any}
+                options={DriversRepo.constants.licenseClasses as any}
+                onChange={(v) =>
+                  setForm((f) => ({ ...f, licenseClass: v as any }))
+                }
+              />
+              <DateInput
+                label="Expiry"
+                value={form.licenseExpiryISO}
+                onChange={(v) =>
+                  setForm((f) => ({ ...f, licenseExpiryISO: v }))
+                }
+              />
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <DateInput
+                label="Hire date"
+                value={form.hireDate ?? ""}
+                onChange={(v) => setForm((f) => ({ ...f, hireDate: v }))}
+              />
+              <TextInput
+                label="Assigned vehicle (ID)"
+                value={form.assignedVehicleId ?? ""}
+                onChange={(v) =>
+                  setForm((f) => ({ ...f, assignedVehicleId: v }))
+                }
+              />
+              <TextInput
+                label="Rating (0-5)"
+                value={form.rating != null ? String(form.rating) : ""}
+                onChange={(v) =>
+                  setForm((f) => ({
+                    ...f,
+                    rating: v === "" ? undefined : Number(v),
+                  }))
+                }
+              />
+            </div>
+
+            <TextInput
+              label="Notes"
+              value={form.notes ?? ""}
+              onChange={(v) => setForm((f) => ({ ...f, notes: v }))}
+            />
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <FileUpload
+                label="License document"
+                preview={form.docLicenseUrl || undefined}
+                onChange={handleLicenseDoc}
+                accept="application/pdf,image/*"
+              />
+              <FileUpload
+                label="Government ID"
+                preview={form.docGovtIdUrl || undefined}
+                onChange={handleGovtIdDoc}
+                accept="application/pdf,image/*"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={onCancel}
+                className="rounded-md border bg-white px-3 py-1.5"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="rounded-md px-3 py-1.5 text-white"
+                style={{ background: BRAND }}
+              >
+                Save
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 
 ===== components\admin\drivers\forms\DriverFormSections.ui.tsx =====
@@ -5569,23 +6085,20 @@ export default function BulkBar({ count, onSuspend, onActivate, onArchive, onExp
 
 
 ===== components\admin\drivers\ui\DriverDetailsModal.ui.tsx =====
+// File: src/components/admin/drivers/ui/DriverDetailsModal.ui.tsx
 "use client";
 import * as React from "react";
-import type { Driver } from "@/lib/admin/drivers/types";
-import { Mail, Phone, IdCard } from "lucide-react";
-import { StatusBadge } from "@/components/common/StatusBadge.ui";
+import type { Driver, DriverStatus } from "@/lib/admin/drivers/types";
 
-export function DriverDetailsModal({
-  open,
-  onClose,
-  d,
-}: {
+type Props = {
   open: boolean;
   onClose: () => void;
   d: (Driver & {
     documents?: { label: string; url?: string }[];
   }) | null;
-}) {
+};
+
+export default function DriverDetailsModal({ open, onClose, d }: Props) {
   if (!open || !d) return null;
 
   const sections = [
@@ -5594,9 +6107,9 @@ export function DriverDetailsModal({
       content: (
         <div className="grid gap-2 text-sm">
           <Row label="Code" value={d.code} />
-          <Row label="Status" value={<StatusBadge value={d.status} />} />
+          <Row label="Status" value={<Badge value={d.status} />} />
           <Row label="Hire date" value={d.hireDate ?? "—"} />
-          <Row label="Rating" value={d.rating?.toFixed(1) ?? "—"} />
+          <Row label="Rating" value={d.rating != null ? d.rating.toFixed(1) : "—"} />
           <Row label="Last check-in/out" value={d.lastCheckIn ?? "—"} />
         </div>
       ),
@@ -5650,17 +6163,23 @@ export function DriverDetailsModal({
         </div>
       ),
     },
-    {
-      key: "Notes",
-      content: <div className="text-sm whitespace-pre-wrap">{d.notes ?? "—"}</div>,
-    },
+    { key: "Notes", content: <div className="text-sm whitespace-pre-wrap">{d.notes ?? "—"}</div> },
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-      <div className="max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-2xl bg-white shadow-xl">
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      {/* Scrollable modal with sticky header */}
+      <div
+        className="flex w-full max-w-5xl max-h-[90vh] min-h-0 flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
         {/* Header */}
-        <div className="flex items-center justify-between border-b p-4">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-white p-4">
           <div className="flex items-center gap-3">
             <div className="size-12 overflow-hidden rounded-full bg-gray-100">
               {d.avatarUrl ? (
@@ -5675,7 +6194,6 @@ export function DriverDetailsModal({
               <div className="text-sm text-gray-500">{d.code}</div>
             </div>
           </div>
-
           <button
             onClick={onClose}
             className="rounded-lg bg-red-600 px-3 py-1.5 text-sm text-white shadow hover:bg-red-700 focus:outline-none"
@@ -5684,9 +6202,9 @@ export function DriverDetailsModal({
           </button>
         </div>
 
-        {/* Body */}
-        <div className="grid gap-4 p-4 lg:grid-cols-[340px,1fr]">
-          {/* Left */}
+        {/* Body (scrollable) */}
+        <div className="grid flex-1 min-h-0 gap-4 overflow-y-auto p-4 lg:grid-cols-[340px,1fr]">
+          {/* Left column */}
           <div className="space-y-3">
             <div className="overflow-hidden rounded-xl border bg-white">
               {d.avatarUrl ? (
@@ -5700,15 +6218,14 @@ export function DriverDetailsModal({
             <div className="rounded-xl border bg-white p-3 text-sm">
               <div className="font-medium">Contact</div>
               <div className="mt-2 grid gap-2">
-                <ContactRow icon={<Phone size={16} />} value={d.phone ?? "—"} />
-                <ContactRow icon={<Mail size={16} />} value={d.email ?? "—"} />
+                <Row label="Phone" value={d.phone ?? "—"} />
+                <Row label="Email" value={d.email ?? "—"} />
               </div>
             </div>
           </div>
 
-          {/* Right */}
+          {/* Right column */}
           <div className="space-y-4">
-            {/* Faux tabs */}
             <div className="flex gap-3 border-b">
               {sections.map((s) => (
                 <span key={s.key} className="px-2 py-2 text-sm font-medium">
@@ -5731,132 +6248,32 @@ export function DriverDetailsModal({
   );
 }
 
+/* tiny atoms */
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex justify-between gap-4">
+    <div className="flex justify-between gap-4 text-sm">
       <span className="text-gray-600">{label}</span>
       <span className="text-gray-900">{value}</span>
     </div>
   );
 }
-function ContactRow({ icon, value }: { icon: React.ReactNode; value: React.ReactNode }) {
-  return (
-    <div className="flex items-center justify-between gap-2 text-gray-700">
-      <span className="inline-flex items-center gap-2 text-gray-600">{icon}</span>
-      <span className="truncate">{value}</span>
-    </div>
-  );
-}
 
-
-===== components\admin\drivers\ui\DriverForm.ui.tsx =====
-"use client";
-import * as React from "react";
-import type { Driver, DriverCreate } from "@/lib/admin/drivers/types";
-import { todayISO } from "@/lib/admin/drivers/utils";
-
-type Props = {
-  mode: "create" | "edit";
-  driver?: Driver;
-  onClose: () => void;
-  onSubmit: (data: DriverCreate | Partial<Driver>) => void;
-};
-
-export default function DriverForm({ mode, driver, onClose, onSubmit }: Props) {
-  const [form, setForm] = React.useState<DriverCreate>(() => ({
-    employeeNo: driver?.employeeNo ?? "",
-    firstName: driver?.firstName ?? "",
-    lastName: driver?.lastName ?? "",
-    email: driver?.email ?? "",
-    phone: driver?.phone ?? "",
-    status: driver?.status ?? "active",
-    photoUrl: driver?.photoUrl,
-    hiredAt: driver?.hiredAt ?? todayISO(),
-    license: driver?.license ?? { number: "", category: "B", expiry: todayISO() },
-    requirements: driver?.requirements,
-    primaryVehicleId: driver?.primaryVehicleId ?? null,
-    allowedVehicleTypes: driver?.allowedVehicleTypes ?? ["van","bus","car"],
-    notes: driver?.notes ?? ""
-  }));
-
-  const handle = (k: any, v: any) => setForm(s => ({ ...s, [k]: v }));
-
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSubmit(mode === "create" ? form : { ...form });
-  };
+function Badge({ value }: { value: DriverStatus }) {
+  const cls =
+    value === "active"
+      ? "bg-green-100 text-green-700"
+      : value === "on_trip"
+      ? "bg-blue-100 text-blue-700"
+      : value === "off_duty"
+      ? "bg-gray-100 text-gray-700"
+      : value === "suspended"
+      ? "bg-amber-100 text-amber-700"
+      : "bg-gray-200 text-gray-700";
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
-      <div className="w-full max-w-2xl rounded-lg bg-white shadow-lg">
-        <div className="flex items-center justify-between border-b p-4">
-          <h2 className="text-lg font-semibold">{mode === "create" ? "Add Driver" : "Edit Driver"}</h2>
-          <button className="rounded px-2 py-1 text-sm hover:bg-gray-100" onClick={onClose}>Close</button>
-        </div>
-
-        <form onSubmit={submit} className="grid gap-4 p-4 md:grid-cols-2">
-          <label className="grid gap-1">
-            <span className="text-xs text-gray-600">Employee #</span>
-            <input className="rounded border px-3 py-2" value={form.employeeNo} onChange={e=>handle("employeeNo", e.target.value)} required />
-          </label>
-
-          <label className="grid gap-1">
-            <span className="text-xs text-gray-600">Status</span>
-            <select className="rounded border px-3 py-2" value={form.status} onChange={e=>handle("status", e.target.value)}>
-              <option value="active">active</option>
-              <option value="suspended">suspended</option>
-              <option value="archived">archived</option>
-              <option value="pending_verification">pending_verification</option>
-            </select>
-          </label>
-
-          <label className="grid gap-1">
-            <span className="text-xs text-gray-600">First name</span>
-            <input className="rounded border px-3 py-2" value={form.firstName} onChange={e=>handle("firstName", e.target.value)} required />
-          </label>
-
-          <label className="grid gap-1">
-            <span className="text-xs text-gray-600">Last name</span>
-            <input className="rounded border px-3 py-2" value={form.lastName} onChange={e=>handle("lastName", e.target.value)} required />
-          </label>
-
-          <label className="grid gap-1">
-            <span className="text-xs text-gray-600">Email</span>
-            <input type="email" className="rounded border px-3 py-2" value={form.email} onChange={e=>handle("email", e.target.value)} required />
-          </label>
-
-          <label className="grid gap-1">
-            <span className="text-xs text-gray-600">Phone</span>
-            <input className="rounded border px-3 py-2" value={form.phone} onChange={e=>handle("phone", e.target.value)} />
-          </label>
-
-          <label className="grid gap-1">
-            <span className="text-xs text-gray-600">License Number</span>
-            <input className="rounded border px-3 py-2" value={form.license.number} onChange={e=>setForm(s=>({...s, license:{...s.license, number: e.target.value}}))} required />
-          </label>
-
-          <label className="grid gap-1">
-            <span className="text-xs text-gray-600">License Category</span>
-            <input className="rounded border px-3 py-2" value={form.license.category} onChange={e=>setForm(s=>({...s, license:{...s.license, category: e.target.value}}))} />
-          </label>
-
-          <label className="grid gap-1">
-            <span className="text-xs text-gray-600">License Expiry</span>
-            <input type="date" className="rounded border px-3 py-2" value={form.license.expiry} onChange={e=>setForm(s=>({...s, license:{...s.license, expiry: e.target.value}}))} />
-          </label>
-
-          <label className="grid gap-1 md:col-span-2">
-            <span className="text-xs text-gray-600">Notes</span>
-            <textarea className="rounded border px-3 py-2" rows={3} value={form.notes} onChange={e=>handle("notes", e.target.value)} />
-          </label>
-
-          <div className="md:col-span-2 flex items-center justify-end gap-2 pt-2">
-            <button type="button" className="rounded border px-4 py-2 hover:bg-gray-50" onClick={onClose}>Cancel</button>
-            <button type="submit" className="rounded bg-[#7a1f2a] px-4 py-2 text-white hover:opacity-90">{mode === "create" ? "Create" : "Save"}</button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <span className={`rounded-full px-2 py-0.5 text-xs ${cls}`}>
+      {value.replaceAll("_", " ")}
+    </span>
   );
 }
 
@@ -5912,7 +6329,7 @@ export default function DriverRowActions({ onEdit }: { onEdit: () => void }) {
 import * as React from "react";
 import type { Driver } from "@/lib/admin/drivers/types";
 import { Edit, Trash2, ChevronRight, Phone, Mail, IdCard } from "lucide-react";
-import { StatusBadge } from "@/components/common/StatusBadge.ui";
+import { StatusBadge } from "@/components/common/ui/StatusBadge.ui";
 
 const BRAND = "#7a0019";
 
@@ -6047,9 +6464,9 @@ function IconBtn({
 ===== components\admin\drivers\ui\DriversTable.ui.tsx =====
 "use client";
 import * as React from "react";
-import type { Driver } from "@/lib/admin/drivers/types";
 import { Edit, Trash2 } from "lucide-react";
-import { StatusBadge } from "@/components/common/StatusBadge.ui";
+import type { Driver } from "@/lib/admin/drivers/types";
+import { StatusBadge } from "@/components/common/ui/StatusBadge.ui";
 
 export function DriversTable({
   rows,
@@ -6109,8 +6526,7 @@ export function DriversTable({
                 <StatusBadge value={d.status} />
               </td>
               <td className="p-2">
-                {d.licenseClass} • {d.licenseNo} &nbsp;(
-                {d.licenseExpiryISO})
+                {d.licenseClass} • {d.licenseNo} &nbsp;({d.licenseExpiryISO})
               </td>
               <td className="p-2">{d.phone ?? "—"}</td>
               <td className="p-2">{d.email ?? "—"}</td>
@@ -6449,12 +6865,17 @@ function MiniBar({ data }: { data: { day: string; count: number }[] }) {
 }
 
 
-===== components\admin\maintenance\FiltersBar.ui.tsx =====
+===== components\admin\maintenance\filters\FiltersBar.ui.tsx =====
+// src/components/admin/maintenance/filters/FiltersBar.ui.tsx
 "use client";
 import * as React from "react";
 import { Search } from "lucide-react";
 import type { MaintFilters } from "@/lib/admin/maintenance/types";
 import { MaintConstants } from "@/lib/admin/maintenance/service";
+import { Select } from "@/components/common/inputs/Select.ui"; // string[] options
+
+const TYPE_OPTIONS = ["All Types", ...MaintConstants.types] as const;
+const STATUS_OPTIONS = ["All Status", ...MaintConstants.statuses] as const;
 
 export function MaintFiltersBar({
   value, onChange, onClear
@@ -6463,39 +6884,46 @@ export function MaintFiltersBar({
   onChange: (v: MaintFilters) => void;
   onClear: () => void;
 }) {
+  const typeDisplay = value.type ?? "All Types";
+  const statusDisplay = value.status ?? "All Status";
+
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-white p-2">
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-white p-2">
       <div className="flex items-center gap-2 px-2 py-1.5 rounded-md border">
         <Search size={16} className="opacity-60" />
         <input
-          placeholder="Search vehicle, plate, description…"
-          className="outline-none text-sm"
           value={value.search ?? ""}
-          onChange={e => onChange({ ...value, search: e.target.value })}
+          onChange={(e) => onChange({ ...value, search: e.currentTarget.value })}
+          placeholder="Search vehicle, plate, description…"
+          autoComplete="off"
+          className="outline-none text-sm"
+          suppressHydrationWarning
+          aria-label="Search maintenance"
         />
       </div>
 
-      <select
-        className="rounded-md border px-2 py-1.5 text-sm bg-white"
-        value={value.type ?? ""}
-        onChange={e => onChange({ ...value, type: e.target.value as any })}
-      >
-        <option value="">All Types</option>
-        {MaintConstants.types.map(t => <option key={t} value={t}>{t}</option>)}
-      </select>
+      <Select
+        label="Type"
+        value={typeDisplay}
+        options={TYPE_OPTIONS}
+        onChange={(next) =>
+          onChange({ ...value, type: next === "All Types" ? undefined : (next as any) })
+        }
+      />
 
-      <select
-        className="rounded-md border px-2 py-1.5 text-sm bg-white"
-        value={value.status ?? ""}
-        onChange={e => onChange({ ...value, status: e.target.value as any })}
-      >
-        <option value="">All Status</option>
-        {MaintConstants.statuses.map(s => <option key={s} value={s}>{s}</option>)}
-      </select>
+      <Select
+        label="Status"
+        value={statusDisplay}
+        options={STATUS_OPTIONS}
+        onChange={(next) =>
+          onChange({ ...value, status: next === "All Status" ? undefined : (next as any) })
+        }
+      />
 
       <button
         onClick={onClear}
         className="ml-auto px-3 py-1.5 text-sm rounded-md border hover:bg-gray-50"
+        aria-label="Clear filters"
       >
         Clear
       </button>
@@ -6504,7 +6932,7 @@ export function MaintFiltersBar({
 }
 
 
-===== components\admin\maintenance\MaintForm.ui.tsx =====
+===== components\admin\maintenance\forms\MaintForm.ui.tsx =====
 "use client";
 import * as React from "react";
 import type { Maintenance } from "@/lib/admin/maintenance/types";
@@ -6566,92 +6994,333 @@ export function MaintForm({
 }
 
 
-===== components\admin\maintenance\MaintTable.ui.tsx =====
+===== components\admin\maintenance\table\Pagination.tsx =====
 "use client";
 import * as React from "react";
-import { Edit, Trash2 } from "lucide-react";
-import type { Maintenance } from "@/lib/admin/maintenance/types";
 
-export function MaintTable({
-  rows, selection, setSelection, onEdit, onDelete
+export default function Pagination({
+  page, total, pageSize, onPrev, onNext
 }: {
+  page: number;
+  total: number;
+  pageSize: number;
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  const start = total ? (page - 1) * pageSize + 1 : 0;
+  const end = Math.min(total, page * pageSize);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  return (
+    <div className="flex items-center justify-between p-3">
+      <div className="text-xs text-gray-500">
+        Showing {start}-{end} of {total}
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          className="rounded-full border px-3 py-1.5 text-sm disabled:opacity-50"
+          onClick={onPrev}
+          disabled={page === 1}
+          title="Prev"
+        >
+          Prev
+        </button>
+        <span className="text-sm">Page {page} / {totalPages}</span>
+        <button
+          className="rounded-full border px-3 py-1.5 text-sm disabled:opacity-50"
+          onClick={onNext}
+          disabled={page >= totalPages}
+          title="Next"
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
+===== components\admin\maintenance\table\TableHeader.tsx =====
+"use client";
+import * as React from "react";
+
+export default function TableHeader({
+  allOnPageSelected,
+  onToggleAll,
+}: {
+  allOnPageSelected: boolean;
+  onToggleAll: (checked: boolean) => void;
+}) {
+  return (
+    <thead className="bg-gray-50 text-gray-600 sticky top-0 z-10">
+      <tr>
+        <th className="w-10 p-2 text-left">
+          <input
+            type="checkbox"
+            checked={allOnPageSelected}
+            onChange={(e) => onToggleAll(e.currentTarget.checked)}
+            aria-label="Select all on page"
+          />
+        </th>
+        <th className="p-2 text-left">Vehicle</th>
+        <th className="p-2 text-left">Plate</th>
+        <th className="p-2 text-left">Type</th>
+        <th className="p-2 text-left">Status</th>
+        <th className="p-2 text-left">Cost</th>
+        <th className="p-2 text-left">Date</th>
+        <th className="p-2 text-right">Actions</th>
+      </tr>
+    </thead>
+  );
+}
+
+
+===== components\admin\maintenance\table\TableRow.tsx =====
+"use client";
+import * as React from "react";
+import type { Maintenance } from "@/lib/admin/maintenance/types";
+import { Pencil, Trash2 } from "lucide-react";
+import StatusChip from "@/components/common/ui/StatusChip.ui";
+
+const php = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 });
+
+function pick(r: Maintenance, ...keys: string[]) {
+  for (const k of keys) {
+    const v = (r as any)[k];
+    if (v !== undefined && v !== null && v !== "") return v;
+  }
+  return "";
+}
+const getCost = (r: Maintenance) => {
+  const v = pick(r, "cost", "amount", "totalCost", "price") as any;
+  const n = Number(v); return Number.isFinite(n) ? n : 0;
+};
+
+export default function TableRow({
+  row, checked, onToggle, onEdit, onDelete
+}: {
+  row: Maintenance;
+  checked: boolean;
+  onToggle: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const status = String(pick(row, "status", "state") || "");
+
+  return (
+    <tr className="border-t even:bg-gray-50/40 hover:bg-gray-50 transition-colors">
+      <td className="p-2">
+        <input type="checkbox" checked={checked} onChange={onToggle} aria-label="Select row" />
+      </td>
+      <td className="p-2">{pick(row, "vehicleCode", "vehicle", "unit")}</td>
+      <td className="p-2">{pick(row, "plateNo", "plate", "plateNumber")}</td>
+      <td className="p-2">{pick(row, "type", "category", "kind")}</td>
+      <td className="p-2"><StatusChip status={status} /></td>
+      <td className="p-2">{php.format(getCost(row))}</td>
+      <td className="p-2">{pick(row, "date", "serviceDate", "performedAt", "updatedAt", "createdAt")}</td>
+      <td className="p-2 text-right">
+        <div className="inline-flex gap-1">
+          <button
+            onClick={onEdit}
+            className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 bg-white hover:bg-gray-50"
+            aria-label="Edit"
+          >
+            <Pencil size={14} /> Edit
+          </button>
+          <button
+            onClick={onDelete}
+            className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 bg-white text-rose-700 hover:bg-rose-50"
+            aria-label="Delete"
+          >
+            <Trash2 size={14} /> Delete
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+
+===== components\admin\maintenance\table\index.tsx =====
+// src/components/admin/maintenance/table/index.tsx
+"use client";
+import * as React from "react";
+import type { Maintenance } from "@/lib/admin/maintenance/types";
+import TableHeader from "./TableHeader";
+import TableRow from "./TableRow";
+import Pagination from "./Pagination";
+import Toolbar from "@/components/admin/maintenance/toolbar/Toolbar";
+// ⬇ keep your common UI that actually matches your repo
+import EmptyState from "@/components/common/ui/EmptyState.ui";
+import SkeletonTable from "@/components/common/ui/SkeletonTable.ui";
+
+export type MaintTableHandle = { getVisibleIds: () => string[] };
+
+type Props = {
+  loading?: boolean;
   rows: Maintenance[];
   selection: string[];
   setSelection: (ids: string[]) => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
-}) {
-  const all = rows.length > 0 && selection.length === rows.length;
-  const toggleAll = () => setSelection(all ? [] : rows.map(r => r.id));
-  const toggleOne = (id: string) =>
-    setSelection(selection.includes(id) ? selection.filter(x => x !== id) : [...selection, id]);
+  onExport: () => void;
+  onDeleteSelected: () => void;
+  onAdd: () => void;
+  pageSize?: number;
+};
+
+function InnerTable(
+  {
+    loading = false,
+    rows,
+    selection,
+    setSelection,
+    onEdit,
+    onDelete,
+    onExport,
+    onDeleteSelected,
+    onAdd,
+    pageSize = 10,
+  }: Props,
+  ref: React.Ref<MaintTableHandle>
+) {
+  const [page, setPage] = React.useState(1);
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  React.useEffect(() => { setPage((p) => Math.min(p, totalPages)); }, [rows.length, pageSize, totalPages]);
+
+  const start = (page - 1) * pageSize;
+  const visible = rows.slice(start, start + pageSize);
+
+  React.useImperativeHandle(ref, () => ({ getVisibleIds: () => visible.map((r: any) => r.id) }), [visible]);
+
+  const allOnPageSelected = visible.length > 0 && visible.every((r: any) => selection.includes(r.id));
+  const toggleSelectAllOnPage = (checked: boolean) => {
+    if (!visible.length) return;
+    if (checked) {
+      const merged = new Set([...selection, ...visible.map((r: any) => r.id)]);
+      setSelection(Array.from(merged));
+    } else {
+      const minus = new Set(selection);
+      visible.forEach((r: any) => minus.delete(r.id));
+      setSelection(Array.from(minus));
+    }
+  };
 
   return (
-    <div className="overflow-x-auto rounded-lg border bg-white">
-      <table className="min-w-[980px] w-full text-sm">
-        <thead className="bg-gray-50 text-gray-600">
-          <tr>
-            <th className="w-10 p-2 text-left">
-              <input type="checkbox" checked={all} onChange={toggleAll} />
-            </th>
-            <th className="p-2 text-left">Vehicle</th>
-            <th className="p-2 text-left">Plate</th>
-            <th className="p-2 text-left">Type</th>
-            <th className="p-2 text-left">Description</th>
-            <th className="p-2 text-right">Odometer</th>
-            <th className="p-2 text-left">Request</th>
-            <th className="p-2 text-left">Service</th>
-            <th className="p-2 text-left">Status</th>
-            <th className="p-2"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(m => (
-            <tr key={m.id} className="border-top">
-              <td className="p-2">
-                <input
-                  type="checkbox"
-                  checked={selection.includes(m.id)}
-                  onChange={() => toggleOne(m.id)}
-                />
-              </td>
-              <td className="p-2">{m.vehicleCode}</td>
-              <td className="p-2">{m.plateNo}</td>
-              <td className="p-2">{m.type}</td>
-              <td className="p-2">{m.description}</td>
-              <td className="p-2 text-right">{m.odometerKm.toLocaleString()} km</td>
-              <td className="p-2">{m.requestDate}</td>
-              <td className="p-2">{m.serviceDate ?? "-"}</td>
-              <td className="p-2">
-                <span className="px-2 py-0.5 rounded-full bg-gray-100">{m.status}</span>
-              </td>
-              <td className="p-2">
-                <div className="flex justify-end gap-1.5">
-                  <button
-                    onClick={() => onEdit(m.id)}
-                    className="p-1.5 border rounded-md hover:bg-gray-50"
-                  >
-                    <Edit size={16} />
-                  </button>
-                  <button
-                    onClick={() => onDelete(m.id)}
-                    className="p-1.5 border rounded-md hover:bg-gray-50"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              </td>
-            </tr>
-          ))}
-          {rows.length === 0 && (
-            <tr>
-              <td colSpan={10} className="p-6 text-center text-gray-500">
-                No records
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+    <div className="rounded-2xl border bg-white shadow-sm">
+      <div className="flex items-center justify-between p-3">
+        <h2 className="text-base font-semibold">Maintenance Records</h2>
+        <Toolbar
+          selectionCount={selection.length}
+          onExport={onExport}
+          onDeleteSelected={onDeleteSelected}
+          onAdd={onAdd}
+        />
+      </div>
+
+      {loading ? (
+        <div className="p-3">
+          <SkeletonTable rows={6} cols={8} />
+        </div>
+      ) : rows.length === 0 ? (
+        <EmptyState
+          title="No maintenance records"
+          description="Try adjusting your filters or add a new record."
+          action={
+            <button
+              onClick={onAdd}
+              className="rounded-xl px-4 py-2 bg-[#7a0019] text-white hover:brightness-110"
+            >
+              Add Maintenance
+            </button>
+          }
+        />
+      ) : (
+        <>
+          <div className="overflow-x-auto">
+            <table className="min-w-[840px] w-full text-sm">
+              <TableHeader allOnPageSelected={allOnPageSelected} onToggleAll={toggleSelectAllOnPage} />
+              <tbody>
+                {visible.map((r: any) => (
+                  <TableRow
+                    key={r.id}
+                    row={r}
+                    checked={selection.includes(r.id)}
+                    onToggle={() => {
+                      const s = new Set(selection);
+                      s.has(r.id) ? s.delete(r.id) : s.add(r.id);
+                      setSelection(Array.from(s));
+                    }}
+                    onEdit={() => onEdit(r.id)}
+                    onDelete={() => onDelete(r.id)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <Pagination
+            page={page}
+            total={rows.length}
+            pageSize={pageSize}
+            onPrev={() => setPage((p) => Math.max(1, p - 1))}
+            onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+const Table = React.forwardRef(InnerTable);
+export default Table;
+
+
+===== components\admin\maintenance\toolbar\Toolbar.tsx =====
+"use client";
+import * as React from "react";
+import { Download, Trash2, Plus } from "lucide-react";
+
+export default function Toolbar({
+  selectionCount, onExport, onDeleteSelected, onAdd
+}: {
+  selectionCount: number;
+  onExport: () => void;
+  onDeleteSelected: () => void;
+  onAdd: () => void;
+}) {
+  const Primary = "bg-[#7a0019] text-white hover:brightness-110";
+  const Ghost = "border bg-white hover:bg-gray-50";
+
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        onClick={onExport}
+        className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl ${Ghost}`}
+        title="Ctrl+Enter"
+        aria-label="Export CSV"
+      >
+        <Download size={16} /> Export
+      </button>
+
+      <button
+        disabled={!selectionCount}
+        onClick={onDeleteSelected}
+        className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl ${Ghost} disabled:opacity-50`}
+        title="Delete selected"
+        aria-label="Delete selected"
+      >
+        <Trash2 size={16} /> Delete ({selectionCount || 0})
+      </button>
+
+      <button
+        onClick={onAdd}
+        className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl ${Primary}`}
+        title="Alt+N"
+        aria-label="Add record"
+      >
+        <Plus size={16} /> Add
+      </button>
     </div>
   );
 }
@@ -9469,6 +10138,77 @@ export default function ViewToggleUI({
 }
 
 
+===== components\admin\schedule\ScheduleURLSync.tsx =====
+"use client";
+import * as React from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+
+type ScheduleFilterDraft = {
+  status?: "All" | "Planned" | "InProgress" | "Completed" | "Cancelled";
+  dept?: "All" | "CCMS" | "HR" | "Registrar" | "Finance";
+  from?: string; // YYYY-MM-DD
+  to?: string;   // YYYY-MM-DD
+  mode?: "auto" | "apply";
+};
+
+const STATUS = ["All","Planned","InProgress","Completed","Cancelled"] as const;
+const DEPT   = ["All","CCMS","HR","Registrar","Finance"] as const;
+const MODE   = ["auto","apply"] as const;
+const isIn = <T extends readonly string[]>(vs: T, v: string): v is T[number] => (vs as readonly string[]).includes(v);
+
+type Props = { draft: ScheduleFilterDraft; onDraftChange: (n: Partial<ScheduleFilterDraft>) => void; };
+
+export default function ScheduleURLSync({ draft, onDraftChange }: Props) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const lastRef = React.useRef("");
+
+  React.useEffect(() => {
+    const sp = searchParams ?? new URLSearchParams();
+    const next: Partial<ScheduleFilterDraft> = {};
+    const status = sp.get("status") || undefined;
+    const dept   = sp.get("dept") || undefined;
+    const from   = sp.get("from") || undefined;
+    const to     = sp.get("to") || undefined;
+    const mode   = sp.get("mode") || undefined;
+
+    if (status && isIn(STATUS, status)) next.status = status;
+    if (dept && isIn(DEPT, dept)) next.dept = dept;
+    if (from) next.from = from;
+    if (to) next.to = to;
+    if (mode && isIn(MODE, mode)) next.mode = mode;
+
+    if (Object.keys(next).length) onDraftChange(next);
+    lastRef.current = JSON.stringify({
+      status: next.status ?? "", dept: next.dept ?? "", from: next.from ?? "", to: next.to ?? "", mode: next.mode ?? ""
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  React.useEffect(() => {
+    const payload = {
+      status: draft.status ?? "", dept: draft.dept ?? "", from: draft.from ?? "", to: draft.to ?? "", mode: draft.mode ?? ""
+    };
+    const str = JSON.stringify(payload);
+    if (str === lastRef.current) return;
+
+    const base = searchParams?.toString() ?? "";
+    const sp = new URLSearchParams(base);
+    payload.status ? sp.set("status", payload.status) : sp.delete("status");
+    payload.dept ? sp.set("dept", payload.dept) : sp.delete("dept");
+    payload.from ? sp.set("from", payload.from) : sp.delete("from");
+    payload.to ? sp.set("to", payload.to) : sp.delete("to");
+    payload.mode ? sp.set("mode", payload.mode) : sp.delete("mode");
+
+    lastRef.current = str;
+    router.replace(`${pathname}?${sp.toString()}`);
+  }, [draft, pathname, router, searchParams]);
+
+  return null;
+}
+
+
 ===== components\admin\schedule\filters\ScheduleFilterDropdown.ui.tsx =====
 "use client";
 import * as React from "react";
@@ -9679,24 +10419,23 @@ function Field({
 
 
 ===== components\admin\schedule\forms\CreateScheduleDialog.ui.tsx =====
+// src/components/admin/schedule/forms/CreateScheduleDialog.ui.tsx
 "use client";
 import * as React from "react";
-import MapPicker, { PickedPlace } from "@/components/common/MapPicker.ui";
+import MapPicker, { PickedPlace } from "@/components/common/map/MapPicker.ui";
 
-// ---- types the container will import ----
 export type CreateForm = {
   requestId: string | null;
   title: string;
   origin: string;
   destination: string;
-  date: string;         // yyyy-mm-dd
-  startTime: string;    // HH:mm
-  endTime: string;      // HH:mm
+  date: string;       // yyyy-mm-dd
+  startTime: string;  // HH:mm
+  endTime: string;    // HH:mm
   driverId: string;
   vehicleId: string;
   status: "PLANNED" | "ONGOING" | "COMPLETED" | "CANCELLED";
   notes: string;
-  // optional structured places (saved by container if you want)
   originPlace?: PickedPlace | null;
   destinationPlace?: PickedPlace | null;
 };
@@ -9706,32 +10445,51 @@ export type VehicleOption = { id: string; label: string; plateNo: string; busy?:
 
 type Props = {
   open: boolean;
-  tripIdPreview: string;
-  form: CreateForm;
-  drivers: DriverOption[];
-  vehicles: VehicleOption[];
-  driverConflicts: Array<{ id: string; title: string; date: string; startTime: string; endTime: string }>;
-  vehicleConflicts: Array<{ id: string; title: string; date: string; startTime: string; endTime: string }>;
-  disableSave: boolean;
+  tripIdPreview?: string;
+  form?: CreateForm; // ← tolerant
+  drivers?: DriverOption[];
+  vehicles?: VehicleOption[];
+  driverConflicts?: Array<{ id: string; title: string; date: string; startTime: string; endTime: string }>;
+  vehicleConflicts?: Array<{ id: string; title: string; date: string; startTime: string; endTime: string }>;
+  disableSave?: boolean;
 
-  onChange: (patch: Partial<CreateForm>) => void;
+  onChange?: (patch: Partial<CreateForm>) => void;
   onClose: () => void;
-  onSave: () => void;
+  onSave?: () => void;
 };
 
-export default function CreateScheduleDialogUI({
-  open,
-  tripIdPreview,
-  form,
-  drivers,
-  vehicles,
-  driverConflicts,
-  vehicleConflicts,
-  disableSave,
-  onChange,
-  onClose,
-  onSave,
-}: Props) {
+export default function CreateScheduleDialogUI(props: Props) {
+  const {
+    open,
+    tripIdPreview = "",
+    onClose,
+    onSave = () => {},
+    onChange = () => {},
+  } = props;
+
+  // Safe defaults if anything is missing
+  const form: CreateForm = {
+    requestId: props.form?.requestId ?? null,
+    title: props.form?.title ?? "",
+    origin: props.form?.origin ?? "",
+    destination: props.form?.destination ?? "",
+    date: props.form?.date ?? new Date().toISOString().slice(0, 10),
+    startTime: props.form?.startTime ?? "08:00",
+    endTime: props.form?.endTime ?? "09:00",
+    driverId: props.form?.driverId ?? "",
+    vehicleId: props.form?.vehicleId ?? "",
+    status: props.form?.status ?? "PLANNED",
+    notes: props.form?.notes ?? "",
+    originPlace: props.form?.originPlace ?? null,
+    destinationPlace: props.form?.destinationPlace ?? null,
+  };
+
+  const drivers = props.drivers ?? [];
+  const vehicles = props.vehicles ?? [];
+  const driverConflicts = props.driverConflicts ?? [];
+  const vehicleConflicts = props.vehicleConflicts ?? [];
+  const disableSave = props.disableSave ?? false;
+
   const [openOriginMap, setOpenOriginMap] = React.useState(false);
   const [openDestMap, setOpenDestMap] = React.useState(false);
 
@@ -9746,7 +10504,7 @@ export default function CreateScheduleDialogUI({
         {/* Header */}
         <div className="flex items-center justify-between border-b px-5 py-4">
           <h3 className="text-lg font-semibold">
-            {form?.requestId ? "Edit schedule" : "Create schedule"}
+            {form.requestId ? "Edit schedule" : "Create schedule"}
           </h3>
           <div className="text-xs text-neutral-500">
             Trip ID (auto):{" "}
@@ -9893,9 +10651,7 @@ export default function CreateScheduleDialogUI({
 
           {/* Notes */}
           <div className="col-span-2">
-            <label className="mb-1 block text-xs font-medium text-neutral-600">
-              Notes (optional)
-            </label>
+            <label className="mb-1 block text-xs font-medium text-neutral-600">Notes (optional)</label>
             <textarea
               className="min-h-[90px] w-full rounded-lg border px-3 py-2"
               placeholder="Anything the driver needs to know…"
@@ -9905,7 +10661,7 @@ export default function CreateScheduleDialogUI({
           </div>
 
           {/* Warnings */}
-          {(driverConflicts.length || vehicleConflicts.length) > 0 && (
+          {(driverConflicts.length > 0 || vehicleConflicts.length > 0) && (
             <div className="col-span-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
               <div className="mb-1 font-medium">Conflicts</div>
               {driverConflicts.length > 0 && (
@@ -9930,9 +10686,7 @@ export default function CreateScheduleDialogUI({
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-2 border-t px-5 py-3">
-          <button onClick={onClose} className="h-10 rounded-lg border px-4">
-            Cancel
-          </button>
+          <button onClick={onClose} className="h-10 rounded-lg border px-4">Cancel</button>
           <button
             onClick={onSave}
             disabled={disableSave}
@@ -9947,20 +10701,13 @@ export default function CreateScheduleDialogUI({
           open={openOriginMap}
           initial={form.originPlace ?? null}
           onClose={() => setOpenOriginMap(false)}
-          onPick={(p) => {
-            // update both plain text and structured place
-            onChange({ origin: p.address, originPlace: p });
-            setOpenOriginMap(false);
-          }}
+          onPick={(p) => { onChange({ origin: p.address, originPlace: p }); setOpenOriginMap(false); }}
         />
         <MapPicker
           open={openDestMap}
           initial={form.destinationPlace ?? null}
           onClose={() => setOpenDestMap(false)}
-          onPick={(p) => {
-            onChange({ destination: p.address, destinationPlace: p });
-            setOpenDestMap(false);
-          }}
+          onPick={(p) => { onChange({ destination: p.address, destinationPlace: p }); setOpenDestMap(false); }}
         />
       </div>
     </div>
@@ -9969,14 +10716,10 @@ export default function CreateScheduleDialogUI({
 
 
 ===== components\admin\schedule\forms\CreateScheduleDialogs.container.tsx =====
+// src/components/admin/schedule/forms/CreateScheduleDialogs.container.tsx
 "use client";
 import * as React from "react";
-import CreateScheduleDialogUI, {
-  CreateForm,
-  DriverOption,
-  VehicleOption,
-} from "./CreateScheduleDialog.ui";
-
+import CreateScheduleDialogUI, { CreateForm, DriverOption, VehicleOption } from "./CreateScheduleDialog.ui";
 import { ScheduleRepo } from "@/lib/admin/schedule/store";
 import type { Schedule } from "@/lib/admin/schedule/types";
 import {
@@ -10003,17 +10746,21 @@ const makeInit = (initial?: Partial<Schedule>): CreateForm => {
     date: initial?.date ?? new Date().toISOString().slice(0, 10),
     startTime: initial?.startTime ?? "08:00",
     endTime: initial?.endTime ?? "09:00",
-    driverId: initial?.driverId ?? drivers[0].id,
-    vehicleId: initial?.vehicleId ?? vehicles[0].id,
+    driverId: initial?.driverId ?? (drivers[0]?.id ?? ""),
+    vehicleId: initial?.vehicleId ?? (vehicles[0]?.id ?? ""),
     status: (initial?.status as Schedule["status"]) ?? "PLANNED",
     notes: initial?.notes ?? "",
-    // fields that CreateForm carries for the map picker
     originPlace: null,
     destinationPlace: null,
   };
 };
 
-export default function CreateScheduleDialog({ open, initial, onClose, onSubmit }: Props) {
+export default function CreateScheduleDialog({
+  open,
+  initial,
+  onClose,
+  onSubmit,
+}: Props) {
   const [form, setForm] = React.useState<CreateForm>(makeInit(initial));
 
   React.useEffect(() => {
@@ -10021,8 +10768,9 @@ export default function CreateScheduleDialog({ open, initial, onClose, onSubmit 
   }, [open, initial]);
 
   const snapshot = ScheduleRepo.list();
-  const editingId = (initial?.id as string | undefined) ?? undefined;
+  const editingId = initial?.id as string | undefined;
 
+  // probe event with current form to evaluate conflicts
   const probe: Schedule = {
     id: editingId || "new",
     createdAt: new Date().toISOString(),
@@ -10030,7 +10778,7 @@ export default function CreateScheduleDialog({ open, initial, onClose, onSubmit 
     ...form,
   };
 
-  // options with busy flags
+  // options (mark busy)
   const drivers: DriverOption[] = ScheduleRepo.constants.drivers.map((d) => ({
     id: d.id,
     name: d.name,
@@ -10064,9 +10812,8 @@ export default function CreateScheduleDialog({ open, initial, onClose, onSubmit 
       onClose={onClose}
       onSave={() => {
         if (disableSave) return;
-        // Submit only the Schedule fields expected by onSubmit
-        const { originPlace, destinationPlace, ...rest } = form;
-        onSubmit(rest);
+        const { originPlace, destinationPlace, ...payload } = form;
+        onSubmit(payload);
       }}
     />
   );
@@ -10685,6 +11432,72 @@ export default function StatusBadge({ status }: { status: ScheduleStatus }) {
       {status}
     </span>
   );
+}
+
+
+===== components\admin\vehicles\VehiclesURLSync.tsx =====
+"use client";
+import * as React from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+
+type VehiclesFilterDraft = {
+  status?: "All" | "Available" | "InUse" | "Repair" | "Retired";
+  type?: "All" | "Car" | "Van" | "Truck" | "Bus";
+  from?: string;
+  to?: string;
+  mode?: "auto" | "apply";
+};
+
+const STATUS = ["All","Available","InUse","Repair","Retired"] as const;
+const TYPE   = ["All","Car","Van","Truck","Bus"] as const;
+const MODE   = ["auto","apply"] as const;
+const isIn = <T extends readonly string[]>(vs: T, v: string): v is T[number] => (vs as readonly string[]).includes(v);
+
+type Props = { draft: VehiclesFilterDraft; onDraftChange: (n: Partial<VehiclesFilterDraft>) => void; };
+
+export default function VehiclesURLSync({ draft, onDraftChange }: Props) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const lastRef = React.useRef("");
+
+  React.useEffect(() => {
+    const sp = searchParams ?? new URLSearchParams();
+    const next: Partial<VehiclesFilterDraft> = {};
+    const status = sp.get("status") || undefined;
+    const type   = sp.get("type") || undefined;
+    const from   = sp.get("from") || undefined;
+    const to     = sp.get("to") || undefined;
+    const mode   = sp.get("mode") || undefined;
+
+    if (status && isIn(STATUS, status)) next.status = status;
+    if (type && isIn(TYPE, type)) next.type = type;
+    if (from) next.from = from;
+    if (to) next.to = to;
+    if (mode && isIn(MODE, mode)) next.mode = mode;
+
+    if (Object.keys(next).length) onDraftChange(next);
+    lastRef.current = JSON.stringify({ status: next.status ?? "", type: next.type ?? "", from: next.from ?? "", to: next.to ?? "", mode: next.mode ?? "" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  React.useEffect(() => {
+    const payload = { status: draft.status ?? "", type: draft.type ?? "", from: draft.from ?? "", to: draft.to ?? "", mode: draft.mode ?? "" };
+    const str = JSON.stringify(payload);
+    if (str === lastRef.current) return;
+
+    const sp = new URLSearchParams(searchParams?.toString() ?? "");
+    payload.status ? sp.set("status", payload.status) : sp.delete("status");
+    payload.type ? sp.set("type", payload.type) : sp.delete("type");
+    payload.from ? sp.set("from", payload.from) : sp.delete("from");
+    payload.to ? sp.set("to", payload.to) : sp.delete("to");
+    payload.mode ? sp.set("mode", payload.mode) : sp.delete("mode");
+
+    lastRef.current = str;
+    router.replace(`${pathname}?${sp.toString()}`);
+  }, [draft, pathname, router, searchParams]);
+
+  return null;
 }
 
 
@@ -11823,7 +12636,7 @@ export function VehiclesGrid({
 import * as React from "react";
 import { Edit, Trash2 } from "lucide-react";
 import type { Vehicle } from "@/lib/admin/vehicles/types";
-import { StatusBadge } from "@/components/common/StatusBadge.ui";
+import { StatusBadge } from "@/components/common/ui/StatusBadge.ui";
 
 export function VehiclesTable({
   rows,
@@ -12185,301 +12998,6 @@ export default function Header({
 }
 
 
-===== components\common\MapPicker.ui.tsx =====
-"use client";
-
-import * as React from "react";
-import { createPortal } from "react-dom";
-import dynamic from "next/dynamic";
-import type { PickedPlace } from "./MapPickerLeafletImpl";
-
-// Dynamically import the Leaflet impl (client only)
-const MapPickerLeaflet = dynamic(() => import("./MapPickerLeafletImpl"), {
-  ssr: false,
-  loading: () => null,
-});
-
-export type { PickedPlace };
-
-function usePortalTarget() {
-  const [el, setEl] = React.useState<HTMLElement | null>(null);
-
-  React.useEffect(() => {
-    let target = document.getElementById("travilink-portal-root") as HTMLElement | null;
-    if (!target) {
-      target = document.createElement("div");
-      target.id = "travilink-portal-root";
-      document.body.appendChild(target);
-    }
-    setEl(target);
-    return () => {
-      // keep the portal for reuse; don’t remove
-    };
-  }, []);
-
-  return el;
-}
-
-export default function MapPicker(props: {
-  open: boolean;
-  onClose: () => void;
-  onPick: (p: PickedPlace) => void;
-  initial?: PickedPlace | null;
-}) {
-  // Guard SSR
-  if (typeof window === "undefined") return null;
-  const target = usePortalTarget();
-  if (!target || !props.open) return null;
-
-  return createPortal(
-    // Backdrop + centered card, isolated from the dialog’s stacking context
-    <div
-      className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/50"
-      onClick={props.onClose}
-    >
-      <div
-        className="mx-3 w-[min(1000px,calc(100vw-1.5rem))] rounded-2xl bg-white shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <MapPickerLeaflet {...props} />
-      </div>
-    </div>,
-    target
-  );
-}
-
-
-===== components\common\MapPickerLeafletImpl.tsx =====
-// src/components/common/MapPickerLeafletImpl.tsx
-"use client";
-
-import * as React from "react";
-import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
-import L from "leaflet";
-
-//
-// Default marker icons — copy these files to:
-//   /public/leaflet/marker-icon.png
-//   /public/leaflet/marker-icon-2x.png
-//   /public/leaflet/marker-shadow.png
-//
-L.Icon.Default.mergeOptions({
-  iconUrl: "/leaflet/marker-icon.png",
-  iconRetinaUrl: "/leaflet/marker-icon-2x.png",
-  shadowUrl: "/leaflet/marker-shadow.png",
-});
-
-export type PickedPlace = {
-  lat: number;
-  lng: number;
-  address: string;
-};
-
-type Props = {
-  open: boolean;                 // (kept for API symmetry; not used here)
-  onClose: () => void;
-  onPick: (p: PickedPlace) => void;
-  initial?: PickedPlace | null;
-};
-
-type NominatimHit = {
-  display_name: string;
-  lat: string;
-  lon: string;
-};
-
-// tiny debounce so we don't spam Nominatim when typing
-function useDebounced<T extends (...args: any[]) => void>(fn: T, delay = 400) {
-  const t = React.useRef<number | null>(null);
-  return React.useCallback(
-    (...args: Parameters<T>) => {
-      if (t.current) window.clearTimeout(t.current);
-      t.current = window.setTimeout(() => fn(...args), delay);
-    },
-    [fn, delay]
-  );
-}
-
-async function nominatimSearch(q: string) {
-  const params = new URLSearchParams({
-    q,
-    format: "jsonv2",
-    limit: "8",
-    dedupe: "1",
-    addressdetails: "1",
-    autocomplete: "1",
-    countrycodes: "ph", // bias to PH; remove if you want global
-  });
-  const url = `https://nominatim.openstreetmap.org/search?${params.toString()}`;
-  const res = await fetch(url);
-  if (!res.ok) return [];
-  return (await res.json()) as NominatimHit[];
-}
-
-async function nominatimReverse(lat: number, lon: number) {
-  const params = new URLSearchParams({
-    format: "jsonv2",
-    lat: String(lat),
-    lon: String(lon),
-    addressdetails: "1",
-  });
-  const url = `https://nominatim.openstreetmap.org/reverse?${params.toString()}`;
-  const res = await fetch(url);
-  if (!res.ok) return null;
-  return await res.json();
-}
-
-function ClickPicker({ onPickPos }: { onPickPos: (lat: number, lng: number) => void }) {
-  useMapEvents({
-    click(e) {
-      onPickPos(e.latlng.lat, e.latlng.lng);
-    },
-  });
-  return null;
-}
-
-export default function MapPickerLeafletImpl({ onClose, onPick, initial }: Props) {
-  const [query, setQuery] = React.useState("");
-  const [results, setResults] = React.useState<NominatimHit[]>([]);
-  const [loading, setLoading] = React.useState(false);
-  const [chosen, setChosen] = React.useState<PickedPlace | null>(initial ?? null);
-
-  const center = chosen
-    ? ([chosen.lat, chosen.lng] as [number, number])
-    : ([14.5995, 120.9842] as [number, number]); // Manila default
-
-  const runSearch = useDebounced(async (text: string) => {
-    const trimmed = text.trim();
-    if (!trimmed) {
-      setResults([]);
-      return;
-    }
-    setLoading(true);
-    try {
-      const hits = await nominatimSearch(trimmed);
-      setResults(hits);
-    } catch {
-      setResults([]);
-    } finally {
-      setLoading(false);
-    }
-  }, 450);
-
-  function onQueryChange(v: string) {
-    setQuery(v);
-    runSearch(v);
-  }
-
-  function selectResult(hit: NominatimHit) {
-    const lat = parseFloat(hit.lat);
-    const lng = parseFloat(hit.lon);
-    setChosen({ lat, lng, address: hit.display_name });
-    setResults([]);
-    setQuery(hit.display_name);
-  }
-
-  async function handleMapClick(lat: number, lng: number) {
-    try {
-      const rev = await nominatimReverse(lat, lng);
-      const addr =
-        rev?.display_name ?? `lat: ${lat.toFixed(6)}, lng: ${lng.toFixed(6)}`;
-      setChosen({ lat, lng, address: addr });
-      setQuery(addr);
-      setResults([]);
-    } catch {
-      setChosen({
-        lat,
-        lng,
-        address: `lat: ${lat.toFixed(6)}, lng: ${lng.toFixed(6)}`,
-      });
-    }
-  }
-
-  function useThisLocation() {
-    if (!chosen) return;
-    onPick(chosen);
-  }
-
-  return (
-    <div className="flex flex-col gap-0">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b px-4 py-3">
-        <div className="text-base font-semibold">Pick location</div>
-        <button
-          onClick={onClose}
-          className="rounded-lg border px-3 py-1.5 text-sm hover:bg-neutral-50"
-        >
-          Close
-        </button>
-      </div>
-
-      {/* Search */}
-      <div className="relative p-3">
-        <input
-          value={query}
-          onChange={(e) => onQueryChange(e.target.value)}
-          className="h-11 w-full rounded-lg border px-3"
-          placeholder="Search address or place (Nominatim)"
-        />
-        {query && (results.length > 0 || loading) && (
-          <div className="absolute left-3 right-3 top-[3.25rem] z-[2] max-h-64 overflow-auto rounded-lg border bg-white shadow-lg">
-            {loading && (
-              <div className="px-3 py-2 text-sm text-neutral-500">Searching…</div>
-            )}
-            {results.map((r, i) => (
-              <button
-                key={`${r.lat}-${r.lon}-${i}`}
-                onClick={() => selectResult(r)}
-                className="block w-full px-3 py-2 text-left text-sm hover:bg-neutral-50"
-              >
-                {r.display_name}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Map */}
-      <div className="px-3 pb-3">
-        <div className="h-[60vh] w-full overflow-hidden rounded-xl border">
-          <MapContainer center={center} zoom={13} style={{ height: "100%", width: "100%" }}>
-            <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/">OSM</a> contributors'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
-            <ClickPicker onPickPos={handleMapClick} />
-            {chosen && <Marker position={[chosen.lat, chosen.lng]} />}
-          </MapContainer>
-        </div>
-
-        {/* Chosen preview */}
-        <div className="mt-2 rounded-md border bg-neutral-50 px-3 py-2 text-xs text-neutral-700">
-          <div className="font-medium">Chosen:</div>
-          <div className="truncate">{chosen?.address ?? "—"}</div>
-          <div>
-            lat: {chosen?.lat?.toFixed(6) ?? "—"}, lng: {chosen?.lng?.toFixed(6) ?? "—"}
-          </div>
-        </div>
-      </div>
-
-      {/* Footer */}
-      <div className="flex items-center justify-end gap-2 border-t px-4 py-3">
-        <button onClick={onClose} className="h-10 rounded-lg border px-4">
-          Cancel
-        </button>
-        <button
-          onClick={useThisLocation}
-          disabled={!chosen}
-          className="h-10 rounded-lg bg-[#7A0010] px-4 text-white disabled:opacity-50"
-        >
-          Use this location
-        </button>
-      </div>
-    </div>
-  );
-}
-
-
 ===== components\common\Modal.ui.tsx =====
 // components/common/Modal.ui.tsx
 "use client";
@@ -12588,7 +13106,46 @@ export function PageBody({
 }
 
 
-===== components\common\ReasonModal.ui.tsx =====
+===== components\common\Modal\Modal.tsx =====
+// src/components/common/Modal/Modal.tsx
+"use client";
+import * as React from "react";
+import { useEscapeToClose } from "@/lib/common/useEscapeToClose";
+
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+  maxWidth?: number | string;
+  ariaLabel?: string;
+};
+
+export default function Modal({ open, onClose, children, maxWidth = 760, ariaLabel = "Dialog" }: Props) {
+  useEscapeToClose(open, onClose);
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/40"
+      role="dialog"
+      aria-modal="true"
+      aria-label={ariaLabel}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose(); // backdrop click
+      }}
+    >
+      <div
+        className="max-h-[90vh] w-[min(96vw,var(--mw))] overflow-auto rounded-xl bg-white p-4 shadow-xl"
+        style={{ ["--mw" as any]: typeof maxWidth === "number" ? `${maxWidth}px` : maxWidth }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+
+===== components\common\Modal\ReasonModal.ui.tsx =====
 // src/components/admin/common/ReasonModal.ui.tsx
 "use client";
 import React from "react";
@@ -12629,101 +13186,6 @@ export default function ReasonModalUI({
         </div>
       </div>
     </div>
-  );
-}
-
-
-===== components\common\StatusBadge.ui.tsx =====
-"use client";
-export function StatusBadge({ value }: { value: string }) {
-  const cls =
-    value === "active"
-      ? "bg-green-100 text-green-700"
-      : value === "maintenance"
-      ? "bg-amber-100 text-amber-700"
-      : "bg-gray-200 text-gray-700";
-  return <span className={`rounded-full px-2 py-0.5 text-xs ${cls}`}>{value}</span>;
-}
-
-
-===== components\common\StatusChip.tsx =====
-export default function StatusChip({ status }: { status: string }) {
-  const color =
-    status === "Available"
-      ? "bg-[var(--color-accent)] text-white"
-      : status === "Maintenance"
-      ? "bg-[var(--color-warning)] text-white"
-      : status === "On Trip"
-      ? "bg-blue-600 text-white"
-      : "bg-neutral-400 text-white";
-
-  return (
-    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${color}`}>
-      {status}
-    </span>
-  );
-}
-
-
-===== components\common\ToastProvider.tsx =====
-"use client";
-import React from "react";
-
-type Toast = {
-  id: string;
-  title?: string;
-  message: string;
-  kind?: "success" | "error" | "info";
-  ms?: number;
-};
-
-type Ctx = {
-  toast: (t: Omit<Toast, "id">) => void;
-};
-
-const ToastContext = React.createContext<Ctx | null>(null);
-
-export function useToast() {
-  const ctx = React.useContext(ToastContext);
-  if (!ctx) throw new Error("useToast must be used within <ToastProvider />");
-  return ctx.toast;
-}
-
-export default function ToastProvider({ children }: { children: React.ReactNode }) {
-  const [toasts, setToasts] = React.useState<Toast[]>([]);
-
-  const toast = React.useCallback((t: Omit<Toast, "id">) => {
-    const id = crypto.randomUUID();
-    const ms = t.ms ?? 4000;
-    const next: Toast = { id, kind: "info", ...t };
-    setToasts((prev) => [next, ...prev]);
-    window.setTimeout(() => {
-      setToasts((prev) => prev.filter((x) => x.id !== id));
-    }, ms);
-  }, []);
-
-  return (
-    <ToastContext.Provider value={{ toast }}>
-      {children}
-      {/* container */}
-      <div className="pointer-events-none fixed right-4 top-4 z-[9999] flex w-[360px] max-w-[90vw] flex-col gap-2">
-        {toasts.map((t) => (
-          <div
-            key={t.id}
-            className={`pointer-events-auto rounded-md border p-3 shadow ${
-              t.kind === "success"
-                ? "border-green-200 bg-green-50 text-green-900"
-                : t.kind === "error"
-                ? "border-red-200 bg-red-50 text-red-900"
-                : "border-neutral-200 bg-white text-neutral-900"
-            }`}
-          >
-            {t.title && <div className="mb-1 text-sm font-medium">{t.title}</div>}
-            <div className="text-sm">{t.message}</div>
-          </div>
-        ))}
-      </div>
-    </ToastContext.Provider>
   );
 }
 
@@ -13295,6 +13757,474 @@ export function TextInput({
         placeholder={placeholder} disabled={disabled}
       />
     </label>
+  );
+}
+
+
+===== components\common\map\MapPicker.ui.tsx =====
+"use client";
+
+import * as React from "react";
+import { createPortal } from "react-dom";
+import dynamic from "next/dynamic";
+import type { PickedPlace } from "./MapPickerLeafletImpl";
+
+// Client-only import of the Leaflet implementation
+const MapPickerLeaflet = dynamic(() => import("./MapPickerLeafletImpl"), {
+  ssr: false,
+  loading: () => null,
+});
+
+export type { PickedPlace };
+
+function usePortalTarget() {
+  const [el, setEl] = React.useState<HTMLElement | null>(null);
+
+  React.useEffect(() => {
+    let target = document.getElementById("travilink-portal-root") as HTMLElement | null;
+    if (!target) {
+      target = document.createElement("div");
+      target.id = "travilink-portal-root";
+      document.body.appendChild(target);
+    }
+    setEl(target);
+    // do not remove on unmount so it can be reused
+  }, []);
+
+  return el;
+}
+
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  onPick: (p: PickedPlace) => void;
+  initial?: PickedPlace | null;
+};
+
+export default function MapPicker({ open, onClose, onPick, initial }: Props) {
+  // Guard SSR
+  if (typeof window === "undefined") return null;
+
+  const portalTarget = usePortalTarget();
+  if (!portalTarget || !open) return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/50"
+      onClick={onClose}
+      aria-modal="true"
+      role="dialog"
+    >
+      <div
+        className="mx-3 w-[min(1000px,calc(100vw-1.5rem))] overflow-hidden rounded-2xl bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <MapPickerLeaflet open onClose={onClose} onPick={onPick} initial={initial ?? null} />
+      </div>
+    </div>,
+    portalTarget
+  );
+}
+
+
+===== components\common\map\MapPickerLeafletImpl.tsx =====
+"use client";
+
+import * as React from "react";
+import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from "react-leaflet";
+import L from "leaflet";
+
+// -------- Types (named export so other files can import 'type { PickedPlace }') -----
+export type PickedPlace = {
+  lat: number;
+  lng: number;
+  address: string;
+};
+
+// -------- Maroon marker icon (SVG data URL) ----------------------------------------
+const MAROON = "#7A0010";
+const svgPin = encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="48" viewBox="0 0 32 48">
+     <path d="M16 0C7.7 0 1 6.7 1 15c0 10.5 13.7 31.1 14.3 32 .4.6 1 .6 1.4 0C17.3 46.1 31 25.5 31 15 31 6.7 24.3 0 16 0z" fill="${MAROON}"/>
+     <circle cx="16" cy="15" r="6" fill="white"/>
+   </svg>`
+);
+const maroonIcon = L.icon({
+  iconUrl: `data:image/svg+xml;charset=utf-8,${svgPin}`,
+  iconSize: [32, 48],
+  iconAnchor: [16, 48],
+  popupAnchor: [0, -44],
+  shadowUrl: undefined,
+});
+
+// -------- Helpers for map control --------------------------------------------------
+function CenterOn({ lat, lng, zoom = 15 }: { lat: number; lng: number; zoom?: number }) {
+  const map = useMap();
+  React.useEffect(() => {
+    map.setView([lat, lng], zoom, { animate: true });
+  }, [lat, lng, zoom, map]);
+  return null;
+}
+
+function ClickPicker({ onPickPos }: { onPickPos: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click(e) {
+      onPickPos(e.latlng.lat, e.latlng.lng);
+    },
+  });
+  return null;
+}
+
+// -------- Nominatim search / reverse ----------------------------------------------
+type NominatimHit = { display_name: string; lat: string; lon: string };
+
+function useDebounced<T extends (...args: any[]) => void>(fn: T, delay = 400) {
+  const t = React.useRef<number | null>(null);
+  return React.useCallback(
+    (...args: Parameters<T>) => {
+      if (t.current) window.clearTimeout(t.current);
+      t.current = window.setTimeout(() => fn(...args), delay);
+    },
+    [fn, delay]
+  );
+}
+
+async function nominatimSearch(q: string) {
+  const params = new URLSearchParams({
+    q,
+    format: "jsonv2",
+    limit: "8",
+    dedupe: "1",
+    addressdetails: "1",
+    autocomplete: "1",
+    countrycodes: "ph",
+  });
+  const res = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`);
+  if (!res.ok) return [] as NominatimHit[];
+  return (await res.json()) as NominatimHit[];
+}
+
+async function nominatimReverse(lat: number, lon: number) {
+  const params = new URLSearchParams({
+    format: "jsonv2",
+    lat: String(lat),
+    lon: String(lon),
+    addressdetails: "1",
+  });
+  const res = await fetch(`https://nominatim.openstreetmap.org/reverse?${params.toString()}`);
+  if (!res.ok) return null;
+  return await res.json();
+}
+
+// -------- Component ----------------------------------------------------------------
+type Props = {
+  open: boolean; // kept for symmetry; not used
+  onClose: () => void;
+  onPick: (p: PickedPlace) => void;
+  initial?: PickedPlace | null;
+};
+
+export default function MapPickerLeafletImpl({ onClose, onPick, initial }: Props) {
+  const [query, setQuery] = React.useState("");
+  const [results, setResults] = React.useState<NominatimHit[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [chosen, setChosen] = React.useState<PickedPlace | null>(initial ?? null);
+
+  const center = chosen
+    ? ([chosen.lat, chosen.lng] as [number, number])
+    : ([14.5995, 120.9842] as [number, number]); // Manila default
+
+  const runSearch = useDebounced(async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      setResults([]);
+      return;
+    }
+    setLoading(true);
+    try {
+      const hits = await nominatimSearch(trimmed);
+      setResults(hits);
+    } catch {
+      setResults([]);
+    } finally {
+      setLoading(false);
+    }
+  }, 450);
+
+  function onQueryChange(v: string) {
+    setQuery(v);
+    runSearch(v);
+  }
+
+  function pickAndCenter(lat: number, lng: number, address: string) {
+    setChosen({ lat, lng, address });
+    setQuery(address);
+    setResults([]);
+  }
+
+  function selectResult(hit: NominatimHit) {
+    const lat = parseFloat(hit.lat);
+    const lng = parseFloat(hit.lon);
+    pickAndCenter(lat, lng, hit.display_name);
+  }
+
+  async function handleMapClick(lat: number, lng: number) {
+    try {
+      const rev = await nominatimReverse(lat, lng);
+      const addr = rev?.display_name ?? `lat: ${lat.toFixed(6)}, lng: ${lng.toFixed(6)}`;
+      pickAndCenter(lat, lng, addr);
+    } catch {
+      pickAndCenter(lat, lng, `lat: ${lat.toFixed(6)}, lng: ${lng.toFixed(6)}`);
+    }
+  }
+
+  function useThisLocation() {
+    if (!chosen) return;
+    onPick(chosen);
+    onClose();
+  }
+
+  return (
+    <div className="flex flex-col gap-0">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b px-4 py-3">
+        <div className="text-base font-semibold">Pick location</div>
+        <button
+          onClick={onClose}
+          className="rounded-lg border px-3 py-1.5 text-sm hover:bg-neutral-50"
+        >
+          Close
+        </button>
+      </div>
+
+      {/* Search */}
+      <div className="relative p-3">
+        <input
+          value={query}
+          onChange={(e) => onQueryChange(e.target.value)}
+          className="h-11 w-full rounded-lg border px-3"
+          placeholder="Search address or place (OpenStreetMap Nominatim)"
+        />
+        {query && (results.length > 0 || loading) && (
+          <div className="absolute left-3 right-3 top-[3.25rem] z-[2] max-h-64 overflow-auto rounded-lg border bg-white shadow-lg">
+            {loading && (
+              <div className="px-3 py-2 text-sm text-neutral-500">Searching…</div>
+            )}
+            {results.map((r, i) => (
+              <button
+                key={`${r.lat}-${r.lon}-${i}`}
+                onClick={() => selectResult(r)}
+                className="block w-full px-3 py-2 text-left text-sm hover:bg-neutral-50"
+              >
+                {r.display_name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Map */}
+      <div className="px-3 pb-3">
+        <div className="h-[60vh] w-full overflow-hidden rounded-xl border">
+          <MapContainer center={center} zoom={13} style={{ height: "100%", width: "100%" }}>
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/">OSM</a> contributors'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
+            {/* re-center the map whenever chosen changes */}
+            {chosen && <CenterOn lat={chosen.lat} lng={chosen.lng} />}
+            <ClickPicker onPickPos={handleMapClick} />
+            {chosen && <Marker position={[chosen.lat, chosen.lng]} icon={maroonIcon} />}
+          </MapContainer>
+        </div>
+
+        {/* Chosen preview */}
+        <div className="mt-2 rounded-md border bg-neutral-50 px-3 py-2 text-xs text-neutral-700">
+          <div className="font-medium">Chosen:</div>
+          <div className="truncate">{chosen?.address ?? "—"}</div>
+          <div>
+            lat: {chosen?.lat?.toFixed(6) ?? "—"}, lng: {chosen?.lng?.toFixed(6) ?? "—"}
+          </div>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center justify-end gap-2 border-t px-4 py-3">
+        <button onClick={onClose} className="h-10 rounded-lg border px-4">
+          Cancel
+        </button>
+        <button
+          onClick={useThisLocation}
+          disabled={!chosen}
+          className="h-10 rounded-lg bg-[#7A0010] px-4 text-white disabled:opacity-50"
+        >
+          Use this location
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
+===== components\common\ui\EmptyState.ui.tsx =====
+"use client";
+import * as React from "react";
+import { Inbox } from "lucide-react";
+
+export default function EmptyState({
+  title = "No records found",
+  description,
+  action,
+}: {
+  title?: string;
+  description?: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center text-center py-12 px-4 text-gray-500">
+      <Inbox size={48} className="mb-3 opacity-60" />
+      <h3 className="text-lg font-medium">{title}</h3>
+      {description && <p className="mt-1 text-sm">{description}</p>}
+      {action && <div className="mt-4">{action}</div>}
+    </div>
+  );
+}
+
+
+===== components\common\ui\SkeletonTable.ui.tsx =====
+"use client";
+import * as React from "react";
+
+export default function SkeletonTable({ rows = 5, cols = 6 }: { rows?: number; cols?: number }) {
+  return (
+    <div className="overflow-x-auto rounded-lg border bg-white animate-pulse">
+      <table className="min-w-full text-sm">
+        <thead>
+          <tr>
+            {Array.from({ length: cols }).map((_, i) => (
+              <th key={i} className="px-3 py-2">
+                <div className="h-4 w-24 bg-gray-200 rounded" />
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {Array.from({ length: rows }).map((_, r) => (
+            <tr key={r} className="border-t">
+              {Array.from({ length: cols }).map((_, c) => (
+                <td key={c} className="px-3 py-2">
+                  <div className="h-4 w-full bg-gray-200 rounded" />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+
+===== components\common\ui\StatusBadge.ui.tsx =====
+"use client";
+import * as React from "react";
+
+export function StatusBadge({ value }: { value: string }) {
+  const cls =
+    value === "active"
+      ? "bg-green-100 text-green-700"
+      : value === "suspended"
+      ? "bg-amber-100 text-amber-700"
+      : value === "pending_verification"
+      ? "bg-blue-100 text-blue-700" // <— color for pending
+      : "bg-gray-200 text-gray-700"; // archived / others
+
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-xs capitalize ${cls}`}>
+      {value.replaceAll("_", " ")}
+    </span>
+  );
+}
+
+
+===== components\common\ui\StatusChip.ui.tsx =====
+export default function StatusChip({ status }: { status: string }) {
+  const color =
+    status === "Available"
+      ? "bg-[var(--color-accent)] text-white"
+      : status === "Maintenance"
+      ? "bg-[var(--color-warning)] text-white"
+      : status === "On Trip"
+      ? "bg-blue-600 text-white"
+      : "bg-neutral-400 text-white";
+
+  return (
+    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${color}`}>
+      {status}
+    </span>
+  );
+}
+
+
+===== components\common\ui\ToastProvider.ui.tsx =====
+"use client";
+import React from "react";
+
+type Toast = {
+  id: string;
+  title?: string;
+  message: string;
+  kind?: "success" | "error" | "info";
+  ms?: number;
+};
+
+type Ctx = {
+  toast: (t: Omit<Toast, "id">) => void;
+};
+
+const ToastContext = React.createContext<Ctx | null>(null);
+
+export function useToast() {
+  const ctx = React.useContext(ToastContext);
+  if (!ctx) throw new Error("useToast must be used within <ToastProvider />");
+  return ctx.toast;
+}
+
+export default function ToastProvider({ children }: { children: React.ReactNode }) {
+  const [toasts, setToasts] = React.useState<Toast[]>([]);
+
+  const toast = React.useCallback((t: Omit<Toast, "id">) => {
+    const id = crypto.randomUUID();
+    const ms = t.ms ?? 4000;
+    const next: Toast = { id, kind: "info", ...t };
+    setToasts((prev) => [next, ...prev]);
+    window.setTimeout(() => {
+      setToasts((prev) => prev.filter((x) => x.id !== id));
+    }, ms);
+  }, []);
+
+  return (
+    <ToastContext.Provider value={{ toast }}>
+      {children}
+      {/* container */}
+      <div className="pointer-events-none fixed right-4 top-4 z-[9999] flex w-[360px] max-w-[90vw] flex-col gap-2">
+        {toasts.map((t) => (
+          <div
+            key={t.id}
+            className={`pointer-events-auto rounded-md border p-3 shadow ${
+              t.kind === "success"
+                ? "border-green-200 bg-green-50 text-green-900"
+                : t.kind === "error"
+                ? "border-red-200 bg-red-50 text-red-900"
+                : "border-neutral-200 bg-white text-neutral-900"
+            }`}
+          >
+            {t.title && <div className="mb-1 text-sm font-medium">{t.title}</div>}
+            <div className="text-sm">{t.message}</div>
+          </div>
+        ))}
+      </div>
+    </ToastContext.Provider>
   );
 }
 
@@ -18188,114 +19118,120 @@ export const sampleDrivers: Driver[] = [
     code: "DRV-001",
     firstName: "Marco",
     lastName: "Reyes",
-    phone: "+63 917 555 1001",
     email: "marco.reyes@example.com",
+    phone: "+63 917 555 1001",
     status: "active",
-    hireDate: "2023-04-10",
+    avatarUrl: "https://i.pravatar.cc/240?img=12",
+    hireDate: "2023-10-04",
     licenseNo: "N12-3456-7890",
     licenseClass: "B",
     licenseExpiryISO: "2026-07-20",
     assignedVehicleId: "v2",
-    lastCheckIn: "2025-09-18 17:22",
     rating: 4.7,
+    lastCheckIn: "2025-09-18 08:03",
     notes: "Punctual; prefers AM shifts.",
-    avatarUrl: "/images/drivers/driver1.jpg",
-    docLicenseUrl: "/docs/drivers/driver1-license.pdf",
-    docGovtIdUrl: "/docs/drivers/driver1-id.pdf",
-    createdAt: "2023-04-10T03:00:00.000Z",
-    updatedAt: "2025-09-10T09:00:00.000Z",
+    createdAt: "2025-08-01",
+    updatedAt: "2025-09-01",
   },
   {
     id: "d2",
     code: "DRV-002",
     firstName: "Janel",
     lastName: "Santos",
-    phone: "+63 917 555 1002",
     email: "janel.santos@example.com",
-    status: "on_trip",
-    hireDate: "2022-11-01",
-    licenseNo: "N98-7654-3210",
-    licenseClass: "C",
-    licenseExpiryISO: "2027-05-12",
-    assignedVehicleId: "v5",
-    lastCheckIn: "2025-09-19 08:10",
-    rating: 4.6,
-    notes: "Long-haul specialist.",
-    avatarUrl: "/images/drivers/driver2.jpg",
-    createdAt: "2022-11-01T03:00:00.000Z",
-    updatedAt: "2025-09-10T09:00:00.000Z",
+    phone: "+63 915 333 2234",
+    status: "active",
+    avatarUrl: "https://i.pravatar.cc/240?img=32",
+    hireDate: "2024-02-12",
+    licenseNo: "M88-2211-3456",
+    licenseClass: "B",
+    licenseExpiryISO: "2027-01-18",
+    assignedVehicleId: "",
+    rating: 4.4,
+    lastCheckIn: "2025-09-18 17:43",
+    notes: "Calm under pressure.",
+    createdAt: "2025-08-01",
+    updatedAt: "2025-09-01",
   },
   {
     id: "d3",
     code: "DRV-003",
     firstName: "Karlo",
-    lastName: "Diaz",
-    status: "off_duty",
-    phone: "+63 917 555 1003",
-    email: "karlo.diaz@example.com",
-    hireDate: "2024-01-15",
-    licenseNo: "N22-3344-5566",
-    licenseClass: "B",
-    licenseExpiryISO: "2025-10-05",
-    rating: 4.2,
-    notes: "Part-time weekends.",
-    avatarUrl: "/images/drivers/driver3.jpg",
-    createdAt: "2024-01-15T03:00:00.000Z",
-    updatedAt: "2025-09-10T09:00:00.000Z",
+    lastName: "Domingo",
+    email: "karlo.domingo@example.com",
+    phone: "+63 920 888 1090",
+    status: "suspended",
+    avatarUrl: "https://i.pravatar.cc/240?img=7",
+    hireDate: "2022-06-10",
+    licenseNo: "L77-9900-1122",
+    licenseClass: "C",
+    licenseExpiryISO: "2025-12-09",
+    assignedVehicleId: "v5",
+    rating: 3.9,
+    lastCheckIn: "2025-09-17 19:20",
+    notes: "Pending retraining.",
+    createdAt: "2025-08-01",
+    updatedAt: "2025-09-01",
   },
   {
     id: "d4",
     code: "DRV-004",
     firstName: "Aida",
-    lastName: "Lopez",
-    status: "suspended",
-    phone: "+63 917 555 1004",
-    email: "aida.lopez@example.com",
-    hireDate: "2021-03-02",
-    licenseNo: "N55-6677-8899",
-    licenseClass: "D",
-    licenseExpiryISO: "2026-01-22",
-    rating: 4.1,
-    notes: "Pending HR review.",
-    avatarUrl: "/images/drivers/driver4.jpg",
-    createdAt: "2021-03-02T03:00:00.000Z",
-    updatedAt: "2025-09-10T09:00:00.000Z",
+    lastName: "Lim",
+    email: "aida.lim@example.com",
+    phone: "+63 922 201 0098",
+    status: "active",
+    avatarUrl: "https://i.pravatar.cc/240?img=47",
+    hireDate: "2021-11-22",
+    licenseNo: "B55-6612-3399",
+    licenseClass: "B",
+    licenseExpiryISO: "2026-03-30",
+    assignedVehicleId: "",
+    rating: 4.9,
+    lastCheckIn: "2025-09-18 11:30",
+    notes: "Top performer.",
+    createdAt: "2025-08-01",
+    updatedAt: "2025-09-01",
   },
   {
     id: "d5",
     code: "DRV-005",
     firstName: "Lance",
-    lastName: "Garcia",
-    status: "active",
-    phone: "+63 917 555 1005",
-    email: "lance.garcia@example.com",
-    hireDate: "2020-07-19",
-    licenseNo: "N77-8888-9999",
-    licenseClass: "C",
-    licenseExpiryISO: "2024-12-15", // almost expired or expired soon (example)
-    rating: 4.9,
-    notes: "Mentor driver.",
-    avatarUrl: "/images/drivers/driver5.jpg",
-    createdAt: "2020-07-19T03:00:00.000Z",
-    updatedAt: "2025-09-10T09:00:00.000Z",
+    lastName: "Cruz",
+    email: "lance.cruz@example.com",
+    phone: "+63 917 222 0044",
+    status: "pending_verification",
+    avatarUrl: "https://i.pravatar.cc/240?img=66",
+    hireDate: "2025-01-15",
+    licenseNo: "K44-2200-1111",
+    licenseClass: "B",
+    licenseExpiryISO: "2028-01-14",
+    assignedVehicleId: "",
+    rating: 0,
+    lastCheckIn: undefined,
+    notes: "New hire.",
+    createdAt: "2025-08-01",
+    updatedAt: "2025-09-01",
   },
   {
     id: "d6",
     code: "DRV-006",
     firstName: "Mika",
     lastName: "Tan",
-    status: "active",
-    phone: "+63 917 555 1006",
     email: "mika.tan@example.com",
-    hireDate: "2024-06-08",
-    licenseNo: "N99-0001-2345",
+    phone: "+63 918 901 2330",
+    status: "archived",
+    avatarUrl: "https://i.pravatar.cc/240?img=14",
+    hireDate: "2019-03-03",
+    licenseNo: "H12-0009-7733",
     licenseClass: "B",
-    licenseExpiryISO: "2025-09-10", // expired example
-    rating: 4.3,
-    notes: "New hire; needs refresher route.",
-    avatarUrl: "/images/drivers/driver6.jpg",
-    createdAt: "2024-06-08T03:00:00.000Z",
-    updatedAt: "2025-09-10T09:00:00.000Z",
+    licenseExpiryISO: "2026-09-12",
+    assignedVehicleId: "",
+    rating: 4.1,
+    lastCheckIn: "2025-08-10 16:10",
+    notes: "Resigned 2025-08.",
+    createdAt: "2025-08-01",
+    updatedAt: "2025-09-01",
   },
 ];
 
@@ -18408,7 +19344,17 @@ export const DriversRepo = {
 
 
 ===== lib\admin\drivers\types.ts =====
-export type DriverStatus = "active" | "on_trip" | "off_duty" | "suspended";
+// File: src/lib/admin/drivers/types.ts
+
+// Expanded Driver statuses
+export type DriverStatus =
+  | "active"
+  | "on_trip"
+  | "off_duty"
+  | "suspended"
+  | "pending_verification"
+  | "archived";
+
 export type LicenseClass = "A" | "B" | "C" | "D" | "E";
 
 export interface Driver {
@@ -18420,7 +19366,7 @@ export interface Driver {
   email?: string;
 
   status: DriverStatus;
-  hireDate?: string;
+  hireDate?: string; // ISO date
 
   licenseNo: string;
   licenseClass: LicenseClass;
@@ -18428,7 +19374,7 @@ export interface Driver {
 
   assignedVehicleId?: string;
   lastCheckIn?: string;
-  rating?: number; // 0-5
+  rating?: number; // 0–5
   notes?: string;
 
   avatarUrl?: string;
@@ -18451,7 +19397,9 @@ export type DriverTab =
   | "on_trip"
   | "off_duty"
   | "suspended"
-  | "expired_license";
+  | "expired_license"
+  | "pending_verification"
+  | "archived";
 
 
 ===== lib\admin\drivers\utils.ts =====
@@ -20078,6 +21026,314 @@ r.plateNo, r.code, r.brand, r.model, r.type, String(r.capacity), r.status, Strin
 ].map(x => `"${String(x).replaceAll('"','""')}"`).join(","))];
 return lines.join("\n");
 }
+
+===== lib\common\applyOptimistic.ts =====
+export async function applyOptimistic<Row>(
+  currentRows: Row[],
+  setRows: (rows: Row[]) => void,
+  ids: string[],
+  mutate: (rows: Row[], ids: string[]) => Row[],   // produce next rows
+  apiCall: () => Promise<unknown>,                 // remote call
+  onSuccess?: () => void,
+  onError?: () => void
+) {
+  const snapshot = currentRows;
+  const next = mutate(snapshot, ids);
+  setRows(next);
+  try {
+    await apiCall();
+    onSuccess?.();
+  } catch (e) {
+    setRows(snapshot);
+    onError?.();
+  }
+}
+
+
+===== lib\common\csv.ts =====
+// src/lib/common/csv.ts
+export function toCsv<T extends Record<string, any>>(rows: T[]) {
+  if (!rows.length) return "";
+  const headers = Object.keys(rows[0]);
+  const escape = (v: any) => {
+    const s = String(v ?? "");
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const lines = [
+    headers.join(","),
+    ...rows.map((r) => headers.map((h) => escape(r[h])).join(",")),
+  ];
+  return lines.join("\n");
+}
+
+export function downloadCsv(filename: string, rows: any[]) {
+  const blob = new Blob([toCsv(rows)], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+
+===== lib\common\filterGuards.ts =====
+export function makeGuard<T extends readonly string[]>(values: T) {
+  const set = new Set(values as readonly string[]);
+  return (v: string): v is T[number] => set.has(v);
+}
+
+
+===== lib\common\pagination.ts =====
+// src/lib/common/pagination.ts
+export type Pagination = { page: number; pageSize: number; total: number };
+
+export function clampPage(total: number, pageSize: number, page: number) {
+  const maxPage = Math.max(1, Math.ceil((total || 0) / pageSize));
+  return Math.min(Math.max(1, page), maxPage);
+}
+
+
+===== lib\common\selection.ts =====
+// src/lib/common/selection.ts
+export function toggleOne(set: (fn: (prev: Set<string>) => Set<string>) => void, id: string) {
+  set((prev) => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+}
+
+export function toggleAllOnPage(
+  set: (fn: (prev: Set<string>) => Set<string>) => void,
+  idsOnPage: string[],
+  checked: boolean
+) {
+  set((prev) => {
+    const next = new Set(prev);
+    idsOnPage.forEach((id) => (checked ? next.add(id) : next.delete(id)));
+    return next;
+  });
+}
+
+export function clearSelection(set: (v: Set<string>) => void) {
+  set(new Set());
+}
+
+
+===== lib\common\typingGuard.ts =====
+export function isTypingTarget(el: EventTarget | null): boolean {
+  const t = el as HTMLElement | null;
+  if (!t) return false;
+  const tag = t.tagName?.toLowerCase();
+  if (t.isContentEditable) return true;
+  if (tag === "input" || tag === "textarea" || tag === "select") return true;
+  const role = t.getAttribute?.("role");
+  if (role && role.toLowerCase() === "textbox") return true;
+  return false;
+}
+
+
+===== lib\common\urlSync.tsx =====
+"use client";
+import * as React from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+
+type WithQS = { q?: string; sort?: string };
+type Props<TDraft extends Record<string, any>> = {
+  read: (p: URLSearchParams) => Partial<TDraft & WithQS>;
+  write: (draft: TDraft & WithQS) => URLSearchParams;
+  draft: TDraft & WithQS;
+  onDraftChange: (patch: Partial<TDraft & WithQS>) => void;
+};
+
+export function URLSync<TDraft extends Record<string, any>>({
+  read, write, draft, onDraftChange
+}: Props<TDraft>) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const didInit = React.useRef(false);
+  const lastQS = React.useRef<string | null>(null);
+
+  // Normalize pathname to a non-null string
+  const safePath = React.useMemo(() => pathname ?? "/", [pathname]);
+
+  // 1) Read once from URL and patch draft
+  React.useEffect(() => {
+    const patch = read(new URLSearchParams((searchParams?.toString() ?? "") as string));
+    if (Object.keys(patch).length) onDraftChange(patch);
+    didInit.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 2) Whenever draft changes, write to URL — only if QS actually changed
+  React.useEffect(() => {
+    if (!didInit.current) return;
+    const params = write(draft);
+    const qs = params.toString();
+    if (lastQS.current === qs) return; // prevent update loop
+    lastQS.current = qs;
+    router.replace(qs ? `${safePath}?${qs}` : safePath, { scroll: false });
+  }, [draft, safePath, router, write]);
+
+  return null;
+}
+
+
+===== lib\common\useDebouncedValue.ts =====
+// src/lib/common/useDebouncedValue.ts
+"use client";
+import * as React from "react";
+
+export function useDebouncedValue<T>(value: T, delay = 300) {
+  const [debounced, setDebounced] = React.useState(value);
+  React.useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(id);
+  }, [value, delay]);
+  return debounced;
+}
+
+
+===== lib\common\useEscapeToClose.ts =====
+// src/lib/common/useEscapeToClose.ts
+"use client";
+import * as React from "react";
+import { isTypingTarget } from "./typingGuard";
+
+export function useEscapeToClose(open: boolean, onClose: () => void) {
+  React.useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (isTypingTarget(e.target)) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+}
+
+
+===== lib\common\useHotkeys.ts =====
+"use client";
+import * as React from "react";
+import { isTypingTarget } from "./typingGuard";
+
+type Hotkey = {
+  key: string;               // "a", "x", "ArrowLeft", "Enter"
+  ctrl?: boolean;
+  meta?: boolean;
+  shift?: boolean;
+  alt?: boolean;             // support Alt combos (e.g., Alt+N)
+  handler: (e: KeyboardEvent) => void;
+};
+
+type Options = { ignoreWhileTyping?: boolean };
+
+export function useHotkeys(hotkeys: Hotkey[], opts?: Options) {
+  const hkRef = React.useRef<Hotkey[]>(hotkeys);
+  const optRef = React.useRef<Options | undefined>(opts);
+
+  React.useEffect(() => { hkRef.current = hotkeys; }, [hotkeys]);
+  React.useEffect(() => { optRef.current = opts; }, [opts]);
+
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const hotkeys = hkRef.current;
+      const options = optRef.current;
+
+      if ((e as any).isComposing) return;
+      if (e.key === "Control" || e.key === "Meta" || e.key === "Shift" || e.key === "Alt") return;
+
+      const targetIsTyping = isTypingTarget(e.target);
+      // While typing, allow only Ctrl/Meta/Alt modified combos to pass
+      if (options?.ignoreWhileTyping && targetIsTyping && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        return;
+      }
+
+      for (const hk of hotkeys) {
+        const pressed = e.key;
+        const matchKey =
+          pressed === hk.key ||
+          pressed.toLowerCase() === hk.key.toLowerCase(); // letters
+
+        if (!matchKey) continue;
+        if (hk.ctrl && !e.ctrlKey) continue;
+        if (hk.meta && !e.metaKey) continue;
+        if (hk.shift && !e.shiftKey) continue;
+        if (hk.alt && !e.altKey) continue;
+
+        e.preventDefault(); // run before default behaviors (e.g., form submit)
+        hk.handler(e);
+        break;
+      }
+    };
+
+    // Capture to beat default browser behaviors when possible
+    document.addEventListener("keydown", onKey, { capture: true });
+    return () => {
+      document.removeEventListener("keydown", onKey, { capture: true } as any);
+    };
+  }, []);
+}
+
+
+===== lib\common\useQS.ts =====
+// src/lib/common/useQS.ts
+"use client";
+
+import { useEffect, useRef } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+
+/**
+ * Sync local state <q, sort> with the URL's ?q=&sort= (guarded to avoid loops).
+ *
+ * - On mount: reads ?q and ?sort then seeds setQ/setSort.
+ * - On change: writes back to URL only if something actually changed
+ *   compared to last snapshot (lastRef) to prevent ping-pong.
+ */
+export function useQS(
+  q: string,
+  sort: "asc" | "desc",
+  setQ: (v: string) => void,
+  setSort: (v: "asc" | "desc") => void
+) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const sp = useSearchParams();
+  const lastRef = useRef("");
+
+  // Read once on mount
+  useEffect(() => {
+    const initQ = sp.get("q") ?? "";
+    const initSort = sp.get("sort") === "asc" ? "asc" : "desc";
+    setQ(initQ);
+    setSort(initSort);
+    lastRef.current = `q=${initQ}&sort=${initSort}`;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Write (guarded)
+  useEffect(() => {
+    const nextKey = `q=${q}&sort=${sort}`;
+    if (nextKey === lastRef.current) return;
+
+    const nextSP = new URLSearchParams(sp.toString());
+    const qTrim = q.trim();
+    if (qTrim) nextSP.set("q", qTrim);
+    else nextSP.delete("q");
+    nextSP.set("sort", sort);
+
+    lastRef.current = nextKey;
+    router.replace(`${pathname}?${nextSP.toString()}`);
+  }, [q, sort, router, pathname, sp]);
+}
+
 
 ===== lib\data\dates.ts =====
 // src/lib/dates.ts

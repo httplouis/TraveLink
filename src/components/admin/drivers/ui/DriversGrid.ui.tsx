@@ -2,7 +2,7 @@
 import * as React from "react";
 import type { Driver } from "@/lib/admin/drivers/types";
 import { Edit, Trash2, ChevronRight, Phone, Mail, IdCard } from "lucide-react";
-import { StatusBadge } from "@/components/common/StatusBadge.ui";
+import { StatusBadge } from "@/components/common/ui/StatusBadge.ui";
 
 const BRAND = "#7a0019";
 

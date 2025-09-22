@@ -1,8 +1,6 @@
 // src/app/layout.tsx
 import "./globals.css";
-import type { Metadata } from "next";
-<link rel="preconnect" href={process.env.NEXT_PUBLIC_SUPABASE_URL} crossOrigin="" />
-
+import type { Metadata, Viewport } from "next";
 
 export const metadata: Metadata = {
   title: { default: "TraviLink", template: "%s • TraviLink" },
@@ -15,19 +13,27 @@ export const metadata: Metadata = {
     ],
     apple: [{ url: "/apple-touch-icon.png" }],
   },
-  manifest: "/site.webmanifest",      
-  themeColor: "#7f1d1d",            
+  // If /public/site.webmanifest doesn't exist yet, comment this out to avoid 404 spam.
+  manifest: "/site.webmanifest",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+// themeColor must live in `viewport` (not `metadata`)
+export const viewport: Viewport = {
+  themeColor: "#7f1d1d",
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+
   return (
-    <html lang="en">
-      {/* globals.css sets background/text + dark mode; keep body clean */}
-      <body className="min-h-dvh antialiased">{children}</body>
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Valid place for preconnect. Safe if env is empty. */}
+        {supabaseUrl && <link rel="preconnect" href={supabaseUrl} crossOrigin="" />}
+      </head>
+      <body className="min-h-dvh antialiased" suppressHydrationWarning>
+        {children}
+      </body>
     </html>
   );
 }

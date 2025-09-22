@@ -5,18 +5,22 @@ import * as React from "react";
 import { ScheduleRepo } from "@/lib/admin/schedule/store";
 import type { Schedule } from "@/lib/admin/schedule/types";
 
+/* UI */
 import ScheduleTable from "@/components/admin/schedule/ui/ScheduleTable.ui";
 import ScheduleToolbar from "@/components/admin/schedule/toolbar/ScheduleToolbar.ui";
 import ScheduleDetailsModal from "@/components/admin/schedule/ui/ScheduleDetailsModal.ui";
-
-import { useScheduleFilters } from "@/components/admin/schedule/hooks/useScheduleFilters";
-import { DEFAULT_SCH_FILTERS, filterSchedules } from "@/lib/admin/schedule/filters";
-
-import { useScheduleKpis } from "@/components/admin/schedule/kpi/useScheduleKpis";
 import KpiGrid from "@/components/admin/schedule/ui/KpiGrid.ui";
 
-// ✅ Use ONLY the container (it manages form state + validation)
+/* Filters / KPIs (original hooks) */
+import { useScheduleFilters } from "@/components/admin/schedule/hooks/useScheduleFilters";
+import { DEFAULT_SCH_FILTERS, filterSchedules } from "@/lib/admin/schedule/filters";
+import { useScheduleKpis } from "@/components/admin/schedule/kpi/useScheduleKpis";
+
+/* Create/Edit dialog — container only */
 import CreateScheduleDialog from "@/components/admin/schedule/forms/CreateScheduleDialogs.container";
+
+/* URL sync for q + sort only */
+import ScheduleURLSync from "@/app/(protected)/admin/schedule/ScheduleURLSync";
 
 export default function SchedulePageClient() {
   // Avoid SSR/CSR mismatch for anything touching localStorage
@@ -70,9 +74,9 @@ export default function SchedulePageClient() {
     });
 
   const onToggleAll = (checked: boolean) =>
-    setSelected((p) => {
-      const n = new Set(p);
-      pageRows.forEach((r) => (checked ? n.add(r.id) : n.delete(r.id)));
+    setSelected(() => {
+      const n = new Set<string>();
+      if (checked) pageRows.forEach((r) => n.add(r.id));
       return n;
     });
 
@@ -98,6 +102,10 @@ export default function SchedulePageClient() {
 
   return (
     <div className="space-y-3">
+      {/* URL sync for q/sort only (no filter-draft types touched) */}
+      <ScheduleURLSync q={q} sort={sort} onQ={setQ} onSort={setSort} />
+
+      {/* KPI cards — uses your hook shape */}
       <KpiGrid kpis={kpis} />
 
       <ScheduleTable
@@ -106,16 +114,16 @@ export default function SchedulePageClient() {
         selected={selected}
         onToggleOne={onToggleOne}
         onToggleAll={onToggleAll}
-        onEdit={(r) => {
+        onEdit={(r: Schedule) => {
           setEditRow(r);
           setOpen(true);
         }}
-        onDeleteMany={(ids) => {
+        onDeleteMany={(ids: string[]) => {
           ScheduleRepo.removeMany(ids);
           setSelected(new Set());
           refresh();
         }}
-        onSetStatus={(id, s) => {
+        onSetStatus={(id: string, s: Schedule["status"]) => {
           try {
             ScheduleRepo.setStatus(id, s);
             refresh();
@@ -123,17 +131,17 @@ export default function SchedulePageClient() {
             alert(e?.message || "Cannot change status");
           }
         }}
-        onPageChange={setPage}
-        onView={(r) => setViewRow(r)}
+        onPageChange={(nextPage: number) => setPage(nextPage)}
+        onView={(r: Schedule) => setViewRow(r)}
         toolbar={
           <ScheduleToolbar
             q={q}
-            onQChange={(v) => {
+            onQChange={(v: string) => {
               setQ(v);
               setPage(1);
             }}
             sort={sort}
-            onSortChange={(s) => {
+            onSortChange={(s: "newest" | "oldest") => {
               setSort(s);
               setPage(1);
             }}
@@ -158,7 +166,7 @@ export default function SchedulePageClient() {
         }
       />
 
-      {/* ✅ Only the container dialog here */}
+      {/* Create/Edit dialog — container only */}
       <CreateScheduleDialog
         open={open}
         initial={editRow ?? undefined}
@@ -178,6 +186,7 @@ export default function SchedulePageClient() {
         }}
       />
 
+      {/* Details modal — correct prop is `data`, not `row` */}
       <ScheduleDetailsModal
         open={!!viewRow}
         data={viewRow || undefined}

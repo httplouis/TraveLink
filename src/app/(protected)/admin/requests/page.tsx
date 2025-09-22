@@ -1,117 +1,53 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { RequestRow, Pagination } from "@/lib/admin/types";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
-import ToastProvider, { useToast } from "@/components/common/ToastProvider";
+/* UI */
+import ToastProvider, { useToast } from "@/components/common/ui/ToastProvider.ui";
+import ConfirmUI from "@/components/admin/requests/ui/Confirm.ui";
 import RequestsSummaryUI from "@/components/admin/requests/ui/RequestsSummary.ui";
+import RequestsTableUI from "@/components/admin/requests/ui/RequestsTable.ui";
+import RequestsCardGridUI from "@/components/admin/requests/ui/RequestsCardGrid.ui";
+import RequestDetailsModalUI from "@/components/admin/requests/ui/RequestDetailsModal.ui";
+import ViewToggleUI from "@/components/admin/requests/ui/ViewToggle.ui";
+
+/* Containers */
 import FiltersBarContainer from "@/components/admin/requests/containers/FiltersBar.container";
 import BulkBarContainer, { BulkBarHandle } from "@/components/admin/requests/containers/BulkBar.container";
 
-import RequestsTableUI from "@/components/admin/requests/ui/RequestsTable.ui";
-import RequestsCardGridUI from "@/components/admin/requests/ui/RequestsCardGrid.ui";
-import ViewToggleUI from "@/components/admin/requests/ui/ViewToggle.ui";
+/* URL-sync (filters-only, named export) */
+import { RequestsURLSync } from "./RequestsURLSync";
 
-import RequestDetailsModalUI from "@/components/admin/requests/ui/RequestDetailsModal.ui";
-import ConfirmUI from "@/components/admin/requests/ui/Confirm.ui";
+/* Logic & utils */
+import { useHotkeys } from "@/lib/common/useHotkeys";
+import { clampPage } from "@/lib/common/pagination";
+import { useDebouncedValue } from "@/lib/common/useDebouncedValue";
+import { toggleAllOnPage as selToggleAllOnPage, clearSelection as selClear } from "@/lib/common/selection";
 
-import { exportRequestsCsv } from "@/lib/admin/export";
-import { approveRequests, rejectRequests, deleteRequests } from "@/lib/admin/requests/action";
+/* Data + Actions */
 import { REQUESTS } from "@/lib/admin/requests/data";
+import { approveRequests, rejectRequests, deleteRequests } from "@/lib/admin/requests/action";
+import { exportRequestsCsv } from "@/lib/admin/export";
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+/* Types */
+import type { RequestRow, Pagination as Pg } from "@/lib/admin/types";
 
-/* ---------- tiny debounce hook ---------- */
-function useDebouncedValue<T>(value: T, delay = 300) {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const id = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(id);
-  }, [value, delay]);
-  return debounced;
-}
-
-/* ---------- URL <-> UI sync (search, filters, sort) ---------- */
-function URLSync({
-  draft,
-  onDraftChange,
-  tableSearch,
-  setTableSearch,
-  sortDir,
-  setSortDir,
-}: {
-  draft: any;
-  onDraftChange: (n: Partial<any>) => void;
-  tableSearch: string;
-  setTableSearch: (v: string) => void;
-  sortDir: "asc" | "desc";
-  setSortDir: (v: "asc" | "desc") => void;
-}) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const didInit = useRef(false);
-
-  // On mount: read URL -> state
-  useEffect(() => {
-    const p = new URLSearchParams(searchParams.toString());
-
-    const q = p.get("q") ?? "";
-    const status = (p.get("status") as any) || undefined;
-    const dept = (p.get("dept") as any) || undefined;
-    const from = p.get("from") || "";
-    const to = p.get("to") || "";
-    const mode = (p.get("mode") as "auto" | "apply") || undefined;
-    const sd = p.get("sort");
-
-    if (q) setTableSearch(q);
-
-    const patch: Record<string, any> = {};
-    if (status) patch.status = status;
-    if (dept) patch.dept = dept;
-    if (from) patch.from = from;
-    if (to) patch.to = to;
-    if (mode) patch.mode = mode;
-    if (Object.keys(patch).length) onDraftChange(patch);
-
-    if (sd === "asc" || sd === "desc") setSortDir(sd);
-
-    didInit.current = true;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // On state change: write state -> URL (omit defaults)
-  useEffect(() => {
-    if (!didInit.current) return;
-
-    const params = new URLSearchParams();
-    if (tableSearch.trim()) params.set("q", tableSearch.trim());
-    if (draft.status && draft.status !== "All") params.set("status", String(draft.status));
-    if (draft.dept && draft.dept !== "All") params.set("dept", String(draft.dept));
-    if (draft.from) params.set("from", String(draft.from));
-    if (draft.to) params.set("to", String(draft.to));
-    if (draft.mode && draft.mode !== "auto") params.set("mode", String(draft.mode));
-    if (sortDir === "asc") params.set("sort", "asc"); // default is 'desc'
-
-    const qs = params.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-  }, [draft, tableSearch, sortDir, pathname, router]);
-
-  return null;
-}
+/* ======================================================================= */
+/* =========================== INNER PAGE LOGIC =========================== */
+/* ======================================================================= */
 
 function PageInner() {
   const toast = useToast();
   const bulkRef = useRef<BulkBarHandle>(null);
 
-  /* SOURCE rows (mock) */
+  // SOURCE rows (mock)
   const [allRows, setAllRows] = useState<RequestRow[]>(() => [...REQUESTS]);
 
-  /* FILTERED rows (from FiltersBarContainer) */
+  // FILTERED rows (from FiltersBarContainer)
   const [filteredRows, setFilteredRows] = useState<RequestRow[]>(() => allRows);
   useEffect(() => setFilteredRows(allRows), [allRows]);
 
-  /* LOCAL table/card search + sort (applied after Filters) */
+  // LOCAL table/card search + sort (applied after Filters)
   const [tableSearch, setTableSearch] = useState("");
   const debouncedQ = useDebouncedValue(tableSearch, 300);
   const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
@@ -132,16 +68,16 @@ function PageInner() {
     );
   }, [filteredRows, debouncedQ, sortDir]);
 
-  /* VIEW TOGGLE */
+  // VIEW TOGGLE
   const [view, setView] = useState<"table" | "card">("table");
 
-  /* SELECTION (shared across views) */
+  // SELECTION (shared across views)
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const clearSelection = () => setSelected(new Set());
+  const clearSelection = () => selClear(setSelected);
 
-  /* PAGINATION (table 15/page; card 9/page) */
+  // PAGINATION (table 15/page; card 9/page)
   const PAGE_SIZES = { table: 15, card: 9 } as const;
-  const [pagination, setPagination] = useState<Pagination>({
+  const [pagination, setPagination] = useState<Pg>({
     page: 1,
     pageSize: PAGE_SIZES.table,
     total: postFilterRows.length,
@@ -163,44 +99,12 @@ function PageInner() {
     clearSelection();
   }, [postFilterRows]);
 
-  // measure sticky offsets → CSS vars
-  useEffect(() => {
-  const selKpi = '[data-role="admin"] .admin-sticky-kpi';
-  const selTb  = '[data-role="admin"] .admin-sticky-toolbar';
-
-  function update() {
-    const kpi = document.querySelector(selKpi) as HTMLElement | null;
-    const tb  = document.querySelector(selTb)  as HTMLElement | null;
-
-    const kpiH = kpi?.offsetHeight ?? 0;
-    const tbH  = tb?.offsetHeight ?? 0;
-
-    const root = document.querySelector('[data-role="admin"]') as HTMLElement | null;
-    if (root) {
-      root.style.setProperty("--rq-kpi", `${kpiH}px`);
-      root.style.setProperty("--rq-toolbar", `${tbH}px`);
-      root.style.setProperty("--rq-offset", `${kpiH + tbH}px`);
-    }
-  }
-
-  update();
-  window.addEventListener("resize", update);
-
-  const obs = new MutationObserver(update);
-  const kpiNode = document.querySelector(selKpi);
-  const tbNode  = document.querySelector(selTb);
-  if (kpiNode) obs.observe(kpiNode, { childList: true, subtree: true, attributes: true });
-  if (tbNode)  obs.observe(tbNode,  { childList: true, subtree: true, attributes: true });
-
-  return () => { window.removeEventListener("resize", update); obs.disconnect(); };
-}, []);
-
   const pageRows = useMemo(() => {
     const start = (pagination.page - 1) * pagination.pageSize;
     return postFilterRows.slice(start, start + pagination.pageSize);
   }, [postFilterRows, pagination.page, pagination.pageSize]);
 
-  /* DETAILS + CONFIRM */
+  // DETAILS + CONFIRM
   const [openDetails, setOpenDetails] = useState(false);
   const [activeRow, setActiveRow] = useState<RequestRow | undefined>();
   const openRow = (r: RequestRow) => {
@@ -210,10 +114,14 @@ function PageInner() {
 
   const [confirm, setConfirm] = useState<{ open: boolean; kind?: "approve" | "reject"; id?: string }>({ open: false });
 
-  /* ---------- PATCH HELPERS (optimistic) ---------- */
+  // ---------- PATCH HELPERS (optimistic) ----------
   function patchStatus(ids: string[], status?: "Approved" | "Rejected") {
-    setAllRows((prev) => (status ? prev.map((r) => (ids.includes(r.id) ? { ...r, status } : r)) : prev.filter((r) => !ids.includes(r.id))));
-    setFilteredRows((prev) => (status ? prev.map((r) => (ids.includes(r.id) ? { ...r, status } : r)) : prev.filter((r) => !ids.includes(r.id))));
+    setAllRows((prev) =>
+      status ? prev.map((r) => (ids.includes(r.id) ? { ...r, status } : r)) : prev.filter((r) => !ids.includes(r.id))
+    );
+    setFilteredRows((prev) =>
+      status ? prev.map((r) => (ids.includes(r.id) ? { ...r, status } : r)) : prev.filter((r) => !ids.includes(r.id))
+    );
   }
 
   async function approveOne(id: string) {
@@ -252,7 +160,7 @@ function PageInner() {
     setOpenDetails(false);
   };
 
-  /* ---------- BULK ---------- */
+  // ---------- BULK ----------
   async function bulkApprove(ids: string[]) {
     if (!ids.length) return;
     const snapAll = [...allRows];
@@ -307,58 +215,36 @@ function PageInner() {
     }
   }
 
-  /* ---------- Keyboard shortcuts (with typing guard) ---------- */
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      const t = e.target as HTMLElement | null;
-      const tag = t?.tagName?.toLowerCase();
-      const typing =
-        (t && (t as HTMLElement).isContentEditable) ||
-        tag === "input" ||
-        tag === "textarea" ||
-        tag === "select";
-      if (typing) return;
+  // ---------- Keyboard shortcuts ----------
+  useHotkeys(
+    [
+      { key: "Enter", ctrl: true, handler: () => bulkRef.current?.approveSelected() },
+      {
+        key: "a",
+        handler: () =>
+          setSelected((prev) => {
+            const next = new Set(prev);
+            pageRows.forEach((r) => next.add(r.id));
+            return next;
+          }),
+      },
+      { key: "x", handler: () => selClear(setSelected) },
+      { key: "ArrowLeft", handler: () => setPagination((p) => ({ ...p, page: Math.max(1, p.page - 1) })) },
+      {
+        key: "ArrowRight",
+        handler: () =>
+          setPagination((p) => ({
+            ...p,
+            page: clampPage(p.total, p.pageSize, p.page + 1),
+          })),
+      },
+      { key: "t", handler: () => setView("table") },
+      { key: "c", handler: () => setView("card") },
+    ],
+    { ignoreWhileTyping: true }
+  );
 
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "enter") {
-        e.preventDefault();
-        bulkRef.current?.approveSelected();
-        return;
-      }
-      if (!e.ctrlKey && !e.metaKey && e.key.toLowerCase() === "a") {
-        e.preventDefault();
-        setSelected((prev) => new Set([...prev, ...pageRows.map((r) => r.id)]));
-        return;
-      }
-      if (e.key.toLowerCase() === "x") {
-        e.preventDefault();
-        clearSelection();
-        return;
-      }
-      if (e.key === "ArrowLeft") {
-        setPagination((p) => ({ ...p, page: Math.max(1, p.page - 1) }));
-        return;
-      }
-      if (e.key === "ArrowRight") {
-        setPagination((p) => ({
-          ...p,
-          page: Math.min(Math.ceil(p.total / p.pageSize) || 1, p.page + 1),
-        }));
-        return;
-      }
-      if (e.key.toLowerCase() === "t") {
-        setView("table");
-        return;
-      }
-      if (e.key.toLowerCase() === "c") {
-        setView("card");
-        return;
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [pageRows]);
-
-  /* KPI summary uses filteredRows (pre-search) */
+  // KPI summary uses filteredRows (pre-search)
   const summary = useMemo(
     () => ({
       pending: filteredRows.filter((r) => r.status === "Pending").length,
@@ -372,30 +258,21 @@ function PageInner() {
   return (
     <div className="space-y-4">
       {/* Sticky KPI + View toggle */}
-<div className="admin-sticky-kpi">
-  {/* stack the cards and the toggle with spacing + a bit of right padding */}
-  <div className="space-y-2 pr-2">
-    <RequestsSummaryUI summary={summary} />
-    <div className="flex justify-end">
-      <ViewToggleUI view={view} onChange={setView} />
-    </div>
-  </div>
-</div>
-
+      <div className="admin-sticky-kpi">
+        <div className="space-y-2 pr-2">
+          <RequestsSummaryUI summary={summary} />
+          <div className="flex justify-end">
+            <ViewToggleUI view={view} onChange={setView} />
+          </div>
+        </div>
+      </div>
 
       {/* Filters container provides filtering logic to both views */}
       <FiltersBarContainer rows={allRows} onFiltered={setFilteredRows}>
         {(controls) => (
           <>
-            {/* URL sync */}
-            <URLSync
-              draft={controls.draft}
-              onDraftChange={controls.onDraftChange}
-              tableSearch={tableSearch}
-              setTableSearch={setTableSearch}
-              sortDir={sortDir}
-              setSortDir={setSortDir}
-            />
+            {/* Filters URL sync (filters only) */}
+            <RequestsURLSync draft={controls.draft} onDraftChange={controls.onDraftChange} />
 
             {/* Bulk bar */}
             {selected.size > 0 && (
@@ -435,13 +312,7 @@ function PageInner() {
                     return next;
                   })
                 }
-                onToggleAllOnPage={(checked, idsOnPage) =>
-                  setSelected((prev) => {
-                    const next = new Set(prev);
-                    idsOnPage.forEach((id) => (checked ? next.add(id) : next.delete(id)));
-                    return next;
-                  })
-                }
+                onToggleAllOnPage={(checked, idsOnPage) => selToggleAllOnPage(setSelected, idsOnPage, checked)}
                 onRowClick={openRow}
                 onRowViewDetails={(row) => openRow(row)}
                 onPageChange={(page) => setPagination((p) => ({ ...p, page }))}
@@ -496,6 +367,10 @@ function PageInner() {
     </div>
   );
 }
+
+/* ======================================================================= */
+/* ============================== PAGE WRAP =============================== */
+/* ======================================================================= */
 
 export default function AdminRequestsPage() {
   return (

@@ -1,42 +1,53 @@
-// src/components/common/MapPickerLeafletImpl.tsx
 "use client";
 
 import * as React from "react";
-import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 
-//
-// Default marker icons — copy these files to:
-//   /public/leaflet/marker-icon.png
-//   /public/leaflet/marker-icon-2x.png
-//   /public/leaflet/marker-shadow.png
-//
-L.Icon.Default.mergeOptions({
-  iconUrl: "/leaflet/marker-icon.png",
-  iconRetinaUrl: "/leaflet/marker-icon-2x.png",
-  shadowUrl: "/leaflet/marker-shadow.png",
-});
-
+// -------- Types (named export so other files can import 'type { PickedPlace }') -----
 export type PickedPlace = {
   lat: number;
   lng: number;
   address: string;
 };
 
-type Props = {
-  open: boolean;                 // (kept for API symmetry; not used here)
-  onClose: () => void;
-  onPick: (p: PickedPlace) => void;
-  initial?: PickedPlace | null;
-};
+// -------- Maroon marker icon (SVG data URL) ----------------------------------------
+const MAROON = "#7A0010";
+const svgPin = encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="48" viewBox="0 0 32 48">
+     <path d="M16 0C7.7 0 1 6.7 1 15c0 10.5 13.7 31.1 14.3 32 .4.6 1 .6 1.4 0C17.3 46.1 31 25.5 31 15 31 6.7 24.3 0 16 0z" fill="${MAROON}"/>
+     <circle cx="16" cy="15" r="6" fill="white"/>
+   </svg>`
+);
+const maroonIcon = L.icon({
+  iconUrl: `data:image/svg+xml;charset=utf-8,${svgPin}`,
+  iconSize: [32, 48],
+  iconAnchor: [16, 48],
+  popupAnchor: [0, -44],
+  shadowUrl: undefined,
+});
 
-type NominatimHit = {
-  display_name: string;
-  lat: string;
-  lon: string;
-};
+// -------- Helpers for map control --------------------------------------------------
+function CenterOn({ lat, lng, zoom = 15 }: { lat: number; lng: number; zoom?: number }) {
+  const map = useMap();
+  React.useEffect(() => {
+    map.setView([lat, lng], zoom, { animate: true });
+  }, [lat, lng, zoom, map]);
+  return null;
+}
 
-// tiny debounce so we don't spam Nominatim when typing
+function ClickPicker({ onPickPos }: { onPickPos: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click(e) {
+      onPickPos(e.latlng.lat, e.latlng.lng);
+    },
+  });
+  return null;
+}
+
+// -------- Nominatim search / reverse ----------------------------------------------
+type NominatimHit = { display_name: string; lat: string; lon: string };
+
 function useDebounced<T extends (...args: any[]) => void>(fn: T, delay = 400) {
   const t = React.useRef<number | null>(null);
   return React.useCallback(
@@ -56,11 +67,10 @@ async function nominatimSearch(q: string) {
     dedupe: "1",
     addressdetails: "1",
     autocomplete: "1",
-    countrycodes: "ph", // bias to PH; remove if you want global
+    countrycodes: "ph",
   });
-  const url = `https://nominatim.openstreetmap.org/search?${params.toString()}`;
-  const res = await fetch(url);
-  if (!res.ok) return [];
+  const res = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`);
+  if (!res.ok) return [] as NominatimHit[];
   return (await res.json()) as NominatimHit[];
 }
 
@@ -71,20 +81,18 @@ async function nominatimReverse(lat: number, lon: number) {
     lon: String(lon),
     addressdetails: "1",
   });
-  const url = `https://nominatim.openstreetmap.org/reverse?${params.toString()}`;
-  const res = await fetch(url);
+  const res = await fetch(`https://nominatim.openstreetmap.org/reverse?${params.toString()}`);
   if (!res.ok) return null;
   return await res.json();
 }
 
-function ClickPicker({ onPickPos }: { onPickPos: (lat: number, lng: number) => void }) {
-  useMapEvents({
-    click(e) {
-      onPickPos(e.latlng.lat, e.latlng.lng);
-    },
-  });
-  return null;
-}
+// -------- Component ----------------------------------------------------------------
+type Props = {
+  open: boolean; // kept for symmetry; not used
+  onClose: () => void;
+  onPick: (p: PickedPlace) => void;
+  initial?: PickedPlace | null;
+};
 
 export default function MapPickerLeafletImpl({ onClose, onPick, initial }: Props) {
   const [query, setQuery] = React.useState("");
@@ -118,34 +126,32 @@ export default function MapPickerLeafletImpl({ onClose, onPick, initial }: Props
     runSearch(v);
   }
 
+  function pickAndCenter(lat: number, lng: number, address: string) {
+    setChosen({ lat, lng, address });
+    setQuery(address);
+    setResults([]);
+  }
+
   function selectResult(hit: NominatimHit) {
     const lat = parseFloat(hit.lat);
     const lng = parseFloat(hit.lon);
-    setChosen({ lat, lng, address: hit.display_name });
-    setResults([]);
-    setQuery(hit.display_name);
+    pickAndCenter(lat, lng, hit.display_name);
   }
 
   async function handleMapClick(lat: number, lng: number) {
     try {
       const rev = await nominatimReverse(lat, lng);
-      const addr =
-        rev?.display_name ?? `lat: ${lat.toFixed(6)}, lng: ${lng.toFixed(6)}`;
-      setChosen({ lat, lng, address: addr });
-      setQuery(addr);
-      setResults([]);
+      const addr = rev?.display_name ?? `lat: ${lat.toFixed(6)}, lng: ${lng.toFixed(6)}`;
+      pickAndCenter(lat, lng, addr);
     } catch {
-      setChosen({
-        lat,
-        lng,
-        address: `lat: ${lat.toFixed(6)}, lng: ${lng.toFixed(6)}`,
-      });
+      pickAndCenter(lat, lng, `lat: ${lat.toFixed(6)}, lng: ${lng.toFixed(6)}`);
     }
   }
 
   function useThisLocation() {
     if (!chosen) return;
     onPick(chosen);
+    onClose();
   }
 
   return (
@@ -167,7 +173,7 @@ export default function MapPickerLeafletImpl({ onClose, onPick, initial }: Props
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           className="h-11 w-full rounded-lg border px-3"
-          placeholder="Search address or place (Nominatim)"
+          placeholder="Search address or place (OpenStreetMap Nominatim)"
         />
         {query && (results.length > 0 || loading) && (
           <div className="absolute left-3 right-3 top-[3.25rem] z-[2] max-h-64 overflow-auto rounded-lg border bg-white shadow-lg">
@@ -195,8 +201,10 @@ export default function MapPickerLeafletImpl({ onClose, onPick, initial }: Props
               attribution='&copy; <a href="https://www.openstreetmap.org/">OSM</a> contributors'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
+            {/* re-center the map whenever chosen changes */}
+            {chosen && <CenterOn lat={chosen.lat} lng={chosen.lng} />}
             <ClickPicker onPickPos={handleMapClick} />
-            {chosen && <Marker position={[chosen.lat, chosen.lng]} />}
+            {chosen && <Marker position={[chosen.lat, chosen.lng]} icon={maroonIcon} />}
           </MapContainer>
         </div>
 
