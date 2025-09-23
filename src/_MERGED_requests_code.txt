@@ -191,6 +191,76 @@ export default function Page() {
 }
 
 
+===== app\(protected)\admin\feedback\page.tsx =====
+// src/app/(protected)/admin/feedback/page.tsx
+"use client";
+import * as React from "react";
+import { useFeedback } from "@/components/admin/feedback/logic/useFeedback";
+import { FeedbackRepo } from "@/lib/admin/feedback/store";
+import FeedbackTable from "@/components/admin/feedback/ui/FeedbackTable.ui";
+import FeedbackForm from "@/components/admin/feedback/ui/FeedbackForm.ui";
+import type { Feedback } from "@/lib/admin/feedback/types";
+
+export default function FeedbackPage() {
+  const { rows, refresh } = useFeedback();
+  const [open, setOpen] = React.useState(false);
+  const [view, setView] = React.useState<Feedback | null>(null);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between">
+        <h1 className="text-2xl font-semibold">Feedback</h1>
+        <button
+          onClick={() => setOpen(true)}
+          className="rounded bg-[#7A0010] px-4 py-2 text-white"
+        >
+          Add Feedback
+        </button>
+      </div>
+      <FeedbackTable
+        rows={rows}
+        onView={(f) => setView(f)}
+        onDelete={(ids) => {
+          FeedbackRepo.removeMany(ids);
+          refresh();
+        }}
+      />
+      <FeedbackForm
+        open={open}
+        onClose={() => setOpen(false)}
+        onSave={(data) => {
+          FeedbackRepo.create(data);
+          refresh();
+        }}
+      />
+      {view && (
+        <div
+          className="fixed inset-0 z-50 grid place-items-center bg-black/40"
+          onClick={() => setView(null)}
+        >
+          <div
+            className="max-w-md rounded bg-white p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-lg font-semibold">Feedback details</h2>
+            <p className="mt-2 text-sm">
+              <strong>User:</strong> {view.user}
+            </p>
+            <p className="mt-1 text-sm">{view.message}</p>
+            <button
+              className="mt-4 rounded bg-[#7A0010] px-3 py-1 text-white"
+              onClick={() => setView(null)}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 ===== app\(protected)\admin\history\page.client.tsx =====
 "use client";
 import * as React from "react";
@@ -1060,192 +1130,280 @@ export default function ClientWrapper() {
 
 
 ===== app\(protected)\admin\schedule\SchedulePageClient.tsx =====
+// src/app/(protected)/admin/schedule/SchedulePageClient.tsx
 "use client";
 
 import * as React from "react";
-
-/* common */
-import { useDebouncedValue } from "@/lib/common/useDebouncedValue";
-import { useQS } from "@/lib/common/useQS";
-import { clampPage } from "@/lib/common/pagination";
-import { clearSelection as selClear } from "@/lib/common/selection";
-
-/* schedule domain */
-import type { Schedule, ScheduleStatus } from "@/lib/admin/schedule/types";
 import { ScheduleRepo } from "@/lib/admin/schedule/store";
-import { filterSchedules, DEFAULT_SCH_FILTERS, type ScheduleFilterState } from "@/lib/admin/schedule/filters";
-import { computeKpis } from "@/lib/admin/schedule/stats";
+import type { Schedule } from "@/lib/admin/schedule/types";
+import { useHotkeys } from "@/lib/common/useHotkeys";
 
 /* UI */
-import KpiGrid from "@/components/admin/schedule/ui/KpiGrid.ui";
-import ScheduleToolbar from "@/components/admin/schedule/toolbar/ScheduleToolbar.ui";
 import ScheduleTable from "@/components/admin/schedule/ui/ScheduleTable.ui";
+import ScheduleToolbar from "@/components/admin/schedule/toolbar/ScheduleToolbar.ui";
 import ScheduleDetailsModal from "@/components/admin/schedule/ui/ScheduleDetailsModal.ui";
-import ScheduleURLSync from "@/components/admin/schedule/ScheduleURLSync";
+import KpiGrid from "@/components/admin/schedule/ui/KpiGrid.ui";
 
-/* Create/Edit dialog (container) */
+/* Filters / KPIs */
+import { useScheduleFilters } from "@/components/admin/schedule/hooks/useScheduleFilters";
+import { DEFAULT_SCH_FILTERS, filterSchedules } from "@/lib/admin/schedule/filters";
+import { useScheduleKpis } from "@/components/admin/schedule/kpi/useScheduleKpis";
+
+/* Create/Edit dialog — container only */
 import CreateScheduleDialog from "@/components/admin/schedule/forms/CreateScheduleDialogs.container";
 
-/** Toolbar sort shape */
-type Sort = "newest" | "oldest";
+/* URL sync */
+import ScheduleURLSync from "./ScheduleURLSync"; // q + sort only
+import ScheduleFiltersURLSync from "@/components/admin/schedule/ScheduleFiltersURLSync"; // status/dept/from/to/mode
 
 export default function SchedulePageClient() {
-  /* ---------- source of truth ---------- */
-  const [allRows, setAllRows] = React.useState<Schedule[]>(() => ScheduleRepo.list());
+  const [hydrated, setHydrated] = React.useState(false);
+  React.useEffect(() => setHydrated(true), []);
 
-  /* ---------- filters + search ---------- */
-  const [draft, setDraft] = React.useState<ScheduleFilterState>({ ...DEFAULT_SCH_FILTERS });
-
-  /** Toolbar sort (newest/oldest) */
-  const [sort, setSort] = React.useState<Sort>("newest");
-
-  /** Map Sort <-> "asc" | "desc" for URL syncing */
-  const sortDir: "asc" | "desc" = sort === "oldest" ? "asc" : "desc";
-  const mapSetSortFromDir = (dir: "asc" | "desc") => setSort(dir === "asc" ? "oldest" : "newest");
-
-  // Keep ?q=&sort= in the URL
-  useQS(draft.search, sortDir, (v) => setDraft((d) => ({ ...d, search: v })), mapSetSortFromDir);
-
-  const debouncedQ = useDebouncedValue(draft.search, 250);
-
-  /* ---------- derived rows ---------- */
-  const filteredRows = React.useMemo(() => {
-    const f = { ...draft, search: debouncedQ };
-    let rows = filterSchedules(allRows, f);
-    // sort by date+time using mapped sortDir
-    rows = [...rows].sort((a, b) => {
-      const av = a.date + a.startTime;
-      const bv = b.date + b.startTime;
-      return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
-    });
-    return rows;
-  }, [allRows, draft, debouncedQ, sortDir]);
-
-  /* ---------- pagination + selection ---------- */
-  const pageSize = 15;
+  // State
+  const [rows, setRows] = React.useState<Schedule[]>([]);
   const [page, setPage] = React.useState(1);
+  const [pageSize] = React.useState(15);
+  const [q, setQ] = React.useState("");
+  const [sort, setSort] = React.useState<"newest" | "oldest">("newest");
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
-  const clearSelection = () => selClear(setSelected);
+  const [open, setOpen] = React.useState(false);
+  const [editRow, setEditRow] = React.useState<Schedule | null>(null);
+  const [viewRow, setViewRow] = React.useState<Schedule | null>(null);
 
-  React.useEffect(() => {
-    setPage((p) => clampPage(filteredRows.length, pageSize, p));
-  }, [filteredRows.length]);
-
-  const start = (page - 1) * pageSize;
-  const pageRows = React.useMemo(() => filteredRows.slice(start, start + pageSize), [filteredRows, start]);
-  const idsOnPage = React.useMemo(() => pageRows.map((r) => r.id), [pageRows]);
-
-  const onToggleOne = (id: string, checked: boolean) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      checked ? next.add(id) : next.delete(id);
-      return next;
-    });
-  };
-  const onToggleAll = (checked: boolean) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (checked) idsOnPage.forEach((id) => next.add(id));
-      else idsOnPage.forEach((id) => next.delete(id));
-      return next;
-    });
-  };
-
-  /* ---------- repo-backed ops ---------- */
-  const reload = () => setAllRows(ScheduleRepo.list());
-
-  const onSetStatus = async (id: string, status: ScheduleStatus) => {
-    ScheduleRepo.setStatus(id, status);
-    reload();
-  };
-  const onDeleteMany = async (ids: string[]) => {
-    if (!ids.length) return;
-    ScheduleRepo.removeMany(ids);
-    clearSelection();
-    reload();
-  };
-
-  /* ---------- create/edit dialogs ---------- */
-  const [createOpen, setCreateOpen] = React.useState(false);
-  const [editInitial, setEditInitial] = React.useState<Partial<Schedule> | null>(null);
-
-  const handleAddNew = () => {
-    setEditInitial(null);
-    setCreateOpen(true);
-  };
-  const handleEdit = (row: Schedule) => {
-    setEditInitial(row);
-    setCreateOpen(true);
-  };
-  const handleSubmit = (data: Omit<Schedule, "id" | "createdAt" | "tripId">) => {
-    try {
-      if (editInitial?.id) {
-        ScheduleRepo.update(editInitial.id as string, data);
-      } else {
-        ScheduleRepo.create(data);
-      }
-      setCreateOpen(false);
-      reload();
-    } catch (e: any) {
-      alert(e?.message ?? "Failed to save schedule");
+  const filters = useScheduleFilters(DEFAULT_SCH_FILTERS);
+  const { kpis, refresh: refreshKpis } = useScheduleKpis();
+   React.useEffect(() => {
+    if (filters.draft.mode === "auto") {
+      filters.apply();
     }
-  };
+  }, [filters.draft, filters]);
 
-  /* ---------- details modal ---------- */
-  const [detailsId, setDetailsId] = React.useState<string | null>(null);
-  const current = detailsId ? allRows.find((r) => r.id === detailsId) ?? null : null;
+  // Load repo after mount
+  React.useEffect(() => {
+    if (!hydrated) return;
+    setRows(ScheduleRepo.list());
+    refreshKpis();
+  }, [hydrated, refreshKpis]);
 
-  /* ---------- KPIs ---------- */
-  const kpis = React.useMemo(() => computeKpis(allRows), [allRows]);
+  function refresh() {
+    setRows(ScheduleRepo.list());
+    refreshKpis();
+  }
 
-  /* ---------- toolbar node ---------- */
-  const toolbar = (
-    <ScheduleToolbar
-      q={draft.search}
-      onQChange={(v) => setDraft((d) => ({ ...d, search: v }))}
-      sort={sort}
-      onSortChange={setSort}              // ✅ expects Sort
-      onAddNew={handleAddNew}
-      draft={draft}
-      onDraftChange={(patch) => setDraft((d) => ({ ...d, ...patch }))}
-      onApply={() => {}}
-      onClearAll={() => setDraft({ ...DEFAULT_SCH_FILTERS })}
-    />
+  const filtered = React.useMemo(() => {
+    if (!hydrated) return [] as Schedule[];
+    const base = filterSchedules(rows, { ...filters.applied, search: q });
+    return [...base].sort((a, b) => {
+      const tA = `${a.date}T${a.startTime}`;
+      const tB = `${b.date}T${b.startTime}`;
+      return sort === "newest" ? (tA < tB ? 1 : -1) : tA > tB ? 1 : -1;
+    });
+  }, [hydrated, rows, filters.applied, q, sort]);
+
+  const total = filtered.length;
+  const pageRows = filtered.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
+  const maxPage = React.useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [total, pageSize]);
+
+  useHotkeys(
+    [
+      { key: "n", handler: () => { setEditRow(null); setOpen(true); } },
+      {
+        key: "Delete",
+        handler: () => {
+          if (!selected.size) return;
+          ScheduleRepo.removeMany([...selected]);
+          setSelected(new Set());
+          refresh();
+        },
+      },
+      { key: "x", handler: () => setSelected(new Set()) },
+      {
+        key: "a",
+        handler: () => {
+          const next = new Set<string>(selected);
+          pageRows.forEach((r) => next.add(r.id));
+          setSelected(next);
+        },
+      },
+      { key: "ArrowLeft", handler: () => setPage((p) => Math.max(1, p - 1)) },
+      { key: "ArrowRight", handler: () => setPage((p) => Math.min(maxPage, p + 1)) },
+      { key: "t", handler: () => setSort((s) => (s === "newest" ? "oldest" : "newest")) },
+    ],
+    { ignoreWhileTyping: true }
   );
 
+  const onToggleOne = (id: string, checked: boolean) =>
+    setSelected((p) => {
+      const n = new Set(p);
+      checked ? n.add(id) : n.delete(id);
+      return n;
+    });
+
+  const onToggleAll = (checked: boolean) =>
+    setSelected(() => {
+      const n = new Set<string>();
+      if (checked) pageRows.forEach((r) => n.add(r.id));
+      return n;
+    });
+
+  if (!hydrated) {
+    return (
+      <div className="space-y-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="rounded-xl border bg-white p-4">
+              <div className="h-4 w-28 animate-pulse rounded bg-neutral-200" />
+              <div className="mt-2 h-8 w-12 animate-pulse rounded bg-neutral-200" />
+            </div>
+          ))}
+        </div>
+        <div className="rounded-2xl border bg-white p-4">
+          <div className="mb-3 h-6 w-40 animate-pulse rounded bg-neutral-200" />
+          <div className="h-48 animate-pulse rounded bg-neutral-100" />
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-4 p-4">
-      <KpiGrid kpis={kpis as any} />
-      <ScheduleURLSync draft={draft as any} onDraftChange={setDraft as any} />
+    <div className="space-y-3">
+      {/* URL sync for q/sort */}
+      <ScheduleURLSync q={q} sort={sort} onQ={setQ} onSort={setSort} />
+      {/* URL sync for filters (status/dept/from/to/mode) */}
+      <ScheduleFiltersURLSync draft={filters.draft} onDraftChange={(patch) => filters.update(patch)} />
+
+      {/* KPI cards */}
+      <KpiGrid kpis={kpis} />
 
       <ScheduleTable
         rows={pageRows}
-        pagination={{ page, pageSize, total: filteredRows.length } as any}
+        pagination={{ page, pageSize, total }}
         selected={selected}
         onToggleOne={onToggleOne}
         onToggleAll={onToggleAll}
-        onEdit={handleEdit}
-        onDeleteMany={onDeleteMany}
-        onSetStatus={onSetStatus}
-        onPageChange={(next) => setPage((p) => clampPage(filteredRows.length, pageSize, next))}
-        onView={(row) => setDetailsId(row.id)}
-        toolbar={toolbar}
-      />
-
-      <ScheduleDetailsModal
-        open={!!detailsId}
-        onClose={() => setDetailsId(null)}
-        {...({ row: current, schedule: current, id: detailsId ?? "" } as any)}
+        onEdit={(r: Schedule) => {
+          setEditRow(r);
+          setOpen(true);
+        }}
+        onDeleteMany={(ids: string[]) => {
+          ScheduleRepo.removeMany(ids);
+          setSelected(new Set());
+          refresh();
+        }}
+        onSetStatus={(id: string, s: Schedule["status"]) => {
+          try {
+            ScheduleRepo.setStatus(id, s);
+            refresh();
+          } catch (e: any) {
+            alert(e?.message || "Cannot change status");
+          }
+        }}
+        onPageChange={(nextPage: number) => setPage(nextPage)}
+        onView={(r: Schedule) => setViewRow(r)}
+        toolbar={
+          <ScheduleToolbar
+            q={q}
+            onQChange={(v: string) => {
+              setQ(v);
+              setPage(1);
+            }}
+            sort={sort}
+            onSortChange={(s: "newest" | "oldest") => {
+              setSort(s);
+              setPage(1);
+            }}
+            onAddNew={() => {
+              setEditRow(null);
+              setOpen(true);
+            }}
+            draft={filters.draft}
+            onDraftChange={(n) => {
+              filters.update(n);
+              setPage(1);
+            }}
+            onApply={() => {
+              filters.apply();
+              setPage(1);
+            }}
+            onClearAll={() => {
+              filters.clearAll();
+              setPage(1);
+            }}
+          />
+        }
       />
 
       <CreateScheduleDialog
-        open={createOpen}
-        initial={editInitial ?? undefined}
-        onClose={() => setCreateOpen(false)}
-        onSubmit={handleSubmit}
+        open={open}
+        initial={editRow ?? undefined}
+        onClose={() => setOpen(false)}
+        onSubmit={(data) => {
+          try {
+            if (editRow) {
+              ScheduleRepo.update(editRow.id, data);
+            } else {
+              ScheduleRepo.create(data);
+            }
+            setOpen(false);
+            refresh();
+          } catch (err: any) {
+            alert(err?.message || "Cannot save schedule.");
+          }
+        }}
+      />
+
+      <ScheduleDetailsModal
+        open={!!viewRow}
+        data={viewRow || undefined}
+        onClose={() => setViewRow(null)}
       />
     </div>
   );
+}
+
+
+===== app\(protected)\admin\schedule\ScheduleURLSync.tsx =====
+"use client";
+import * as React from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+
+type Sort = "newest" | "oldest";
+
+type Props = {
+  q: string;
+  sort: Sort;
+  onQ: (next: string) => void;
+  onSort: (next: Sort) => void;
+};
+
+/** Syncs ?q= and ?sort=asc|desc with local state (newest↔desc, oldest↔asc) */
+export default function ScheduleURLSync({ q, sort, onQ, onSort }: Props) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  // read once
+  React.useEffect(() => {
+    const sp = searchParams ?? new URLSearchParams();
+    const q0 = sp.get("q") ?? "";
+    const s0 = sp.get("sort") as "asc" | "desc" | null;
+    if (q0 !== q) onQ(q0);
+    if (s0 === "asc") onSort("oldest");
+    if (s0 === "desc") onSort("newest");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // write when q/sort change
+  React.useEffect(() => {
+    const sp = new URLSearchParams(searchParams?.toString() ?? "");
+    q ? sp.set("q", q) : sp.delete("q");
+    const dir = sort === "oldest" ? "asc" : "desc";
+    sp.set("sort", dir);
+    router.replace(`${pathname}?${sp.toString()}`);
+  }, [q, sort, pathname, router, searchParams]);
+
+  return null;
 }
 
 
@@ -6609,6 +6767,168 @@ export { default as FiltersBar } from "./FiltersBar.ui";
 export { default as BulkBar } from "./BulkBar.ui";
 
 
+===== components\admin\feedback\logic\useFeedback.ts =====
+// src/components/admin/feedback/logic/useFeedback.ts
+"use client";
+import * as React from "react";
+import { FeedbackRepo } from "@/lib/admin/feedback/store";
+import type { Feedback } from "@/lib/admin/feedback/types";
+
+export function useFeedback() {
+  const [rows, setRows] = React.useState<Feedback[]>([]);
+
+  React.useEffect(() => {
+    setRows(FeedbackRepo.list());
+  }, []);
+
+  const refresh = () => setRows(FeedbackRepo.list());
+
+  return { rows, refresh };
+}
+
+
+===== components\admin\feedback\ui\FeedbackDetails.ui.tsx =====
+
+
+===== components\admin\feedback\ui\FeedbackForm.ui.tsx =====
+// src/components/admin/feedback/ui/FeedbackForm.ui.tsx
+"use client";
+import * as React from "react";
+import type { Feedback } from "@/lib/admin/feedback/types";
+
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  onSave: (data: Omit<Feedback, "id" | "createdAt">) => void;
+};
+
+export default function FeedbackForm({ open, onClose, onSave }: Props) {
+  const [user, setUser] = React.useState("");
+  const [message, setMessage] = React.useState("");
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/40"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-xl bg-white p-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="mb-2 text-lg font-semibold">New Feedback</h2>
+        <input
+          className="mb-2 w-full rounded border p-2"
+          placeholder="User"
+          value={user}
+          onChange={(e) => setUser(e.target.value)}
+        />
+        <textarea
+          className="mb-2 w-full rounded border p-2"
+          placeholder="Message"
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+        />
+        <div className="flex justify-end space-x-2">
+          <button onClick={onClose} className="rounded border px-3 py-1">
+            Cancel
+          </button>
+          <button
+            onClick={() => {
+              if (user && message) {
+                onSave({ user, message, status: "NEW" });
+                setUser("");
+                setMessage("");
+                onClose();
+              }
+            }}
+            className="rounded bg-[#7A0010] px-3 py-1 text-white"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+===== components\admin\feedback\ui\FeedbackTable.ui.tsx =====
+// src/components/admin/feedback/ui/FeedbackTable.ui.tsx
+"use client";
+import * as React from "react";
+import type { Feedback } from "@/lib/admin/feedback/types";
+
+type Props = {
+  rows: Feedback[];
+  onView: (f: Feedback) => void;
+  onDelete: (ids: string[]) => void;
+};
+
+export default function FeedbackTable({ rows, onView, onDelete }: Props) {
+  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+
+  const toggle = (id: string, checked: boolean) => {
+    setSelected((prev) => {
+      const n = new Set(prev);
+      checked ? n.add(id) : n.delete(id);
+      return n;
+    });
+  };
+
+  return (
+    <div className="rounded-2xl border bg-white p-4">
+      <div className="mb-2 flex items-center justify-between">
+        <h2 className="text-lg font-semibold">Feedback</h2>
+        {selected.size > 0 && (
+          <button
+            onClick={() => onDelete([...selected])}
+            className="rounded bg-red-600 px-3 py-1 text-sm text-white"
+          >
+            Delete ({selected.size})
+          </button>
+        )}
+      </div>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b text-left">
+            <th className="p-2">User</th>
+            <th className="p-2">Message</th>
+            <th className="p-2">Status</th>
+            <th className="p-2">Created</th>
+            <th className="p-2">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((f) => (
+            <tr key={f.id} className="border-b hover:bg-neutral-50">
+              <td className="p-2">{f.user}</td>
+              <td className="p-2 truncate max-w-[300px]">{f.message}</td>
+              <td className="p-2">{f.status}</td>
+              <td className="p-2">{new Date(f.createdAt).toLocaleString()}</td>
+              <td className="p-2 space-x-2">
+                <button
+                  className="rounded bg-blue-600 px-2 py-1 text-xs text-white"
+                  onClick={() => onView(f)}
+                >
+                  View
+                </button>
+                <input
+                  type="checkbox"
+                  checked={selected.has(f.id)}
+                  onChange={(e) => toggle(f.id, e.target.checked)}
+                />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+
 ===== components\admin\logs\FiltersBar.ui.tsx =====
 "use client";
 import * as React from "react";
@@ -7593,9 +7913,11 @@ function SplitDropdown({
 
 
 ===== components\admin\nav\AdminLeftNav.tsx =====
+// src/components/admin/layout/AdminLeftNav.tsx
 "use client";
 
 import Link from "next/link";
+import CollapseToggle from "@/components/common/CollapseToggle";
 import { usePathname } from "next/navigation";
 import * as React from "react";
 import {
@@ -7611,6 +7933,7 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  MessageSquare,
   Search,
 } from "lucide-react";
 
@@ -7632,6 +7955,7 @@ const NAV: Item[] = [
   { href: "/admin/track", label: "Track / Live", Icon: MapPin },
   { href: "/admin/history", label: "History / Logs", Icon: History },
   { href: "/admin/report", label: "Reports / Exports", Icon: FileBarChart },
+  { href: "/admin/feedback", label: "Feedback", Icon: MessageSquare },
   { href: "/admin/settings", label: "Settings", Icon: Settings },
 ];
 
@@ -7690,7 +8014,7 @@ export default function AdminLeftNav() {
         collapsed ? "text-white" : "text-neutral-800",
       ].join(" ")}
     >
-      {/* ---------- Top row: Search + Toggle (HCI-friendly) ---------- */}
+      {/* ---------- Top row: Search + Toggle ---------- */}
       <div className={collapsed ? "px-2 pt-2 pb-1" : "px-3 pt-3 pb-2"}>
         <div className="flex items-center gap-2">
           {!collapsed && (
@@ -7706,30 +8030,11 @@ export default function AdminLeftNav() {
             </div>
           )}
 
-          {/* Top-right toggle (small, easy target) */}
-          <button
-            type="button"
-            data-nav-toggle="true"
-            onClick={(e) => {
-              e.stopPropagation();
-              setCollapsed((v) => !v);
-            }}
-            title={collapsed ? "Expand sidebar (Ctrl+B)" : "Collapse sidebar (Ctrl+B)"}
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            className={[
-              "shrink-0 rounded-full border",
-              collapsed
-                ? "border-white/25 bg-white/15 text-white hover:bg-white/25"
-                : "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50",
-              "shadow-sm p-1.5 transition",
-            ].join(" ")}
-          >
-            {collapsed ? (
-              <ChevronRight className="h-4 w-4" />
-            ) : (
-              <ChevronLeft className="h-4 w-4" />
-            )}
-          </button>
+          {/* Rect toggle like your screenshot */}
+          <CollapseToggle
+  collapsed={collapsed}
+  onClick={() => setCollapsed((v) => !v)}
+/>
         </div>
 
         {/* Section label when expanded */}
@@ -10138,68 +10443,115 @@ export default function ViewToggleUI({
 }
 
 
-===== components\admin\schedule\ScheduleURLSync.tsx =====
+===== components\admin\schedule\ScheduleFiltersURLSync.tsx =====
+// src/components/admin/schedule/ScheduleFiltersURLSync.tsx
 "use client";
 import * as React from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
-type ScheduleFilterDraft = {
-  status?: "All" | "Planned" | "InProgress" | "Completed" | "Cancelled";
-  dept?: "All" | "CCMS" | "HR" | "Registrar" | "Finance";
-  from?: string; // YYYY-MM-DD
-  to?: string;   // YYYY-MM-DD
-  mode?: "auto" | "apply";
+/** Accept both TitleCase and UPPER_CASE for status */
+const STATUS = [
+  "All",
+  "Planned", "InProgress", "Completed", "Cancelled",
+  "PLANNED", "ONGOING", "COMPLETED", "CANCELLED",
+] as const;
+
+const DEPT = ["All", "CCMS", "HR", "Registrar", "Finance"] as const;
+const MODE = ["auto", "apply"] as const;
+
+const isIn = <T extends readonly string[]>(vs: T, v: string): v is T[number] =>
+  (vs as readonly string[]).includes(v);
+
+export type ScheduleFilterDraft = {
+  status?: typeof STATUS[number];
+  dept?: typeof DEPT[number];
+  driver?: "All" | string;     // driverId
+  vehicle?: "All" | string;    // vehicleId
+  from?: string | null;        // YYYY-MM-DD
+  to?: string | null;          // YYYY-MM-DD
+  mode?: typeof MODE[number];  // auto = apply immediately
 };
 
-const STATUS = ["All","Planned","InProgress","Completed","Cancelled"] as const;
-const DEPT   = ["All","CCMS","HR","Registrar","Finance"] as const;
-const MODE   = ["auto","apply"] as const;
-const isIn = <T extends readonly string[]>(vs: T, v: string): v is T[number] => (vs as readonly string[]).includes(v);
+type Props = {
+  draft: ScheduleFilterDraft;
+  onDraftChange: (patch: Partial<ScheduleFilterDraft>) => void;
+};
 
-type Props = { draft: ScheduleFilterDraft; onDraftChange: (n: Partial<ScheduleFilterDraft>) => void; };
-
-export default function ScheduleURLSync({ draft, onDraftChange }: Props) {
+export default function ScheduleFiltersURLSync({ draft, onDraftChange }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const lastRef = React.useRef("");
 
+  /** READ ONCE from URL → draft */
   React.useEffect(() => {
     const sp = searchParams ?? new URLSearchParams();
-    const next: Partial<ScheduleFilterDraft> = {};
-    const status = sp.get("status") || undefined;
-    const dept   = sp.get("dept") || undefined;
-    const from   = sp.get("from") || undefined;
-    const to     = sp.get("to") || undefined;
-    const mode   = sp.get("mode") || undefined;
 
+    const status  = sp.get("status")  ?? undefined;
+    const dept    = sp.get("dept")    ?? undefined;
+    const driver  = sp.get("driver")  ?? undefined;
+    const vehicle = sp.get("vehicle") ?? undefined;
+    const from    = sp.get("from");
+    const to      = sp.get("to");
+    const mode    = sp.get("mode")    ?? undefined;
+
+    const next: Partial<ScheduleFilterDraft> = {};
     if (status && isIn(STATUS, status)) next.status = status;
-    if (dept && isIn(DEPT, dept)) next.dept = dept;
-    if (from) next.from = from;
-    if (to) next.to = to;
-    if (mode && isIn(MODE, mode)) next.mode = mode;
+    if (dept && isIn(DEPT, dept))       next.dept = dept;
+    if (driver)                         next.driver = driver as any;
+    if (vehicle)                        next.vehicle = vehicle as any;
+    next.from = from ?? null;
+    next.to   = to   ?? null;
+    if (mode && isIn(MODE, mode))       next.mode = mode;
 
     if (Object.keys(next).length) onDraftChange(next);
+
+    // snapshot to avoid redundant writes
     lastRef.current = JSON.stringify({
-      status: next.status ?? "", dept: next.dept ?? "", from: next.from ?? "", to: next.to ?? "", mode: next.mode ?? ""
+      status:  next.status  ?? "",
+      dept:    next.dept    ?? "",
+      driver:  next.driver  ?? "",
+      vehicle: next.vehicle ?? "",
+      from:    next.from    ?? "",
+      to:      next.to      ?? "",
+      mode:    next.mode    ?? "",
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /** WRITE whenever draft changes → URL */
   React.useEffect(() => {
     const payload = {
-      status: draft.status ?? "", dept: draft.dept ?? "", from: draft.from ?? "", to: draft.to ?? "", mode: draft.mode ?? ""
+      status:  draft.status  ?? "",
+      dept:    draft.dept    ?? "",
+      driver:  draft.driver  ?? "",
+      vehicle: draft.vehicle ?? "",
+      from:    draft.from    ?? "",
+      to:      draft.to      ?? "",
+      mode:    draft.mode    ?? "",
     };
     const str = JSON.stringify(payload);
     if (str === lastRef.current) return;
 
-    const base = searchParams?.toString() ?? "";
-    const sp = new URLSearchParams(base);
-    payload.status ? sp.set("status", payload.status) : sp.delete("status");
-    payload.dept ? sp.set("dept", payload.dept) : sp.delete("dept");
-    payload.from ? sp.set("from", payload.from) : sp.delete("from");
-    payload.to ? sp.set("to", payload.to) : sp.delete("to");
-    payload.mode ? sp.set("mode", payload.mode) : sp.delete("mode");
+    const sp = new URLSearchParams(searchParams?.toString() ?? "");
+
+    // Only keep meaningful params in the URL
+    if (draft.status && draft.status !== "All") sp.set("status", draft.status);
+    else sp.delete("status");
+
+    if (draft.dept && draft.dept !== "All") sp.set("dept", draft.dept);
+    else sp.delete("dept");
+
+    if (draft.driver && draft.driver !== "All") sp.set("driver", draft.driver);
+    else sp.delete("driver");
+
+    if (draft.vehicle && draft.vehicle !== "All") sp.set("vehicle", draft.vehicle);
+    else sp.delete("vehicle");
+
+    draft.from ? sp.set("from", draft.from) : sp.delete("from");
+    draft.to   ? sp.set("to",   draft.to)   : sp.delete("to");
+
+    draft.mode ? sp.set("mode", draft.mode) : sp.delete("mode");
 
     lastRef.current = str;
     router.replace(`${pathname}?${sp.toString()}`);
@@ -10446,7 +10798,7 @@ export type VehicleOption = { id: string; label: string; plateNo: string; busy?:
 type Props = {
   open: boolean;
   tripIdPreview?: string;
-  form?: CreateForm; // ← tolerant
+  form?: CreateForm;
   drivers?: DriverOption[];
   vehicles?: VehicleOption[];
   driverConflicts?: Array<{ id: string; title: string; date: string; startTime: string; endTime: string }>;
@@ -10467,7 +10819,6 @@ export default function CreateScheduleDialogUI(props: Props) {
     onChange = () => {},
   } = props;
 
-  // Safe defaults if anything is missing
   const form: CreateForm = {
     requestId: props.form?.requestId ?? null,
     title: props.form?.title ?? "",
@@ -10610,11 +10961,19 @@ export default function CreateScheduleDialogUI(props: Props) {
             >
               {!drivers.length && <option value="">No drivers configured</option>}
               {drivers.map((d) => (
-                <option key={d.id} value={d.id} disabled={d.busy}>
-                  {d.name} {d.busy ? " • busy" : ""}
+                <option
+                  key={d.id}
+                  value={d.id}
+                  disabled={d.busy}
+                  title={d.busy ? "Driver is busy for the selected time window" : ""}
+                >
+                  {d.name} {d.busy ? "• busy" : ""}
                 </option>
               ))}
             </select>
+            <p className="mt-1 text-[11px] text-neutral-500">
+              Items marked <span className="font-medium">busy</span> are unavailable for the selected time.
+            </p>
           </div>
 
           {/* Vehicle */}
@@ -10627,8 +10986,13 @@ export default function CreateScheduleDialogUI(props: Props) {
             >
               {!vehicles.length && <option value="">No vehicles configured</option>}
               {vehicles.map((v) => (
-                <option key={v.id} value={v.id} disabled={v.busy}>
-                  {v.label} ({v.plateNo}) {v.busy ? " • busy" : ""}
+                <option
+                  key={v.id}
+                  value={v.id}
+                  disabled={v.busy}
+                  title={v.busy ? "Vehicle is busy for the selected time window" : ""}
+                >
+                  {v.label} ({v.plateNo}) {v.busy ? "• busy" : ""}
                 </option>
               ))}
             </select>
@@ -10719,7 +11083,11 @@ export default function CreateScheduleDialogUI(props: Props) {
 // src/components/admin/schedule/forms/CreateScheduleDialogs.container.tsx
 "use client";
 import * as React from "react";
-import CreateScheduleDialogUI, { CreateForm, DriverOption, VehicleOption } from "./CreateScheduleDialog.ui";
+import CreateScheduleDialogUI, {
+  CreateForm,
+  DriverOption,
+  VehicleOption,
+} from "./CreateScheduleDialog.ui";
 import { ScheduleRepo } from "@/lib/admin/schedule/store";
 import type { Schedule } from "@/lib/admin/schedule/types";
 import {
@@ -10748,7 +11116,7 @@ const makeInit = (initial?: Partial<Schedule>): CreateForm => {
     endTime: initial?.endTime ?? "09:00",
     driverId: initial?.driverId ?? (drivers[0]?.id ?? ""),
     vehicleId: initial?.vehicleId ?? (vehicles[0]?.id ?? ""),
-    status: (initial?.status as Schedule["status"]) ?? "PLANNED",
+    status: (initial?.status as CreateForm["status"]) ?? "PLANNED",
     notes: initial?.notes ?? "",
     originPlace: null,
     destinationPlace: null,
@@ -10768,17 +11136,26 @@ export default function CreateScheduleDialog({
   }, [open, initial]);
 
   const snapshot = ScheduleRepo.list();
-  const editingId = initial?.id as string | undefined;
+  const editingId = (initial?.id as string) || undefined;
 
-  // probe event with current form to evaluate conflicts
+  // Probe event with current form (used by availability/conflict utils)
   const probe: Schedule = {
     id: editingId || "new",
     createdAt: new Date().toISOString(),
     tripId: "PREVIEW",
-    ...form,
+    title: form.title,
+    origin: form.origin,
+    destination: form.destination,
+    date: form.date,
+    startTime: form.startTime,
+    endTime: form.endTime,
+    driverId: form.driverId,
+    vehicleId: form.vehicleId,
+    status: form.status,
+    notes: form.notes,
   };
 
-  // options (mark busy)
+  // Build options w/ busy flag
   const drivers: DriverOption[] = ScheduleRepo.constants.drivers.map((d) => ({
     id: d.id,
     name: d.name,
@@ -10792,6 +11169,7 @@ export default function CreateScheduleDialog({
     busy: !isVehicleAvailable(snapshot, v.id, probe, editingId),
   }));
 
+  // Conflicts for the selected driver/vehicle (to show details + disable save)
   const driverConflicts = conflictsForDriver(snapshot, form.driverId, probe, editingId);
   const vehicleConflicts = conflictsForVehicle(snapshot, form.vehicleId, probe, editingId);
   const disableSave = driverConflicts.length > 0 || vehicleConflicts.length > 0;
@@ -12898,6 +13276,50 @@ export default function Card({ title, children }: { title: string; children: Rea
       <h2 className="text-[15px] md:text-base font-semibold mb-3 md:mb-4">{title}</h2>
       <div className="min-w-0">{children}</div>
     </section>
+  );
+}
+
+
+===== components\common\CollapseToggle.tsx =====
+"use client";
+import * as React from "react";
+import { ArrowLeftToLine, ArrowRightToLine } from "lucide-react";
+
+type Props = {
+  collapsed: boolean;
+  onClick: () => void;
+  brand?: string; // optional brand hex (defaults to TraviLink maroon)
+};
+
+export default function CollapseToggle({ collapsed, onClick, brand = "#7a1f2a" }: Props) {
+  // two style sets: light (expanded sidebar) vs dark (collapsed rail)
+  const light =
+    "border-neutral-300 bg-white text-neutral-700 hover:text-white hover:bg-[var(--brand)] hover:border-[var(--brand)]";
+  const dark =
+    "border-white/30 bg-white/15 text-white hover:bg-white hover:text-[var(--brand)] hover:border-white";
+
+  return (
+    <button
+      type="button"
+      data-nav-toggle="true"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      title={collapsed ? "Expand sidebar (Ctrl+B)" : "Collapse sidebar (Ctrl+B)"}
+      aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+      style={{ ["--brand" as any]: brand }}
+      className={[
+        "relative flex h-8 w-10 items-center justify-center rounded-md border shadow-sm transition-colors",
+        collapsed ? dark : light,
+      ].join(" ")}
+    >
+      {collapsed ? (
+        <ArrowRightToLine className="h-4 w-4" />
+      ) : (
+        <ArrowLeftToLine className="h-4 w-4" />
+      )}
+    </button>
   );
 }
 
@@ -19513,6 +19935,212 @@ export const useDriverTableColumns = () => {
 };
 
 
+===== lib\admin\feedback\mock.ts =====
+// src/lib/admin/feedback/mock.ts
+import type { Feedback } from "./types";
+
+function iso(offsetDays = 0, hour = 9) {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  d.setHours(hour, Math.floor(Math.random() * 59), 0, 0);
+  return d.toISOString();
+}
+
+export const MOCK_FEEDBACK: Feedback[] = [
+  {
+    id: "FB-0001",
+    createdAt: iso(-6, 10),
+    user: "Ana Santos",
+    message: "Love the shuttle schedule view. Can we add a dark mode toggle?",
+    rating: 5,
+    status: "NEW",
+  },
+  {
+    id: "FB-0002",
+    createdAt: iso(-5, 14),
+    user: "Registrar Office",
+    message: "Sometimes the map pin does not center on mobile.",
+    rating: 3,
+    status: "REVIEWED",
+  },
+  {
+    id: "FB-0003",
+    createdAt: iso(-4, 15),
+    user: "John Dela Cruz",
+    message: "Please allow exporting request history by department.",
+    rating: 4,
+    status: "NEW",
+  },
+  {
+    id: "FB-0004",
+    createdAt: iso(-2, 11),
+    user: "Maintenance",
+    message: "UI labels overlap when zoom is 125%.",
+    rating: 2,
+    status: "RESOLVED",
+  },
+  {
+    id: "FB-0005",
+    createdAt: iso(-1, 9),
+    user: "HR",
+    message: "Add keyboard shortcut to open new feedback form.",
+    rating: 4,
+    status: "REVIEWED",
+  },
+];
+
+
+===== lib\admin\feedback\store.ts =====
+// src/lib/admin/feedback/store.ts
+import type { Feedback } from "./types";
+import { MOCK_FEEDBACK } from "./mock";
+
+const STORAGE_KEY = "feedbackRepo";
+
+function load(): Feedback[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Feedback[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function save(rows: Feedback[]) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(rows));
+}
+
+function ensureSeed() {
+  const cur = load();
+  if (!cur || cur.length === 0) {
+    save(MOCK_FEEDBACK);
+  }
+}
+
+export const FeedbackRepo = {
+  /** Call on mount — seeds when empty */
+  init() {
+    ensureSeed();
+  },
+
+  list(): Feedback[] {
+    ensureSeed();
+    return load();
+  },
+
+  get(id: string): Feedback | undefined {
+    return this.list().find((f) => f.id === id);
+  },
+
+  create(data: Omit<Feedback, "id" | "createdAt">) {
+    const all = this.list();
+    const fb: Feedback = {
+      id: crypto?.randomUUID ? crypto.randomUUID() : `FB-${Math.random().toString(36).slice(2, 9)}`,
+      createdAt: new Date().toISOString(),
+      ...data,
+    };
+    all.push(fb);
+    save(all);
+    return fb;
+  },
+
+  update(id: string, patch: Partial<Feedback>) {
+    const all = this.list();
+    const i = all.findIndex((f) => f.id === id);
+    if (i >= 0) {
+      all[i] = { ...all[i], ...patch };
+      save(all);
+      return all[i];
+    }
+    return undefined;
+  },
+
+  setStatus(id: string, status: Feedback["status"]) {
+    return this.update(id, { status });
+  },
+
+  removeMany(ids: string[]) {
+    const all = this.list().filter((f) => !ids.includes(f.id));
+    save(all);
+  },
+
+  /** Dev helper: clear and re-seed */
+  resetToMock() {
+    save([]);
+    ensureSeed();
+    return this.list();
+  },
+};
+
+
+===== lib\admin\feedback\types.ts =====
+// src/lib/admin/feedback/types.ts
+export type Feedback = {
+  id: string;
+  createdAt: string;
+  user: string;          // faculty/staff/student name
+  message: string;       // feedback content
+  rating?: number;       // optional stars 1-5
+  status: "NEW" | "REVIEWED" | "RESOLVED";
+};
+
+
+===== lib\admin\feedback\utils.ts =====
+// src/lib/admin/feedback/utils.ts
+import type { Feedback } from "./types";
+
+/** Simple text search across common fields */
+export function searchFeedback(rows: Feedback[], q: string): Feedback[] {
+  const s = (q || "").trim().toLowerCase();
+  if (!s) return rows;
+  return rows.filter((f) => {
+    const hay = `${f.user} ${f.message} ${f.status} ${new Date(f.createdAt).toLocaleString()}`.toLowerCase();
+    return hay.includes(s);
+  });
+}
+
+export type SortKey = "newest" | "oldest" | "ratingHigh" | "ratingLow";
+export function sortFeedback(rows: Feedback[], key: SortKey): Feedback[] {
+  const arr = [...rows];
+  switch (key) {
+    case "newest":
+      return arr.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    case "oldest":
+      return arr.sort((a, b) => (a.createdAt > b.createdAt ? 1 : -1));
+    case "ratingHigh":
+      return arr.sort((a, b) => ((b.rating ?? -1) - (a.rating ?? -1)));
+    case "ratingLow":
+      return arr.sort((a, b) => ((a.rating ?? Infinity) - (b.rating ?? Infinity)));
+    default:
+      return arr;
+  }
+}
+
+export function filterByStatus(rows: Feedback[], status: "NEW" | "REVIEWED" | "RESOLVED" | "ALL" = "ALL") {
+  if (status === "ALL") return rows;
+  return rows.filter((f) => f.status === status);
+}
+
+export function paginate<T>(rows: T[], page: number, pageSize: number) {
+  const total = rows.length;
+  const start = (page - 1) * pageSize;
+  const end = start + pageSize;
+  return { pageRows: rows.slice(start, end), total };
+}
+
+/** Quick KPIs if you want a small header widget */
+export function computeFeedbackKpis(rows: Feedback[]) {
+  const total = rows.length;
+  const newCount = rows.filter((r) => r.status === "NEW").length;
+  const reviewed = rows.filter((r) => r.status === "REVIEWED").length;
+  const resolved = rows.filter((r) => r.status === "RESOLVED").length;
+  const avgRating =
+    rows.length ? Math.round((rows.reduce((s, r) => s + (r.rating ?? 0), 0) / rows.length) * 10) / 10 : 0;
+  return { total, newCount, reviewed, resolved, avgRating };
+}
+
+
 ===== lib\admin\logs\analytics.ts =====
 import type { LogEntry } from "./types";
 
@@ -20254,56 +20882,102 @@ export const DASHBOARD_DATA: DashboardData = {
 
 ===== lib\admin\schedule\filters.ts =====
 // src/lib/admin/schedule/filters.ts
-import type { Schedule } from "./types";
-import { ScheduleRepo } from "./store";
+import type { Schedule, ScheduleStatus } from "./types";
+
+/** Accept both TitleCase (old UI) and UPPER_CASE (domain) */
+type FilterStatus =
+  | "All"
+  | "Planned"
+  | "InProgress"
+  | "Completed"
+  | "Cancelled"
+  | "PLANNED"
+  | "ONGOING"
+  | "COMPLETED"
+  | "CANCELLED";
 
 export type ScheduleFilterState = {
-  status: "All" | "PLANNED" | "ONGOING" | "COMPLETED" | "CANCELLED";
+  status: FilterStatus;
+  dept: "All" | "CCMS" | "HR" | "Registrar" | "Finance"; // keep/remove based on your model
   driver: "All" | string;   // driverId
   vehicle: "All" | string;  // vehicleId
-  from: "" | string;        // yyyy-mm-dd
-  to: "" | string;          // yyyy-mm-dd
-  search: string;           // free text
+  from?: string | null;     // YYYY-MM-DD
+  to?: string | null;       // YYYY-MM-DD
   mode: "auto" | "apply";
+  search: string;
 };
 
 export const DEFAULT_SCH_FILTERS: ScheduleFilterState = {
   status: "All",
+  dept: "All",
   driver: "All",
   vehicle: "All",
-  from: "",
-  to: "",
-  search: "",
+  from: null,
+  to: null,
   mode: "auto",
+  search: "",
 };
 
-export function filterSchedules(
-  rows: Schedule[],
-  f: ScheduleFilterState
-): Schedule[] {
-  const q = (f.search ?? "").toLowerCase().trim();
+/** Map UI status → domain ScheduleStatus (or null for “All”) */
+function normalizeFilterStatus(s: FilterStatus): ScheduleStatus | null {
+  switch (s) {
+    case "All":
+      return null;
+    case "Planned":
+    case "PLANNED":
+      return "PLANNED";
+    case "InProgress":
+    case "ONGOING":
+      return "ONGOING";
+    case "Completed":
+    case "COMPLETED":
+      return "COMPLETED";
+    case "Cancelled":
+    case "CANCELLED":
+      return "CANCELLED";
+    default:
+      return null;
+  }
+}
 
-  // map driverId -> driver name (lowercase) for search
-  const driverNameById: Record<string, string> = Object.fromEntries(
-    ScheduleRepo.constants.drivers.map((d) => [d.id, d.name.toLowerCase()])
-  );
+export function filterSchedules(rows: Schedule[], f: ScheduleFilterState): Schedule[] {
+  let out = rows;
 
-  return (rows ?? []).filter((r) => {
-    const okStatus = f.status === "All" || r.status === f.status;
-    const okDriver = f.driver === "All" || r.driverId === f.driver;
-    const okVehicle = f.vehicle === "All" || r.vehicleId === f.vehicle;
-    const okFrom = !f.from || r.date >= f.from;
-    const okTo = !f.to || r.date <= f.to;
+  // status
+  const norm = normalizeFilterStatus(f.status);
+  if (norm) out = out.filter((r) => r.status === norm);
 
-    const driverName = driverNameById[r.driverId] ?? "";
-    const okSearch =
-      !q ||
-      [r.tripId, r.title, r.origin, r.destination, driverName].some((s) =>
-        (s ?? "").toLowerCase().includes(q)
-      );
+  // dept (optional – remove/adjust if Schedule doesn’t have it)
+  if (f.dept !== "All") out = out.filter((r: any) => r.dept === f.dept);
 
-    return okStatus && okDriver && okVehicle && okFrom && okTo && okSearch;
-  });
+  // driver/vehicle
+  if (f.driver !== "All") out = out.filter((r) => r.driverId === f.driver);
+  if (f.vehicle !== "All") out = out.filter((r) => r.vehicleId === f.vehicle);
+
+  // date range (YYYY-MM-DD compare)
+  if (f.from) out = out.filter((r) => r.date >= f.from!);
+  if (f.to) out = out.filter((r) => r.date <= f.to!);
+
+  // search
+  const q = f.search.trim().toLowerCase();
+  if (q) {
+    out = out.filter((r) => {
+      const hay = [
+        r.tripId,
+        r.title,
+        r.origin,
+        r.destination,
+        (r as any).driverName,
+        (r as any).vehicleLabel,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }
+
+  return out;
 }
 
 

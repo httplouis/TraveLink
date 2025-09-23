@@ -24,7 +24,6 @@ function usePortalTarget() {
       document.body.appendChild(target);
     }
     setEl(target);
-    // do not remove on unmount so it can be reused
   }, []);
 
   return el;
@@ -38,23 +37,36 @@ type Props = {
 };
 
 export default function MapPicker({ open, onClose, onPick, initial }: Props) {
-  // Guard SSR
   if (typeof window === "undefined") return null;
 
   const portalTarget = usePortalTarget();
+  const escHandler = React.useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    },
+    [onClose]
+  );
+
+  React.useEffect(() => {
+    if (!open) return;
+    document.addEventListener("keydown", escHandler);
+    return () => document.removeEventListener("keydown", escHandler);
+  }, [open, escHandler]);
+
   if (!portalTarget || !open) return null;
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/50"
+      className="fixed inset-0 z-[9998] grid place-items-center bg-black/50 backdrop-blur-sm"
       onClick={onClose}
       aria-modal="true"
       role="dialog"
     >
       <div
-        className="mx-3 w-[min(1000px,calc(100vw-1.5rem))] overflow-hidden rounded-2xl bg-white shadow-2xl"
+        className="mx-4 w-[min(1000px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Leaflet implementation handles the inner UI */}
         <MapPickerLeaflet open onClose={onClose} onPick={onPick} initial={initial ?? null} />
       </div>
     </div>,

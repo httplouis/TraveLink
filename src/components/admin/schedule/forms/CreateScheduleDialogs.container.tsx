@@ -36,8 +36,6 @@ const makeInit = (initial?: Partial<Schedule>): CreateForm => {
     vehicleId: initial?.vehicleId ?? (vehicles[0]?.id ?? ""),
     status: (initial?.status as CreateForm["status"]) ?? "PLANNED",
     notes: initial?.notes ?? "",
-    originPlace: null,
-    destinationPlace: null,
   };
 };
 
@@ -56,7 +54,6 @@ export default function CreateScheduleDialog({
   const snapshot = ScheduleRepo.list();
   const editingId = (initial?.id as string) || undefined;
 
-  // Probe event with current form (used by availability/conflict utils)
   const probe: Schedule = {
     id: editingId || "new",
     createdAt: new Date().toISOString(),
@@ -73,7 +70,6 @@ export default function CreateScheduleDialog({
     notes: form.notes,
   };
 
-  // Build options w/ busy flag
   const drivers: DriverOption[] = ScheduleRepo.constants.drivers.map((d) => ({
     id: d.id,
     name: d.name,
@@ -87,7 +83,6 @@ export default function CreateScheduleDialog({
     busy: !isVehicleAvailable(snapshot, v.id, probe, editingId),
   }));
 
-  // Conflicts for the selected driver/vehicle (to show details + disable save)
   const driverConflicts = conflictsForDriver(snapshot, form.driverId, probe, editingId);
   const vehicleConflicts = conflictsForVehicle(snapshot, form.vehicleId, probe, editingId);
   const disableSave = driverConflicts.length > 0 || vehicleConflicts.length > 0;
@@ -108,8 +103,8 @@ export default function CreateScheduleDialog({
       onClose={onClose}
       onSave={() => {
         if (disableSave) return;
-        const { originPlace, destinationPlace, ...payload } = form;
-        onSubmit(payload);
+        // No originPlace/destinationPlace here — submit the plain form fields
+        onSubmit(form as Omit<Schedule, "id" | "createdAt" | "tripId">);
       }}
     />
   );

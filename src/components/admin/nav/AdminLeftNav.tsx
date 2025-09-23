@@ -1,6 +1,8 @@
+// src/components/admin/layout/AdminLeftNav.tsx
 "use client";
 
 import Link from "next/link";
+import CollapseToggle from "@/components/common/CollapseToggle";
 import { usePathname } from "next/navigation";
 import * as React from "react";
 import {
@@ -16,6 +18,7 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  MessageSquare,
   Search,
 } from "lucide-react";
 
@@ -37,6 +40,7 @@ const NAV: Item[] = [
   { href: "/admin/track", label: "Track / Live", Icon: MapPin },
   { href: "/admin/history", label: "History / Logs", Icon: History },
   { href: "/admin/report", label: "Reports / Exports", Icon: FileBarChart },
+  { href: "/admin/feedback", label: "Feedback", Icon: MessageSquare },
   { href: "/admin/settings", label: "Settings", Icon: Settings },
 ];
 
@@ -95,7 +99,7 @@ export default function AdminLeftNav() {
         collapsed ? "text-white" : "text-neutral-800",
       ].join(" ")}
     >
-      {/* ---------- Top row: Search + Toggle (HCI-friendly) ---------- */}
+      {/* ---------- Top row: Search + Toggle ---------- */}
       <div className={collapsed ? "px-2 pt-2 pb-1" : "px-3 pt-3 pb-2"}>
         <div className="flex items-center gap-2">
           {!collapsed && (
@@ -111,30 +115,11 @@ export default function AdminLeftNav() {
             </div>
           )}
 
-          {/* Top-right toggle (small, easy target) */}
-          <button
-            type="button"
-            data-nav-toggle="true"
-            onClick={(e) => {
-              e.stopPropagation();
-              setCollapsed((v) => !v);
-            }}
-            title={collapsed ? "Expand sidebar (Ctrl+B)" : "Collapse sidebar (Ctrl+B)"}
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            className={[
-              "shrink-0 rounded-full border",
-              collapsed
-                ? "border-white/25 bg-white/15 text-white hover:bg-white/25"
-                : "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50",
-              "shadow-sm p-1.5 transition",
-            ].join(" ")}
-          >
-            {collapsed ? (
-              <ChevronRight className="h-4 w-4" />
-            ) : (
-              <ChevronLeft className="h-4 w-4" />
-            )}
-          </button>
+          {/* Rect toggle like your screenshot */}
+          <CollapseToggle
+  collapsed={collapsed}
+  onClick={() => setCollapsed((v) => !v)}
+/>
         </div>
 
         {/* Section label when expanded */}

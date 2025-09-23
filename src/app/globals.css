@@ -101,3 +101,10 @@ html, body {
   position: relative;
   z-index: 9999;
 }
+.admin-sticky-toolbar {
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 40;   /* under modals/z-50; above rows */
+}
+.travilink-schedule-rows { position: relative; z-index: 0; }
