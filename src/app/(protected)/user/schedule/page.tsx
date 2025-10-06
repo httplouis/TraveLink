@@ -1,19 +1,19 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import ScheduleView, { type Filters } from "@/components/faculty/schedule/ScheduleView";
-import type { Trip, Vehicle, Status } from "@/components/faculty/schedule/types";
+import ScheduleView, { type Filters } from "@/components/user/schedule/ScheduleView";
+import type { Trip, Vehicle, Status } from "@/components/user/schedule/types";
 
 // TEMP demo data; replace with Supabase fetch later
 const TRIPS: Trip[] = [
-  { id: "SCH-1001", start: "2025-12-25T08:00", end: "2025-12-25T12:00", vehicle: "Bus", destination: "Tagaytay",        status: "Approved" },
-  { id: "SCH-1002", start: "2025-12-28T09:30", end: "2025-12-28T13:30", vehicle: "Van", destination: "MSEUF Lucena",    status: "Pending"  },
-  { id: "SCH-1003", start: "2026-01-10T06:15", end: "2026-01-10T10:00", vehicle: "Bus", destination: "Batangas",        status: "Assigned" },
-  { id: "SCH-0994", start: "2025-11-29T07:30", end: "2025-11-29T11:00", vehicle: "Car", destination: "San Pablo",       status: "Completed"},
-  { id: "SCH-0990", start: "2025-11-15T14:00", end: "2025-11-15T16:30", vehicle: "Van", destination: "City Hall",       status: "Rejected" },
+  { id: "SCH-1001", start: "2025-12-25T08:00", end: "2025-12-25T12:00", vehicle: "Bus", destination: "Tagaytay",     status: "Approved" },
+  { id: "SCH-1002", start: "2025-12-28T09:30", end: "2025-12-28T13:30", vehicle: "Van", destination: "MSEUF Lucena", status: "Pending"  },
+  { id: "SCH-1003", start: "2026-01-10T06:15", end: "2026-01-10T10:00", vehicle: "Bus", destination: "Batangas",     status: "Assigned" },
+  { id: "SCH-0994", start: "2025-11-29T07:30", end: "2025-11-29T11:00", vehicle: "Car", destination: "San Pablo",    status: "Completed"},
+  { id: "SCH-0990", start: "2025-11-15T14:00", end: "2025-11-15T16:30", vehicle: "Van", destination: "City Hall",    status: "Rejected" },
 ];
 
-export default function FacultySchedulePage() {
+export default function UserSchedulePage() {
   const [tab, setTab] = useState<"upcoming" | "history">("upcoming");
   const [filters, setFilters] = useState<Filters>({
     q: "",
@@ -54,7 +54,7 @@ export default function FacultySchedulePage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `faculty-schedule-${tab}.csv`;
+    a.download = `user-schedule-${tab}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };

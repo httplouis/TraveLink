@@ -1,13 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import ProfileView, {
   ProfileData,
   PasswordState,
   ProfileErrors,
-} from "@/components/faculty/profile/ProfileView";
+} from "@/components/user/profile/ProfileView";
 
-export default function FacultyProfilePage() {
+export default function UserProfilePage() {
   const [profile, setProfile] = useState<ProfileData>({
     firstName: "Jolo",
     lastName: "Santos",
@@ -82,8 +82,6 @@ export default function FacultyProfilePage() {
     reader.onload = () => update("avatar", String(reader.result));
     reader.readAsDataURL(file);
   }
-
-  // (Optional) computed initials etc. can stay in the view
 
   return (
     <ProfileView

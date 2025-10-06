@@ -94,6 +94,6 @@ export function Select<T extends string>({
           </option>
         ))}
       </select>
-    </label>
+    </label>  
   );
 }

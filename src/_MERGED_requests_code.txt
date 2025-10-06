@@ -1994,7 +1994,7 @@ export default function SubmitMaintenance() {
 }
 
 
-===== app\(protected)\faculty\layout.tsx =====
+===== app\(protected)\user\layout.tsx =====
 "use client";
 
 import Link from "next/link";
@@ -2074,7 +2074,7 @@ export default function FacultyLayout({ children }: { children: React.ReactNode 
 }
 
 
-===== app\(protected)\faculty\page.tsx =====
+===== app\(protected)\user\page.tsx =====
 import DashboardView, {
   Metrics,
   UpcomingItem,
@@ -2122,7 +2122,7 @@ export default async function FacultyDashboardPage() {
 }
 
 
-===== app\(protected)\faculty\feedback\page.tsx =====
+===== app\(protected)\user\feedback\page.tsx =====
 "use client";
 
 import { useState } from "react";
@@ -2255,7 +2255,7 @@ export default function FacultyFeedbackPage() {
 }
 
 
-===== app\(protected)\faculty\notifications\page.tsx =====
+===== app\(protected)\user\notifications\page.tsx =====
 "use client";
 
 import { useMemo, useState } from "react";
@@ -2304,7 +2304,7 @@ export default function FacultyNotificationsPage() {
 }
 
 
-===== app\(protected)\faculty\profile\page.tsx =====
+===== app\(protected)\user\profile\page.tsx =====
 "use client";
 
 import { useMemo, useState } from "react";
@@ -2409,7 +2409,7 @@ export default function FacultyProfilePage() {
 }
 
 
-===== app\(protected)\faculty\request\page.tsx =====
+===== app\(protected)\user\request\page.tsx =====
 // src/app/(protected)/faculty/request/page.tsx
 "use client";
 
@@ -2541,7 +2541,7 @@ export default function FacultyRequestPage() {
 }
 
 
-===== app\(protected)\faculty\schedule\page.tsx =====
+===== app\(protected)\user\schedule\page.tsx =====
 "use client";
 
 import { useMemo, useState } from "react";
@@ -5812,19 +5812,18 @@ export function DriversHeader({
 
 
 ===== components\admin\drivers\forms\DriverFormModal.ui.tsx =====
-// File: src/components/admin/drivers/forms/DriverFormModal.ui.tsx
+// src/components/admin/drivers/forms/DriverFormModal.ui.tsx
 "use client";
 import * as React from "react";
 import type { Driver } from "@/lib/admin/drivers/types";
 import { DriversRepo } from "@/lib/admin/drivers/store";
 import { validate } from "@/lib/admin/drivers/utils";
 
-import { TextInput } from "@/components/common/inputs/TextInput.ui";
-import { DateInput } from "@/components/common/inputs/DateInput.ui";
-import { Select } from "@/components/common/inputs/Select.ui";
-import { FileUpload } from "@/components/common/file_upload/FileUpload.ui";
+import {
+  DriverFormModalView,
+  type DriverFormValues,
+} from "./DriverFormModal.view";
 
-const BRAND = "#7a0019";
 type FormShape = Omit<Driver, "id" | "createdAt" | "updatedAt">;
 
 export function DriverFormModal({
@@ -5838,54 +5837,39 @@ export function DriverFormModal({
   onCancel: () => void;
   onSubmit: (data: FormShape) => void;
 }) {
-  const [form, setForm] = React.useState<FormShape>(() => ({
-    code: initial?.code ?? "",
-    firstName: initial?.firstName ?? "",
-    lastName: initial?.lastName ?? "",
-    phone: initial?.phone ?? "",
-    email: initial?.email ?? "",
-    status: (initial?.status as any) ?? DriversRepo.constants.statuses[0],
-    hireDate: initial?.hireDate ?? "",
-    licenseNo: initial?.licenseNo ?? "",
-    licenseClass:
-      (initial?.licenseClass as any) ?? DriversRepo.constants.licenseClasses[0],
-    licenseExpiryISO:
-      initial?.licenseExpiryISO ?? new Date().toISOString().slice(0, 10),
-    assignedVehicleId: initial?.assignedVehicleId ?? "",
-    lastCheckIn: initial?.lastCheckIn ?? "",
-    rating: initial?.rating ?? undefined,
-    notes: initial?.notes ?? "",
-    avatarUrl: initial?.avatarUrl ?? "",
-    docLicenseUrl: initial?.docLicenseUrl ?? "",
-    docGovtIdUrl: initial?.docGovtIdUrl ?? "",
-  }));
+  const makeInit = React.useCallback(
+    (seed?: Partial<Driver>): DriverFormValues => ({
+      code: seed?.code ?? "",
+      firstName: seed?.firstName ?? "",
+      lastName: seed?.lastName ?? "",
+      phone: seed?.phone ?? "",
+      email: seed?.email ?? "",
+      status: (seed?.status as any) ?? DriversRepo.constants.statuses[0],
+      hireDate: seed?.hireDate ?? "",
+      licenseNo: seed?.licenseNo ?? "",
+      licenseClass:
+        (seed?.licenseClass as any) ?? DriversRepo.constants.licenseClasses[0],
+      licenseExpiryISO:
+        seed?.licenseExpiryISO ?? new Date().toISOString().slice(0, 10),
+      assignedVehicleId: seed?.assignedVehicleId ?? "",
+      lastCheckIn: seed?.lastCheckIn ?? "",
+      rating: seed?.rating ?? undefined,
+      notes: seed?.notes ?? "",
+      avatarUrl: seed?.avatarUrl ?? "",
+      docLicenseUrl: seed?.docLicenseUrl ?? "",
+      docGovtIdUrl: seed?.docGovtIdUrl ?? "",
+    }),
+    []
+  );
+
+  const [form, setForm] = React.useState<DriverFormValues>(makeInit(initial));
   const [err, setErr] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (!open) return;
-    setForm({
-      code: initial?.code ?? "",
-      firstName: initial?.firstName ?? "",
-      lastName: initial?.lastName ?? "",
-      phone: initial?.phone ?? "",
-      email: initial?.email ?? "",
-      status: (initial?.status as any) ?? DriversRepo.constants.statuses[0],
-      hireDate: initial?.hireDate ?? "",
-      licenseNo: initial?.licenseNo ?? "",
-      licenseClass:
-        (initial?.licenseClass as any) ?? DriversRepo.constants.licenseClasses[0],
-      licenseExpiryISO:
-        initial?.licenseExpiryISO ?? new Date().toISOString().slice(0, 10),
-      assignedVehicleId: initial?.assignedVehicleId ?? "",
-      lastCheckIn: initial?.lastCheckIn ?? "",
-      rating: initial?.rating ?? undefined,
-      notes: initial?.notes ?? "",
-      avatarUrl: initial?.avatarUrl ?? "",
-      docLicenseUrl: initial?.docLicenseUrl ?? "",
-      docGovtIdUrl: initial?.docGovtIdUrl ?? "",
-    });
+    setForm(makeInit(initial));
     setErr(null);
-  }, [open, initial]);
+  }, [open, initial, makeInit]);
 
   // close on ESC + lock background scroll while open
   React.useEffect(() => {
@@ -5900,188 +5884,417 @@ export function DriverFormModal({
     };
   }, [open, onCancel]);
 
-  const submit = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const v = validate(form as any);
     if (v) return setErr(v);
-    onSubmit(form);
+    onSubmit(form as FormShape);
   };
 
-  const handleAvatar = (_: File | null, url?: string) =>
-    setForm((f) => ({ ...f, avatarUrl: url ?? "" }));
-  const handleLicenseDoc = (_: File | null, url?: string) =>
-    setForm((f) => ({ ...f, docLicenseUrl: url ?? "" }));
-  const handleGovtIdDoc = (_: File | null, url?: string) =>
-    setForm((f) => ({ ...f, docGovtIdUrl: url ?? "" }));
+  const statuses = DriversRepo.constants.statuses;
+  const licenseClasses = DriversRepo.constants.licenseClasses;
 
+  return (
+    <DriverFormModalView
+      open={open}
+      mode={initial ? "edit" : "create"}
+      values={form}
+      statuses={statuses}
+      licenseClasses={licenseClasses}
+      error={err}
+      onClose={onCancel}
+      onSubmit={handleSubmit}
+      onChange={(k, v) => setForm((f) => ({ ...f, [k]: v }))}
+      onAvatarChange={(_file, url) =>
+        setForm((f) => ({ ...f, avatarUrl: url ?? "" }))
+      }
+      onLicenseDocChange={(_file, url) =>
+        setForm((f) => ({ ...f, docLicenseUrl: url ?? "" }))
+      }
+      onGovtIdDocChange={(_file, url) =>
+        setForm((f) => ({ ...f, docGovtIdUrl: url ?? "" }))
+      }
+    />
+  );
+}
+
+
+===== components\admin\drivers\forms\DriverFormModal.view.tsx =====
+// src/components/admin/drivers/forms/DriverFormModal.view.tsx
+"use client";
+
+import * as React from "react";
+import { FileUpload } from "@/components/common/file_upload/FileUpload.ui";
+
+export type DriverFormValues = {
+  code: string;
+  firstName: string;
+  lastName: string;
+  phone?: string;
+  email?: string;
+  status: string;
+  hireDate?: string;
+  licenseNo: string;
+  licenseClass: string;
+  licenseExpiryISO: string; // yyyy-mm-dd
+  assignedVehicleId?: string;
+  lastCheckIn?: string;
+  rating?: number;
+  notes?: string;
+  avatarUrl?: string;
+  docLicenseUrl?: string;
+  docGovtIdUrl?: string;
+};
+
+const BRAND = "#7a0019";
+
+/** =============== BORDERLESS, SOFT UI VIEW =============== */
+export function DriverFormModalView({
+  open,
+  mode = "create",
+  values,
+  statuses,
+  licenseClasses,
+  error,
+  onClose,
+  onSubmit,
+  onChange,
+  onAvatarChange,
+  onLicenseDocChange,
+  onGovtIdDocChange,
+}: {
+  open: boolean;
+  mode?: "create" | "edit";
+  values: DriverFormValues;
+  statuses: ReadonlyArray<string>;
+  licenseClasses: ReadonlyArray<string>;
+  error?: string | null;
+
+  onClose: () => void;
+  onSubmit: (e: React.FormEvent) => void;
+  onChange: <K extends keyof DriverFormValues>(k: K, v: DriverFormValues[K]) => void;
+
+  onAvatarChange: (_file: File | null, url?: string) => void;
+  onLicenseDocChange: (_file: File | null, url?: string) => void;
+  onGovtIdDocChange: (_file: File | null, url?: string) => void;
+}) {
   if (!open) return null;
 
   return (
     <div
-      className="fixed inset-0 z-[60] bg-black/40 p-4"
-      onMouseDown={(e) => e.target === e.currentTarget && onCancel()}
+      className="fixed inset-0 z-[60] grid bg-black/45 p-4 backdrop-blur-sm"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+      aria-modal="true"
+      role="dialog"
     >
-      {/* wrapper is a column with sticky header and scrollable body */}
       <div
-        className="mx-auto flex h-full w-full max-w-3xl max-h-[90vh] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+        className="mx-auto flex h-full w-full max-w-4xl max-h-[92vh] flex-col overflow-hidden rounded-3xl bg-white/90 shadow-2xl backdrop-blur supports-[backdrop-filter]:bg-white/80"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        {/* sticky header */}
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-white px-4 py-3">
-          <h2 className="text-lg font-semibold">
-            {initial ? "Edit Driver" : "Add Driver"}
-          </h2>
+        {/* Header */}
+        <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-5">
+          <div className="text-lg font-semibold">
+            {mode === "edit" ? "Edit Driver" : "Add Driver"}
+          </div>
           <button
-            onClick={onCancel}
-            className="rounded-lg bg-red-600 px-3 py-1.5 text-sm text-white shadow hover:bg-red-700 focus:outline-none"
+            onClick={onClose}
+            className="rounded-full bg-red-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-red-700"
           >
             Close
           </button>
         </div>
 
-        {/* scrollable body */}
-        <div className="flex-1 overflow-y-auto p-4">
-          <form onSubmit={submit} className="grid gap-4">
-            {err && (
-              <div className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                {err}
+        {/* Body (soft sections, no hard borders) */}
+        <form onSubmit={onSubmit} className="flex-1 overflow-y-auto px-6 pb-28">
+          {error && (
+            <div className="mb-3 rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-sm">
+              {error}
+            </div>
+          )}
+
+          <SoftSection title="Profile">
+            <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
+              <div>
+                {/* FileUpload keeps its own look; still sits nicely in the soft card */}
+                <FileUpload
+                  label="Avatar"
+                  preview={values.avatarUrl || undefined}
+                  onChange={onAvatarChange}
+                />
               </div>
-            )}
 
-            <FileUpload
-              label="Avatar"
-              preview={form.avatarUrl || undefined}
-              onChange={handleAvatar}
-            />
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <TextInput
-                label="First name"
-                value={form.firstName}
-                onChange={(v) => setForm((f) => ({ ...f, firstName: v }))}
-              />
-              <TextInput
-                label="Last name"
-                value={form.lastName}
-                onChange={(v) => setForm((f) => ({ ...f, lastName: v }))}
-              />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <InputSoft
+                  label="First name"
+                  value={values.firstName}
+                  onChange={(v) => onChange("firstName", v)}
+                />
+                <InputSoft
+                  label="Last name"
+                  value={values.lastName}
+                  onChange={(v) => onChange("lastName", v)}
+                />
+                <InputSoft
+                  label="Driver code"
+                  value={values.code}
+                  onChange={(v) => onChange("code", v)}
+                />
+                <SelectSoft
+                  label="Status"
+                  value={values.status}
+                  onChange={(v) => onChange("status", v)}
+                  options={statuses}
+                />
+              </div>
             </div>
+          </SoftSection>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <TextInput
-                label="Driver code"
-                value={form.code}
-                onChange={(v) => setForm((f) => ({ ...f, code: v }))}
-              />
-              <Select
-                label="Status"
-                value={form.status as any}
-                options={DriversRepo.constants.statuses as any}
-                onChange={(v) => setForm((f) => ({ ...f, status: v as any }))}
-              />
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <TextInput
+          <SoftSection title="Contact">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <InputSoft
                 label="Phone"
-                value={form.phone ?? ""}
-                onChange={(v) => setForm((f) => ({ ...f, phone: v }))}
+                value={values.phone ?? ""}
+                onChange={(v) => onChange("phone", v)}
+                inputMode="tel"
               />
-              <TextInput
+              <InputSoft
                 label="Email"
-                value={form.email ?? ""}
-                onChange={(v) => setForm((f) => ({ ...f, email: v }))}
+                value={values.email ?? ""}
+                onChange={(v) => onChange("email", v)}
+                inputMode="email"
               />
             </div>
+          </SoftSection>
 
-            <div className="grid gap-3 sm:grid-cols-3">
-              <TextInput
+          <SoftSection title="License">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <InputSoft
                 label="License No."
-                value={form.licenseNo}
-                onChange={(v) => setForm((f) => ({ ...f, licenseNo: v }))}
+                value={values.licenseNo}
+                onChange={(v) => onChange("licenseNo", v)}
               />
-              <Select
+              <SelectSoft
                 label="Class"
-                value={form.licenseClass as any}
-                options={DriversRepo.constants.licenseClasses as any}
-                onChange={(v) =>
-                  setForm((f) => ({ ...f, licenseClass: v as any }))
-                }
+                value={values.licenseClass}
+                onChange={(v) => onChange("licenseClass", v)}
+                options={licenseClasses}
               />
-              <DateInput
+              <DateSoft
                 label="Expiry"
-                value={form.licenseExpiryISO}
-                onChange={(v) =>
-                  setForm((f) => ({ ...f, licenseExpiryISO: v }))
-                }
+                value={values.licenseExpiryISO}
+                onChange={(v) => onChange("licenseExpiryISO", v)}
               />
             </div>
+          </SoftSection>
 
-            <div className="grid gap-3 sm:grid-cols-3">
-              <DateInput
+          <SoftSection title="Employment">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <DateSoft
                 label="Hire date"
-                value={form.hireDate ?? ""}
-                onChange={(v) => setForm((f) => ({ ...f, hireDate: v }))}
+                value={values.hireDate ?? ""}
+                onChange={(v) => onChange("hireDate", v)}
               />
-              <TextInput
+              <InputSoft
                 label="Assigned vehicle (ID)"
-                value={form.assignedVehicleId ?? ""}
-                onChange={(v) =>
-                  setForm((f) => ({ ...f, assignedVehicleId: v }))
-                }
+                value={values.assignedVehicleId ?? ""}
+                onChange={(v) => onChange("assignedVehicleId", v)}
               />
-              <TextInput
+              <InputSoft
                 label="Rating (0-5)"
-                value={form.rating != null ? String(form.rating) : ""}
+                value={values.rating != null ? String(values.rating) : ""}
                 onChange={(v) =>
-                  setForm((f) => ({
-                    ...f,
-                    rating: v === "" ? undefined : Number(v),
-                  }))
+                  onChange("rating", v === "" ? undefined : Number(v))
                 }
+                inputMode="decimal"
               />
             </div>
 
-            <TextInput
-              label="Notes"
-              value={form.notes ?? ""}
-              onChange={(v) => setForm((f) => ({ ...f, notes: v }))}
-            />
+            <div className="mt-4">
+              <TextAreaSoft
+                label="Notes"
+                value={values.notes ?? ""}
+                onChange={(v) => onChange("notes", v)}
+                placeholder="Anything important about this driver…"
+              />
+            </div>
+          </SoftSection>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+          <SoftSection title="Documents">
+            <div className="grid gap-4 sm:grid-cols-2">
               <FileUpload
                 label="License document"
-                preview={form.docLicenseUrl || undefined}
-                onChange={handleLicenseDoc}
+                preview={values.docLicenseUrl || undefined}
+                onChange={onLicenseDocChange}
                 accept="application/pdf,image/*"
               />
               <FileUpload
                 label="Government ID"
-                preview={form.docGovtIdUrl || undefined}
-                onChange={handleGovtIdDoc}
+                preview={values.docGovtIdUrl || undefined}
+                onChange={onGovtIdDocChange}
                 accept="application/pdf,image/*"
               />
             </div>
+          </SoftSection>
+        </form>
 
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={onCancel}
-                className="rounded-md border bg-white px-3 py-1.5"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="rounded-md px-3 py-1.5 text-white"
-                style={{ background: BRAND }}
-              >
-                Save
-              </button>
-            </div>
-          </form>
+        {/* Floating footer (always visible) */}
+        <div className="pointer-events-auto fixed bottom-0 left-1/2 z-20 w-full max-w-4xl -translate-x-1/2 px-6 pb-4">
+          <div className="flex items-center justify-end gap-2 rounded-full bg-white/90 px-3 py-2 shadow-lg backdrop-blur supports-[backdrop-filter]:bg-white/70">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full bg-neutral-100 px-4 py-2 text-sm hover:bg-neutral-200"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="__driver_form_id__"
+              className="rounded-full px-5 py-2 text-sm font-medium text-white"
+              style={{ background: BRAND }}
+              onClick={() => {
+                const formEl = document.querySelector("form");
+                if (formEl) (formEl as HTMLFormElement).requestSubmit();
+              }}
+            >
+              Save
+            </button>
+          </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ===================== Soft UI pieces (no hard borders) ===================== */
+
+function SoftSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="mb-6 rounded-3xl bg-neutral-50 px-5 py-5 shadow-inner">
+      <h3 className="mb-3 text-sm font-semibold text-neutral-800">{title}</h3>
+      <div className="space-y-3">{children}</div>
+    </section>
+  );
+}
+
+function Label({ children }: { children: React.ReactNode }) {
+  return <div className="mb-1 text-xs font-medium text-neutral-600">{children}</div>;
+}
+
+function InputShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex h-11 items-center rounded-2xl bg-neutral-100 px-3 shadow-inner ring-0 focus-within:ring-2 focus-within:ring-[#7a0019]/25">
+      {children}
+    </div>
+  );
+}
+
+function InputSoft({
+  label,
+  value,
+  onChange,
+  placeholder,
+  inputMode,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
+}) {
+  return (
+    <div>
+      <Label>{label}</Label>
+      <InputShell>
+        <input
+          value={value}
+          onChange={(e) => onChange(e.currentTarget.value)}
+          placeholder={placeholder}
+          inputMode={inputMode}
+          className="w-full bg-transparent outline-none text-sm"
+        />
+      </InputShell>
+    </div>
+  );
+}
+
+function TextAreaSoft({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <div>
+      <Label>{label}</Label>
+      <div className="min-h-[88px] rounded-2xl bg-neutral-100 px-3 py-2 shadow-inner ring-0 focus-within:ring-2 focus-within:ring-[#7a0019]/25">
+        <textarea
+          value={value}
+          onChange={(e) => onChange(e.currentTarget.value)}
+          placeholder={placeholder}
+          className="w-full resize-y bg-transparent text-sm outline-none"
+        />
+      </div>
+    </div>
+  );
+}
+
+function DateSoft({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div>
+      <Label>{label}</Label>
+      <InputShell>
+        <input
+          type="date"
+          value={value}
+          onChange={(e) => onChange(e.currentTarget.value)}
+          className="w-full bg-transparent text-sm outline-none"
+        />
+      </InputShell>
+    </div>
+  );
+}
+
+function SelectSoft({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: ReadonlyArray<string>;
+}) {
+  return (
+    <div>
+      <Label>{label}</Label>
+      <InputShell>
+        <select
+          value={value}
+          onChange={(e) => onChange(e.currentTarget.value)}
+          className="w-full bg-transparent text-sm outline-none"
+        >
+          {options.map((o) => (
+            <option key={o} value={o}>
+              {o}
+            </option>
+          ))}
+        </select>
+      </InputShell>
     </div>
   );
 }
@@ -9645,7 +9858,9 @@ export default function RequestDetailsModalUI({
   onReject,
 }: Props) {
   React.useEffect(() => {
-    function onEsc(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    function onEsc(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
     if (open) window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
   }, [open, onClose]);
@@ -9769,7 +9984,9 @@ function StatusBadge({ status }: { status: RequestRow["status"] }) {
     Rejected: "bg-rose-100 text-rose-800 ring-rose-200",
   };
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${map[status]}`}>
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${map[status]}`}
+    >
       {status}
     </span>
   );
@@ -10561,38 +10778,17 @@ export default function ScheduleFiltersURLSync({ draft, onDraftChange }: Props) 
 }
 
 
-===== components\admin\schedule\filters\ScheduleFilterDropdown.ui.tsx =====
+===== components\admin\schedule\filters\ScheduleFilterDropdown.container.tsx =====
 "use client";
 import * as React from "react";
-import { Filter as FilterIcon, ChevronDown } from "lucide-react";
+import ScheduleFilterDropdownUI, {
+  DriverOption,
+  VehicleOption,
+} from "./ScheduleFilterDropdown.ui";
 import type { ScheduleFilterState } from "@/lib/admin/schedule/filters";
 import { ScheduleRepo } from "@/lib/admin/schedule/store";
 
-const statuses: Array<ScheduleFilterState["status"]> = [
-  "All",
-  "PLANNED",
-  "ONGOING",
-  "COMPLETED",
-  "CANCELLED",
-];
-
-// Local, tiny outside-click hook (so no missing import errors)
-function useOutsideClick(
-  ref: React.RefObject<HTMLElement | null>,
-  onClickOutside: () => void
-) {
-  React.useEffect(() => {
-    function onDocClick(e: MouseEvent) {
-      const el = ref.current;
-      if (!el) return;
-      if (!el.contains(e.target as Node)) onClickOutside();
-    }
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [ref, onClickOutside]);
-}
-
-export default function ScheduleFilterDropdownUI({
+export default function ScheduleFilterDropdown({
   draft,
   onDraftChange,
   onApply,
@@ -10603,18 +10799,94 @@ export default function ScheduleFilterDropdownUI({
   onApply: () => void;
   onClearAll: () => void;
 }) {
+  // Build options here (decoupled from UI)
+  const drivers: DriverOption[] = (ScheduleRepo.constants?.drivers ?? []).map((d) => ({
+    id: d.id,
+    name: d.name,
+  }));
+
+  const vehicles: VehicleOption[] = (ScheduleRepo.constants?.vehicles ?? []).map((v) => ({
+    id: v.id,
+    label: v.label,
+    plateNo: v.plateNo,
+  }));
+
+  return (
+    <ScheduleFilterDropdownUI
+      draft={draft}
+      onDraftChange={onDraftChange}
+      onApply={onApply}
+      onClearAll={onClearAll}
+      drivers={drivers}
+      vehicles={vehicles}
+    />
+  );
+}
+
+
+===== components\admin\schedule\filters\ScheduleFilterDropdown.ui.tsx =====
+"use client";
+import * as React from "react";
+import { Filter as FilterIcon, ChevronDown } from "lucide-react";
+import type { ScheduleFilterState } from "@/lib/admin/schedule/filters";
+
+/** View-only types */
+export type DriverOption = { id: string; name: string };
+export type VehicleOption = { id: string; label: string; plateNo: string };
+
+/** Close on outside click (single root ref) */
+function useOutsideClick(ref: React.RefObject<HTMLElement | null>, onOutside: () => void) {
+  React.useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      const n = ref.current;
+      if (!n) return;
+      if (!n.contains(e.target as Node)) onOutside();
+    };
+    const onEsc = (e: KeyboardEvent) => e.key === "Escape" && onOutside();
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onEsc);
+    };
+  }, [ref, onOutside]);
+}
+
+const STATUSES: Array<ScheduleFilterState["status"]> = [
+  "All",
+  "PLANNED",
+  "ONGOING",
+  "COMPLETED",
+  "CANCELLED",
+];
+
+export default function ScheduleFilterDropdownUI({
+  draft,
+  onDraftChange,
+  onApply,
+  onClearAll,
+  drivers: driversProp,
+  vehicles: vehiclesProp,
+}: {
+  draft: ScheduleFilterState;
+  onDraftChange: (n: Partial<ScheduleFilterState>) => void;
+  onApply: () => void;
+  onClearAll: () => void;
+  drivers?: DriverOption[];   // optional → defensive default
+  vehicles?: VehicleOption[]; // optional → defensive default
+}) {
+  const rootRef = React.useRef<HTMLDivElement | null>(null);
+  const btnRef = React.useRef<HTMLButtonElement | null>(null);
+
   const [open, setOpen] = React.useState(false);
-  const ref = React.useRef<HTMLDivElement | null>(null);
-  useOutsideClick(ref, () => setOpen(false));
+  const [alignRight, setAlignRight] = React.useState(false);
+  useOutsideClick(rootRef, () => setOpen(false));
 
-  const drivers = ScheduleRepo.constants.drivers;
-  const vehicles = ScheduleRepo.constants.vehicles;
+  // ✅ Defensive defaults prevent .map on undefined
+  const drivers = driversProp ?? [];
+  const vehicles = vehiclesProp ?? [];
 
-  // ✅ define as a normal function so TSX doesn’t think it’s JSX
-  function set<K extends keyof ScheduleFilterState>(
-    k: K,
-    v: ScheduleFilterState[K]
-  ) {
+  function set<K extends keyof ScheduleFilterState>(k: K, v: ScheduleFilterState[K]) {
     onDraftChange({ [k]: v } as Pick<ScheduleFilterState, K>);
   }
 
@@ -10626,111 +10898,121 @@ export default function ScheduleFilterDropdownUI({
     !!draft.to ||
     !!(draft.search && draft.search.trim());
 
+  function toggle() {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (r) {
+      const PANEL_W = 300;
+      const gutter = 12;
+      setAlignRight(window.innerWidth - r.left < PANEL_W + gutter);
+    }
+    setOpen((v) => !v);
+  }
+
   return (
-    <div className="relative" ref={ref}>
+    <div ref={rootRef} className="relative inline-block">
+      {/* Trigger */}
       <button
+        ref={btnRef}
         type="button"
         onClick={(e) => {
           e.stopPropagation();
-          setOpen((v) => !v);
+          toggle();
         }}
         aria-haspopup="menu"
         aria-expanded={open}
         className="inline-flex items-center gap-2 rounded-full border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-700 shadow-sm hover:bg-neutral-50"
       >
-        <FilterIcon
-          className={`h-4 w-4 ${
-            hasActive ? "text-[#7a1f2a]" : "text-neutral-500"
-          }`}
-        />
+        <FilterIcon className={`h-4 w-4 ${hasActive ? "text-[#7a1f2a]" : "text-neutral-500"}`} />
         <span>Filter</span>
         <ChevronDown className="h-4 w-4 text-neutral-500" />
       </button>
 
+      {/* Panel */}
       {open && (
         <div
-          className="absolute left-0 z-30 mt-2 w-[340px] rounded-xl border border-neutral-200 bg-white p-3 text-sm shadow-xl"
+          className="absolute z-50 mt-2 w-[300px] rounded-xl border border-neutral-200 bg-white text-sm shadow-2xl"
+          style={alignRight ? { right: 0 } : { left: 0 }}
           onClick={(e) => e.stopPropagation()}
         >
-          <Field label="Status">
-            <select
-              className="w-full rounded-lg border px-2 py-2"
-              value={draft.status}
-              onChange={(e) => set("status", e.target.value as any)}
-            >
-              {statuses.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          <Field label="Driver">
-            <select
-              className="w-full rounded-lg border px-2 py-2"
-              value={draft.driver}
-              onChange={(e) => set("driver", (e.target.value as any) || "All")}
-            >
-              <option value="All">All</option>
-              {drivers.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          <Field label="Vehicle">
-            <select
-              className="w-full rounded-lg border px-2 py-2"
-              value={draft.vehicle}
-              onChange={(e) =>
-                set("vehicle", (e.target.value as any) || "All")
-              }
-            >
-              <option value="All">All</option>
-              {vehicles.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.label} ({v.plateNo})
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="From">
-              <input
-                type="date"
+          <div className="px-3 pt-3 pb-2">
+            <Field label="Status">
+              <select
                 className="w-full rounded-lg border px-2 py-2"
-                value={draft.from || ""}
-                onChange={(e) => set("from", (e.target.value as any) || "")}
-              />
+                value={draft.status}
+                onChange={(e) => set("status", e.target.value as any)}
+              >
+                {STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
             </Field>
-            <Field label="To">
-              <input
-                type="date"
+
+            <Field label="Driver">
+              <select
                 className="w-full rounded-lg border px-2 py-2"
-                value={draft.to || ""}
-                onChange={(e) => set("to", (e.target.value as any) || "")}
-              />
+                value={draft.driver}
+                onChange={(e) => set("driver", (e.target.value as any) || "All")}
+              >
+                <option value="All">All</option>
+                {drivers.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="Vehicle">
+              <select
+                className="w-full rounded-lg border px-2 py-2"
+                value={draft.vehicle}
+                onChange={(e) => set("vehicle", (e.target.value as any) || "All")}
+              >
+                <option value="All">All</option>
+                {vehicles.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.label} ({v.plateNo})
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="From">
+                <input
+                  type="date"
+                  className="w-full rounded-lg border px-2 py-2"
+                  value={draft.from || ""}
+                  onChange={(e) => set("from", (e.target.value as any) || "")}
+                />
+              </Field>
+              <Field label="To">
+                <input
+                  type="date"
+                  className="w-full rounded-lg border px-2 py-2"
+                  value={draft.to || ""}
+                  onChange={(e) => set("to", (e.target.value as any) || "")}
+                />
+              </Field>
+            </div>
+
+            <Field label="Mode">
+              <select
+                className="w-full rounded-lg border px-2 py-2"
+                value={draft.mode}
+                onChange={(e) => set("mode", e.target.value as any)}
+              >
+                <option value="auto">Auto (instant)</option>
+                <option value="apply">Apply (manual)</option>
+              </select>
             </Field>
           </div>
 
-          <Field label="Mode">
-            <select
-              className="w-full rounded-lg border px-2 py-2"
-              value={draft.mode}
-              onChange={(e) => set("mode", e.target.value as any)}
-            >
-              <option value="auto">Auto (instant)</option>
-              <option value="apply">Apply (manual)</option>
-            </select>
-          </Field>
-
-          <div className="grid grid-cols-2 gap-2 pt-1">
+          <div className="flex gap-2 border-t bg-white px-3 py-2">
             <button
-              className="rounded-lg border px-3 py-2 text-sm"
+              className="flex-1 rounded-lg border px-3 py-2 text-sm"
               onClick={() => {
                 onClearAll();
                 setOpen(false);
@@ -10739,7 +11021,7 @@ export default function ScheduleFilterDropdownUI({
               Clear All
             </button>
             <button
-              className="rounded-lg bg-[#7a1f2a] px-3 py-2 text-sm font-medium text-white"
+              className="flex-1 rounded-lg bg-[#7a1f2a] px-3 py-2 text-sm font-medium text-white"
               onClick={() => {
                 if (draft.mode === "apply") onApply();
                 setOpen(false);
@@ -10754,13 +11036,7 @@ export default function ScheduleFilterDropdownUI({
   );
 }
 
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="mb-3 space-y-1">
       <div className="text-xs font-medium text-neutral-600">{label}</div>
@@ -10775,25 +11051,11 @@ function Field({
 "use client";
 import * as React from "react";
 import MapPicker, { PickedPlace } from "@/components/common/map/MapPicker.ui";
+import CreateScheduleDialogView, {
+  CreateForm, DriverOption, VehicleOption
+} from "./CreateScheduleDialog.view";
 
-export type CreateForm = {
-  requestId: string | null;
-  title: string;
-  origin: string;
-  destination: string;
-  date: string;       // yyyy-mm-dd
-  startTime: string;  // HH:mm
-  endTime: string;    // HH:mm
-  driverId: string;
-  vehicleId: string;
-  status: "PLANNED" | "ONGOING" | "COMPLETED" | "CANCELLED";
-  notes: string;
-  originPlace?: PickedPlace | null;
-  destinationPlace?: PickedPlace | null;
-};
-
-export type DriverOption = { id: string; name: string; busy?: boolean };
-export type VehicleOption = { id: string; label: string; plateNo: string; busy?: boolean };
+export type { CreateForm, DriverOption, VehicleOption };
 
 type Props = {
   open: boolean;
@@ -10805,228 +11067,290 @@ type Props = {
   vehicleConflicts?: Array<{ id: string; title: string; date: string; startTime: string; endTime: string }>;
   disableSave?: boolean;
 
-  onChange?: (patch: Partial<CreateForm>) => void;
+  onChange?: (patch: Partial<CreateForm & {
+    originPlace?: PickedPlace | null; destinationPlace?: PickedPlace | null;
+  }>) => void;
   onClose: () => void;
   onSave?: () => void;
 };
 
-export default function CreateScheduleDialogUI(props: Props) {
-  const {
-    open,
-    tripIdPreview = "",
-    onClose,
-    onSave = () => {},
-    onChange = () => {},
-  } = props;
-
-  const form: CreateForm = {
-    requestId: props.form?.requestId ?? null,
-    title: props.form?.title ?? "",
-    origin: props.form?.origin ?? "",
-    destination: props.form?.destination ?? "",
-    date: props.form?.date ?? new Date().toISOString().slice(0, 10),
-    startTime: props.form?.startTime ?? "08:00",
-    endTime: props.form?.endTime ?? "09:00",
-    driverId: props.form?.driverId ?? "",
-    vehicleId: props.form?.vehicleId ?? "",
-    status: props.form?.status ?? "PLANNED",
-    notes: props.form?.notes ?? "",
-    originPlace: props.form?.originPlace ?? null,
-    destinationPlace: props.form?.destinationPlace ?? null,
-  };
-
-  const drivers = props.drivers ?? [];
-  const vehicles = props.vehicles ?? [];
-  const driverConflicts = props.driverConflicts ?? [];
-  const vehicleConflicts = props.vehicleConflicts ?? [];
-  const disableSave = props.disableSave ?? false;
-
+export default function CreateScheduleDialogUI({
+  open,
+  tripIdPreview = "",
+  form: formIn,
+  drivers = [],
+  vehicles = [],
+  driverConflicts = [],
+  vehicleConflicts = [],
+  disableSave = false,
+  onChange = () => {},
+  onClose,
+  onSave = () => {},
+}: Props) {
+  // keep place objects in the container (hindi kasama sa View)
+  const [originPlace, setOriginPlace] = React.useState<PickedPlace | null>(null);
+  const [destinationPlace, setDestinationPlace] = React.useState<PickedPlace | null>(null);
   const [openOriginMap, setOpenOriginMap] = React.useState(false);
   const [openDestMap, setOpenDestMap] = React.useState(false);
 
+  const form: CreateForm = {
+    requestId: formIn?.requestId ?? null,
+    title: formIn?.title ?? "",
+    origin: formIn?.origin ?? "",
+    destination: formIn?.destination ?? "",
+    date: formIn?.date ?? new Date().toISOString().slice(0, 10),
+    startTime: formIn?.startTime ?? "08:00",
+    endTime: formIn?.endTime ?? "09:00",
+    driverId: formIn?.driverId ?? "",
+    vehicleId: formIn?.vehicleId ?? "",
+    status: formIn?.status ?? "PLANNED",
+    notes: formIn?.notes ?? "",
+  };
+
+  return (
+    <>
+      <CreateScheduleDialogView
+        open={open}
+        tripIdPreview={tripIdPreview}
+        form={form}
+        drivers={drivers}
+        vehicles={vehicles}
+        driverConflicts={driverConflicts}
+        vehicleConflicts={vehicleConflicts}
+        disableSave={disableSave}
+        onChange={(patch) => onChange(patch)}
+        onPickOrigin={() => setOpenOriginMap(true)}
+        onPickDestination={() => setOpenDestMap(true)}
+        onClose={onClose}
+        onSave={onSave}
+      />
+
+      {/* Map pickers live in the container */}
+      <MapPicker
+        open={openOriginMap}
+        initial={originPlace}
+        onClose={() => setOpenOriginMap(false)}
+        onPick={(p) => {
+          setOriginPlace(p);
+          onChange({ origin: p.address, originPlace: p });
+          setOpenOriginMap(false);
+        }}
+      />
+      <MapPicker
+        open={openDestMap}
+        initial={destinationPlace}
+        onClose={() => setOpenDestMap(false)}
+        onPick={(p) => {
+          setDestinationPlace(p);
+          onChange({ destination: p.address, destinationPlace: p });
+          setOpenDestMap(false);
+        }}
+      />
+    </>
+  );
+}
+
+
+===== components\admin\schedule\forms\CreateScheduleDialog.view.tsx =====
+// src/components/admin/schedule/forms/CreateScheduleDialog.view.tsx
+"use client";
+import * as React from "react";
+import {
+  X, MapPin, Calendar as CalendarIcon, Clock,
+  BusFront, UserRound, StickyNote, Hash
+} from "lucide-react";
+
+export type CreateForm = {
+  requestId: string | null;
+  title: string;
+  origin: string;
+  destination: string;
+  date: string;      // yyyy-mm-dd
+  startTime: string; // HH:mm
+  endTime: string;   // HH:mm
+  driverId: string;
+  vehicleId: string;
+  status: "PLANNED" | "ONGOING" | "COMPLETED" | "CANCELLED";
+  notes: string;
+};
+
+export type DriverOption = { id: string; name: string; busy?: boolean };
+export type VehicleOption = { id: string; label: string; plateNo: string; busy?: boolean };
+
+type Props = {
+  open: boolean;
+  tripIdPreview?: string;
+  form: CreateForm;
+  drivers: DriverOption[];
+  vehicles: VehicleOption[];
+  driverConflicts: Array<{ id: string; title: string; date: string; startTime: string; endTime: string }>;
+  vehicleConflicts: Array<{ id: string; title: string; date: string; startTime: string; endTime: string }>;
+  disableSave?: boolean;
+
+  onChange: (patch: Partial<CreateForm>) => void;
+  onPickOrigin?: () => void;
+  onPickDestination?: () => void;
+  onClose: () => void;
+  onSave?: () => void;
+};
+
+export default function CreateScheduleDialogView({
+  open,
+  tripIdPreview = "",
+  form,
+  drivers,
+  vehicles,
+  driverConflicts,
+  vehicleConflicts,
+  disableSave = false,
+  onChange,
+  onPickOrigin,
+  onPickDestination,
+  onClose,
+  onSave = () => {},
+}: Props) {
   if (!open) return null;
+
+  const titleText = form.requestId ? "Edit schedule" : "Create schedule";
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={onClose}>
       <div
-        className="w-full max-w-2xl rounded-2xl bg-white shadow-xl"
         onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-3xl rounded-2xl border border-neutral-200 bg-white shadow-2xl overflow-hidden"
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b px-5 py-4">
-          <h3 className="text-lg font-semibold">
-            {form.requestId ? "Edit schedule" : "Create schedule"}
-          </h3>
-          <div className="text-xs text-neutral-500">
-            Trip ID (auto):{" "}
+        <div className="flex items-center justify-between px-5 py-4">
+          <div className="text-lg font-semibold">{titleText}</div>
+          <div className="flex items-center gap-2 text-xs text-neutral-600">
+            <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2 py-1">
+              <Hash size={12} />
+              <span className="font-medium">Trip ID (auto)</span>
+            </span>
             <code className="rounded bg-neutral-50 px-1.5 py-0.5">{tripIdPreview || "—"}</code>
           </div>
+          <button
+            onClick={onClose}
+            className="ml-3 inline-flex h-9 w-9 items-center justify-center rounded-full bg-neutral-100 hover:bg-neutral-200"
+            aria-label="Close"
+          >
+            <X size={16} />
+          </button>
         </div>
 
+        <div className="h-px w-full bg-neutral-200" />
+
         {/* Body */}
-        <div className="grid grid-cols-2 gap-3 px-5 py-4">
+        <div className="px-5 py-4 space-y-4">
           {/* Title */}
-          <div className="col-span-2">
-            <label className="mb-1 block text-xs font-medium text-neutral-600">Title</label>
-            <input
-              className="h-11 w-full rounded-lg border px-3"
-              placeholder="e.g., Campus shuttle"
+          <Field label="Title">
+            <Input
               value={form.title}
               onChange={(e) => onChange({ title: e.target.value })}
+              placeholder="e.g., Library Books Transfer"
             />
-          </div>
+          </Field>
 
-          {/* Origin */}
-          <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-600">Origin</label>
-            <div className="flex">
-              <input
-                className="h-11 w-full rounded-l-lg border border-r-0 px-3"
-                placeholder="Pick-up point"
+          {/* Origin / Destination */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Field label="Origin" hintBtn={{ label: "Pick on map", onClick: onPickOrigin }}>
+              <Input
+                leftIcon={<MapPin size={16} />}
                 value={form.origin}
                 onChange={(e) => onChange({ origin: e.target.value })}
+                placeholder="Pickup point"
               />
-              <button
-                type="button"
-                onClick={() => setOpenOriginMap(true)}
-                className="h-11 rounded-r-lg border border-l-0 px-3 text-sm text-[#7A0010] hover:bg-neutral-50"
-                title="Pick on map"
-              >
-                Pick on map
-              </button>
-            </div>
-          </div>
-
-          {/* Destination */}
-          <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-600">Destination</label>
-            <div className="flex">
-              <input
-                className="h-11 w-full rounded-l-lg border border-r-0 px-3"
-                placeholder="Drop-off point"
+            </Field>
+            <Field label="Destination" hintBtn={{ label: "Pick on map", onClick: onPickDestination }}>
+              <Input
+                leftIcon={<MapPin size={16} />}
                 value={form.destination}
                 onChange={(e) => onChange({ destination: e.target.value })}
+                placeholder="Drop-off point"
               />
-              <button
-                type="button"
-                onClick={() => setOpenDestMap(true)}
-                className="h-11 rounded-r-lg border border-l-0 px-3 text-sm text-[#7A0010] hover:bg-neutral-50"
-                title="Pick on map"
-              >
-                Pick on map
-              </button>
-            </div>
+            </Field>
           </div>
 
-          {/* Date */}
-          <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-600">Date</label>
-            <input
-              type="date"
-              className="h-11 w-full rounded-lg border px-3"
-              value={form.date}
-              onChange={(e) => onChange({ date: e.target.value })}
-            />
-          </div>
-
-          {/* Time */}
-          <div className="flex gap-2">
-            <div className="flex-1">
-              <label className="mb-1 block text-xs font-medium text-neutral-600">Start</label>
-              <input
+          {/* Date / Time */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <Field label="Date">
+              <Input
+                type="date"
+                leftIcon={<CalendarIcon size={16} />}
+                value={form.date}
+                onChange={(e) => onChange({ date: e.target.value })}
+              />
+            </Field>
+            <Field label="Start">
+              <Input
                 type="time"
-                className="h-11 w-full rounded-lg border px-3"
+                leftIcon={<Clock size={16} />}
                 value={form.startTime}
                 onChange={(e) => onChange({ startTime: e.target.value })}
               />
-            </div>
-            <div className="flex-1">
-              <label className="mb-1 block text-xs font-medium text-neutral-600">End</label>
-              <input
+            </Field>
+            <Field label="End">
+              <Input
                 type="time"
-                className="h-11 w-full rounded-lg border px-3"
+                leftIcon={<Clock size={16} />}
                 value={form.endTime}
                 onChange={(e) => onChange({ endTime: e.target.value })}
               />
-            </div>
+            </Field>
           </div>
 
-          {/* Driver */}
-          <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-600">Driver</label>
-            <select
-              className="h-11 w-full rounded-lg border px-3"
-              value={form.driverId}
-              onChange={(e) => onChange({ driverId: e.target.value })}
-            >
-              {!drivers.length && <option value="">No drivers configured</option>}
-              {drivers.map((d) => (
-                <option
-                  key={d.id}
-                  value={d.id}
-                  disabled={d.busy}
-                  title={d.busy ? "Driver is busy for the selected time window" : ""}
-                >
-                  {d.name} {d.busy ? "• busy" : ""}
-                </option>
-              ))}
-            </select>
-            <p className="mt-1 text-[11px] text-neutral-500">
-              Items marked <span className="font-medium">busy</span> are unavailable for the selected time.
-            </p>
+          {/* Driver / Vehicle */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Field label="Driver">
+              <Select
+                leftIcon={<UserRound size={16} />}
+                value={form.driverId}
+                onChange={(v) => onChange({ driverId: v })}
+                options={drivers.map(d => ({ id: d.id, label: `${d.name}${d.busy ? " • busy" : ""}`, disabled: d.busy }))}
+                placeholder="Choose driver"
+              />
+              <p className="mt-1 text-[11px] text-neutral-500">
+                Items marked <span className="rounded bg-amber-100 px-1">busy</span> are unavailable for the selected time.
+              </p>
+            </Field>
+            <Field label="Vehicle">
+              <Select
+                leftIcon={<BusFront size={16} />}
+                value={form.vehicleId}
+                onChange={(v) => onChange({ vehicleId: v })}
+                options={vehicles.map(v => ({ id: v.id, label: `${v.label} (${v.plateNo})${v.busy ? " • busy" : ""}`, disabled: v.busy }))}
+                placeholder="Choose vehicle"
+              />
+            </Field>
           </div>
 
-          {/* Vehicle */}
-          <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-600">Vehicle</label>
-            <select
-              className="h-11 w-full rounded-lg border px-3"
-              value={form.vehicleId}
-              onChange={(e) => onChange({ vehicleId: e.target.value })}
-            >
-              {!vehicles.length && <option value="">No vehicles configured</option>}
-              {vehicles.map((v) => (
-                <option
-                  key={v.id}
-                  value={v.id}
-                  disabled={v.busy}
-                  title={v.busy ? "Vehicle is busy for the selected time window" : ""}
-                >
-                  {v.label} ({v.plateNo}) {v.busy ? "• busy" : ""}
-                </option>
-              ))}
-            </select>
+          {/* Status / Notes */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Field label="Status">
+              <Select
+                value={form.status}
+                onChange={(v) => onChange({ status: v as CreateForm["status"] })}
+                options={[
+                  { id: "PLANNED", label: "Planned" },
+                  { id: "ONGOING", label: "Ongoing" },
+                  { id: "COMPLETED", label: "Completed" },
+                  { id: "CANCELLED", label: "Cancelled" },
+                ]}
+              />
+            </Field>
+            <Field label="Notes (optional)">
+              <TextArea
+                leftIcon={<StickyNote size={16} />}
+                value={form.notes}
+                onChange={(e) => onChange({ notes: e.target.value })}
+                placeholder="Anything the driver needs to know…"
+              />
+            </Field>
           </div>
 
-          {/* Status */}
-          <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-600">Status</label>
-            <select
-              className="h-11 w-full rounded-lg border px-3"
-              value={form.status}
-              onChange={(e) => onChange({ status: e.target.value as CreateForm["status"] })}
-            >
-              <option value="PLANNED">PLANNED</option>
-              <option value="ONGOING">ONGOING</option>
-              <option value="COMPLETED">COMPLETED</option>
-              <option value="CANCELLED">CANCELLED</option>
-            </select>
-          </div>
-
-          {/* Notes */}
-          <div className="col-span-2">
-            <label className="mb-1 block text-xs font-medium text-neutral-600">Notes (optional)</label>
-            <textarea
-              className="min-h-[90px] w-full rounded-lg border px-3 py-2"
-              placeholder="Anything the driver needs to know…"
-              value={form.notes}
-              onChange={(e) => onChange({ notes: e.target.value })}
-            />
-          </div>
-
-          {/* Warnings */}
+          {/* Conflicts */}
           {(driverConflicts.length > 0 || vehicleConflicts.length > 0) && (
-            <div className="col-span-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            <div className="rounded-xl border border-amber-300 bg-amber-50/70 px-4 py-3 text-sm text-amber-900">
               <div className="mb-1 font-medium">Conflicts</div>
               {driverConflicts.length > 0 && (
                 <div className="mb-1">
@@ -11048,32 +11372,105 @@ export default function CreateScheduleDialogUI(props: Props) {
           )}
         </div>
 
+        <div className="h-px w-full bg-neutral-200" />
+
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 border-t px-5 py-3">
-          <button onClick={onClose} className="h-10 rounded-lg border px-4">Cancel</button>
+        <div className="flex items-center justify-end gap-2 px-5 py-3">
+          <button
+            onClick={onClose}
+            className="h-10 rounded-full bg-neutral-100 px-4 text-sm hover:bg-neutral-200"
+          >
+            Cancel
+          </button>
           <button
             onClick={onSave}
             disabled={disableSave}
-            className="h-10 rounded-lg bg-[#7A0010] px-4 text-white disabled:opacity-50"
+            className="h-10 rounded-full bg-[#7A0010] px-5 text-sm font-medium text-white hover:opacity-95 disabled:opacity-60"
           >
             Save
           </button>
         </div>
-
-        {/* Map pickers */}
-        <MapPicker
-          open={openOriginMap}
-          initial={form.originPlace ?? null}
-          onClose={() => setOpenOriginMap(false)}
-          onPick={(p) => { onChange({ origin: p.address, originPlace: p }); setOpenOriginMap(false); }}
-        />
-        <MapPicker
-          open={openDestMap}
-          initial={form.destinationPlace ?? null}
-          onClose={() => setOpenDestMap(false)}
-          onPick={(p) => { onChange({ destination: p.address, destinationPlace: p }); setOpenDestMap(false); }}
-        />
       </div>
+    </div>
+  );
+}
+
+/* -------------------- Small UI atoms -------------------- */
+
+function Field({
+  label, children, hintBtn,
+}: {
+  label: string;
+  children: React.ReactNode;
+  hintBtn?: { label: string; onClick?: () => void };
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <div className="text-[12px] font-medium text-neutral-600">{label}</div>
+        {hintBtn?.onClick && (
+          <button
+            type="button"
+            onClick={hintBtn.onClick}
+            className="text-[12px] font-medium text-[#7A0010] hover:opacity-90"
+          >
+            {hintBtn.label}
+          </button>
+        )}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Input({
+  leftIcon, className, ...rest
+}: React.InputHTMLAttributes<HTMLInputElement> & { leftIcon?: React.ReactNode }) {
+  return (
+    <div
+      className={`flex h-11 items-center gap-2 rounded-xl border px-3 bg-white shadow-[0_1px_0_rgba(0,0,0,0.03)] focus-within:ring-2 focus-within:ring-[#7A0010]/25 border-neutral-300 ${className ?? ""}`}
+    >
+      {leftIcon && <span className="text-neutral-500">{leftIcon}</span>}
+      <input {...rest} className="w-full bg-transparent outline-none text-sm" />
+    </div>
+  );
+}
+
+function TextArea({
+  leftIcon, className, ...rest
+}: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { leftIcon?: React.ReactNode }) {
+  return (
+    <div
+      className={`flex min-h-[90px] items-start gap-2 rounded-xl border px-3 py-2 bg-white shadow-[0_1px_0_rgba(0,0,0,0.03)] focus-within:ring-2 focus-within:ring-[#7A0010]/25 border-neutral-300 ${className ?? ""}`}
+    >
+      {leftIcon && <span className="mt-1 text-neutral-500">{leftIcon}</span>}
+      <textarea {...rest} className="w-full bg-transparent outline-none text-sm resize-y" />
+    </div>
+  );
+}
+
+function Select({
+  leftIcon, value, onChange, options, placeholder,
+}: {
+  leftIcon?: React.ReactNode;
+  value: string;
+  onChange: (v: string) => void;
+  options: Array<{ id: string; label: string; disabled?: boolean }>;
+  placeholder?: string;
+}) {
+  return (
+    <div className="flex h-11 items-center gap-2 rounded-xl border px-3 bg-white shadow-[0_1px_0_rgba(0,0,0,0.03)] focus-within:ring-2 focus-within:ring-[#7A0010]/25 border-neutral-300">
+      {leftIcon && <span className="text-neutral-500">{leftIcon}</span>}
+      <select
+        className="w-full bg-transparent outline-none text-sm"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {placeholder && <option value="">{placeholder}</option>}
+        {options.map(o => (
+          <option key={o.id} value={o.id} disabled={o.disabled}>{o.label}</option>
+        ))}
+      </select>
     </div>
   );
 }
@@ -11118,8 +11515,6 @@ const makeInit = (initial?: Partial<Schedule>): CreateForm => {
     vehicleId: initial?.vehicleId ?? (vehicles[0]?.id ?? ""),
     status: (initial?.status as CreateForm["status"]) ?? "PLANNED",
     notes: initial?.notes ?? "",
-    originPlace: null,
-    destinationPlace: null,
   };
 };
 
@@ -11138,7 +11533,6 @@ export default function CreateScheduleDialog({
   const snapshot = ScheduleRepo.list();
   const editingId = (initial?.id as string) || undefined;
 
-  // Probe event with current form (used by availability/conflict utils)
   const probe: Schedule = {
     id: editingId || "new",
     createdAt: new Date().toISOString(),
@@ -11155,7 +11549,6 @@ export default function CreateScheduleDialog({
     notes: form.notes,
   };
 
-  // Build options w/ busy flag
   const drivers: DriverOption[] = ScheduleRepo.constants.drivers.map((d) => ({
     id: d.id,
     name: d.name,
@@ -11169,7 +11562,6 @@ export default function CreateScheduleDialog({
     busy: !isVehicleAvailable(snapshot, v.id, probe, editingId),
   }));
 
-  // Conflicts for the selected driver/vehicle (to show details + disable save)
   const driverConflicts = conflictsForDriver(snapshot, form.driverId, probe, editingId);
   const vehicleConflicts = conflictsForVehicle(snapshot, form.vehicleId, probe, editingId);
   const disableSave = driverConflicts.length > 0 || vehicleConflicts.length > 0;
@@ -11190,8 +11582,8 @@ export default function CreateScheduleDialog({
       onClose={onClose}
       onSave={() => {
         if (disableSave) return;
-        const { originPlace, destinationPlace, ...payload } = form;
-        onSubmit(payload);
+        // No originPlace/destinationPlace here — submit the plain form fields
+        onSubmit(form as Omit<Schedule, "id" | "createdAt" | "tripId">);
       }}
     />
   );
@@ -11375,8 +11767,16 @@ export default function ScheduleToolbar({
 
 
 ===== components\admin\schedule\ui\KpiGrid.ui.tsx =====
+// src/components/admin/schedule/ui/KpiGrid.ui.tsx
 "use client";
 import * as React from "react";
+import {
+  CalendarDays,
+  Clock,
+  TrendingUp,
+  CalendarCheck2,
+  Users2,
+} from "lucide-react";
 
 export default function KpiGrid({
   kpis,
@@ -11385,48 +11785,155 @@ export default function KpiGrid({
     thisWeek: number;
     today: number;
     ongoingNow: number;
-    completionRate: number;
+    completionRate: number; // 0-100
     last7Done: number;
     last7Total: number;
     upcoming7: number;
-    driverUtilPct: number;
+    driverUtilPct: number; // 0-100
     usedDrivers: number;
     totalDrivers: number;
   };
 }) {
-  const Card = ({
-    title,
-    value,
-    sub,
-  }: {
-    title: string;
-    value: React.ReactNode;
-    sub?: React.ReactNode;
-  }) => (
-    <div className="rounded-xl border border-neutral-200 bg-white px-4 py-3">
-      <div className="text-xs font-medium text-neutral-500">{title}</div>
-      <div className="mt-1 text-2xl font-semibold">{value}</div>
-      {sub ? <div className="mt-1 text-xs text-neutral-500">{sub}</div> : null}
-    </div>
-  );
-
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      <Card title="This Week (total)" value={kpis.thisWeek} />
-      <Card title="Today" value={kpis.today} sub={`${kpis.ongoingNow} ongoing now`} />
-      <Card
-        title="Completion Rate (7d)"
-        value={`${kpis.completionRate}%`}
-        sub={`${kpis.last7Done}/${kpis.last7Total} done`}
+      <KpiCard
+        title="This Week (total)"
+        value={kpis.thisWeek}
+        icon={<CalendarDays className="h-4 w-4" />}
+        accent="bg-blue-50 text-blue-700"
       />
-      <Card title="Upcoming (7d)" value={kpis.upcoming7} />
-      <Card
+
+      <KpiCard
+        title="Today"
+        value={kpis.today}
+        sub={
+          <span className="inline-flex items-center gap-1 text-xs">
+            <Clock className="h-3.5 w-3.5 opacity-70" />
+            {kpis.ongoingNow} ongoing now
+          </span>
+        }
+        icon={<Clock className="h-4 w-4" />}
+        accent="bg-amber-50 text-amber-700"
+      />
+
+      <KpiCard
+        title="Completion Rate (7d)"
+        value={`${clampPct(kpis.completionRate)}%`}
+        sub={
+          <Progress
+            pct={clampPct(kpis.completionRate)}
+            label={`${kpis.last7Done}/${kpis.last7Total} done`}
+            color="emerald"
+          />
+        }
+        icon={<TrendingUp className="h-4 w-4" />}
+        accent="bg-emerald-50 text-emerald-700"
+      />
+
+      <KpiCard
+        title="Upcoming (7d)"
+        value={kpis.upcoming7}
+        icon={<CalendarCheck2 className="h-4 w-4" />}
+        accent="bg-violet-50 text-violet-700"
+      />
+
+      <KpiCard
+        className="sm:col-span-2 lg:col-span-4"
         title="Driver Utilization (7d)"
-        value={`${kpis.driverUtilPct}%`}
-        sub={`${kpis.usedDrivers}/${kpis.totalDrivers} drivers`}
+        value={`${clampPct(kpis.driverUtilPct)}%`}
+        sub={
+          <Progress
+            pct={clampPct(kpis.driverUtilPct)}
+            label={`${kpis.usedDrivers}/${kpis.totalDrivers} drivers`}
+            color="blue"
+          />
+        }
+        icon={<Users2 className="h-4 w-4" />}
+        accent="bg-blue-50 text-blue-700"
       />
     </div>
   );
+}
+
+/* ---------------- UI pieces ---------------- */
+
+function KpiCard({
+  title,
+  value,
+  sub,
+  icon,
+  accent = "bg-neutral-100 text-neutral-700",
+  className = "",
+}: {
+  title: string;
+  value: React.ReactNode;
+  sub?: React.ReactNode;
+  icon?: React.ReactNode;
+  accent?: string; // tailwind classes for the icon chip
+  className?: string;
+}) {
+  return (
+    <div
+      className={`rounded-2xl border border-neutral-200 bg-white px-4 py-3 shadow-sm ${className}`}
+    >
+      <div className="flex items-start justify-between">
+        <div className="text-xs font-medium text-neutral-500">{title}</div>
+        {icon && (
+          <span
+            className={`inline-flex h-7 w-7 items-center justify-center rounded-full ${accent}`}
+          >
+            {icon}
+          </span>
+        )}
+      </div>
+
+      <div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
+
+      {sub ? <div className="mt-2">{sub}</div> : null}
+    </div>
+  );
+}
+
+function Progress({
+  pct,
+  label,
+  color = "emerald",
+}: {
+  pct: number; // 0-100
+  label?: string;
+  color?: "emerald" | "blue" | "violet" | "amber" | "rose";
+}) {
+  const bar =
+    {
+      emerald: "bg-emerald-500",
+      blue: "bg-blue-500",
+      violet: "bg-violet-500",
+      amber: "bg-amber-500",
+      rose: "bg-rose-500",
+    }[color] || "bg-emerald-500";
+
+  return (
+    <div>
+      <div className="h-2 w-full overflow-hidden rounded-full bg-neutral-100">
+        <div
+          className={`h-full ${bar} transition-all`}
+          style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
+          aria-valuenow={pct}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          role="progressbar"
+        />
+      </div>
+      {label ? (
+        <div className="mt-1 text-xs text-neutral-500">{label}</div>
+      ) : null}
+    </div>
+  );
+}
+
+function clampPct(n: number) {
+  if (Number.isNaN(n)) return 0;
+  return Math.max(0, Math.min(100, Math.round(n)));
 }
 
 
@@ -11555,12 +12062,18 @@ function Field({
 
 ===== components\admin\schedule\ui\ScheduleTable.ui.tsx =====
 // src/components/admin/schedule/ui/ScheduleTable.ui.tsx
+// CONTAINER (logic/wiring only) → uses the presentational <ScheduleTableView/>
 "use client";
-import React from "react";
+import * as React from "react";
 import type { Pagination, Schedule } from "@/lib/admin/schedule/types";
-import StatusBadge from "./StatusBadge";
+import {
+  canStart,
+  canComplete,
+  canCancel,
+  canReopen,
+} from "@/lib/admin/schedule/utils";
 import { ScheduleRepo } from "@/lib/admin/schedule/store";
-import { canStart, canComplete, canCancel, canReopen } from "@/lib/admin/schedule/utils";
+import { ScheduleTableView, type RowView } from "./ScheduleTableView.ui";
 
 type Props = {
   rows: Schedule[];
@@ -11576,218 +12089,366 @@ type Props = {
   toolbar: React.ReactNode;
 };
 
-export default function ScheduleTable({
+export default function ScheduleTableContainer(props: Props) {
+  const {
+    rows,
+    pagination,
+    selected,
+    onToggleAll,
+    onToggleOne,
+    onEdit,
+    onDeleteMany,
+    onSetStatus,
+    onPageChange,
+    onView,
+    toolbar,
+  } = props;
+
+  // map ids → human labels (no UI decisions here)
+  const driverMap = React.useMemo(
+    () => new Map(ScheduleRepo.constants.drivers.map((d) => [d.id, d.name])),
+    []
+  );
+  const vehicleMap = React.useMemo(
+    () => new Map(ScheduleRepo.constants.vehicles.map((v) => [v.id, v.label])),
+    []
+  );
+
+  const uiRows: RowView[] = React.useMemo(
+    () =>
+      rows.map((r) => ({
+        id: r.id,
+        title: r.title,
+        status: r.status,
+        tripId: r.tripId,
+        date: r.date,
+        startTime: r.startTime,
+        endTime: r.endTime,
+        origin: r.origin,
+        destination: r.destination,
+        driverName: driverMap.get(r.driverId) ?? "—",
+        vehicleName: vehicleMap.get(r.vehicleId) ?? "—",
+        can: {
+          start: canStart(r),
+          complete: canComplete(r),
+          cancel: canCancel(r),
+          reopen: canReopen(r),
+        },
+        onView: () => onView(r),
+        onEdit: () => onEdit(r),
+        onStart: () => onSetStatus(r.id, "ONGOING"),
+        onComplete: () => onSetStatus(r.id, "COMPLETED"),
+        onCancel: () => onSetStatus(r.id, "CANCELLED"),
+        onReopen: () => onSetStatus(r.id, "PLANNED"),
+      })),
+    [rows, driverMap, vehicleMap, onEdit, onSetStatus, onView]
+  );
+
+  return (
+    <ScheduleTableView
+      rows={uiRows}
+      pagination={pagination}
+      selected={selected}
+      onToggleOne={onToggleOne}
+      onToggleAll={onToggleAll}
+      onDeleteMany={() => onDeleteMany(Array.from(selected))}
+      onPageChange={onPageChange}
+      toolbar={toolbar}
+    />
+  );
+}
+
+
+===== components\admin\schedule\ui\ScheduleTableView.ui.tsx =====
+// src/components/admin/schedule/ui/ScheduleTableView.ui.tsx
+"use client";
+import * as React from "react";
+import {
+  Play,
+  CheckCircle2,
+  RotateCcw,
+  XCircle,
+  Pencil,
+  Eye,
+} from "lucide-react";
+import StatusBadge from "./StatusBadge";
+
+/** Row data passed from the container */
+export type RowView = {
+  id: string;
+  title: string;
+  status: "PLANNED" | "ONGOING" | "COMPLETED" | "CANCELLED";
+  tripId: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  origin: string;
+  destination: string;
+  driverName: string;
+  vehicleName: string;
+  can: { start: boolean; complete: boolean; cancel: boolean; reopen: boolean };
+  onView: () => void;
+  onEdit: () => void;
+  onStart: () => void;
+  onComplete: () => void;
+  onCancel: () => void;
+  onReopen: () => void;
+};
+
+export type PaginationView = {
+  page: number;
+  pageSize: number;
+  total: number;
+};
+
+export function ScheduleTableView({
   rows,
   pagination,
   selected,
   onToggleOne,
   onToggleAll,
-  onEdit,
   onDeleteMany,
-  onSetStatus,
   onPageChange,
-  onView,
   toolbar,
-}: Props) {
+}: {
+  rows: RowView[];
+  pagination: PaginationView;
+  selected: Set<string>;
+  onToggleOne: (id: string, checked: boolean) => void;
+  onToggleAll: (checked: boolean) => void;
+  onDeleteMany: () => void;
+  onPageChange: (p: number) => void;
+  toolbar: React.ReactNode;
+}) {
   const allOnPage = rows.map((r) => r.id);
-  const allChecked =
-    allOnPage.length > 0 && allOnPage.every((id) => selected.has(id));
+  const allChecked = allOnPage.length > 0 && allOnPage.every((id) => selected.has(id));
+  const totalPages = Math.max(1, Math.ceil(pagination.total / pagination.pageSize));
 
   return (
-    <div className="rounded-2xl border border-neutral-200 bg-white shadow-sm">
-      {/* sticky toolbar area */}
-      <div className="admin-sticky-toolbar px-3 py-2">{toolbar}</div>
+    <div className="rounded-2xl overflow-hidden border border-neutral-200 bg-white shadow-sm">
+      {/* Sticky header (toolbar + count) */}
+      <div className="sticky top-[var(--table-sticky-top,0px)] z-40 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 rounded-t-2xl">
+        <div className="px-3 py-2">{toolbar}</div>
+        <div className="h-px w-full bg-neutral-200" />
+        <div className="flex items-center justify-between px-3 py-2">
+          <label className="inline-flex items-center gap-2 text-sm text-neutral-700">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-neutral-300"
+              checked={allChecked}
+              onChange={(e) => onToggleAll(e.target.checked)}
+            />
+            <span className="opacity-70">{pagination.total} total</span>
+          </label>
 
-      {/* bulk + count */}
-      <div className="flex items-center justify-between px-3 py-2">
-        <div className="text-sm text-gray-600">{pagination.total} total</div>
-        {selected.size > 0 && (
-          <div className="flex items-center gap-2">
+          {selected.size > 0 && (
             <button
-              onClick={() => onDeleteMany(Array.from(selected))}
-              className="h-9 rounded-md border px-3"
+              onClick={onDeleteMany}
+              className="h-9 rounded-full bg-neutral-100 px-4 text-sm hover:bg-neutral-200 transition-colors"
             >
-              Delete
+              Delete selected ({selected.size})
             </button>
+          )}
+        </div>
+        <div className="h-px w-full bg-neutral-200" />
+      </div>
+
+      {/* Rows */}
+      <div className="divide-y">
+        {rows.map((r) => (
+          <ScheduleRow
+            key={r.id}
+            row={r}
+            checked={selected.has(r.id)}
+            onCheck={onToggleOne}
+          />
+        ))}
+
+        {rows.length === 0 && (
+          <div className="px-4 py-10 text-center text-sm text-neutral-500">
+            No schedules match your filters.
           </div>
         )}
       </div>
 
-      <table className="w-full text-sm">
-        <thead className="bg-gray-50">
-          <tr className="text-left">
-            <th className="px-3 py-2">
-              <input
-                type="checkbox"
-                checked={allChecked}
-                onChange={(e) => onToggleAll(e.target.checked)}
-              />
-            </th>
-            <th className="px-3 py-2">Trip ID</th>
-            <th className="px-3 py-2">Title</th>
-            <th className="px-3 py-2">When</th>
-            <th className="px-3 py-2">Driver</th>
-            <th className="px-3 py-2">Vehicle</th>
-            <th className="px-3 py-2">Status</th>
-            <th className="px-3 py-2" />
-          </tr>
-        </thead>
-
-        <tbody>
-          {rows.map((r) => {
-            const driver =
-              ScheduleRepo.constants.drivers.find((d) => d.id === r.driverId)
-                ?.name ?? "—";
-            const vehicle =
-              ScheduleRepo.constants.vehicles.find((v) => v.id === r.vehicleId)
-                ?.label ?? "—";
-
-            const sStart = canStart(r);
-            const sComplete = canComplete(r);
-            const sCancel = canCancel(r);
-            const sReopen = canReopen(r);
-
-            return (
-              <tr key={r.id} className="border-t">
-                <td className="px-3 py-2">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(r.id)}
-                    onChange={(e) => onToggleOne(r.id, e.target.checked)}
-                  />
-                </td>
-
-                <td className="px-3 py-2">
-                  <code className="rounded bg-gray-50 px-1.5 py-0.5">
-                    {r.tripId}
-                  </code>
-                </td>
-
-                <td className="px-3 py-2 font-medium">
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    className="cursor-pointer underline-offset-2 hover:underline"
-                    onClick={() => onView(r)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") onView(r);
-                    }}
-                    title="View details"
-                  >
-                    {r.title}
-                  </span>
-                </td>
-
-                <td className="px-3 py-2">
-                  {r.date} {r.startTime}-{r.endTime}
-                </td>
-
-                <td className="px-3 py-2">{driver}</td>
-                <td className="px-3 py-2">{vehicle}</td>
-
-                <td className="px-3 py-2">
-                  <StatusBadge status={r.status} />
-                </td>
-
-                <td className="px-3 py-2">
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={() => onView(r)}
-                      className="rounded border px-2 py-1"
-                    >
-                      View
-                    </button>
-
-                    <button
-                      disabled={!sStart}
-                      onClick={() => onSetStatus(r.id, "ONGOING")}
-                      className="rounded border px-2 py-1 disabled:opacity-50"
-                    >
-                      Start
-                    </button>
-
-                    <button
-                      disabled={!sComplete}
-                      onClick={() => onSetStatus(r.id, "COMPLETED")}
-                      className="rounded border px-2 py-1 disabled:opacity-50"
-                    >
-                      Complete
-                    </button>
-
-                    <button
-                      disabled={r.status !== "ONGOING"}
-                      onClick={() => onSetStatus(r.id, "PLANNED" as any)}
-                      className="rounded border px-2 py-1 disabled:opacity-50"
-                    >
-                      Stop
-                    </button>
-
-                    <button
-                      disabled={!sCancel}
-                      onClick={() => onSetStatus(r.id, "CANCELLED")}
-                      className="rounded border px-2 py-1 disabled:opacity-50"
-                    >
-                      Cancel
-                    </button>
-
-                    <button
-                      disabled={!sReopen}
-                      onClick={() => onSetStatus(r.id, "PLANNED" as any)}
-                      className="rounded border px-2 py-1 disabled:opacity-50"
-                    >
-                      Reopen
-                    </button>
-
-                    <button
-                      onClick={() => onEdit(r)}
-                      className="rounded border px-2 py-1"
-                    >
-                      Edit
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            );
-          })}
-
-          {rows.length === 0 && (
-            <tr>
-              <td
-                colSpan={8}
-                className="px-3 py-8 text-center text-gray-500"
-              >
-                No schedules
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-
-      <div className="flex items-center justify-between px-3 py-2">
-        <div className="text-sm">
-          Page {pagination.page} of{" "}
-          {Math.ceil(pagination.total / pagination.pageSize)}
+      {/* Pagination */}
+      <div className="flex items-center justify-between px-3 sm:px-4 py-3 border-t">
+        <div className="text-sm text-neutral-600">
+          Page {pagination.page} of {totalPages}
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           <button
-            disabled={pagination.page <= 1}
-            onClick={() => onPageChange(pagination.page - 1)}
-            className="h-9 rounded-md border px-3 disabled:opacity-50"
+            className="rounded-full px-3 py-2 text-sm bg-neutral-100 hover:bg-neutral-200 transition-colors disabled:opacity-50"
+            onClick={() => onPageChange(Math.max(1, pagination.page - 1))}
+            disabled={pagination.page === 1}
           >
             Prev
           </button>
           <button
-            disabled={
-              pagination.page * pagination.pageSize >= pagination.total
-            }
-            onClick={() => onPageChange(pagination.page + 1)}
-            className="h-9 rounded-md border px-3 disabled:opacity-50"
+            className="rounded-full px-3 py-2 text-sm bg-neutral-100 hover:bg-neutral-200 transition-colors disabled:opacity-50"
+            onClick={() => onPageChange(Math.min(totalPages, pagination.page + 1))}
+            disabled={pagination.page >= totalPages}
           >
             Next
           </button>
         </div>
       </div>
     </div>
+  );
+}
+
+/* ---------- Row ---------- */
+
+function statusAccent(status: RowView["status"]) {
+  return {
+    PLANNED: "border-amber-400/70",
+    ONGOING: "border-blue-500/70",
+    COMPLETED: "border-emerald-500/70",
+    CANCELLED: "border-rose-500/70",
+  }[status];
+}
+
+function ScheduleRow({
+  row: r,
+  checked,
+  onCheck,
+}: {
+  row: RowView;
+  checked: boolean;
+  onCheck: (id: string, checked: boolean) => void;
+}) {
+  return (
+    <div
+      className={`group grid grid-cols-[40px_1fr_auto] gap-3 px-3 sm:px-4 py-3 hover:bg-neutral-50 border-l-4 ${statusAccent(
+        r.status
+      )}`}
+    >
+      {/* checkbox */}
+      <div className="flex items-start pt-1.5">
+        <input
+          type="checkbox"
+          className="h-4 w-4 rounded border-neutral-300"
+          checked={checked}
+          onChange={(e) => onCheck(r.id, e.target.checked)}
+        />
+      </div>
+
+      {/* main info */}
+      <button onClick={r.onView} className="text-left min-w-0" title="View details">
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-neutral-900 truncate">{r.title}</span>
+          <StatusBadge status={r.status} />
+        </div>
+        <div className="mt-1 text-[13px] text-neutral-600 flex flex-wrap gap-x-4 gap-y-1">
+          <span className="truncate">
+            <span className="font-medium">Trip ID:</span> {r.tripId}
+          </span>
+          <span className="truncate">
+            <span className="font-medium">When:</span> {r.date} {r.startTime}–{r.endTime}
+          </span>
+          <span className="truncate">
+            <span className="font-medium">Driver:</span> {r.driverName}
+          </span>
+          <span className="truncate">
+            <span className="font-medium">Vehicle:</span> {r.vehicleName}
+          </span>
+        </div>
+        <div className="mt-1 text-[13px] text-neutral-600 truncate">
+          <span className="font-medium">Route:</span> {r.origin} → {r.destination}
+        </div>
+      </button>
+
+      {/* colorful, borderless icon actions */}
+      <div className="flex items-center justify-end gap-1.5 sm:gap-2">
+        <IconPill title="View" onClick={r.onView} variant="neutral">
+          <Eye size={16} />
+        </IconPill>
+
+        <IconPill title="Edit" onClick={r.onEdit} variant="brand">
+          <Pencil size={16} />
+        </IconPill>
+
+        <IconPill
+          title="Start"
+          onClick={r.onStart}
+          variant="blue"
+          disabled={!r.can.start}
+        >
+          <Play size={16} />
+        </IconPill>
+
+        <IconPill
+          title="Complete"
+          onClick={r.onComplete}
+          variant="green"
+          disabled={!r.can.complete}
+        >
+          <CheckCircle2 size={16} />
+        </IconPill>
+
+        <IconPill
+          title="Cancel"
+          onClick={r.onCancel}
+          variant="rose"
+          disabled={!r.can.cancel}
+        >
+          <XCircle size={16} />
+        </IconPill>
+
+        <IconPill
+          title="Reopen"
+          onClick={r.onReopen}
+          variant="amber"
+          disabled={!r.can.reopen}
+        >
+          <RotateCcw size={16} />
+        </IconPill>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Shared UI ---------- */
+
+function IconPill({
+  title,
+  onClick,
+  children,
+  disabled,
+  variant = "neutral",
+}: {
+  title: string;
+  onClick: () => void;
+  children: React.ReactNode;
+  disabled?: boolean;
+  variant?: "neutral" | "brand" | "blue" | "green" | "rose" | "amber";
+}) {
+  const base =
+    "inline-flex h-9 min-w-9 items-center justify-center rounded-full px-3 text-[13px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-offset-2";
+  const styles: Record<string, string> = {
+    neutral: "bg-neutral-100 hover:bg-neutral-200 text-neutral-700 focus-visible:ring-neutral-300",
+    brand:
+      "bg-[#7a1f2a]/10 hover:bg-[#7a1f2a]/15 text-[#7a1f2a] focus-visible:ring-[#7a1f2a]/30",
+    blue: "bg-blue-100 hover:bg-blue-200 text-blue-700 focus-visible:ring-blue-300",
+    green: "bg-emerald-100 hover:bg-emerald-200 text-emerald-700 focus-visible:ring-emerald-300",
+    rose: "bg-rose-100 hover:bg-rose-200 text-rose-700 focus-visible:ring-rose-300",
+    amber: "bg-amber-100 hover:bg-amber-200 text-amber-700 focus-visible:ring-amber-300",
+  };
+
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onClick={onClick}
+      disabled={disabled}
+      className={`${base} ${styles[variant]} disabled:opacity-40`}
+    >
+      {/* keep only icon; text hidden for compactness */}
+      <span className="grid place-items-center">
+        {children}
+      </span>
+    </button>
   );
 }
 
@@ -13226,7 +13887,7 @@ export function Select<T extends string>({
           </option>
         ))}
       </select>
-    </label>
+    </label>  
   );
 }
 
@@ -14210,7 +14871,6 @@ function usePortalTarget() {
       document.body.appendChild(target);
     }
     setEl(target);
-    // do not remove on unmount so it can be reused
   }, []);
 
   return el;
@@ -14224,23 +14884,36 @@ type Props = {
 };
 
 export default function MapPicker({ open, onClose, onPick, initial }: Props) {
-  // Guard SSR
   if (typeof window === "undefined") return null;
 
   const portalTarget = usePortalTarget();
+  const escHandler = React.useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    },
+    [onClose]
+  );
+
+  React.useEffect(() => {
+    if (!open) return;
+    document.addEventListener("keydown", escHandler);
+    return () => document.removeEventListener("keydown", escHandler);
+  }, [open, escHandler]);
+
   if (!portalTarget || !open) return null;
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/50"
+      className="fixed inset-0 z-[9998] grid place-items-center bg-black/50 backdrop-blur-sm"
       onClick={onClose}
       aria-modal="true"
       role="dialog"
     >
       <div
-        className="mx-3 w-[min(1000px,calc(100vw-1.5rem))] overflow-hidden rounded-2xl bg-white shadow-2xl"
+        className="mx-4 w-[min(1000px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Leaflet implementation handles the inner UI */}
         <MapPickerLeaflet open onClose={onClose} onPick={onPick} initial={initial ?? null} />
       </div>
     </div>,
@@ -14256,30 +14929,28 @@ import * as React from "react";
 import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 
-// -------- Types (named export so other files can import 'type { PickedPlace }') -----
+/* ===================== Types ===================== */
 export type PickedPlace = {
   lat: number;
   lng: number;
   address: string;
 };
 
-// -------- Maroon marker icon (SVG data URL) ----------------------------------------
-const MAROON = "#7A0010";
+/* ===================== Marker Icon ===================== */
+const BRAND = "#7A0010";
 const svgPin = encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="48" viewBox="0 0 32 48">
-     <path d="M16 0C7.7 0 1 6.7 1 15c0 10.5 13.7 31.1 14.3 32 .4.6 1 .6 1.4 0C17.3 46.1 31 25.5 31 15 31 6.7 24.3 0 16 0z" fill="${MAROON}"/>
+     <path d="M16 0C7.7 0 1 6.7 1 15c0 10.5 13.7 31.1 14.3 32 .4.6 1 .6 1.4 0C17.3 46.1 31 25.5 31 15 31 6.7 24.3 0 16 0z" fill="${BRAND}"/>
      <circle cx="16" cy="15" r="6" fill="white"/>
    </svg>`
 );
-const maroonIcon = L.icon({
+const pinIcon = L.icon({
   iconUrl: `data:image/svg+xml;charset=utf-8,${svgPin}`,
   iconSize: [32, 48],
   iconAnchor: [16, 48],
-  popupAnchor: [0, -44],
-  shadowUrl: undefined,
 });
 
-// -------- Helpers for map control --------------------------------------------------
+/* ===================== Map helpers ===================== */
 function CenterOn({ lat, lng, zoom = 15 }: { lat: number; lng: number; zoom?: number }) {
   const map = useMap();
   React.useEffect(() => {
@@ -14297,7 +14968,7 @@ function ClickPicker({ onPickPos }: { onPickPos: (lat: number, lng: number) => v
   return null;
 }
 
-// -------- Nominatim search / reverse ----------------------------------------------
+/* ===================== Nominatim helpers ===================== */
 type NominatimHit = { display_name: string; lat: string; lon: string };
 
 function useDebounced<T extends (...args: any[]) => void>(fn: T, delay = 400) {
@@ -14338,9 +15009,9 @@ async function nominatimReverse(lat: number, lon: number) {
   return await res.json();
 }
 
-// -------- Component ----------------------------------------------------------------
+/* ===================== Component ===================== */
 type Props = {
-  open: boolean; // kept for symmetry; not used
+  open: boolean; // kept for symmetry
   onClose: () => void;
   onPick: (p: PickedPlace) => void;
   initial?: PickedPlace | null;
@@ -14378,7 +15049,7 @@ export default function MapPickerLeafletImpl({ onClose, onPick, initial }: Props
     runSearch(v);
   }
 
-  function pickAndCenter(lat: number, lng: number, address: string) {
+  function pick(lat: number, lng: number, address: string) {
     setChosen({ lat, lng, address });
     setQuery(address);
     setResults([]);
@@ -14387,16 +15058,16 @@ export default function MapPickerLeafletImpl({ onClose, onPick, initial }: Props
   function selectResult(hit: NominatimHit) {
     const lat = parseFloat(hit.lat);
     const lng = parseFloat(hit.lon);
-    pickAndCenter(lat, lng, hit.display_name);
+    pick(lat, lng, hit.display_name);
   }
 
   async function handleMapClick(lat: number, lng: number) {
     try {
       const rev = await nominatimReverse(lat, lng);
       const addr = rev?.display_name ?? `lat: ${lat.toFixed(6)}, lng: ${lng.toFixed(6)}`;
-      pickAndCenter(lat, lng, addr);
+      pick(lat, lng, addr);
     } catch {
-      pickAndCenter(lat, lng, `lat: ${lat.toFixed(6)}, lng: ${lng.toFixed(6)}`);
+      pick(lat, lng, `lat: ${lat.toFixed(6)}, lng: ${lng.toFixed(6)}`);
     }
   }
 
@@ -14407,28 +15078,29 @@ export default function MapPickerLeafletImpl({ onClose, onPick, initial }: Props
   }
 
   return (
-    <div className="flex flex-col gap-0">
+    <div className="flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between border-b px-4 py-3">
+      <div className="flex items-center justify-between px-5 py-4">
         <div className="text-base font-semibold">Pick location</div>
         <button
           onClick={onClose}
-          className="rounded-lg border px-3 py-1.5 text-sm hover:bg-neutral-50"
+          className="h-9 rounded-full bg-neutral-100 px-3 text-sm hover:bg-neutral-200"
         >
           Close
         </button>
       </div>
+      <div className="h-px w-full bg-neutral-200" />
 
       {/* Search */}
-      <div className="relative p-3">
+      <div className="relative p-4">
         <input
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
-          className="h-11 w-full rounded-lg border px-3"
+          className="h-11 w-full rounded-xl border border-neutral-300 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-[#7A0010]/25"
           placeholder="Search address or place (OpenStreetMap Nominatim)"
         />
         {query && (results.length > 0 || loading) && (
-          <div className="absolute left-3 right-3 top-[3.25rem] z-[2] max-h-64 overflow-auto rounded-lg border bg-white shadow-lg">
+          <div className="absolute left-4 right-4 top-[3.25rem] z-[2] max-h-64 overflow-auto rounded-xl border border-neutral-200 bg-white shadow-xl">
             {loading && (
               <div className="px-3 py-2 text-sm text-neutral-500">Searching…</div>
             )}
@@ -14446,23 +15118,22 @@ export default function MapPickerLeafletImpl({ onClose, onPick, initial }: Props
       </div>
 
       {/* Map */}
-      <div className="px-3 pb-3">
-        <div className="h-[60vh] w-full overflow-hidden rounded-xl border">
+      <div className="px-4 pb-4">
+        <div className="h-[60vh] w-full overflow-hidden rounded-2xl border border-neutral-200 shadow-sm">
           <MapContainer center={center} zoom={13} style={{ height: "100%", width: "100%" }}>
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/">OSM</a> contributors'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
-            {/* re-center the map whenever chosen changes */}
             {chosen && <CenterOn lat={chosen.lat} lng={chosen.lng} />}
             <ClickPicker onPickPos={handleMapClick} />
-            {chosen && <Marker position={[chosen.lat, chosen.lng]} icon={maroonIcon} />}
+            {chosen && <Marker position={[chosen.lat, chosen.lng]} icon={pinIcon} />}
           </MapContainer>
         </div>
 
         {/* Chosen preview */}
-        <div className="mt-2 rounded-md border bg-neutral-50 px-3 py-2 text-xs text-neutral-700">
-          <div className="font-medium">Chosen:</div>
+        <div className="mt-3 grid gap-1 rounded-xl bg-neutral-50 px-3 py-2 text-xs text-neutral-700">
+          <div className="font-medium">Selected</div>
           <div className="truncate">{chosen?.address ?? "—"}</div>
           <div>
             lat: {chosen?.lat?.toFixed(6) ?? "—"}, lng: {chosen?.lng?.toFixed(6) ?? "—"}
@@ -14470,15 +15141,17 @@ export default function MapPickerLeafletImpl({ onClose, onPick, initial }: Props
         </div>
       </div>
 
+      <div className="h-px w-full bg-neutral-200" />
+
       {/* Footer */}
-      <div className="flex items-center justify-end gap-2 border-t px-4 py-3">
-        <button onClick={onClose} className="h-10 rounded-lg border px-4">
+      <div className="flex items-center justify-end gap-2 px-5 py-3">
+        <button onClick={onClose} className="h-10 rounded-full bg-neutral-100 px-4 text-sm hover:bg-neutral-200">
           Cancel
         </button>
         <button
           onClick={useThisLocation}
           disabled={!chosen}
-          className="h-10 rounded-lg bg-[#7A0010] px-4 text-white disabled:opacity-50"
+          className="h-10 rounded-full bg-[#7A0010] px-5 text-sm font-medium text-white hover:opacity-95 disabled:opacity-50"
         >
           Use this location
         </button>
@@ -16243,7 +16916,179 @@ export default function StatusView({ status, onChange, onSave, onViewHistoryHref
 }
 
 
-===== components\faculty\DashboardView.tsx =====
+===== components\ui\Badge.tsx =====
+"use client";
+import React from "react";
+
+export default function Badge({
+  color = "gray",
+  children,
+}: {
+  color?: "green" | "red" | "amber" | "blue" | "gray";
+  children: React.ReactNode;
+}) {
+  const map: Record<string, string> = {
+    green: "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200",
+    red: "bg-rose-100 text-rose-700 ring-1 ring-rose-200",
+    amber: "bg-amber-100 text-amber-700 ring-1 ring-amber-200",
+    blue: "bg-sky-100 text-sky-700 ring-1 ring-sky-200",
+    gray: "bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200",
+  };
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium transition-colors duration-150 ${map[color]}`}>
+      {children}
+    </span>
+  );
+}
+
+
+===== components\ui\Button.tsx =====
+"use client";
+import React from "react";
+
+export default function CTA({
+  tone = "primary",
+  className = "",
+  children,
+  ...rest
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  tone?: "primary" | "ghost" | "success" | "danger";
+}) {
+  const base =
+    "inline-flex items-center justify-center rounded-full px-3 py-[7px] text-[13px] sm:text-sm font-semibold whitespace-nowrap transition-all duration-150 active:translate-y-[1px] focus:outline-none focus:ring-2 focus:ring-offset-2";
+  const tones: Record<string, string> = {
+    primary:
+      "bg-[#7A0010] text-white shadow-sm shadow-[#7A0010]/20 hover:shadow-md hover:shadow-[#7A0010]/25 hover:-translate-y-0.5 hover:bg-[#66000D] focus:ring-[#7A0010]",
+    ghost:
+      "bg-white/70 text-neutral-800 ring-1 ring-neutral-200 hover:bg-neutral-100/80 hover:-translate-y-0.5 focus:ring-neutral-300",
+    success:
+      "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100 hover:-translate-y-0.5 focus:ring-emerald-300",
+    danger:
+      "bg-rose-50 text-rose-700 ring-1 ring-rose-200 hover:bg-rose-100 hover:-translate-y-0.5 focus:ring-rose-300",
+  };
+  return (
+    <button className={`${base} ${tones[tone]} ${className}`} {...rest}>
+      {children}
+    </button>
+  );
+}
+
+
+===== components\ui\Icons.tsx =====
+"use client";
+
+import React from "react";
+import type { VehicleType } from "@/lib/travilink";
+
+export const IconBell = () => (
+  <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75">
+    <path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 10-12 0v3.2c0 .5-.2 1-.6 1.4L4 17h5" />
+    <path d="M9 18a3 3 0 0 0 6 0" />
+  </svg>
+);
+
+export const IconSearch = () => (
+  <svg viewBox="0 0 24 24" className="w-4 h-4 absolute left-2.5 top-2.5 pointer-events-none" fill="none" stroke="currentColor" strokeWidth="1.75">
+    <circle cx="11" cy="11" r="7" />
+    <path d="m20 20-3.5-3.5" />
+  </svg>
+);
+
+const IconBus = () => (
+  <svg viewBox="0 0 24 24" className="w-10 h-10" fill="none" stroke="currentColor" strokeWidth="1.75">
+    <rect x="3" y="6" width="18" height="9" rx="2" />
+    <circle cx="7" cy="17" r="1.5" />
+    <circle cx="17" cy="17" r="1.5" />
+  </svg>
+);
+
+const IconVan = () => (
+  <svg viewBox="0 0 24 24" className="w-10 h-10" fill="none" stroke="currentColor" strokeWidth="1.75">
+    <path d="M3 14V9a2 2 0 0 1 2-2h7l5 4v3" />
+    <circle cx="7" cy="17" r="1.5" />
+    <circle cx="17" cy="17" r="1.5" />
+  </svg>
+);
+
+const IconCar = () => (
+  <svg viewBox="0 0 24 24" className="w-10 h-10" fill="none" stroke="currentColor" strokeWidth="1.75">
+    <path d="M4 13l2-5h12l2 5v4H4z" />
+    <circle cx="7" cy="17" r="1.5" />
+    <circle cx="17" cy="17" r="1.5" />
+  </svg>
+);
+
+export const VehicleIcon = ({ type }: { type: VehicleType }) =>
+  type === "Bus" ? <IconBus /> : type === "Van" ? <IconVan /> : <IconCar />;
+
+export const IconFile = () => (
+  <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.75">
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9z" />
+    <path d="M14 3v6h6" />
+  </svg>
+);
+
+export const IconWrench = () => (
+  <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.75">
+    <path d="M14.7 6.3a4 4 0 1 0-5.66 5.66l9.9 9.9 2.83-2.83-9.9-9.9z" />
+    <circle cx="5" cy="5" r="2" />
+  </svg>
+);
+
+export const IconUser = () => (
+  <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.75">
+    <circle cx="12" cy="7" r="4" />
+    <path d="M5.5 21a8.38 8.38 0 0 1 13 0" />
+  </svg>
+);
+
+export const IconInfo = () => (
+  <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.75">
+    <circle cx="12" cy="12" r="10" />
+    <path d="M12 8h.01M11 12h2v5h-2z" />
+  </svg>
+);
+
+export const IconTrash = () => (
+  <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M3 6h18" />
+    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+    <path d="M10 11v6M14 11v6" />
+  </svg>
+);
+
+
+===== components\ui\Page.tsx =====
+"use client";
+import React from "react";
+
+export function Page({ children }: { children: React.ReactNode }) {
+  return <div className="min-h-screen bg-neutral-50">{children}</div>;
+}
+
+export function PageHeader({
+  title,
+  description,
+  actions,
+}: { title: string; description?: string; actions?: React.ReactNode }) {
+  return (
+    <div className="sticky top-0 z-20 bg-white border-b px-4 md:px-6 py-4 flex items-center justify-between">
+      <div>
+        <h1 className="text-xl md:text-2xl font-semibold">{title}</h1>
+        {description && <p className="text-sm text-neutral-500">{description}</p>}
+      </div>
+      {actions}
+    </div>
+  );
+}
+
+export function PageBody({ children }: { children: React.ReactNode }) {
+  return <div className="p-4 md:p-6">{children}</div>;
+}
+
+
+===== components\user\DashboardView.tsx =====
 "use client";
 
 import Link from "next/link";
@@ -16481,7 +17326,7 @@ export default function DashboardView({
 }
 
 
-===== components\faculty\Nav.tsx =====
+===== components\user\Nav.tsx =====
 // src/components/faculty/Nav.tsx
 "use client";
 
@@ -16541,7 +17386,7 @@ export default function FacultyNav() {
 }
 
 
-===== components\faculty\ProfileRail.tsx =====
+===== components\user\ProfileRail.tsx =====
 "use client";
 
 type StatProps = { value: number | string; label: string };
@@ -16584,7 +17429,7 @@ export default function ProfileRail() {
 }
 
 
-===== components\faculty\feedback\FeedbackView.tsx =====
+===== components\user\feedback\FeedbackView.tsx =====
 "use client";
 
 import Stars from "./Stars";
@@ -16803,7 +17648,7 @@ export default function FeedbackView({
 }
 
 
-===== components\faculty\feedback\Stars.tsx =====
+===== components\user\feedback\Stars.tsx =====
 "use client";
 
 export default function Stars({
@@ -16835,7 +17680,7 @@ export default function Stars({
 }
 
 
-===== components\faculty\notification\NotificationsView.tsx =====
+===== components\user\notification\NotificationsView.tsx =====
 "use client";
 
 import Link from "next/link";
@@ -17046,7 +17891,7 @@ function BellEmpty(props: React.SVGProps<SVGSVGElement>) {
 }
 
 
-===== components\faculty\profile\ProfileView.tsx =====
+===== components\user\profile\ProfileView.tsx =====
 "use client";
 
 import { useMemo, useRef } from "react";
@@ -17376,7 +18221,7 @@ export default function ProfileView({
 }
 
 
-===== components\faculty\request\Form.tsx =====
+===== components\user\request\Form.tsx =====
 // src/components/faculty/request/Form.tsx
 "use client";
 
@@ -17512,7 +18357,7 @@ export default function FacultyRequestForm({
 }
 
 
-===== components\faculty\request\Summary.tsx =====
+===== components\user\request\Summary.tsx =====
 // src/components/faculty/request/Summary.tsx
 "use client";
 import type { RequestForm } from "./Form";
@@ -17545,7 +18390,7 @@ export default function RequestSummary({ form }: { form: RequestForm }) {
 }
 
 
-===== components\faculty\schedule\ScheduleView.tsx =====
+===== components\user\schedule\ScheduleView.tsx =====
 "use client";
 
 import Link from "next/link";
@@ -17772,7 +18617,7 @@ export default function ScheduleView({
 }
 
 
-===== components\faculty\schedule\types.ts =====
+===== components\user\schedule\types.ts =====
 // Shared types for faculty screens
 
 export type Vehicle = "Car" | "Van" | "Bus";
@@ -17787,178 +18632,6 @@ export type Trip = {
   note?: string;
   status: Status;
 };
-
-
-===== components\ui\Badge.tsx =====
-"use client";
-import React from "react";
-
-export default function Badge({
-  color = "gray",
-  children,
-}: {
-  color?: "green" | "red" | "amber" | "blue" | "gray";
-  children: React.ReactNode;
-}) {
-  const map: Record<string, string> = {
-    green: "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200",
-    red: "bg-rose-100 text-rose-700 ring-1 ring-rose-200",
-    amber: "bg-amber-100 text-amber-700 ring-1 ring-amber-200",
-    blue: "bg-sky-100 text-sky-700 ring-1 ring-sky-200",
-    gray: "bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200",
-  };
-  return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium transition-colors duration-150 ${map[color]}`}>
-      {children}
-    </span>
-  );
-}
-
-
-===== components\ui\Button.tsx =====
-"use client";
-import React from "react";
-
-export default function CTA({
-  tone = "primary",
-  className = "",
-  children,
-  ...rest
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  tone?: "primary" | "ghost" | "success" | "danger";
-}) {
-  const base =
-    "inline-flex items-center justify-center rounded-full px-3 py-[7px] text-[13px] sm:text-sm font-semibold whitespace-nowrap transition-all duration-150 active:translate-y-[1px] focus:outline-none focus:ring-2 focus:ring-offset-2";
-  const tones: Record<string, string> = {
-    primary:
-      "bg-[#7A0010] text-white shadow-sm shadow-[#7A0010]/20 hover:shadow-md hover:shadow-[#7A0010]/25 hover:-translate-y-0.5 hover:bg-[#66000D] focus:ring-[#7A0010]",
-    ghost:
-      "bg-white/70 text-neutral-800 ring-1 ring-neutral-200 hover:bg-neutral-100/80 hover:-translate-y-0.5 focus:ring-neutral-300",
-    success:
-      "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100 hover:-translate-y-0.5 focus:ring-emerald-300",
-    danger:
-      "bg-rose-50 text-rose-700 ring-1 ring-rose-200 hover:bg-rose-100 hover:-translate-y-0.5 focus:ring-rose-300",
-  };
-  return (
-    <button className={`${base} ${tones[tone]} ${className}`} {...rest}>
-      {children}
-    </button>
-  );
-}
-
-
-===== components\ui\Icons.tsx =====
-"use client";
-
-import React from "react";
-import type { VehicleType } from "@/lib/travilink";
-
-export const IconBell = () => (
-  <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75">
-    <path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 10-12 0v3.2c0 .5-.2 1-.6 1.4L4 17h5" />
-    <path d="M9 18a3 3 0 0 0 6 0" />
-  </svg>
-);
-
-export const IconSearch = () => (
-  <svg viewBox="0 0 24 24" className="w-4 h-4 absolute left-2.5 top-2.5 pointer-events-none" fill="none" stroke="currentColor" strokeWidth="1.75">
-    <circle cx="11" cy="11" r="7" />
-    <path d="m20 20-3.5-3.5" />
-  </svg>
-);
-
-const IconBus = () => (
-  <svg viewBox="0 0 24 24" className="w-10 h-10" fill="none" stroke="currentColor" strokeWidth="1.75">
-    <rect x="3" y="6" width="18" height="9" rx="2" />
-    <circle cx="7" cy="17" r="1.5" />
-    <circle cx="17" cy="17" r="1.5" />
-  </svg>
-);
-
-const IconVan = () => (
-  <svg viewBox="0 0 24 24" className="w-10 h-10" fill="none" stroke="currentColor" strokeWidth="1.75">
-    <path d="M3 14V9a2 2 0 0 1 2-2h7l5 4v3" />
-    <circle cx="7" cy="17" r="1.5" />
-    <circle cx="17" cy="17" r="1.5" />
-  </svg>
-);
-
-const IconCar = () => (
-  <svg viewBox="0 0 24 24" className="w-10 h-10" fill="none" stroke="currentColor" strokeWidth="1.75">
-    <path d="M4 13l2-5h12l2 5v4H4z" />
-    <circle cx="7" cy="17" r="1.5" />
-    <circle cx="17" cy="17" r="1.5" />
-  </svg>
-);
-
-export const VehicleIcon = ({ type }: { type: VehicleType }) =>
-  type === "Bus" ? <IconBus /> : type === "Van" ? <IconVan /> : <IconCar />;
-
-export const IconFile = () => (
-  <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.75">
-    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9z" />
-    <path d="M14 3v6h6" />
-  </svg>
-);
-
-export const IconWrench = () => (
-  <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.75">
-    <path d="M14.7 6.3a4 4 0 1 0-5.66 5.66l9.9 9.9 2.83-2.83-9.9-9.9z" />
-    <circle cx="5" cy="5" r="2" />
-  </svg>
-);
-
-export const IconUser = () => (
-  <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.75">
-    <circle cx="12" cy="7" r="4" />
-    <path d="M5.5 21a8.38 8.38 0 0 1 13 0" />
-  </svg>
-);
-
-export const IconInfo = () => (
-  <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.75">
-    <circle cx="12" cy="12" r="10" />
-    <path d="M12 8h.01M11 12h2v5h-2z" />
-  </svg>
-);
-
-export const IconTrash = () => (
-  <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M3 6h18" />
-    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-    <path d="M10 11v6M14 11v6" />
-  </svg>
-);
-
-
-===== components\ui\Page.tsx =====
-"use client";
-import React from "react";
-
-export function Page({ children }: { children: React.ReactNode }) {
-  return <div className="min-h-screen bg-neutral-50">{children}</div>;
-}
-
-export function PageHeader({
-  title,
-  description,
-  actions,
-}: { title: string; description?: string; actions?: React.ReactNode }) {
-  return (
-    <div className="sticky top-0 z-20 bg-white border-b px-4 md:px-6 py-4 flex items-center justify-between">
-      <div>
-        <h1 className="text-xl md:text-2xl font-semibold">{title}</h1>
-        {description && <p className="text-sm text-neutral-500">{description}</p>}
-      </div>
-      {actions}
-    </div>
-  );
-}
-
-export function PageBody({ children }: { children: React.ReactNode }) {
-  return <div className="p-4 md:p-6">{children}</div>;
-}
 
 
 ===== lib\api.ts =====
@@ -21043,22 +21716,29 @@ export function computeKpis(rows: Schedule[], now = new Date()): Kpi[] {
 
 
 ===== lib\admin\schedule\store.ts =====
-import { Schedule, ScheduleStatus, Driver, Vehicle } from "./types";
+// src/lib/admin/schedule/store.ts
+import type { Schedule, ScheduleStatus, Driver, Vehicle } from "./types";
 
-/* ---------- storage guards ---------- */
+/* ---------- storage keys / guards ---------- */
 const KEY = "travilink.schedules.v1";
-const KEY_SEQ = "travilink.schedules.seq.v1"; // per-day counters
+const KEY_SEQ = "travilink.schedules.seq.v1"; // per-day counters (YYYY-MM-DD -> number)
 const isBrowser = typeof window !== "undefined" && !!globalThis.window?.localStorage;
+
 let MEM: Schedule[] | null = null;
 let MEM_SEQ: Record<string, number> | null = null;
 
 function readSeq(): Record<string, number> {
   if (isBrowser) {
-    const raw = window.localStorage.getItem(KEY_SEQ);
-    return raw ? JSON.parse(raw) : {};
+    try {
+      const raw = window.localStorage.getItem(KEY_SEQ);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
   }
   return MEM_SEQ ?? (MEM_SEQ = {});
 }
+
 function writeSeq(seq: Record<string, number>) {
   if (isBrowser) window.localStorage.setItem(KEY_SEQ, JSON.stringify(seq));
   else MEM_SEQ = seq;
@@ -21070,6 +21750,7 @@ function fmtTripId(date: string, n: number) {
   const d = date.replaceAll("-", "");
   return `TRIP-${d}-${String(n).padStart(4, "0")}`;
 }
+
 /** Reserve and return the next Trip ID for a given date. */
 function allocateTripId(date: string) {
   const seq = readSeq();
@@ -21079,11 +21760,30 @@ function allocateTripId(date: string) {
   writeSeq(seq);
   return fmtTripId(date, next);
 }
+
 /** Peek next Trip ID (no increment) for preview. */
 function peekTripId(date: string) {
   const seq = readSeq();
   const next = (seq[date] ?? 0) + 1;
   return fmtTripId(date, next);
+}
+
+/** Rebuild KEY_SEQ from existing rows (idempotent) */
+function rebuildSeq(rows: Schedule[]) {
+  const seq: Record<string, number> = {};
+  for (const r of rows) {
+    // find the numeric part from r.tripId
+    const m = r.tripId?.match(/TRIP-(\d{8})-(\d{4})$/);
+    const date = r.date;
+    if (!date) continue;
+    let n = Number(m?.[2] ?? 0);
+    if (!n) {
+      // fall back to parse by scanning duplicates on same date
+      n = (seq[date] ?? 0) + 1;
+    }
+    seq[date] = Math.max(seq[date] ?? 0, n);
+  }
+  writeSeq(seq);
 }
 
 /* ---------- seed data ---------- */
@@ -21157,18 +21857,8 @@ function seed(): Schedule[] {
   if (isBrowser) window.localStorage.setItem(KEY, JSON.stringify(rows));
   else MEM = rows;
 
+  rebuildSeq(rows);
   return rows;
-}
-
-function readAll(): Schedule[] {
-  if (isBrowser) {
-    const raw = window.localStorage.getItem(KEY);
-    const parsed: Schedule[] | null = raw ? JSON.parse(raw) : null;
-    const rows = parsed ?? seed();
-    return backfillTripIds(rows);
-  }
-  const rows = MEM ?? seed();
-  return backfillTripIds(rows);
 }
 
 function writeAll(rows: Schedule[]) {
@@ -21176,7 +21866,29 @@ function writeAll(rows: Schedule[]) {
   else MEM = rows;
 }
 
-/* Backfill missing tripId for legacy rows */
+function readAll(): Schedule[] {
+  let rows: Schedule[] | null = null;
+  if (isBrowser) {
+    try {
+      const raw = window.localStorage.getItem(KEY);
+      rows = raw ? (JSON.parse(raw) as Schedule[]) : null;
+    } catch {
+      rows = null;
+    }
+  } else {
+    rows = MEM;
+  }
+
+  if (!rows || rows.length === 0) {
+    rows = seed();
+  } else {
+    rows = backfillTripIds(rows);
+    rebuildSeq(rows);
+  }
+  return rows;
+}
+
+/* Backfill missing tripId for legacy rows, then persist */
 function backfillTripIds(rows: Schedule[]) {
   let changed = false;
   const out = rows.map((r) => {
@@ -21190,7 +21902,7 @@ function backfillTripIds(rows: Schedule[]) {
   return out;
 }
 
-/* ---------- conflict helpers (local) ---------- */
+/* ---------- conflict helpers ---------- */
 function overlaps(a: { date: string; startTime: string; endTime: string },
                   b: { date: string; startTime: string; endTime: string }) {
   if (a.date !== b.date) return false;
@@ -21220,16 +21932,34 @@ function findConflicts(rows: Schedule[], probe: Schedule, ignoreId?: string) {
 
 /* ---------- repo ---------- */
 export const ScheduleRepo = {
+  /** Ensure demo data & sequence exist (call once on page mount) */
+  ensureDemo(): void {
+    try {
+      const raw = isBrowser ? window.localStorage.getItem(KEY) : MEM ? "mem" : null;
+      if (!raw) {
+        seed();
+      } else {
+        const rows = readAll(); // will backfill + rebuild seq
+        if (!rows.length) seed();
+      }
+    } catch {
+      seed();
+    }
+  },
+
   list(): Schedule[] {
     return readAll();
   },
+
   get(id: string): Schedule | undefined {
     return readAll().find((r) => r.id === id);
   },
+
   /** show the next Trip ID for a date without consuming it */
   peekTripId(date: string) {
     return peekTripId(date);
   },
+
   create(input: Omit<Schedule, "id" | "createdAt" | "tripId">): Schedule {
     const rows = readAll();
     const id =
@@ -21237,7 +21967,7 @@ export const ScheduleRepo = {
     const rec: Schedule = {
       ...input,
       id,
-      tripId: allocateTripId(input.date), // 👈 assign immutable Trip ID
+      tripId: allocateTripId(input.date), // immutable per-date sequence
       createdAt: new Date().toISOString(),
     };
 
@@ -21248,9 +21978,7 @@ export const ScheduleRepo = {
       const msg = [
         d ? `Driver busy with ${d.title || "another schedule"} (${d.date} ${d.startTime}-${d.endTime})` : "",
         v ? `Vehicle busy with ${v.title || "another schedule"} (${v.date} ${v.startTime}-${v.endTime})` : "",
-      ]
-        .filter(Boolean)
-        .join(" • ");
+      ].filter(Boolean).join(" • ");
       throw new Error(msg || "Conflict");
     }
 
@@ -21258,17 +21986,16 @@ export const ScheduleRepo = {
     writeAll(rows);
     return rec;
   },
+
   update(id: string, patch: Partial<Schedule>): Schedule | undefined {
     const rows = readAll();
     const idx = rows.findIndex((r) => r.id === id);
     if (idx < 0) return;
 
     const prev = rows[idx];
-    // tripId is immutable; ignore attempts to change it
-    const { tripId: _ignore, ...patchSafe } = patch as any;
+    const { tripId: _ignore, ...patchSafe } = patch as any; // tripId immutable
     const next = { ...prev, ...patchSafe } as Schedule;
 
-    // only validate when changing assignment/time
     const touchesAssignment =
       (patchSafe.date && patchSafe.date !== prev.date) ||
       (patchSafe.startTime && patchSafe.startTime !== prev.startTime) ||
@@ -21284,9 +22011,7 @@ export const ScheduleRepo = {
         const msg = [
           d ? `Driver busy with ${d.title || "another schedule"} (${d.date} ${d.startTime}-${d.endTime})` : "",
           v ? `Vehicle busy with ${v.title || "another schedule"} (${v.date} ${v.startTime}-${v.endTime})` : "",
-        ]
-          .filter(Boolean)
-          .join(" • ");
+        ].filter(Boolean).join(" • ");
         throw new Error(msg || "Conflict");
       }
     }
@@ -21295,10 +22020,12 @@ export const ScheduleRepo = {
     writeAll(rows);
     return rows[idx];
   },
+
   removeMany(ids: string[]) {
     const set = new Set(ids);
     writeAll(readAll().filter((r) => !set.has(r.id)));
   },
+
   setStatus(id: string, status: ScheduleStatus) {
     return this.update(id, { status });
   },

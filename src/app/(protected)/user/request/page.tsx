@@ -1,12 +1,11 @@
-// src/app/(protected)/faculty/request/page.tsx
 "use client";
 
 import { useState } from "react";
 import Link from "next/link";
 import { PageHeader, PageBody } from "@/components/common/Page";
 import { createTripRequest } from "@/lib/api";
-import FacultyRequestForm, { RequestForm } from "@/components/faculty/request/Form";
-import RequestSummary from "@/components/faculty/request/Summary";
+import UserRequestForm, { RequestForm } from "@/components/user/request/Form";
+import RequestSummary from "@/components/user/request/Summary";
 
 // simple validator – stays here so design files remain dumb
 function validate(form: RequestForm) {
@@ -20,7 +19,7 @@ function validate(form: RequestForm) {
   return e;
 }
 
-export default function FacultyRequestPage() {
+export default function UserRequestPage() {
   const [form, setForm] = useState<RequestForm>({
     purpose: "",
     origin: "",
@@ -50,7 +49,6 @@ export default function FacultyRequestPage() {
         origin: form.origin,
         destination: form.destination,
         schedule: form.schedule, // single datetime
-        // keep these if your table has them (it does per latest schema)
         start_time: form.schedule || null, // optional mirror
         passengers: form.passengers === "" ? null : Number(form.passengers),
         notes: form.notes || null,
@@ -89,7 +87,7 @@ export default function FacultyRequestPage() {
         title="New Transport Request"
         description="Fill out the details below to request a vehicle. (Vehicle assignment handled by Admin.)"
         actions={
-          <Link href="/faculty" className="rounded-md border px-3 py-2 text-sm hover:bg-neutral-50">
+          <Link href="/user" className="rounded-md border px-3 py-2 text-sm hover:bg-neutral-50">
             Back to Dashboard
           </Link>
         }
@@ -97,7 +95,7 @@ export default function FacultyRequestPage() {
 
       <PageBody>
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4">
-          <FacultyRequestForm
+          <UserRequestForm
             form={form}
             errors={errors}
             submitting={submitting}
@@ -113,7 +111,10 @@ export default function FacultyRequestPage() {
               <ul className="list-disc pl-5 text-sm text-neutral-700 space-y-1">
                 <li>Requests are subject to dispatcher approval.</li>
                 <li>Vehicle will be assigned by Admin based on availability.</li>
-                <li>Editing is allowed while status is <span className="font-medium">Pending</span>.</li>
+                <li>
+                  Editing is allowed while status is{" "}
+                  <span className="font-medium">Pending</span>.
+                </li>
               </ul>
               {submittedId && (
                 <p className="mt-3 text-sm text-green-700">

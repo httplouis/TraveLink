@@ -1,4 +1,3 @@
-// src/components/faculty/Nav.tsx
 "use client";
 
 import Link from "next/link";
@@ -12,20 +11,21 @@ import {
 } from "lucide-react";
 
 const items = [
-  { href: "/faculty",          label: "Dashboard", Icon: LayoutGrid, exact: true },
-  { href: "/faculty/schedule", label: "Schedule",  Icon: CalendarDays },
-  { href: "/faculty/request",  label: "Request",   Icon: PlusSquare },
-  { href: "/faculty/profile",  label: "Profile",   Icon: UserRound },
-  { href: "/faculty/feedback", label: "Feedback",  Icon: MessageSquareText },
+  { href: "/user", label: "Dashboard", Icon: LayoutGrid, exact: true },
+  { href: "/user/schedule", label: "Schedule", Icon: CalendarDays },
+  { href: "/user/request", label: "Request", Icon: PlusSquare },
+  { href: "/user/profile", label: "Profile", Icon: UserRound },
+  { href: "/user/feedback", label: "Feedback", Icon: MessageSquareText },
 ];
 
-export default function FacultyNav() {
-  const pathname = usePathname();
+export default function UserLeftNav() {
+  const pathname = usePathname() ?? "";
+
   const isActive = (href: string, exact?: boolean) =>
-    exact ? pathname === href : (pathname === href || pathname.startsWith(href + "/"));
+    exact ? pathname === href : pathname === href || pathname.startsWith(href + "/");
 
   return (
-    <nav aria-label="Faculty menu" className="space-y-3">
+    <nav aria-label="User menu" className="space-y-3">
       {items.map(({ href, label, Icon, exact }) => {
         const active = isActive(href, exact);
         return (
@@ -39,7 +39,6 @@ export default function FacultyNav() {
                 : "bg-white text-neutral-700 hover:bg-neutral-50",
             ].join(" ")}
           >
-            {/* left accent line */}
             <span
               aria-hidden="true"
               className={[

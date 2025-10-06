@@ -4,12 +4,12 @@ import { useMemo, useState } from "react";
 import NotificationsView, {
   NotificationItem,
   NotificationsTab,
-} from "@/components/faculty/notification/NotificationsView";
+} from "@/components/user/notification/NotificationsView";
 
-export default function FacultyNotificationsPage() {
+export default function UserNotificationsPage() {
   // demo local state (replace with real fetch later)
   const [items, setItems] = useState<NotificationItem[]>([
-    // sample structure (start empty if you want)
+    // sample structure
     // { id: "1", text: "Your request REQ-24013 was approved.", time: "2h ago", read: false },
     // { id: "2", text: "Schedule update: Bus departs 30 mins earlier.", time: "1d ago", read: true },
   ]);

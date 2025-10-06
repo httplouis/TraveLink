@@ -3,8 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { PageHeader, PageBody } from "@/components/common/Page";
-// Update the import path if the actual file is named 'feedbackView.tsx' (lowercase 'f'), or adjust to the correct path and casing.
-import FeedbackView from "@/components/faculty/feedback/FeedbackView";
+import FeedbackView from "@/components/user/feedback/FeedbackView";
 
 /* ------------ Types used only by the container ------------ */
 type Form = {
@@ -24,14 +23,15 @@ const isPhone = (v: string) => /^(\+?\d{10,15}|0\d{9,10})$/.test(v.replace(/\s|-
 const validate = (f: Form): Errors => {
   const e: Errors = {};
   if (!f.category) e.category = "Please pick a category.";
-  if (!f.message.trim() || f.message.trim().length < 10) e.message = "Please write at least 10 characters.";
+  if (!f.message.trim() || f.message.trim().length < 10)
+    e.message = "Please write at least 10 characters.";
   if (!f.anonymous && f.contact.trim() && !(isEmail(f.contact) || isPhone(f.contact))) {
     e.contact = "Enter a valid email or phone, or leave blank.";
   }
   return e;
 };
 
-export default function FacultyFeedbackPage() {
+export default function UserFeedbackPage() {
   const [form, setForm] = useState<Form>({
     category: "",
     rating: 0,
@@ -93,7 +93,10 @@ export default function FacultyFeedbackPage() {
         title="Feedback"
         description="Send feedback about the transport service."
         actions={
-          <Link href="/faculty" className="rounded-md border px-3 py-2 text-sm hover:bg-neutral-50">
+          <Link
+            href="/user"
+            className="rounded-md border px-3 py-2 text-sm hover:bg-neutral-50"
+          >
             Back to Dashboard
           </Link>
         }

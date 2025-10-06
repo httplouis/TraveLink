@@ -18,7 +18,9 @@ export default function RequestDetailsModalUI({
   onReject,
 }: Props) {
   React.useEffect(() => {
-    function onEsc(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    function onEsc(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
     if (open) window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
   }, [open, onClose]);
@@ -142,7 +144,9 @@ function StatusBadge({ status }: { status: RequestRow["status"] }) {
     Rejected: "bg-rose-100 text-rose-800 ring-rose-200",
   };
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${map[status]}`}>
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${map[status]}`}
+    >
       {status}
     </span>
   );
