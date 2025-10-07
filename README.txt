@@ -47,6 +47,8 @@ react-leaflet leaflet \
 lucide-react \
 @headlessui/react \
 clsx
+pnpm add framer-motion
+
 
 # For dev tools (optional but recommended)
 pnpm add -D eslint prettier @types/react @types/node
