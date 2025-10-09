@@ -48,6 +48,8 @@ lucide-react \
 @headlessui/react \
 clsx
 pnpm add framer-motion
+pnpm add zustand
+
 
 
 # For dev tools (optional but recommended)
