@@ -1,6 +1,14 @@
+// components/user/request/ui/SeminarApplicationForm.ui.tsx
 "use client";
 
 import * as React from "react";
+import {
+  TextInput,
+  DateInput,
+  TextArea,
+  CurrencyInput,
+} from "@/components/user/request/ui/controls";
+import LocationField from "@/components/user/request/ui/LocationField.ui";
 
 export default function SeminarApplicationForm({
   data,
@@ -12,66 +20,82 @@ export default function SeminarApplicationForm({
   errors: Record<string, string>;
 }) {
   return (
-    <section className="rounded-2xl border bg-white p-4 shadow-sm">
-      <h3 className="mb-3 text-lg font-semibold">Seminar Application</h3>
-
-      <div className="grid gap-3 md:grid-cols-2">
-        <Field label="Application date" error={errors["seminar.applicationDate"]}>
-          <input
-            type="date"
-            className="input"
-            value={data?.applicationDate || ""}
-            onChange={(e) => onChange({ applicationDate: e.target.value })}
-          />
-        </Field>
-
-        <Field label="Title" error={errors["seminar.title"]}>
-          <input
-            className="input"
-            value={data?.title || ""}
-            onChange={(e) => onChange({ title: e.target.value })}
-          />
-        </Field>
-
-        <Field label="Date from" error={errors["seminar.dateFrom"]}>
-          <input
-            type="date"
-            className="input"
-            value={data?.dateFrom || ""}
-            onChange={(e) => onChange({ dateFrom: e.target.value })}
-          />
-        </Field>
-
-        <Field label="Date to" error={errors["seminar.dateTo"]}>
-          <input
-            type="date"
-            className="input"
-            value={data?.dateTo || ""}
-            onChange={(e) => onChange({ dateTo: e.target.value })}
-          />
-        </Field>
+    <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-lg font-semibold">Seminar Application</h3>
+        <span className="text-xs text-neutral-500">
+          Required fields marked with *
+        </span>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2 mt-2">
-        <Field label="Type of Training (tags)">
-          <input
-            className="input"
-            placeholder="Comma-separated e.g., Workshop, Webinar"
-            value={(data?.typeOfTraining || []).join(", ")}
-            onChange={(e) =>
-              onChange({
-                typeOfTraining: e.target.value
-                  .split(",")
-                  .map((s) => s.trim())
-                  .filter(Boolean),
-              })
-            }
-          />
-        </Field>
+      {/* Required basics */}
+      <div className="grid gap-4 md:grid-cols-2">
+        <DateInput
+          id="sem-applicationDate"
+          label="Application date"
+          required
+          value={data?.applicationDate || ""}
+          onChange={(e) =>
+            onChange({ applicationDate: (e.target as HTMLInputElement).value })
+          }
+          error={errors["seminar.applicationDate"]}
+        />
 
-        <Field label="Training category">
+        <TextInput
+          id="sem-title"
+          label="Title"
+          required
+          placeholder="e.g., National Research Conference 2025"
+          value={data?.title || ""}
+          onChange={(e) => onChange({ title: e.target.value })}
+          error={errors["seminar.title"]}
+        />
+
+        <DateInput
+          id="sem-dateFrom"
+          label="Date from"
+          required
+          value={data?.dateFrom || ""}
+          onChange={(e) =>
+            onChange({ dateFrom: (e.target as HTMLInputElement).value })
+          }
+          error={errors["seminar.dateFrom"]}
+        />
+
+        <DateInput
+          id="sem-dateTo"
+          label="Date to"
+          required
+          value={data?.dateTo || ""}
+          onChange={(e) =>
+            onChange({ dateTo: (e.target as HTMLInputElement).value })
+          }
+          error={errors["seminar.dateTo"]}
+        />
+      </div>
+
+      {/* Tags + category */}
+      <div className="mt-3 grid gap-4 md:grid-cols-2">
+        <TextInput
+          label="Type of Training (tags)"
+          placeholder="Comma-separated, e.g., Workshop, Webinar"
+          value={(data?.typeOfTraining || []).join(", ")}
+          onChange={(e) =>
+            onChange({
+              typeOfTraining: e.target.value
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean),
+            })
+          }
+        />
+
+        <label className="grid w-full gap-1">
+          <span className="text-[13px] font-medium text-neutral-700">
+            Training category
+          </span>
           <select
-            className="input"
+            className="h-10 w-full rounded-xl border border-neutral-300 bg-white px-3 text-sm outline-none focus:border-neutral-400 focus:ring-2 focus:ring-neutral-200"
             value={data?.trainingCategory || ""}
             onChange={(e) => onChange({ trainingCategory: e.target.value })}
           >
@@ -81,133 +105,127 @@ export default function SeminarApplicationForm({
             <option value="national">National</option>
             <option value="international">International</option>
           </select>
-        </Field>
+        </label>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-3 mt-2">
-        <Field label="Sponsor/Provider">
-          <input
-            className="input"
-            value={data?.sponsor || ""}
-            onChange={(e) => onChange({ sponsor: e.target.value })}
-          />
-        </Field>
-        <Field label="Venue">
-          <input
-            className="input"
-            value={data?.venue || ""}
-            onChange={(e) => onChange({ venue: e.target.value })}
-          />
-        </Field>
-        <Field label="Modality">
-          <input
-            className="input"
-            value={data?.modality || ""}
-            onChange={(e) => onChange({ modality: e.target.value })}
-          />
-        </Field>
+      {/* Provider / Venue / Modality */}
+      <div className="mt-3 grid gap-4 md:grid-cols-3">
+        <TextInput
+          label="Sponsor/Provider"
+          placeholder="Organization / Agency"
+          value={data?.sponsor || ""}
+          onChange={(e) => onChange({ sponsor: e.target.value })}
+        />
+
+        {/* VENUE — LocationField with embedded “Pick on map” button */}
+        <LocationField
+          label="Venue"
+          value={data?.venue || ""}
+          geo={data?.venueGeo || null}
+          onChange={({ address, geo }) =>
+            onChange({ venue: address, venueGeo: geo ?? null })
+          }
+          inputId="sem-venue"
+          placeholder="Type address or pick on map"
+        />
+
+        <TextInput
+          label="Modality"
+          placeholder="Onsite / Online / Hybrid"
+          value={data?.modality || ""}
+          onChange={(e) => onChange({ modality: e.target.value })}
+        />
       </div>
 
-      <div className="mt-3 grid gap-3 md:grid-cols-2">
-        <Field label="Registration Fee (₱)">
-          <input
-            className="input"
-            inputMode="decimal"
-            value={data?.fees?.registrationFee ?? ""}
-            onChange={(e) =>
-              onChange({
-                fees: {
-                  ...(data?.fees || {}),
-                  registrationFee: asNum(e.target.value),
-                },
-              })
-            }
-          />
-        </Field>
-
-        <Field label="Total Amount (₱)">
-          <input
-            className="input"
-            inputMode="decimal"
-            value={data?.fees?.totalAmount ?? ""}
-            onChange={(e) =>
-              onChange({
-                fees: { ...(data?.fees || {}), totalAmount: asNum(e.target.value) },
-              })
-            }
-          />
-        </Field>
+      {/* Fees summary */}
+      <div className="mt-4 grid gap-4 md:grid-cols-2">
+        <CurrencyInput
+          label="Registration Fee"
+          placeholder="0.00"
+          value={data?.fees?.registrationFee ?? ""}
+          onChange={(e) =>
+            onChange({
+              fees: {
+                ...(data?.fees || {}),
+                registrationFee: asNum(e.target.value),
+              },
+            })
+          }
+        />
+        <CurrencyInput
+          label="Total Amount"
+          placeholder="0.00"
+          value={data?.fees?.totalAmount ?? ""}
+          onChange={(e) =>
+            onChange({
+              fees: {
+                ...(data?.fees || {}),
+                totalAmount: asNum(e.target.value),
+              },
+            })
+          }
+        />
       </div>
 
-      <div className="mt-3 grid gap-3 md:grid-cols-2">
-        <Field label="Registration (₱)">
-          <input
-            className="input"
-            inputMode="decimal"
-            value={data?.breakdown?.registration ?? ""}
-            onChange={(e) =>
-              onChange({
-                breakdown: {
-                  ...(data?.breakdown || {}),
-                  registration: asNum(e.target.value),
-                },
-              })
-            }
-          />
-        </Field>
+      {/* Breakdown */}
+      <div className="mt-4 grid gap-4 md:grid-cols-2">
+        <CurrencyInput
+          label="Registration"
+          placeholder="0.00"
+          value={data?.breakdown?.registration ?? ""}
+          onChange={(e) =>
+            onChange({
+              breakdown: {
+                ...(data?.breakdown || {}),
+                registration: asNum(e.target.value),
+              },
+            })
+          }
+        />
+        <CurrencyInput
+          label="Accommodation"
+          placeholder="0.00"
+          value={data?.breakdown?.accommodation ?? ""}
+          onChange={(e) =>
+            onChange({
+              breakdown: {
+                ...(data?.breakdown || {}),
+                accommodation: asNum(e.target.value),
+              },
+            })
+          }
+        />
+        <CurrencyInput
+          label="Per diem / Meals / Driver’s allowance"
+          placeholder="0.00"
+          value={data?.breakdown?.perDiemMealsDriversAllowance ?? ""}
+          onChange={(e) =>
+            onChange({
+              breakdown: {
+                ...(data?.breakdown || {}),
+                perDiemMealsDriversAllowance: asNum(e.target.value),
+              },
+            })
+          }
+        />
+        <CurrencyInput
+          label="Transport / Fare / Gas / Parking / Toll"
+          placeholder="0.00"
+          value={data?.breakdown?.transportFareGasParkingToll ?? ""}
+          onChange={(e) =>
+            onChange({
+              breakdown: {
+                ...(data?.breakdown || {}),
+                transportFareGasParkingToll: asNum(e.target.value),
+              },
+            })
+          }
+        />
 
-        <Field label="Accommodation (₱)">
-          <input
-            className="input"
-            inputMode="decimal"
-            value={data?.breakdown?.accommodation ?? ""}
-            onChange={(e) =>
-              onChange({
-                breakdown: {
-                  ...(data?.breakdown || {}),
-                  accommodation: asNum(e.target.value),
-                },
-              })
-            }
-          />
-        </Field>
-
-        <Field label="Per diem / Meals / Driver’s allowance (₱)">
-          <input
-            className="input"
-            inputMode="decimal"
-            value={data?.breakdown?.perDiemMealsDriversAllowance ?? ""}
-            onChange={(e) =>
-              onChange({
-                breakdown: {
-                  ...(data?.breakdown || {}),
-                  perDiemMealsDriversAllowance: asNum(e.target.value),
-                },
-              })
-            }
-          />
-        </Field>
-
-        <Field label="Transport / Fare / Gas / Parking / Toll (₱)">
-          <input
-            className="input"
-            inputMode="decimal"
-            value={data?.breakdown?.transportFareGasParkingToll ?? ""}
-            onChange={(e) =>
-              onChange({
-                breakdown: {
-                  ...(data?.breakdown || {}),
-                  transportFareGasParkingToll: asNum(e.target.value),
-                },
-              })
-            }
-          />
-        </Field>
-
-        <div className="grid grid-cols-3 gap-2">
-          <input
-            className="input col-span-2"
-            placeholder="Other (label)"
+        <div className="md:col-span-2 grid gap-4 md:grid-cols-[1fr_180px]">
+          <TextInput
+            label="Other (label)"
+            placeholder="e.g., Materials, Printing"
             value={data?.breakdown?.otherLabel || ""}
             onChange={(e) =>
               onChange({
@@ -215,9 +233,8 @@ export default function SeminarApplicationForm({
               })
             }
           />
-          <input
-            className="input"
-            inputMode="decimal"
+          <CurrencyInput
+            label="Amount"
             placeholder="0.00"
             value={data?.breakdown?.otherAmount ?? ""}
             onChange={(e) =>
@@ -232,53 +249,40 @@ export default function SeminarApplicationForm({
         </div>
       </div>
 
-      <div className="mt-3 grid gap-3 md:grid-cols-2">
-        <Field label="Make-up Class Schedule">
-          <textarea
-            className="input min-h-[80px]"
-            value={data?.makeUpClassSchedule || ""}
-            onChange={(e) => onChange({ makeUpClassSchedule: e.target.value })}
-          />
-        </Field>
+      {/* Others */}
+      <div className="mt-4 grid gap-4 md:grid-cols-2">
+        <TextArea
+          label="Make-up Class Schedule"
+          placeholder="If faculty, indicate proposed make-up classes"
+          value={data?.makeUpClassSchedule || ""}
+          onChange={(e) => onChange({ makeUpClassSchedule: e.target.value })}
+        />
 
-        <Field label="Applicant’s Undertaking">
-          <input
-            type="checkbox"
-            className="mr-2"
-            checked={!!data?.applicantUndertaking}
-            onChange={(e) => onChange({ applicantUndertaking: e.target.checked })}
-          />
-          Agree
-        </Field>
+        <label className="grid gap-1">
+          <span className="text-[13px] font-medium text-neutral-700">
+            Applicant’s Undertaking
+          </span>
+          <label className="flex items-center gap-2 rounded-xl border border-neutral-200 p-3">
+            <input
+              type="checkbox"
+              className="h-4 w-4"
+              checked={!!data?.applicantUndertaking}
+              onChange={(e) => onChange({ applicantUndertaking: e.target.checked })}
+            />
+            <span className="text-sm text-neutral-700">Agree</span>
+          </label>
+        </label>
       </div>
 
-      <div className="mt-3">
-        <Field label="Fund release line (₱)">
-          <input
-            className="input"
-            inputMode="decimal"
-            value={data?.fundReleaseLine ?? ""}
-            onChange={(e) =>
-              onChange({ fundReleaseLine: asNum(e.target.value) })
-            }
-          />
-        </Field>
+      <div className="mt-4">
+        <CurrencyInput
+          label="Fund release line"
+          placeholder="0.00"
+          value={data?.fundReleaseLine ?? ""}
+          onChange={(e) => onChange({ fundReleaseLine: asNum(e.target.value) })}
+        />
       </div>
     </section>
-  );
-}
-
-function Field({
-  label,
-  error,
-  children,
-}: React.PropsWithChildren<{ label: string; error?: string }>) {
-  return (
-    <label className="grid gap-1">
-      <span className="text-sm text-neutral-700">{label}</span>
-      {children}
-      {error && <span className="text-xs text-red-600">{error}</span>}
-    </label>
   );
 }
 

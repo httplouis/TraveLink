@@ -1,7 +1,20 @@
+// components/user/request/ui/TravelOrderForm.ui.tsx
 "use client";
 
 import * as React from "react";
 import type { VehicleMode } from "@/lib/user/request/types";
+import {
+  TextInput,
+  DateInput,
+  TextArea,
+  CurrencyInput,
+} from "@/components/user/request/ui/controls";
+import LocationField from "@/components/user/request/ui/LocationField.ui";
+
+function asNum(v: string): number | null {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
 
 export default function TravelOrderForm({
   data,
@@ -23,182 +36,190 @@ export default function TravelOrderForm({
     Number(c.hiredDrivers || 0) > 0;
 
   return (
-    <section className="rounded-2xl border bg-white p-4 shadow-sm">
-      <h3 className="mb-3 text-lg font-semibold">Travel Order</h3>
-
-      <div className="grid gap-3 md:grid-cols-2">
-        <Field label="Destination" error={errors["travelOrder.destination"]}>
-          <input
-            className="input"
-            value={data.destination || ""}
-            onChange={(e) => onChange({ destination: e.target.value })}
-          />
-        </Field>
-
-        <Field label="Departure date" error={errors["travelOrder.departureDate"]}>
-          <input
-            type="date"
-            className="input"
-            value={data.departureDate || ""}
-            onChange={(e) => onChange({ departureDate: e.target.value })}
-          />
-        </Field>
-
-        <Field label="Return date" error={errors["travelOrder.returnDate"]}>
-          <input
-            type="date"
-            className="input"
-            value={data.returnDate || ""}
-            onChange={(e) => onChange({ returnDate: e.target.value })}
-          />
-        </Field>
+    <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-lg font-semibold">Travel Order</h3>
+        <span className="text-xs text-neutral-500">
+          Required fields marked with *
+        </span>
       </div>
 
-      <Field
-        label="Purpose of travel"
-        error={errors["travelOrder.purposeOfTravel"]}
-      >
-        <textarea
-          className="input min-h-[86px]"
-          value={data.purposeOfTravel || ""}
-          onChange={(e) => onChange({ purposeOfTravel: e.target.value })}
+      {/* Top grid */}
+      <div className="grid gap-4 md:grid-cols-2">
+        <DateInput
+          id="to-date"
+          label="Date"
+          required
+          value={data.date}
+          onChange={(e) => onChange({ date: e.target.value })}
+          error={errors["travelOrder.date"]}
+          helper="Select the date this request is created."
         />
-      </Field>
+
+        <TextInput
+          id="to-requester"
+          label="Requesting person"
+          required
+          placeholder="Juan Dela Cruz"
+          value={data.requestingPerson}
+          onChange={(e) => onChange({ requestingPerson: e.target.value })}
+          error={errors["travelOrder.requestingPerson"]}
+        />
+
+        <TextInput
+          id="to-department"
+          label="Department"
+          required
+          placeholder="e.g., CITE, SHS, Accounting"
+          value={data.department}
+          onChange={(e) => onChange({ department: e.target.value })}
+          error={errors["travelOrder.department"]}
+        />
+
+        {/* Destination with map picker */}
+        <div className="grid gap-1">
+          <LocationField
+            label="Destination"
+            inputId="to-destination"
+            value={data.destination || ""}
+            geo={data.destinationGeo || null}
+            onChange={({ address, geo }) =>
+              onChange({
+                destination: address,
+                destinationGeo: geo ?? null,
+              })
+            }
+            placeholder="City / Venue / School / Company"
+          />
+          {errors["travelOrder.destination"] && (
+            <span className="text-xs text-red-600">
+              {errors["travelOrder.destination"]}
+            </span>
+          )}
+        </div>
+
+        <DateInput
+          id="to-departure"
+          label="Departure date"
+          required
+          value={data.departureDate}
+          onChange={(e) => onChange({ departureDate: e.target.value })}
+          error={errors["travelOrder.departureDate"]}
+        />
+
+        <DateInput
+          id="to-return"
+          label="Return date"
+          required
+          value={data.returnDate}
+          onChange={(e) => onChange({ returnDate: e.target.value })}
+          error={errors["travelOrder.returnDate"]}
+        />
+      </div>
 
       <div className="mt-4">
-        <div className="text-sm font-semibold">Travel Cost (estimate)</div>
+        <TextArea
+          id="to-purpose"
+          label="Purpose of travel"
+          required
+          placeholder="Briefly explain what the trip is for"
+          value={data.purposeOfTravel}
+          onChange={(e) => onChange({ purposeOfTravel: e.target.value })}
+          error={errors["travelOrder.purposeOfTravel"]}
+        />
+      </div>
 
-        <div className="mt-2 grid gap-3 md:grid-cols-2">
-          <Money
+      {/* Costs */}
+      <div className="mt-6 rounded-xl border border-neutral-200 p-4">
+        <div className="mb-3 text-sm font-semibold">Travel Cost (estimate)</div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <CurrencyInput
             label="Food"
-            value={c.food}
-            onChange={(v) => onChangeCosts({ food: v })}
+            placeholder="0.00"
+            value={c.food ?? ""}
+            onChange={(e) => onChangeCosts({ food: asNum(e.target.value) })}
           />
-          <Money
+          <CurrencyInput
             label="Driver’s allowance"
-            value={c.driversAllowance}
-            onChange={(v) => onChangeCosts({ driversAllowance: v })}
+            placeholder="0.00"
+            value={c.driversAllowance ?? ""}
+            onChange={(e) =>
+              onChangeCosts({ driversAllowance: asNum(e.target.value) })
+            }
           />
-          <Money
+          <CurrencyInput
             label="Rent vehicles"
-            value={c.rentVehicles}
-            onChange={(v) => onChangeCosts({ rentVehicles: v })}
+            placeholder="0.00"
+            value={c.rentVehicles ?? ""}
+            onChange={(e) =>
+              onChangeCosts({ rentVehicles: asNum(e.target.value) })
+            }
           />
-          <Money
+          <CurrencyInput
             label="Hired drivers"
-            value={c.hiredDrivers}
-            onChange={(v) => onChangeCosts({ hiredDrivers: v })}
+            placeholder="0.00"
+            value={c.hiredDrivers ?? ""}
+            onChange={(e) =>
+              onChangeCosts({ hiredDrivers: asNum(e.target.value) })
+            }
           />
-          <Money
+          <CurrencyInput
             label="Accommodation"
-            value={c.accommodation}
-            onChange={(v) => onChangeCosts({ accommodation: v })}
+            placeholder="0.00"
+            value={c.accommodation ?? ""}
+            onChange={(e) =>
+              onChangeCosts({ accommodation: asNum(e.target.value) })
+            }
           />
 
-          <div className="grid grid-cols-3 gap-2">
-            <input
-              className="input col-span-2"
-              placeholder="Other (label)"
-              value={c.otherLabel || ""}
-              onChange={(e) =>
-                onChangeCosts({ otherLabel: e.target.value })
-              }
+          <div className="grid grid-cols-3 gap-3 md:col-span-2">
+            <TextInput
+              label="Other (label)"
+              placeholder="e.g., Materials, Printing"
+              value={c.otherLabel ?? ""}
+              onChange={(e) => onChangeCosts({ otherLabel: e.target.value })}
             />
-            <input
-              className="input"
-              inputMode="decimal"
+            <CurrencyInput
+              label="Amount"
               placeholder="0.00"
               value={c.otherAmount ?? ""}
               onChange={(e) =>
                 onChangeCosts({ otherAmount: asNum(e.target.value) })
               }
+              className="col-span-2 sm:col-span-1"
             />
           </div>
         </div>
 
         {needsJustif && (
-          <div className="mt-3">
-            <Field
+          <div className="mt-4">
+            <TextArea
+              id="to-justification"
               label="Justification"
+              required
+              placeholder="State reasons for renting or hiring a driver"
+              value={c.justification ?? ""}
+              onChange={(e) => onChangeCosts({ justification: e.target.value })}
               error={errors["travelOrder.costs.justification"]}
-            >
-              <textarea
-                className="input min-h-[80px]"
-                placeholder="State reasons for renting / hired drivers"
-                value={c.justification || ""}
-                onChange={(e) =>
-                  onChangeCosts({ justification: e.target.value })
-                }
-              />
-            </Field>
+            />
           </div>
         )}
       </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
-        <Field label="Endorsed by (Dept Head)">
-          <input
-            className="input"
-            value={data.endorsedByHeadName || ""}
-            onChange={(e) =>
-              onChange({ endorsedByHeadName: e.target.value })
-            }
-          />
-        </Field>
-
-        <Field label="Endorsement date">
-          <input
-            type="date"
-            className="input"
-            value={data.endorsedByHeadDate || ""}
-            onChange={(e) =>
-              onChange({ endorsedByHeadDate: e.target.value })
-            }
-          />
-        </Field>
+      {/* Endorsement */}
+      <div className="mt-6 grid gap-4 md:grid-cols-2">
+        <TextInput
+          label="Endorsed by (Dept Head)"
+          placeholder="Name of Department Head"
+          value={data.endorsedByHeadName ?? ""}
+          onChange={(e) => onChange({ endorsedByHeadName: e.target.value })}
+        />
+        <DateInput
+          label="Endorsement date"
+          value={data.endorsedByHeadDate ?? ""}
+          onChange={(e) => onChange({ endorsedByHeadDate: e.target.value })}
+        />
       </div>
     </section>
   );
-}
-
-function Field({
-  label,
-  error,
-  children,
-}: React.PropsWithChildren<{ label: string; error?: string }>) {
-  return (
-    <label className="grid gap-1">
-      <span className="text-sm text-neutral-700">{label}</span>
-      {children}
-      {error && <span className="text-xs text-red-600">{error}</span>}
-    </label>
-  );
-}
-
-function Money({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value?: number | null;
-  onChange: (v: number | null) => void;
-}) {
-  return (
-    <label className="grid gap-1">
-      <span className="text-sm text-neutral-700">{label}</span>
-      <input
-        className="input"
-        inputMode="decimal"
-        placeholder="0.00"
-        value={value ?? ""}
-        onChange={(e) => onChange(asNum(e.target.value))}
-      />
-    </label>
-  );
-}
-
-function asNum(v: string): number | null {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
 }
