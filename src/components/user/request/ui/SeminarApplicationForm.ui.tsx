@@ -10,6 +10,8 @@ import {
 } from "@/components/user/request/ui/controls";
 import LocationField from "@/components/user/request/ui/LocationField.ui";
 
+const MODALITY_OPTIONS = ["Onsite", "Online", "Hybrid"] as const;
+
 export default function SeminarApplicationForm({
   data,
   onChange,
@@ -90,6 +92,7 @@ export default function SeminarApplicationForm({
           }
         />
 
+        {/* Training category */}
         <label className="grid w-full gap-1">
           <span className="text-[13px] font-medium text-neutral-700">
             Training category
@@ -117,7 +120,7 @@ export default function SeminarApplicationForm({
           onChange={(e) => onChange({ sponsor: e.target.value })}
         />
 
-        {/* VENUE — LocationField with embedded “Pick on map” button */}
+        {/* VENUE — LocationField with embedded map picker */}
         <LocationField
           label="Venue"
           value={data?.venue || ""}
@@ -129,12 +132,29 @@ export default function SeminarApplicationForm({
           placeholder="Type address or pick on map"
         />
 
-        <TextInput
-          label="Modality"
-          placeholder="Onsite / Online / Hybrid"
-          value={data?.modality || ""}
-          onChange={(e) => onChange({ modality: e.target.value })}
-        />
+        {/* NEW: Modality dropdown */}
+        <label className="grid gap-1">
+          <span className="text-[13px] font-medium text-neutral-700">
+            Modality
+          </span>
+          <select
+            className="h-10 w-full rounded-xl border border-neutral-300 bg-white px-3 text-sm outline-none focus:border-neutral-400 focus:ring-2 focus:ring-neutral-200"
+            value={data?.modality || ""}
+            onChange={(e) => onChange({ modality: e.target.value })}
+          >
+            <option value="">Select…</option>
+            {MODALITY_OPTIONS.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+          {errors["seminar.modality"] && (
+            <span className="text-xs text-red-600">
+              {errors["seminar.modality"]}
+            </span>
+          )}
+        </label>
       </div>
 
       {/* Fees summary */}
@@ -267,7 +287,9 @@ export default function SeminarApplicationForm({
               type="checkbox"
               className="h-4 w-4"
               checked={!!data?.applicantUndertaking}
-              onChange={(e) => onChange({ applicantUndertaking: e.target.checked })}
+              onChange={(e) =>
+                onChange({ applicantUndertaking: e.target.checked })
+              }
             />
             <span className="text-sm text-neutral-700">Agree</span>
           </label>

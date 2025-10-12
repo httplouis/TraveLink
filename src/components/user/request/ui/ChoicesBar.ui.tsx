@@ -23,163 +23,135 @@ const ROLES: { label: string; value: RequesterRole }[] = [
   { label: "Org", value: "org" },
 ];
 
+type Props = {
+  value: { reason: Reason; vehicleMode: VehicleMode; requesterRole: RequesterRole };
+  lockedVehicle: VehicleMode | null;
+  onReason: (r: Reason) => void;
+  onVehicle: (v: VehicleMode) => void;
+  onRequester: (r: RequesterRole) => void;
+};
+
 export default function ChoicesBar({
   value,
   lockedVehicle,
   onReason,
   onVehicle,
   onRequester,
-}: {
-  value: { reason: Reason; vehicleMode: VehicleMode; requesterRole: RequesterRole };
-  lockedVehicle: VehicleMode | null;
-  onReason: (r: Reason) => void;
-  onVehicle: (v: VehicleMode) => void;
-  onRequester: (r: RequesterRole) => void;
-}) {
-  const vehicleOptions = React.useMemo(
-    () =>
-      VEHICLES.map((o) => ({
-        ...o,
-        disabled: lockedVehicle ? o.value !== lockedVehicle : false,
-      })),
-    [lockedVehicle]
-  );
-
+}: Props) {
   return (
     <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-      <div className="grid gap-4 md:grid-cols-3">
-        <PrettyRadioGroup
+      <div className="grid gap-6 md:grid-cols-3">
+        <ChoiceGroup<Reason>
           label="Reason of trip"
           value={value.reason}
           options={REASONS}
+          columns={1}
           onChange={onReason}
         />
 
-        <PrettyRadioGroup
+        <ChoiceGroup<VehicleMode>
           label="Vehicle"
           value={value.vehicleMode}
-          options={vehicleOptions}
+          options={VEHICLES.map((o) => ({
+            ...o,
+            disabled: lockedVehicle ? o.value !== lockedVehicle : false,
+            title: lockedVehicle && o.value !== lockedVehicle ? "Locked by reason of trip" : "",
+          }))}
+          columns={1}
           onChange={onVehicle}
-          helper={
-            lockedVehicle
-              ? `Vehicle is locked to “${labelForValue(vehicleOptions, lockedVehicle)}” based on your reason.`
-              : undefined
-          }
         />
 
-        <PrettyRadioGroup
+        <ChoiceGroup<RequesterRole>
           label="Requester"
           value={value.requesterRole}
           options={ROLES}
+          columns={1}
           onChange={onRequester}
         />
       </div>
+
+      {lockedVehicle && (
+        <p className="mt-2 text-xs text-neutral-500">
+          Vehicle locked to <b className="text-[#7A0010]">{lockedVehicle}</b> based on reason.
+        </p>
+      )}
     </section>
   );
 }
 
-function labelForValue<T extends string>(
-  opts: { label: string; value: T }[],
-  v: T
-) {
-  return opts.find((o) => o.value === v)?.label ?? v;
-}
+/* ---------- Generic segmented radio group ---------- */
 
-/**
- * Button-like radio group with full keyboard & screen reader support.
- * - Arrow keys move selection
- * - Space/Enter select
- * - Clear selected styling
- */
-function PrettyRadioGroup<T extends string>({
+function ChoiceGroup<T extends string>({
   label,
   value,
   options,
   onChange,
-  helper,
+  columns = 1,
 }: {
   label: string;
   value: T;
-  options: { label: string; value: T; disabled?: boolean }[];
+  options: { label: string; value: T; disabled?: boolean; title?: string }[];
   onChange: (v: T) => void;
-  helper?: string;
+  columns?: 1 | 2 | 3;
 }) {
-  const groupId = React.useId();
-
-  function onKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
-    const enabled = options.filter((o) => !o.disabled);
-    const idx = enabled.findIndex((o) => o.value === value);
-    if (idx < 0) return;
-
-    if (e.key === "ArrowRight" || e.key === "ArrowDown") {
-      e.preventDefault();
-      const next = enabled[(idx + 1) % enabled.length];
-      onChange(next.value);
-    }
-    if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
-      e.preventDefault();
-      const prev = enabled[(idx - 1 + enabled.length) % enabled.length];
-      onChange(prev.value);
-    }
-  }
+  const groupName = React.useId();
 
   return (
-    <div>
-      <div className="mb-1 flex items-center justify-between">
-        <span className="text-sm font-medium text-neutral-700">{label}</span>
-        {helper && <span className="text-xs text-neutral-500">{helper}</span>}
-      </div>
+    <fieldset className="min-w-0">
+      <legend className="mb-2 text-sm font-medium text-neutral-700">{label}</legend>
 
       <div
+        className={[
+          "grid gap-2",
+          columns === 1 ? "grid-cols-1" : "",
+          columns === 2 ? "grid-cols-2" : "",
+          columns === 3 ? "grid-cols-3" : "",
+        ].join(" ")}
         role="radiogroup"
-        aria-labelledby={groupId}
-        className="flex flex-wrap gap-2"
-        onKeyDown={onKeyDown}
+        aria-label={label}
       >
-        <span id={groupId} className="sr-only">
-          {label}
-        </span>
-
         {options.map((opt) => {
           const selected = value === opt.value;
+          const base =
+            "inline-flex items-center justify-start gap-2 rounded-xl border px-3 py-2 text-sm transition";
+          const state = selected
+            ? "border-[#7A0010] bg-[#7A0010]/5 text-[#7A0010] ring-1 ring-[#7A0010]/20"
+            : "border-neutral-300 hover:bg-neutral-50";
+        const disabled = opt.disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer";
           return (
-            <button
+            <label
               key={String(opt.value)}
-              type="button"
-              role="radio"
-              aria-checked={selected}
-              disabled={!!opt.disabled}
-              onClick={() => !opt.disabled && onChange(opt.value)}
-              className={[
-                "inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm transition",
-                "focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-300",
-                opt.disabled
-                  ? "cursor-not-allowed border-neutral-200 bg-neutral-50 text-neutral-400"
-                  : selected
-                  ? "border-[#7A0010] bg-[#7A0010]/5 text-[#7A0010]"
-                  : "border-neutral-300 text-neutral-800 hover:bg-neutral-50",
-              ].join(" ")}
+              className={`${base} ${state} ${disabled}`}
+              title={opt.title}
             >
-              {/* visual dot */}
+              <input
+                type="radio"
+                className="sr-only"
+                name={groupName}
+                checked={selected}
+                disabled={opt.disabled}
+                onChange={() => onChange(opt.value)}
+                aria-checked={selected}
+              />
               <span
+                aria-hidden
                 className={[
                   "grid h-4 w-4 place-items-center rounded-full border",
                   selected ? "border-[#7A0010]" : "border-neutral-400",
                 ].join(" ")}
-                aria-hidden="true"
               >
                 <span
                   className={[
-                    "h-2 w-2 rounded-full",
+                    "h-2.5 w-2.5 rounded-full",
                     selected ? "bg-[#7A0010]" : "bg-transparent",
                   ].join(" ")}
                 />
               </span>
-              {opt.label}
-            </button>
+              <span className="truncate">{opt.label}</span>
+            </label>
           );
         })}
       </div>
-    </div>
+    </fieldset>
   );
 }

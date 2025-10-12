@@ -1,4 +1,4 @@
-// components/user/request/ui/TravelOrderForm.ui.tsx
+// src/components/user/request/ui/TravelOrderForm.ui.tsx
 "use client";
 
 import * as React from "react";
@@ -11,10 +11,25 @@ import {
 } from "@/components/user/request/ui/controls";
 import LocationField from "@/components/user/request/ui/LocationField.ui";
 
+// Searchable department input
+import DepartmentSelect from "@/components/common/inputs/DepartmentSelect.ui";
+// Department → head mapping helper
+import { getDepartmentHead } from "@/lib/org/departments";
+// Shared signature pad
+import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
+
 function asNum(v: string): number | null {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
+
+type Props = {
+  data: any;
+  onChange: (patch: any) => void;
+  onChangeCosts: (patch: any) => void;
+  errors: Record<string, string>;
+  vehicleMode: VehicleMode;
+};
 
 export default function TravelOrderForm({
   data,
@@ -22,26 +37,28 @@ export default function TravelOrderForm({
   onChangeCosts,
   errors,
   vehicleMode,
-}: {
-  data: any;
-  onChange: (patch: any) => void;
-  onChangeCosts: (patch: any) => void;
-  errors: Record<string, string>;
-  vehicleMode: VehicleMode;
-}) {
+}: Props) {
   const c = data?.costs || {};
   const needsJustif =
     vehicleMode === "rent" ||
     Number(c.rentVehicles || 0) > 0 ||
     Number(c.hiredDrivers || 0) > 0;
 
+  // If user types a head name manually, don’t auto-overwrite next time
+  const headEditedRef = React.useRef(false);
+
+  // --- Signature state (UI helpers only; persisted to parent via onChange) ---
+  const [sigDirty, setSigDirty] = React.useState(false);
+  const [sigSaved, setSigSaved] = React.useState<boolean>(!!data?.signatureSaved);
+  const [sigSavedAt, setSigSavedAt] = React.useState<string | null>(
+    data?.signatureSaved ? new Date().toLocaleString() : null
+  );
+
   return (
     <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-lg font-semibold">Travel Order</h3>
-        <span className="text-xs text-neutral-500">
-          Required fields marked with *
-        </span>
+        <span className="text-xs text-neutral-500">Required fields marked with *</span>
       </div>
 
       {/* Top grid */}
@@ -66,35 +83,45 @@ export default function TravelOrderForm({
           error={errors["travelOrder.requestingPerson"]}
         />
 
-        <TextInput
-          id="to-department"
-          label="Department"
-          required
-          placeholder="e.g., CITE, SHS, Accounting"
-          value={data.department}
-          onChange={(e) => onChange({ department: e.target.value })}
-          error={errors["travelOrder.department"]}
-        />
+        {/* Department / Office (searchable) */}
+        <div className="grid gap-1">
+          <DepartmentSelect
+            id="to-department"
+            label="Department *"
+            value={data.department || ""}
+            required
+            placeholder="e.g., CBA, CCMS, ICT Department"
+            onChange={(nextDept) => {
+              const patch: any = { department: nextDept };
+
+              // Auto-fill head if not manually edited yet or empty
+              const currentHead = data?.endorsedByHeadName ?? "";
+              if (!headEditedRef.current || !currentHead) {
+                patch.endorsedByHeadName = getDepartmentHead(nextDept);
+              }
+
+              onChange(patch);
+            }}
+          />
+          {errors["travelOrder.department"] && (
+            <span className="text-xs text-red-600">{errors["travelOrder.department"]}</span>
+          )}
+        </div>
 
         {/* Destination with map picker */}
         <div className="grid gap-1">
           <LocationField
             label="Destination"
             inputId="to-destination"
-            value={data.destination || ""}
-            geo={data.destinationGeo || null}
+            value={data?.destination || ""}
+            geo={data?.destinationGeo || null}
             onChange={({ address, geo }) =>
-              onChange({
-                destination: address,
-                destinationGeo: geo ?? null,
-              })
+              onChange({ destination: address, destinationGeo: geo ?? undefined })
             }
             placeholder="City / Venue / School / Company"
           />
           {errors["travelOrder.destination"] && (
-            <span className="text-xs text-red-600">
-              {errors["travelOrder.destination"]}
-            </span>
+            <span className="text-xs text-red-600">{errors["travelOrder.destination"]}</span>
           )}
         </div>
 
@@ -106,7 +133,6 @@ export default function TravelOrderForm({
           onChange={(e) => onChange({ departureDate: e.target.value })}
           error={errors["travelOrder.departureDate"]}
         />
-
         <DateInput
           id="to-return"
           label="Return date"
@@ -143,33 +169,25 @@ export default function TravelOrderForm({
             label="Driver’s allowance"
             placeholder="0.00"
             value={c.driversAllowance ?? ""}
-            onChange={(e) =>
-              onChangeCosts({ driversAllowance: asNum(e.target.value) })
-            }
+            onChange={(e) => onChangeCosts({ driversAllowance: asNum(e.target.value) })}
           />
           <CurrencyInput
             label="Rent vehicles"
             placeholder="0.00"
             value={c.rentVehicles ?? ""}
-            onChange={(e) =>
-              onChangeCosts({ rentVehicles: asNum(e.target.value) })
-            }
+            onChange={(e) => onChangeCosts({ rentVehicles: asNum(e.target.value) })}
           />
           <CurrencyInput
             label="Hired drivers"
             placeholder="0.00"
             value={c.hiredDrivers ?? ""}
-            onChange={(e) =>
-              onChangeCosts({ hiredDrivers: asNum(e.target.value) })
-            }
+            onChange={(e) => onChangeCosts({ hiredDrivers: asNum(e.target.value) })}
           />
           <CurrencyInput
             label="Accommodation"
             placeholder="0.00"
             value={c.accommodation ?? ""}
-            onChange={(e) =>
-              onChangeCosts({ accommodation: asNum(e.target.value) })
-            }
+            onChange={(e) => onChangeCosts({ accommodation: asNum(e.target.value) })}
           />
 
           <div className="grid grid-cols-3 gap-3 md:col-span-2">
@@ -183,9 +201,7 @@ export default function TravelOrderForm({
               label="Amount"
               placeholder="0.00"
               value={c.otherAmount ?? ""}
-              onChange={(e) =>
-                onChangeCosts({ otherAmount: asNum(e.target.value) })
-              }
+              onChange={(e) => onChangeCosts({ otherAmount: asNum(e.target.value) })}
               className="col-span-2 sm:col-span-1"
             />
           </div>
@@ -212,13 +228,62 @@ export default function TravelOrderForm({
           label="Endorsed by (Dept Head)"
           placeholder="Name of Department Head"
           value={data.endorsedByHeadName ?? ""}
-          onChange={(e) => onChange({ endorsedByHeadName: e.target.value })}
+          onChange={(e) => {
+            // mark as manually edited so future dept changes won't overwrite
+            headEditedRef.current = true;
+            onChange({ endorsedByHeadName: e.target.value });
+          }}
         />
         <DateInput
           label="Endorsement date"
           value={data.endorsedByHeadDate ?? ""}
           onChange={(e) => onChange({ endorsedByHeadDate: e.target.value })}
         />
+      </div>
+
+      {/* Signature block */}
+      <div className="mt-6 rounded-xl border border-neutral-200 bg-neutral-50/60 p-4">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-sm font-medium text-neutral-700">Endorser signature</span>
+
+          {sigSaved ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+              ✓ Saved{sigSavedAt ? <span className="text-green-700/80"> · {sigSavedAt}</span> : null}
+            </span>
+          ) : (
+            <span className="text-xs text-neutral-500">Not saved</span>
+          )}
+        </div>
+
+        <SignaturePad
+          height={200}
+          value={data?.signatureDataUrl || null}
+          onDraw={() => setSigDirty(true)}
+          onSave={(dataUrl) => {
+            onChange({ signatureDataUrl: dataUrl, signatureSaved: true });
+            setSigSaved(true);
+            setSigDirty(false);
+            setSigSavedAt(new Date().toLocaleString());
+          }}
+          onClear={() => {
+            onChange({ signatureDataUrl: "", signatureSaved: false });
+            setSigDirty(false);
+            setSigSaved(false);
+            setSigSavedAt(null);
+          }}
+          onUpload={async (file) => {
+            const buf = await file.arrayBuffer();
+            const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+            const dataUrl = `data:${file.type};base64,${b64}`;
+            onChange({ signatureDataUrl: dataUrl, signatureSaved: true });
+            setSigSaved(true);
+            setSigDirty(false);
+            setSigSavedAt(new Date().toLocaleString());
+          }}
+          saveDisabled={!sigDirty}
+        />
+
+        
       </div>
     </section>
   );

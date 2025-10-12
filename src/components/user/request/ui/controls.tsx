@@ -1,3 +1,4 @@
+// src/components/user/request/ui/controls.tsx
 "use client";
 
 import * as React from "react";
@@ -8,7 +9,9 @@ type BaseProps = {
   label: string;
   placeholder?: string;
   value?: string | number | null;
-  onChange?: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
+  onChange?: (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => void;
   error?: string;
   required?: boolean;
   helper?: string;
@@ -77,24 +80,65 @@ export function TextInput({
   );
 }
 
-export function DateInput(props: BaseProps) {
+/**
+ * DateInput
+ * Makes the date "placeholder" text opaque across Chrome/Edge/Safari using
+ * WebKit pseudo-elements. Firefox gets a fallback by tinting the text when
+ * the input is empty.
+ */
+export function DateInput({
+  id,
+  label,
+  placeholder = "mm/dd/yyyy",
+  value,
+  onChange,
+  error,
+  required,
+  helper,
+  className,
+  disabled,
+}: BaseProps) {
+  const isEmpty = !value;
+
   return (
-    <FieldWrap label={props.label} error={props.error} helper={props.helper} required={props.required}>
+    <FieldWrap label={label} error={error} helper={helper} required={required}>
+      <style jsx global>{`
+        /* Chrome / Edge / Safari (WebKit/Blink) */
+        input[type='date'][data-empty='true']::-webkit-datetime-edit,
+        input[type='date'][data-empty='true']::-webkit-datetime-edit-text,
+        input[type='date'][data-empty='true']::-webkit-datetime-edit-month-field,
+        input[type='date'][data-empty='true']::-webkit-datetime-edit-day-field,
+        input[type='date'][data-empty='true']::-webkit-datetime-edit-year-field {
+          color: #111827; /* neutral-900 */
+          opacity: 1 !important;
+        }
+        input[type='date']::-webkit-calendar-picker-indicator {
+          opacity: 0.9;
+        }
+
+        /* Firefox fallback */
+        input[type='date'][data-empty='true'] {
+          color: #111827;
+        }
+      `}</style>
+
       <input
-        id={props.id}
+        id={id}
         type="date"
+        data-empty={isEmpty ? "true" : "false"}
         className={clsx(
           "h-10 w-full rounded-xl border bg-white px-3 text-sm outline-none",
-          "placeholder:text-neutral-400",
-          props.error
+          // (Note: placeholder utility doesn't affect type=date; see global CSS above)
+          error
             ? "border-rose-500 ring-2 ring-rose-100"
             : "border-neutral-300 focus:border-neutral-400 focus:ring-2 focus:ring-neutral-200",
-          props.disabled && "bg-neutral-100 text-neutral-500",
-          props.className
+          disabled && "bg-neutral-100 text-neutral-500",
+          className
         )}
-        value={(props.value as string) ?? ""}
-        onChange={props.onChange as any}
-        disabled={props.disabled}
+        placeholder={placeholder}
+        value={(value as string) ?? ""}
+        onChange={onChange as any}
+        disabled={disabled}
       />
     </FieldWrap>
   );

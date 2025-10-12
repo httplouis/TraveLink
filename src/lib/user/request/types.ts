@@ -7,14 +7,32 @@ export type RequesterRole = "head" | "faculty" | "org";
 /** Optional geo data saved when picking from the map */
 export type GeoPoint = { lat: number; lng: number; address?: string };
 
+/** NEW: repeatable "other costs" item */
+export type OtherCostItem = {
+  label: string;
+  amount: number | null;
+};
+
 export type TravelCosts = {
   food?: number | null;
   driversAllowance?: number | null;
   rentVehicles?: number | null;
   hiredDrivers?: number | null;
   accommodation?: number | null;
+
+  /**
+   * NEW preferred structure (repeatable list).
+   * UI should write here going forward.
+   */
+  otherItems?: OtherCostItem[];
+
+  /**
+   * Legacy single-pair fields (kept for old drafts, still optional).
+   * UI can read then migrate these into `otherItems`.
+   */
   otherLabel?: string | null;
   otherAmount?: number | null;
+
   justification?: string | null;
 };
 
@@ -32,6 +50,7 @@ export type TravelOrder = {
   returnDate: string;
   purposeOfTravel: string;
   costs: TravelCosts;
+
   endorsedByHeadName?: string | null;
   endorsedByHeadDate?: string | null;
 };
@@ -65,6 +84,11 @@ export type SeminarApplication = {
     accommodation?: number | null;
     perDiemMealsDriversAllowance?: number | null;
     transportFareGasParkingToll?: number | null;
+
+    /** NEW: repeatable "other" cost lines for seminars */
+    otherItems?: OtherCostItem[];
+
+    /** Legacy single-pair (kept for back-compat) */
     otherLabel?: string | null;
     otherAmount?: number | null;
   };
