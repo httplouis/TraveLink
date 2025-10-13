@@ -17,7 +17,6 @@ import { canSubmit } from "@/lib/user/request/validation";
 import { firstReceiver, fullApprovalPath } from "@/lib/user/request/routing";
 import {
   saveDraft,
-  submitRequest,
   updateSubmission,
   getDraft,
   getSubmission,
@@ -36,6 +35,9 @@ import {
   QuickFillCurrentButton,
   QuickFillMenu,
 } from "@/components/user/request/dev/QuickFillButton.ui";
+
+// ✅ import AdminRequestsRepo
+import { AdminRequestsRepo } from "@/lib/admin/requests/store";
 
 export default function RequestWizard() {
   const search = useSearchParams(); // may be null
@@ -67,18 +69,20 @@ export default function RequestWizard() {
   React.useEffect(() => {
     let did = false;
 
-    // 1) Handoff (from Drafts/Submissions)
     const h = consumeHandoff();
     if (h?.data) {
       hardSet(h.data);
       clearIds();
       if (h.from === "draft") setCurrentDraftId(h.id);
       if (h.from === "submission") setCurrentSubmissionId(h.id);
-      toast({ kind: "success", title: "Loaded", message: `Form populated from ${h.from}.` });
+      toast({
+        kind: "success",
+        title: "Loaded",
+        message: `Form populated from ${h.from}.`,
+      });
       did = true;
     }
 
-    // 2) URL fallback if handoff not present (e.g., page refresh)
     const tryUrlFetch = async () => {
       if (did) return;
 
@@ -91,7 +95,11 @@ export default function RequestWizard() {
           hardSet(d.data);
           clearIds();
           setCurrentDraftId(draftId);
-          toast({ kind: "success", title: "Draft loaded", message: "Form populated from draft." });
+          toast({
+            kind: "success",
+            title: "Draft loaded",
+            message: "Form populated from draft.",
+          });
           did = true;
         }
       } else if (subId) {
@@ -100,17 +108,24 @@ export default function RequestWizard() {
           hardSet(s.data);
           clearIds();
           setCurrentSubmissionId(subId);
-          toast({ kind: "info", title: "Editing submission", message: "Form populated from submission." });
+          toast({
+            kind: "info",
+            title: "Editing submission",
+            message: "Form populated from submission.",
+          });
           did = true;
         }
       }
 
-      // 3) Autosave (only if nothing else)
       if (!did) {
         const autosaved = loadAutosave();
         if (autosaved) {
           hardSet(autosaved);
-          toast({ kind: "info", title: "Restored", message: "Unsaved form recovered." });
+          toast({
+            kind: "info",
+            title: "Restored",
+            message: "Unsaved form recovered.",
+          });
         }
       }
     };
@@ -119,7 +134,11 @@ export default function RequestWizard() {
       const autosaved = loadAutosave();
       if (autosaved) {
         hardSet(autosaved);
-        toast({ kind: "info", title: "Restored", message: "Unsaved form recovered." });
+        toast({
+          kind: "info",
+          title: "Restored",
+          message: "Unsaved form recovered.",
+        });
       }
     });
 
@@ -132,7 +151,6 @@ export default function RequestWizard() {
     return () => clearTimeout(id);
   }, [data]);
 
-  // Clear autosave after successful submit
   function afterSuccessfulSubmitReset() {
     clearAutosave();
     hardSet({
@@ -156,7 +174,6 @@ export default function RequestWizard() {
     clearIds();
   }
 
-  // ----- CLEAR FORM BUTTON HANDLER -----
   async function handleClear() {
     const yes = await ask(
       "Clear the form?",
@@ -168,7 +185,7 @@ export default function RequestWizard() {
 
     clearAutosave();
     hardSet({
-      requesterRole: data.requesterRole, // keep current role
+      requesterRole: data.requesterRole,
       reason: "visit",
       vehicleMode: "owned",
       travelOrder: {
@@ -212,9 +229,17 @@ export default function RequestWizard() {
     try {
       const res = await saveDraft(data, currentDraftId || undefined);
       if (!currentDraftId) setCurrentDraftId(res.id);
-      toast({ kind: "success", title: "Draft saved", message: "Your draft has been saved." });
+      toast({
+        kind: "success",
+        title: "Draft saved",
+        message: "Your draft has been saved.",
+      });
     } catch {
-      toast({ kind: "error", title: "Save failed", message: "Could not save draft." });
+      toast({
+        kind: "error",
+        title: "Save failed",
+        message: "Could not save draft.",
+      });
     } finally {
       setSaving(false);
     }
@@ -252,21 +277,29 @@ export default function RequestWizard() {
     setErrors(v.errors);
     if (!v.ok) {
       scrollToFirstError(v.errors);
-      toast({ kind: "error", title: "Cannot submit", message: "Please complete required fields." });
+      toast({
+        kind: "error",
+        title: "Cannot submit",
+        message: "Please complete required fields.",
+      });
       return;
     }
     setSubmitting(true);
     try {
-      if (currentSubmissionId) {
-        await updateSubmission(currentSubmissionId, data);
-        toast({ kind: "success", title: "Submission updated", message: "Your submission was updated." });
-      } else {
-        await submitRequest(data);
-        toast({ kind: "success", title: "Submitted", message: "Request has been submitted." });
-      }
+      // ✅ directly save to AdminRequestsRepo
+      AdminRequestsRepo.acceptFromUser(data);
+      toast({
+        kind: "success",
+        title: "Submitted",
+        message: "Request has been submitted and sent to Admin.",
+      });
       afterSuccessfulSubmitReset();
     } catch {
-      toast({ kind: "error", title: "Submit failed", message: "Please try again." });
+      toast({
+        kind: "error",
+        title: "Submit failed",
+        message: "Please try again.",
+      });
     } finally {
       setSubmitting(false);
     }
@@ -288,7 +321,6 @@ export default function RequestWizard() {
               {currentSubmissionId ? "Edit Submission" : "Request Form"}
             </h2>
             <div className="flex items-center gap-2">
-              {/* Clear */}
               <button
                 onClick={handleClear}
                 type="button"
@@ -297,12 +329,8 @@ export default function RequestWizard() {
               >
                 Clear
               </button>
-
-              {/* Dev helper buttons */}
               <QuickFillCurrentButton />
               <QuickFillMenu />
-
-              {/* Links */}
               <Link href="/user/drafts" className="text-sm text-neutral-600 underline">
                 View drafts
               </Link>

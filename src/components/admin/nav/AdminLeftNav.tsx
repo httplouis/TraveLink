@@ -1,4 +1,3 @@
-// src/components/admin/layout/AdminLeftNav.tsx
 "use client";
 
 import Link from "next/link";
@@ -16,8 +15,6 @@ import {
   History,
   FileBarChart,
   Settings,
-  ChevronLeft,
-  ChevronRight,
   MessageSquare,
   Search,
 } from "lucide-react";
@@ -59,7 +56,7 @@ export default function AdminLeftNav() {
     localStorage.setItem("tl.nav.collapsed", collapsed ? "1" : "0");
   }, [collapsed]);
 
-  // Hotkey: Ctrl+B or [
+  // Hotkey: Ctrl+B or “[”
   React.useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
@@ -74,7 +71,6 @@ export default function AdminLeftNav() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // When collapsed, clicking anywhere on the rail (except the icon/links/toggle) expands
   function onRootClick(e: React.MouseEvent) {
     if (!collapsed) return;
     const el = e.target as HTMLElement;
@@ -114,15 +110,11 @@ export default function AdminLeftNav() {
               </div>
             </div>
           )}
-
-          {/* Rect toggle like your screenshot */}
           <CollapseToggle
-  collapsed={collapsed}
-  onClick={() => setCollapsed((v) => !v)}
-/>
+            collapsed={collapsed}
+            onClick={() => setCollapsed((v) => !v)}
+          />
         </div>
-
-        {/* Section label when expanded */}
         {!collapsed && (
           <div className="mt-3 px-1 text-[11px] font-semibold tracking-wider text-neutral-500">
             TRAVILINK
@@ -134,7 +126,8 @@ export default function AdminLeftNav() {
       <ul className="space-y-1 px-2">
         {NAV.map(({ href, label, Icon }) => {
           const active =
-            pathname === href || (href !== "/admin" && (pathname ?? "").startsWith(href));
+            pathname === href ||
+            (href !== "/admin" && (pathname ?? "").startsWith(href));
 
           const itemBase = collapsed
             ? "flex items-center justify-center"
@@ -159,18 +152,17 @@ export default function AdminLeftNav() {
                 ].join(" ")}
                 style={{ ["--brand" as any]: BRAND }}
               >
-                {/* Thin active indicator (left) – only when expanded */}
                 {!collapsed && (
                   <span
                     className={[
                       "pointer-events-none absolute left-0 top-1/2 -translate-y-1/2",
                       "h-5 w-0.5 rounded",
-                      active ? "bg-[var(--brand)]" : "bg-transparent group-hover:bg-neutral-300",
+                      active
+                        ? "bg-[var(--brand)]"
+                        : "bg-transparent group-hover:bg-neutral-300",
                     ].join(" ")}
                   />
                 )}
-
-                {/* Icon (maroon), no border */}
                 <Icon
                   className={[
                     "h-5 w-5 transition-colors",
@@ -182,16 +174,12 @@ export default function AdminLeftNav() {
                     !collapsed ? "group-hover:text-[#5e1620]" : "",
                   ].join(" ")}
                 />
-
-                {/* Label (hidden when collapsed) */}
                 {!collapsed && <span className="truncate">{label}</span>}
               </Link>
             </li>
           );
         })}
       </ul>
-
-      {/* Bottom spacer so last item isn’t clipped */}
       <div className="h-6" />
     </div>
   );

@@ -25,12 +25,38 @@ import { useDebouncedValue } from "@/lib/common/useDebouncedValue";
 import { toggleAllOnPage as selToggleAllOnPage, clearSelection as selClear } from "@/lib/common/selection";
 
 /* Data + Actions */
-import { REQUESTS } from "@/lib/admin/requests/data";
 import { approveRequests, rejectRequests, deleteRequests } from "@/lib/admin/requests/action";
 import { exportRequestsCsv } from "@/lib/admin/export";
 
+/* Repo */
+import { AdminRequestsRepo, type AdminRequest } from "@/lib/admin/requests/store";
+
 /* Types */
 import type { RequestRow, Pagination as Pg } from "@/lib/admin/types";
+
+/* ======================================================================= */
+/* =========================== HELPER MAPPER ============================== */
+/* ======================================================================= */
+
+function toRequestRow(req: AdminRequest): RequestRow {
+  return {
+    id: req.id,
+    dept: req.travelOrder?.department || "",
+    purpose: req.travelOrder?.purposeOfTravel || "",
+    requester: req.travelOrder?.requestingPerson || "",
+    driver: "", // wala pa sa form
+    vehicle: "", // wala pa sa form
+    date: req.createdAt,
+    status:
+      req.status === "pending"
+        ? "Pending"
+        : req.status === "approved"
+        ? "Approved"
+        : req.status === "rejected"
+        ? "Rejected"
+        : "Completed",
+  };
+}
 
 /* ======================================================================= */
 /* =========================== INNER PAGE LOGIC =========================== */
@@ -40,14 +66,24 @@ function PageInner() {
   const toast = useToast();
   const bulkRef = useRef<BulkBarHandle>(null);
 
-  // SOURCE rows (mock)
-  const [allRows, setAllRows] = useState<RequestRow[]>(() => [...REQUESTS]);
+  // SOURCE rows (from repo)
+  const [allRows, setAllRows] = useState<RequestRow[]>(() =>
+    AdminRequestsRepo.list().map(toRequestRow)
+  );
 
-  // FILTERED rows (from FiltersBarContainer)
+  // Auto-refresh every 1s (polling)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setAllRows(AdminRequestsRepo.list().map(toRequestRow));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // FILTERED rows
   const [filteredRows, setFilteredRows] = useState<RequestRow[]>(() => allRows);
   useEffect(() => setFilteredRows(allRows), [allRows]);
 
-  // LOCAL table/card search + sort (applied after Filters)
+  // LOCAL search + sort
   const [tableSearch, setTableSearch] = useState("");
   const debouncedQ = useDebouncedValue(tableSearch, 300);
   const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
@@ -71,11 +107,11 @@ function PageInner() {
   // VIEW TOGGLE
   const [view, setView] = useState<"table" | "card">("table");
 
-  // SELECTION (shared across views)
+  // SELECTION
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const clearSelection = () => selClear(setSelected);
 
-  // PAGINATION (table 15/page; card 9/page)
+  // PAGINATION
   const PAGE_SIZES = { table: 15, card: 9 } as const;
   const [pagination, setPagination] = useState<Pg>({
     page: 1,
@@ -83,13 +119,11 @@ function PageInner() {
     total: postFilterRows.length,
   });
 
-  // when view changes
   useEffect(() => {
     setPagination((p) => ({ ...p, page: 1, pageSize: PAGE_SIZES[view] }));
     clearSelection();
   }, [view]);
 
-  // keep pagination with rows
   useEffect(() => {
     setPagination((p) => {
       const total = postFilterRows.length;
@@ -114,8 +148,8 @@ function PageInner() {
 
   const [confirm, setConfirm] = useState<{ open: boolean; kind?: "approve" | "reject"; id?: string }>({ open: false });
 
-  // ---------- PATCH HELPERS (optimistic) ----------
-  function patchStatus(ids: string[], status?: "Approved" | "Rejected") {
+  // ---------- PATCH HELPERS ----------
+  function patchStatus(ids: string[], status?: "Approved" | "Rejected" | "Completed") {
     setAllRows((prev) =>
       status ? prev.map((r) => (ids.includes(r.id) ? { ...r, status } : r)) : prev.filter((r) => !ids.includes(r.id))
     );
@@ -125,31 +159,15 @@ function PageInner() {
   }
 
   async function approveOne(id: string) {
-    const snapAll = [...allRows];
-    const snapFiltered = [...filteredRows];
     patchStatus([id], "Approved");
-    try {
-      await approveRequests([id]);
-      toast({ kind: "success", message: `Request ${id} approved.` });
-    } catch {
-      setAllRows(snapAll);
-      setFilteredRows(snapFiltered);
-      toast({ kind: "error", message: `Failed to approve ${id}.` });
-    }
+    AdminRequestsRepo.setStatus(id, "approved");
+    toast({ kind: "success", message: `Request ${id} approved.` });
   }
 
   async function rejectOne(id: string) {
-    const snapAll = [...allRows];
-    const snapFiltered = [...filteredRows];
     patchStatus([id], "Rejected");
-    try {
-      await rejectRequests([id]);
-      toast({ kind: "success", message: `Request ${id} rejected.` });
-    } catch {
-      setAllRows(snapAll);
-      setFilteredRows(snapFiltered);
-      toast({ kind: "error", message: `Failed to reject ${id}.` });
-    }
+    AdminRequestsRepo.setStatus(id, "rejected");
+    toast({ kind: "success", message: `Request ${id} rejected.` });
   }
 
   const doConfirm = async () => {
@@ -160,91 +178,7 @@ function PageInner() {
     setOpenDetails(false);
   };
 
-  // ---------- BULK ----------
-  async function bulkApprove(ids: string[]) {
-    if (!ids.length) return;
-    const snapAll = [...allRows];
-    const snapFiltered = [...filteredRows];
-    patchStatus(ids, "Approved");
-    try {
-      await approveRequests(ids);
-      toast({ kind: "success", message: `Approved ${ids.length} selected.` });
-    } catch {
-      setAllRows(snapAll);
-      setFilteredRows(snapFiltered);
-      toast({ kind: "error", message: "Failed to approve selected." });
-    }
-  }
-
-  async function bulkReject(ids: string[]) {
-    if (!ids.length) return;
-    const snapAll = [...allRows];
-    const snapFiltered = [...filteredRows];
-    patchStatus(ids, "Rejected");
-    try {
-      await rejectRequests(ids);
-      toast({ kind: "success", message: `Rejected ${ids.length} selected.` });
-    } catch {
-      setAllRows(snapAll);
-      setFilteredRows(snapFiltered);
-      toast({ kind: "error", message: "Failed to reject selected." });
-    }
-  }
-
-  async function bulkDelete(ids: string[]) {
-    if (!ids.length) return;
-    const snapAll = [...allRows];
-    const snapFiltered = [...filteredRows];
-    patchStatus(ids, undefined);
-    try {
-      await deleteRequests(ids);
-      toast({ kind: "success", message: `Deleted ${ids.length} selected.` });
-    } catch {
-      setAllRows(snapAll);
-      setFilteredRows(snapFiltered);
-      toast({ kind: "error", message: "Failed to delete selected." });
-    }
-  }
-
-  function bulkExport(rows: RequestRow[]) {
-    try {
-      exportRequestsCsv(rows);
-      toast({ kind: "success", message: `Exported ${rows.length} row(s).` });
-    } catch {
-      toast({ kind: "error", message: "Export failed." });
-    }
-  }
-
-  // ---------- Keyboard shortcuts ----------
-  useHotkeys(
-    [
-      { key: "Enter", ctrl: true, handler: () => bulkRef.current?.approveSelected() },
-      {
-        key: "a",
-        handler: () =>
-          setSelected((prev) => {
-            const next = new Set(prev);
-            pageRows.forEach((r) => next.add(r.id));
-            return next;
-          }),
-      },
-      { key: "x", handler: () => selClear(setSelected) },
-      { key: "ArrowLeft", handler: () => setPagination((p) => ({ ...p, page: Math.max(1, p.page - 1) })) },
-      {
-        key: "ArrowRight",
-        handler: () =>
-          setPagination((p) => ({
-            ...p,
-            page: clampPage(p.total, p.pageSize, p.page + 1),
-          })),
-      },
-      { key: "t", handler: () => setView("table") },
-      { key: "c", handler: () => setView("card") },
-    ],
-    { ignoreWhileTyping: true }
-  );
-
-  // KPI summary uses filteredRows (pre-search)
+  // KPI summary
   const summary = useMemo(
     () => ({
       pending: filteredRows.filter((r) => r.status === "Pending").length,
@@ -257,7 +191,6 @@ function PageInner() {
 
   return (
     <div className="space-y-4">
-      {/* Sticky KPI + View toggle */}
       <div className="admin-sticky-kpi">
         <div className="space-y-2 pr-2">
           <RequestsSummaryUI summary={summary} />
@@ -267,35 +200,18 @@ function PageInner() {
         </div>
       </div>
 
-      {/* Filters container provides filtering logic to both views */}
       <FiltersBarContainer rows={allRows} onFiltered={setFilteredRows}>
         {(controls) => (
           <>
-            {/* Filters URL sync (filters only) */}
             <RequestsURLSync draft={controls.draft} onDraftChange={controls.onDraftChange} />
 
-            {/* Bulk bar */}
-            {selected.size > 0 && (
-              <BulkBarContainer
-                ref={bulkRef}
-                allRows={postFilterRows}
-                selectedIds={selected}
-                clearSelection={clearSelection}
-                onApproveSelected={bulkApprove}
-                onRejectSelected={bulkReject}
-                onDeleteSelected={bulkDelete}
-                onExportSelected={bulkExport}
-              />
-            )}
-
-            {/* TABLE VIEW */}
             {view === "table" && (
               <RequestsTableUI
                 tableSearch={tableSearch}
                 onTableSearch={setTableSearch}
                 sortDir={sortDir}
                 onSortDirChange={setSortDir}
-                onAddNew={() => toast({ kind: "success", message: "Add New clicked" })}
+                onAddNew={() => toast({ kind: "info", message: "Feature not available in admin" })}
                 filterControls={{
                   draft: controls.draft,
                   onDraftChange: controls.onDraftChange,
@@ -322,7 +238,6 @@ function PageInner() {
               />
             )}
 
-            {/* CARD VIEW */}
             {view === "card" && (
               <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
                 <RequestsCardGridUI

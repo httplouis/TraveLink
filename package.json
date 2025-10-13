@@ -17,6 +17,8 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "framer-motion": "^12.23.22",
+    "jspdf": "^3.0.3",
+    "jspdf-autotable": "^5.0.2",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.539.0",
     "mapbox-gl": "^3.15.0",

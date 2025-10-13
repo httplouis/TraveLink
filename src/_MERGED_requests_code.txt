@@ -2184,34 +2184,134 @@ export default function DraftsPage() {
 
 
 ===== app\(protected)\user\drivers\page.tsx =====
-import VehicleCard from "@/components/user/fleet/VehicleCard";
-import { listPublicVehicles } from "@/lib/fleet/publicRepo";
+// src/app/(protected)/user/drivers/page.tsx
+"use client";
 
-// Server Component – fast & cacheable
-export default async function VehiclesPage() {
-  const vehicles = await listPublicVehicles();
+import * as React from "react";
+import { DriversRepo } from "@/lib/admin/drivers/store";
+
+// If you have exported types, you can import them instead of re-declaring:
+// import type { DriverStatus, LicenseClass } from "@/lib/admin/drivers/types";
+type DriverStatus = "active" | "on_trip" | "off_duty" | "suspended";
+type LicenseClass = "A" | "B" | "C" | "D" | "E";
+
+export default function UserDriversPage() {
+  const [q, setQ] = React.useState("");
+  const [status, setStatus] = React.useState<"" | DriverStatus>("");
+  const [license, setLicense] = React.useState<"" | LicenseClass>("");
+
+  const [rows, setRows] = React.useState(() => DriversRepo.list({}));
+
+  // initial load
+  React.useEffect(() => {
+    DriversRepo.hydrateFromStorage();
+    setRows(DriversRepo.list({}));
+  }, []);
+
+  // apply filters — map "" -> undefined so types match the repo input
+  React.useEffect(() => {
+    setRows(
+      DriversRepo.list({
+        search: q || undefined,
+        status: (status || undefined) as DriverStatus | undefined,
+        licenseClass: (license || undefined) as LicenseClass | undefined,
+      }),
+    );
+  }, [q, status, license]);
 
   return (
-    <div className="space-y-4">
-      <div className="mb-2">
-        <h1 className="text-lg font-semibold">Vehicles</h1>
-        <p className="text-sm text-neutral-600">
-          Read-only list of units available for scheduling. Some details are hidden for privacy.
-        </p>
-      </div>
-
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {vehicles.map((v) => (
-          <VehicleCard key={v.id} v={v} />
-        ))}
-      </div>
-
-      {vehicles.length === 0 && (
-        <div className="rounded-xl border bg-white p-4 text-sm text-neutral-600">
-          No vehicles found.
+    <section className="space-y-4">
+      <header className="flex items-center justify-between">
+        <h1 className="text-lg font-semibold">Drivers</h1>
+        <div className="flex gap-2">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search name, code, license no…"
+            className="h-9 w-64 rounded-lg border border-neutral-300 px-3 text-sm outline-none"
+          />
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value as "" | DriverStatus)}
+            className="h-9 rounded-lg border border-neutral-300 px-2 text-sm"
+          >
+            <option value="">All status</option>
+            <option value="active">Active</option>
+            <option value="on_trip">On trip</option>
+            <option value="off_duty">Off duty</option>
+            <option value="suspended">Suspended</option>
+          </select>
+          <select
+            value={license}
+            onChange={(e) => setLicense(e.target.value as "" | LicenseClass)}
+            className="h-9 rounded-lg border border-neutral-300 px-2 text-sm"
+          >
+            <option value="">All license</option>
+            <option>A</option>
+            <option>B</option>
+            <option>C</option>
+            <option>D</option>
+            <option>E</option>
+          </select>
         </div>
-      )}
-    </div>
+      </header>
+
+      <div className="overflow-hidden rounded-xl border">
+        <table className="w-full text-sm">
+          <thead className="bg-neutral-50 text-neutral-700">
+            <tr>
+              <th className="px-3 py-2 text-left">Name</th>
+              <th className="px-3 py-2 text-left">Code</th>
+              <th className="px-3 py-2 text-left">License</th>
+              <th className="px-3 py-2 text-left">Status</th>
+              <th className="px-3 py-2 text-left">Phone</th>
+              <th className="px-3 py-2 text-left">Email</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((d) => (
+              <tr key={d.id} className="border-t">
+                <td className="px-3 py-2">
+                  {d.firstName} {d.lastName}
+                </td>
+                <td className="px-3 py-2">{d.code}</td>
+                <td className="px-3 py-2">
+                  {d.licenseClass} — {d.licenseNo}
+                </td>
+                <td className="px-3 py-2">
+                  <span
+                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs
+                      ${
+                        d.status === "active"
+                          ? "bg-green-100 text-green-700"
+                          : d.status === "on_trip"
+                          ? "bg-amber-100 text-amber-700"
+                          : d.status === "off_duty"
+                          ? "bg-neutral-200 text-neutral-700"
+                          : "bg-rose-100 text-rose-700"
+                      }`}
+                  >
+                    {d.status}
+                  </span>
+                </td>
+                <td className="px-3 py-2">{d.phone ?? "—"}</td>
+                <td className="px-3 py-2">{d.email ?? "—"}</td>
+              </tr>
+            ))}
+            {!rows.length && (
+              <tr>
+                <td
+                  colSpan={6}
+                  className="px-3 py-6 text-center text-neutral-500"
+                >
+                  No drivers found
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -2521,6 +2621,30 @@ export default function UserRequestPage() {
 }
 
 
+===== app\(protected)\user\request\submit.ts =====
+// src/app/(protected)/user/request/submit.ts (example file where you handle submit)
+"use client";
+import { addToInbox } from "@/lib/common/inbox";
+import type { RequestFormData } from "@/lib/user/request/types";
+
+export async function submitRequest(data: RequestFormData) {
+  // shape a lightweight row for Admin table
+  const item = {
+    dept: data.travelOrder.department,
+    purpose: data.travelOrder.purposeOfTravel,
+    requester: data.travelOrder.requestingPerson,
+    vehicle: data.vehicleMode === "institutional" ? "Institutional" :
+             data.vehicleMode === "owned" ? "Owned" : "Rent",
+    date: data.travelOrder.date,
+  };
+
+  const id = addToInbox(item);
+
+  // …any user-side toasts/redirects
+  return id;
+}
+
+
 ===== app\(protected)\user\schedule\page.tsx =====
 import ScheduleView from "@/features/user/schedule/ScheduleView";
 import { MOCK_TRIPS } from "@/lib/user/schedule/mock"; // dev only
@@ -2697,6 +2821,103 @@ export default function SubmissionsPage() {
 
       {confirmUI}
     </>
+  );
+}
+
+
+===== app\(protected)\user\vehicles\page.tsx =====
+"use client";
+
+import * as React from "react";
+import { VehiclesRepo } from "@/lib/admin/vehicles/store";
+
+export default function UserVehiclesPage() {
+  const [q, setQ] = React.useState("");
+  const [type, setType] = React.useState<"" | "Bus" | "Van" | "Car" | "SUV" | "Motorcycle">("");
+  const [status, setStatus] = React.useState<"" | "active" | "maintenance" | "inactive">("");
+  const [rows, setRows] = React.useState(() => VehiclesRepo.list({}));
+
+  React.useEffect(() => {
+    // hydrate localStorage -> memory then refresh list
+    VehiclesRepo.hydrateFromStorage();
+    setRows(VehiclesRepo.list({}));
+  }, []);
+
+  React.useEffect(() => {
+    setRows(VehiclesRepo.list({ search: q, type, status }));
+  }, [q, type, status]);
+
+  return (
+    <section className="space-y-4">
+      <header className="flex items-center justify-between">
+        <h1 className="text-lg font-semibold">Vehicles</h1>
+        <div className="flex gap-2">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search plate, code, brand, model…"
+            className="h-9 w-64 rounded-lg border border-neutral-300 px-3 text-sm outline-none"
+          />
+          <select
+            value={type}
+            onChange={(e) => setType(e.target.value as any)}
+            className="h-9 rounded-lg border border-neutral-300 px-2 text-sm"
+          >
+            <option value="">All types</option>
+            <option>Bus</option><option>Van</option><option>Car</option><option>SUV</option><option>Motorcycle</option>
+          </select>
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value as any)}
+            className="h-9 rounded-lg border border-neutral-300 px-2 text-sm"
+          >
+            <option value="">All status</option>
+            <option value="active">Active</option>
+            <option value="maintenance">Maintenance</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </div>
+      </header>
+
+      <div className="overflow-hidden rounded-xl border">
+        <table className="w-full text-sm">
+          <thead className="bg-neutral-50 text-neutral-700">
+            <tr>
+              <th className="px-3 py-2 text-left">Plate No.</th>
+              <th className="px-3 py-2 text-left">Code</th>
+              <th className="px-3 py-2 text-left">Brand/Model</th>
+              <th className="px-3 py-2 text-left">Type</th>
+              <th className="px-3 py-2 text-left">Capacity</th>
+              <th className="px-3 py-2 text-left">Status</th>
+              <th className="px-3 py-2 text-left">Last service</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((v) => (
+              <tr key={v.id} className="border-t">
+                <td className="px-3 py-2">{v.plateNo}</td>
+                <td className="px-3 py-2">{v.code}</td>
+                <td className="px-3 py-2">{v.brand} {v.model}</td>
+                <td className="px-3 py-2">{v.type}</td>
+                <td className="px-3 py-2">{v.capacity}</td>
+                <td className="px-3 py-2">
+                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs
+                    ${v.status === "active" ? "bg-green-100 text-green-700" :
+                      v.status === "maintenance" ? "bg-amber-100 text-amber-700" :
+                      "bg-neutral-200 text-neutral-700"}`}>
+                    {v.status}
+                  </span>
+                </td>
+                <td className="px-3 py-2">{v.lastServiceISO}</td>
+              </tr>
+            ))}
+            {!rows.length && (
+              <tr><td colSpan={7} className="px-3 py-6 text-center text-neutral-500">No vehicles found</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -8320,7 +8541,6 @@ function SplitDropdown({
 
 
 ===== components\admin\nav\AdminLeftNav.tsx =====
-// src/components/admin/layout/AdminLeftNav.tsx
 "use client";
 
 import Link from "next/link";
@@ -8338,8 +8558,6 @@ import {
   History,
   FileBarChart,
   Settings,
-  ChevronLeft,
-  ChevronRight,
   MessageSquare,
   Search,
 } from "lucide-react";
@@ -8381,7 +8599,7 @@ export default function AdminLeftNav() {
     localStorage.setItem("tl.nav.collapsed", collapsed ? "1" : "0");
   }, [collapsed]);
 
-  // Hotkey: Ctrl+B or [
+  // Hotkey: Ctrl+B or “[”
   React.useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
@@ -8396,7 +8614,6 @@ export default function AdminLeftNav() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // When collapsed, clicking anywhere on the rail (except the icon/links/toggle) expands
   function onRootClick(e: React.MouseEvent) {
     if (!collapsed) return;
     const el = e.target as HTMLElement;
@@ -8436,15 +8653,11 @@ export default function AdminLeftNav() {
               </div>
             </div>
           )}
-
-          {/* Rect toggle like your screenshot */}
           <CollapseToggle
-  collapsed={collapsed}
-  onClick={() => setCollapsed((v) => !v)}
-/>
+            collapsed={collapsed}
+            onClick={() => setCollapsed((v) => !v)}
+          />
         </div>
-
-        {/* Section label when expanded */}
         {!collapsed && (
           <div className="mt-3 px-1 text-[11px] font-semibold tracking-wider text-neutral-500">
             TRAVILINK
@@ -8456,7 +8669,8 @@ export default function AdminLeftNav() {
       <ul className="space-y-1 px-2">
         {NAV.map(({ href, label, Icon }) => {
           const active =
-            pathname === href || (href !== "/admin" && (pathname ?? "").startsWith(href));
+            pathname === href ||
+            (href !== "/admin" && (pathname ?? "").startsWith(href));
 
           const itemBase = collapsed
             ? "flex items-center justify-center"
@@ -8481,18 +8695,17 @@ export default function AdminLeftNav() {
                 ].join(" ")}
                 style={{ ["--brand" as any]: BRAND }}
               >
-                {/* Thin active indicator (left) – only when expanded */}
                 {!collapsed && (
                   <span
                     className={[
                       "pointer-events-none absolute left-0 top-1/2 -translate-y-1/2",
                       "h-5 w-0.5 rounded",
-                      active ? "bg-[var(--brand)]" : "bg-transparent group-hover:bg-neutral-300",
+                      active
+                        ? "bg-[var(--brand)]"
+                        : "bg-transparent group-hover:bg-neutral-300",
                     ].join(" ")}
                   />
                 )}
-
-                {/* Icon (maroon), no border */}
                 <Icon
                   className={[
                     "h-5 w-5 transition-colors",
@@ -8504,16 +8717,12 @@ export default function AdminLeftNav() {
                     !collapsed ? "group-hover:text-[#5e1620]" : "",
                   ].join(" ")}
                 />
-
-                {/* Label (hidden when collapsed) */}
                 {!collapsed && <span className="truncate">{label}</span>}
               </Link>
             </li>
           );
         })}
       </ul>
-
-      {/* Bottom spacer so last item isn’t clipped */}
       <div className="h-6" />
     </div>
   );
@@ -8959,6 +9168,132 @@ export function ReportTable({
           )}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+
+===== components\admin\requests\RequestDetails.tsx =====
+"use client";
+
+import * as React from "react";
+import { AdminRequestsRepo, type AdminRequest } from "@/lib/admin/requests/store";
+import { buildRequestPDF } from "@/lib/admin/requests/pdf";
+
+export default function RequestDetails({ id }: { id: string }) {
+  const [data, setData] = React.useState<AdminRequest | null>(null);
+
+  React.useEffect(() => {
+    setData(AdminRequestsRepo.get(id) ?? null);
+  }, [id]);
+
+  if (!data) {
+    return (
+      <div className="p-6 text-sm text-neutral-500">
+        Request not found.
+      </div>
+    );
+  }
+
+  const { form } = data;
+
+  function handleDownload() {
+    try {
+      buildRequestPDF(form);
+    } catch (err: any) {
+      alert(err?.message || "Failed to generate PDF");
+    }
+  }
+
+  return (
+    <div className="space-y-6 p-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-semibold">Request Details</h2>
+        <button
+          onClick={handleDownload}
+          className="rounded bg-[#7A0010] px-4 py-2 text-white"
+        >
+          Download PDF
+        </button>
+      </div>
+
+      {/* Top-level meta */}
+      <section className="space-y-1">
+        <div><strong>Reason:</strong> {form.reason}</div>
+        <div><strong>Vehicle Mode:</strong> {form.vehicleMode}</div>
+        <div><strong>Requester Role:</strong> {form.requesterRole}</div>
+      </section>
+
+      {/* Travel Order */}
+      {form.travelOrder && (
+        <section className="space-y-1 border-t pt-4">
+          <h3 className="font-medium">Travel Order</h3>
+          <div><strong>Date:</strong> {form.travelOrder.date}</div>
+          <div><strong>Requesting Person:</strong> {form.travelOrder.requestingPerson}</div>
+          <div><strong>Department:</strong> {form.travelOrder.department}</div>
+          <div><strong>Destination:</strong> {form.travelOrder.destination}</div>
+          <div>
+            <strong>Departure:</strong> {form.travelOrder.departureDate} •{" "}
+            <strong>Return:</strong> {form.travelOrder.returnDate}
+          </div>
+          <div><strong>Purpose:</strong> {form.travelOrder.purposeOfTravel}</div>
+          <div>
+            <strong>Costs:</strong>{" "}
+            {form.travelOrder.costs &&
+              JSON.stringify(form.travelOrder.costs)}
+          </div>
+          {form.travelOrder.endorsedByHeadName && (
+            <div>
+              <strong>Endorsed By:</strong>{" "}
+              {form.travelOrder.endorsedByHeadName} (
+              {form.travelOrder.endorsedByHeadDate})
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* School Service */}
+      {form.schoolService && (
+        <section className="space-y-1 border-t pt-4">
+          <h3 className="font-medium">School Service</h3>
+          <div><strong>Driver:</strong> {form.schoolService.driver}</div>
+          <div><strong>Vehicle:</strong> {form.schoolService.vehicle}</div>
+          <div>
+            <strong>Dispatcher Signed:</strong>{" "}
+            {form.schoolService.vehicleDispatcherSigned ? "Yes" : "No"}
+          </div>
+          <div>
+            <strong>Date:</strong> {form.schoolService.vehicleDispatcherDate}
+          </div>
+        </section>
+      )}
+
+      {/* Seminar Application */}
+      {form.seminar && (
+        <section className="space-y-1 border-t pt-4">
+          <h3 className="font-medium">Seminar Application</h3>
+          <div><strong>Title:</strong> {form.seminar.title}</div>
+          <div><strong>Application Date:</strong> {form.seminar.applicationDate}</div>
+          <div>
+            <strong>Dates:</strong> {form.seminar.dateFrom} → {form.seminar.dateTo}
+          </div>
+          <div><strong>Category:</strong> {form.seminar.trainingCategory}</div>
+          <div><strong>Sponsor:</strong> {form.seminar.sponsor}</div>
+          <div><strong>Venue:</strong> {form.seminar.venue}</div>
+          {form.seminar.breakdown && (
+            <div>
+              <strong>Breakdown:</strong>{" "}
+              {JSON.stringify(form.seminar.breakdown)}
+            </div>
+          )}
+          {form.seminar.applicants && (
+            <div>
+              <strong>Applicants:</strong>{" "}
+              {form.seminar.applicants.map((a) => a.name).join(", ")}
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }
@@ -11245,102 +11580,295 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 "use client";
 import * as React from "react";
 import MapPicker, { PickedPlace } from "@/components/common/map/MapPicker.ui";
-import CreateScheduleDialogView, {
-  CreateForm, DriverOption, VehicleOption
-} from "./CreateScheduleDialog.view";
 
-export type { CreateForm, DriverOption, VehicleOption };
+
+export type CreateForm = {
+  requestId: string | null;
+  title: string;
+  origin: string;
+  destination: string;
+  date: string;       // yyyy-mm-dd
+  startTime: string;  // HH:mm
+  endTime: string;    // HH:mm
+  driverId: string;
+  vehicleId: string;
+  status: "PLANNED" | "ONGOING" | "COMPLETED" | "CANCELLED";
+  notes: string;
+  originPlace?: PickedPlace | null;
+  destinationPlace?: PickedPlace | null;
+};
+
+export type DriverOption = { id: string; name: string; busy?: boolean };
+export type VehicleOption = { id: string; label: string; plateNo: string; busy?: boolean };
 
 type Props = {
   open: boolean;
   tripIdPreview?: string;
-  form?: CreateForm;
+  form?: CreateForm; // ← tolerant
   drivers?: DriverOption[];
   vehicles?: VehicleOption[];
   driverConflicts?: Array<{ id: string; title: string; date: string; startTime: string; endTime: string }>;
   vehicleConflicts?: Array<{ id: string; title: string; date: string; startTime: string; endTime: string }>;
   disableSave?: boolean;
 
-  onChange?: (patch: Partial<CreateForm & {
-    originPlace?: PickedPlace | null; destinationPlace?: PickedPlace | null;
-  }>) => void;
+  onChange?: (patch: Partial<CreateForm>) => void;
   onClose: () => void;
   onSave?: () => void;
 };
 
-export default function CreateScheduleDialogUI({
-  open,
-  tripIdPreview = "",
-  form: formIn,
-  drivers = [],
-  vehicles = [],
-  driverConflicts = [],
-  vehicleConflicts = [],
-  disableSave = false,
-  onChange = () => {},
-  onClose,
-  onSave = () => {},
-}: Props) {
-  // keep place objects in the container (hindi kasama sa View)
-  const [originPlace, setOriginPlace] = React.useState<PickedPlace | null>(null);
-  const [destinationPlace, setDestinationPlace] = React.useState<PickedPlace | null>(null);
+export default function CreateScheduleDialogUI(props: Props) {
+  const {
+    open,
+    tripIdPreview = "",
+    onClose,
+    onSave = () => {},
+    onChange = () => {},
+  } = props;
+
+  // Safe defaults if anything is missing
+  const form: CreateForm = {
+    requestId: props.form?.requestId ?? null,
+    title: props.form?.title ?? "",
+    origin: props.form?.origin ?? "",
+    destination: props.form?.destination ?? "",
+    date: props.form?.date ?? new Date().toISOString().slice(0, 10),
+    startTime: props.form?.startTime ?? "08:00",
+    endTime: props.form?.endTime ?? "09:00",
+    driverId: props.form?.driverId ?? "",
+    vehicleId: props.form?.vehicleId ?? "",
+    status: props.form?.status ?? "PLANNED",
+    notes: props.form?.notes ?? "",
+    originPlace: props.form?.originPlace ?? null,
+    destinationPlace: props.form?.destinationPlace ?? null,
+  };
+
+  const drivers = props.drivers ?? [];
+  const vehicles = props.vehicles ?? [];
+  const driverConflicts = props.driverConflicts ?? [];
+  const vehicleConflicts = props.vehicleConflicts ?? [];
+  const disableSave = props.disableSave ?? false;
+
   const [openOriginMap, setOpenOriginMap] = React.useState(false);
   const [openDestMap, setOpenDestMap] = React.useState(false);
 
-  const form: CreateForm = {
-    requestId: formIn?.requestId ?? null,
-    title: formIn?.title ?? "",
-    origin: formIn?.origin ?? "",
-    destination: formIn?.destination ?? "",
-    date: formIn?.date ?? new Date().toISOString().slice(0, 10),
-    startTime: formIn?.startTime ?? "08:00",
-    endTime: formIn?.endTime ?? "09:00",
-    driverId: formIn?.driverId ?? "",
-    vehicleId: formIn?.vehicleId ?? "",
-    status: formIn?.status ?? "PLANNED",
-    notes: formIn?.notes ?? "",
-  };
+  if (!open) return null;
 
   return (
-    <>
-      <CreateScheduleDialogView
-        open={open}
-        tripIdPreview={tripIdPreview}
-        form={form}
-        drivers={drivers}
-        vehicles={vehicles}
-        driverConflicts={driverConflicts}
-        vehicleConflicts={vehicleConflicts}
-        disableSave={disableSave}
-        onChange={(patch) => onChange(patch)}
-        onPickOrigin={() => setOpenOriginMap(true)}
-        onPickDestination={() => setOpenDestMap(true)}
-        onClose={onClose}
-        onSave={onSave}
-      />
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={onClose}>
+      <div
+        className="w-full max-w-2xl rounded-2xl bg-white shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between border-b px-5 py-4">
+          <h3 className="text-lg font-semibold">
+            {form.requestId ? "Edit schedule" : "Create schedule"}
+          </h3>
+          <div className="text-xs text-neutral-500">
+            Trip ID (auto):{" "}
+            <code className="rounded bg-neutral-50 px-1.5 py-0.5">{tripIdPreview || "—"}</code>
+          </div>
+        </div>
 
-      {/* Map pickers live in the container */}
-      <MapPicker
-        open={openOriginMap}
-        initial={originPlace}
-        onClose={() => setOpenOriginMap(false)}
-        onPick={(p) => {
-          setOriginPlace(p);
-          onChange({ origin: p.address, originPlace: p });
-          setOpenOriginMap(false);
-        }}
-      />
-      <MapPicker
-        open={openDestMap}
-        initial={destinationPlace}
-        onClose={() => setOpenDestMap(false)}
-        onPick={(p) => {
-          setDestinationPlace(p);
-          onChange({ destination: p.address, destinationPlace: p });
-          setOpenDestMap(false);
-        }}
-      />
-    </>
+        {/* Body */}
+        <div className="grid grid-cols-2 gap-3 px-5 py-4">
+          {/* Title */}
+          <div className="col-span-2">
+            <label className="mb-1 block text-xs font-medium text-neutral-600">Title</label>
+            <input
+              className="h-11 w-full rounded-lg border px-3"
+              placeholder="e.g., Campus shuttle"
+              value={form.title}
+              onChange={(e) => onChange({ title: e.target.value })}
+            />
+          </div>
+
+          {/* Origin */}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-neutral-600">Origin</label>
+            <div className="flex">
+              <input
+                className="h-11 w-full rounded-l-lg border border-r-0 px-3"
+                placeholder="Pick-up point"
+                value={form.origin}
+                onChange={(e) => onChange({ origin: e.target.value })}
+              />
+              <button
+                type="button"
+                onClick={() => setOpenOriginMap(true)}
+                className="h-11 rounded-r-lg border border-l-0 px-3 text-sm text-[#7A0010] hover:bg-neutral-50"
+                title="Pick on map"
+              >
+                Pick on map
+              </button>
+            </div>
+          </div>
+
+          {/* Destination */}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-neutral-600">Destination</label>
+            <div className="flex">
+              <input
+                className="h-11 w-full rounded-l-lg border border-r-0 px-3"
+                placeholder="Drop-off point"
+                value={form.destination}
+                onChange={(e) => onChange({ destination: e.target.value })}
+              />
+              <button
+                type="button"
+                onClick={() => setOpenDestMap(true)}
+                className="h-11 rounded-r-lg border border-l-0 px-3 text-sm text-[#7A0010] hover:bg-neutral-50"
+                title="Pick on map"
+              >
+                Pick on map
+              </button>
+            </div>
+          </div>
+
+          {/* Date */}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-neutral-600">Date</label>
+            <input
+              type="date"
+              className="h-11 w-full rounded-lg border px-3"
+              value={form.date}
+              onChange={(e) => onChange({ date: e.target.value })}
+            />
+          </div>
+
+          {/* Time */}
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className="mb-1 block text-xs font-medium text-neutral-600">Start</label>
+              <input
+                type="time"
+                className="h-11 w-full rounded-lg border px-3"
+                value={form.startTime}
+                onChange={(e) => onChange({ startTime: e.target.value })}
+              />
+            </div>
+            <div className="flex-1">
+              <label className="mb-1 block text-xs font-medium text-neutral-600">End</label>
+              <input
+                type="time"
+                className="h-11 w-full rounded-lg border px-3"
+                value={form.endTime}
+                onChange={(e) => onChange({ endTime: e.target.value })}
+              />
+            </div>
+          </div>
+
+          {/* Driver */}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-neutral-600">Driver</label>
+            <select
+              className="h-11 w-full rounded-lg border px-3"
+              value={form.driverId}
+              onChange={(e) => onChange({ driverId: e.target.value })}
+            >
+              {!drivers.length && <option value="">No drivers configured</option>}
+              {drivers.map((d) => (
+                <option key={d.id} value={d.id} disabled={d.busy}>
+                  {d.name} {d.busy ? " • busy" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Vehicle */}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-neutral-600">Vehicle</label>
+            <select
+              className="h-11 w-full rounded-lg border px-3"
+              value={form.vehicleId}
+              onChange={(e) => onChange({ vehicleId: e.target.value })}
+            >
+              {!vehicles.length && <option value="">No vehicles configured</option>}
+              {vehicles.map((v) => (
+                <option key={v.id} value={v.id} disabled={v.busy}>
+                  {v.label} ({v.plateNo}) {v.busy ? " • busy" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Status */}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-neutral-600">Status</label>
+            <select
+              className="h-11 w-full rounded-lg border px-3"
+              value={form.status}
+              onChange={(e) => onChange({ status: e.target.value as CreateForm["status"] })}
+            >
+              <option value="PLANNED">PLANNED</option>
+              <option value="ONGOING">ONGOING</option>
+              <option value="COMPLETED">COMPLETED</option>
+              <option value="CANCELLED">CANCELLED</option>
+            </select>
+          </div>
+
+          {/* Notes */}
+          <div className="col-span-2">
+            <label className="mb-1 block text-xs font-medium text-neutral-600">Notes (optional)</label>
+            <textarea
+              className="min-h-[90px] w-full rounded-lg border px-3 py-2"
+              placeholder="Anything the driver needs to know…"
+              value={form.notes}
+              onChange={(e) => onChange({ notes: e.target.value })}
+            />
+          </div>
+
+          {/* Warnings */}
+          {(driverConflicts.length > 0 || vehicleConflicts.length > 0) && (
+            <div className="col-span-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              <div className="mb-1 font-medium">Conflicts</div>
+              {driverConflicts.length > 0 && (
+                <div className="mb-1">
+                  <span className="font-medium">Driver</span> is busy:
+                  {driverConflicts.map((c) => (
+                    <div key={c.id}>• {c.title} — {c.date} {c.startTime}-{c.endTime}</div>
+                  ))}
+                </div>
+              )}
+              {vehicleConflicts.length > 0 && (
+                <div>
+                  <span className="font-medium">Vehicle</span> is busy:
+                  {vehicleConflicts.map((c) => (
+                    <div key={c.id}>• {c.title} — {c.date} {c.startTime}-{c.endTime}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 border-t px-5 py-3">
+          <button onClick={onClose} className="h-10 rounded-lg border px-4">Cancel</button>
+          <button
+            onClick={onSave}
+            disabled={disableSave}
+            className="h-10 rounded-lg bg-[#7A0010] px-4 text-white disabled:opacity-50"
+          >
+            Save
+          </button>
+        </div>
+
+        {/* Map pickers */}
+        <MapPicker
+          open={openOriginMap}
+          initial={form.originPlace ?? null}
+          onClose={() => setOpenOriginMap(false)}
+          onPick={(p) => { onChange({ origin: p.address, originPlace: p }); setOpenOriginMap(false); }}
+        />
+        <MapPicker
+          open={openDestMap}
+          initial={form.destinationPlace ?? null}
+          onClose={() => setOpenDestMap(false)}
+          onPick={(p) => { onChange({ destination: p.address, destinationPlace: p }); setOpenDestMap(false); }}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -15308,19 +15836,31 @@ export function Select<T extends string>({
 import * as React from "react";
 
 type Props = {
-  /** height of the drawing area in px (width is 100%) */
+  /** Height of the drawing area in px (width is 100%) */
   height?: number;
-  /** line width in px */
+  /** Line width in px */
   lineWidth?: number;
-  /** stroke color */
+  /** Stroke color */
   color?: string;
-  /** called when user clicks “Save signature”; gives you PNG data URL */
-  onSave?: (dataUrl: string) => void;
-  /** called when user clicks “Clear” */
-  onClear?: () => void;
-  /** if you want to preload an image (e.g. uploaded e-sign), call from parent */
+
+  /** Existing signature (data URL) to preload onto the canvas */
+  value?: string | null;
+  /** @deprecated Use `value` instead. Still supported to avoid breaking callers. */
   initialImage?: string | null;
-  /** classname to style the outer wrapper */
+
+  /** Fired the first time the user starts drawing (mouse/touch down) */
+  onDraw?: () => void;
+  /** Called when user clicks “Save signature”; gives you PNG data URL */
+  onSave?: (dataUrl: string) => void;
+  /** Called when user clicks “Clear” */
+  onClear?: () => void;
+  /** Optional: if you want to handle file upload yourself */
+  onUpload?: (file: File) => void;
+
+  /** Disable the Save button (e.g. until something was drawn) */
+  saveDisabled?: boolean;
+
+  /** className for outer wrapper */
   className?: string;
 };
 
@@ -15328,9 +15868,13 @@ export default function SignaturePad({
   height = 160,
   lineWidth = 3,
   color = "#1f2937", // neutral-800
+  value = null,
+  initialImage = null, // kept for compatibility
+  onDraw,
   onSave,
   onClear,
-  initialImage = null,
+  onUpload,
+  saveDisabled = false,
   className = "",
 }: Props) {
   const wrapperRef = React.useRef<HTMLDivElement | null>(null);
@@ -15338,6 +15882,7 @@ export default function SignaturePad({
   const ctxRef = React.useRef<CanvasRenderingContext2D | null>(null);
 
   const drawingRef = React.useRef(false);
+  const drewOnceRef = React.useRef(false);
   const lastXRef = React.useRef(0);
   const lastYRef = React.useRef(0);
 
@@ -15356,20 +15901,17 @@ export default function SignaturePad({
     canvas.style.width = `${cssW}px`;
     canvas.style.height = `${cssH}px`;
 
-    // re-acquire ctx after resize
     const ctx = canvas.getContext("2d");
     if (!ctx) {
       ctxRef.current = null;
       return;
     }
     ctxRef.current = ctx;
+    ctx.setTransform(1, 0, 0, 1, 0, 0); // reset
     ctx.scale(dpr, dpr);
-
-    // If we had an existing image in <img>, we could redraw it here.
-    // No-op by default; the parent can reload if needed.
   }, [height]);
 
-  // Init canvas + ctx
+  // Init / resize
   React.useEffect(() => {
     resizeCanvas();
     const onResize = () => resizeCanvas();
@@ -15377,42 +15919,44 @@ export default function SignaturePad({
     return () => window.removeEventListener("resize", onResize);
   }, [resizeCanvas]);
 
-  // Load initial image (if provided)
+  // Draw a provided image (data URL) to the canvas
+  const drawImageToCanvas = React.useCallback(
+    (dataUrl: string) => {
+      const canvas = canvasRef.current;
+      const ctx = ctxRef.current;
+      if (!canvas || !ctx) return;
+      const img = new Image();
+      img.onload = () => {
+        const w = canvas.clientWidth;
+        const h = height;
+        ctx.clearRect(0, 0, w, h);
+        const scale = Math.min(w / img.width, h / img.height);
+        const dw = img.width * scale;
+        const dh = img.height * scale;
+        const dx = (w - dw) / 2;
+        const dy = (h - dh) / 2;
+        ctx.drawImage(img, dx, dy, dw, dh);
+      };
+      img.src = dataUrl;
+    },
+    [height]
+  );
+
+  // Load initial value / legacy initialImage
   React.useEffect(() => {
-    if (!initialImage) return;
-    const canvas = canvasRef.current;
-    const ctx = ctxRef.current;
-    if (!canvas || !ctx) return;
-
-    const img = new Image();
-    img.onload = () => {
-      // Clear and draw image scaled to fit canvas CSS size
-      const w = canvas.clientWidth;
-      const h = height;
-      ctx.clearRect(0, 0, w, h);
-
-      // keep aspect ratio; fit within
-      const scale = Math.min(w / img.width, h / img.height);
-      const dw = img.width * scale;
-      const dh = img.height * scale;
-      const dx = (w - dw) / 2;
-      const dy = (h - dh) / 2;
-      ctx.drawImage(img, dx, dy, dw, dh);
-    };
-    img.src = initialImage;
-  }, [initialImage, height]);
+    if (value) drawImageToCanvas(value);
+    else if (initialImage) drawImageToCanvas(initialImage);
+  }, [value, initialImage, drawImageToCanvas]);
 
   // Helpers
   function getPos(e: MouseEvent | TouchEvent) {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
-
     const rect = canvas.getBoundingClientRect();
     const touch = (e as TouchEvent).touches?.[0];
     const clientX = touch?.clientX ?? (e as MouseEvent).clientX;
     const clientY = touch?.clientY ?? (e as MouseEvent).clientY;
-
-    // Allow drawing to continue when re-entering (we clamp to edges)
+    // Clamp to edges so drawing can continue when the pointer re-enters
     const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
     const y = Math.max(0, Math.min(clientY - rect.top, rect.height));
     return { x, y };
@@ -15420,20 +15964,22 @@ export default function SignaturePad({
 
   function begin(e: MouseEvent | TouchEvent) {
     const ctx = ctxRef.current;
-    const canvas = canvasRef.current;
-    if (!ctx || !canvas) return;
+    if (!ctx) return;
 
     drawingRef.current = true;
     const p = getPos(e);
     lastXRef.current = p.x;
     lastYRef.current = p.y;
+
+    if (!drewOnceRef.current) {
+      drewOnceRef.current = true;
+      onDraw?.();
+    }
   }
 
   function move(e: MouseEvent | TouchEvent) {
     const ctx = ctxRef.current;
-    const canvas = canvasRef.current;
-    if (!ctx || !canvas) return;
-    if (!drawingRef.current) return;
+    if (!ctx || !drawingRef.current) return;
 
     const p = getPos(e);
 
@@ -15460,7 +16006,6 @@ export default function SignaturePad({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    // passive: false for touchmove to allow drawing while scrolling context
     const opts = { passive: false } as AddEventListenerOptions;
 
     const mdown = (e: MouseEvent) => begin(e);
@@ -15503,12 +16048,13 @@ export default function SignaturePad({
     if (!ctx || !canvas) return;
     ctx.clearRect(0, 0, canvas.clientWidth, height);
     onClear?.();
+    // allow onDraw to fire again after clearing
+    drewOnceRef.current = false;
   }
 
   function save() {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    // export PNG using CSS size (browser handles pixel ratio)
     const dataUrl = canvas.toDataURL("image/png");
     onSave?.(dataUrl);
   }
@@ -15516,35 +16062,31 @@ export default function SignaturePad({
   function onFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (onUpload) {
+      onUpload(file);
+      e.currentTarget.value = "";
+      return;
+    }
+
+    // default behavior: preview it on canvas
     const reader = new FileReader();
     reader.onload = () => {
       const url = String(reader.result || "");
-      // just redraw the image
-      const img = new Image();
-      img.onload = () => {
-        const ctx = ctxRef.current;
-        const canvas = canvasRef.current;
-        if (!ctx || !canvas) return;
-        const w = canvas.clientWidth;
-        const h = height;
-
-        ctx.clearRect(0, 0, w, h);
-        const scale = Math.min(w / img.width, h / img.height);
-        const dw = img.width * scale;
-        const dh = img.height * scale;
-        const dx = (w - dw) / 2;
-        const dy = (h - dh) / 2;
-        ctx.drawImage(img, dx, dy, dw, dh);
-      };
-      img.src = url;
+      drawImageToCanvas(url);
     };
     reader.readAsDataURL(file);
+    e.currentTarget.value = "";
   }
 
   return (
     <div className={`grid gap-2 ${className}`} ref={wrapperRef}>
       <div className="rounded-lg border border-neutral-300 bg-white p-2">
-        <canvas ref={canvasRef} className="block w-full" style={{ height }} />
+        <canvas
+          ref={canvasRef}
+          className="block w-full"
+          style={{ height, touchAction: "none", cursor: "crosshair" }}
+        />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -15555,10 +16097,14 @@ export default function SignaturePad({
         >
           Clear
         </button>
+
         <button
           type="button"
           onClick={save}
-          className="h-9 rounded-md bg-[#7A0010] px-4 text-sm font-medium text-white hover:opacity-95"
+          disabled={saveDisabled}
+          className={`h-9 rounded-md px-4 text-sm font-medium text-white ${
+            saveDisabled ? "bg-neutral-400" : "bg-[#7A0010] hover:opacity-95"
+          }`}
         >
           Save signature
         </button>
@@ -15575,7 +16121,9 @@ export default function SignaturePad({
       </div>
 
       <p className="text-[11px] text-neutral-500">
-        Sign with mouse / touch, then click <span className="font-medium">Save signature</span> — or upload an image file of your e-signature.
+        Sign with mouse / touch, then click{" "}
+        <span className="font-medium">Save signature</span> — or upload an image
+        file of your e-signature.
       </p>
     </div>
   );
@@ -19621,7 +20169,6 @@ export default function TopBar() {
 
 
 ===== components\user\nav\UserLeftNav.tsx =====
-// src/components/user/nav/UserLeftNav.tsx
 "use client";
 
 import Link from "next/link";
@@ -19630,49 +20177,53 @@ import {
   LayoutGrid,
   CalendarDays,
   PlusSquare,
-  UserRound,
-  MessageSquareText,
+  FileClock,
+  ListChecks,
   Car,
   IdCard,
-  ChevronDown,
+  UserRound,
+  MessageSquareText,
 } from "lucide-react";
 import * as React from "react";
 
 type Item =
   | {
-      type?: "link";
+      type: "link";
       href: string;
       label: string;
-      Icon: React.ComponentType<any>;
+      Icon: React.ComponentType<{ className?: string }>;
       exact?: boolean;
     }
   | {
       type: "group";
       label: string;
-      Icon?: React.ComponentType<any>;
-      children: Array<Extract<Item, { type?: "link" }>>;
+      Icon: React.ComponentType<{ className?: string }>;
+      children: Array<{
+        href: string;
+        label: string;
+        Icon: React.ComponentType<{ className?: string }>;
+        exact?: boolean;
+      }>;
     };
 
-const items: Item[] = [
+const NAV: Item[] = [
   { type: "link", href: "/user", label: "Dashboard", Icon: LayoutGrid, exact: true },
   { type: "link", href: "/user/schedule", label: "Schedule", Icon: CalendarDays },
 
+  // Always expanded group
   {
     type: "group",
     label: "Request",
     Icon: PlusSquare,
     children: [
       { href: "/user/request", label: "New request", Icon: PlusSquare, exact: true },
-      // FIXED PATHS ↓↓↓
-      { href: "/user/drafts", label: "Drafts", Icon: PlusSquare },
-      { href: "/user/submissions", label: "Submissions", Icon: PlusSquare },
+      { href: "/user/drafts", label: "Drafts", Icon: FileClock },
+      { href: "/user/submissions", label: "Submissions", Icon: ListChecks },
     ],
   },
 
-  // Fleet (top-level links)
   { type: "link", href: "/user/vehicles", label: "Vehicles", Icon: Car },
   { type: "link", href: "/user/drivers", label: "Drivers", Icon: IdCard },
-
   { type: "link", href: "/user/profile", label: "Profile", Icon: UserRound },
   { type: "link", href: "/user/feedback", label: "Feedback", Icon: MessageSquareText },
 ];
@@ -19683,115 +20234,94 @@ export default function UserLeftNav() {
   const isActive = (href: string, exact?: boolean) =>
     exact ? pathname === href : pathname === href || pathname.startsWith(href + "/");
 
-  // Find the Request group
-  const requestGroup = items.find(
-    (i): i is Extract<Item, { type: "group" }> => i.type === "group" && i.label === "Request"
-  );
-
-  // Auto-open Request group if any of its children match
-  const initiallyOpen =
-    !!requestGroup &&
-    requestGroup.children.some((c) => isActive(c.href, (c as any).exact));
-
-  const [openRequest, setOpenRequest] = React.useState(initiallyOpen);
-
-  // Keep open state in sync when navigating with browser back/forward
-  React.useEffect(() => {
-    if (!requestGroup) return;
-    const onChild = requestGroup.children.some((c) => isActive(c.href, (c as any).exact));
-    setOpenRequest(onChild);
-  }, [pathname, requestGroup]);
-
   return (
-    <nav aria-label="User menu" className="space-y-3">
-      {items.map((it, idx) => {
-        if (it.type === "group") {
-          const groupActive = it.children.some((c) => isActive(c.href, (c as any).exact));
-          const show = it.label === "Request" ? openRequest : true;
-
+    <nav aria-label="User menu" className="space-y-2">
+      {NAV.map((item, idx) => {
+        if (item.type === "link") {
+          const active = isActive(item.href, item.exact);
           return (
-            <div key={`group-${idx}`} className="space-y-2">
-              <button
-                type="button"
-                onClick={() => setOpenRequest((v) => !v)}
+            <Link
+              key={`${idx}-${item.href}`}
+              href={item.href}
+              className={[
+                "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
+                active
+                  ? "bg-neutral-100 text-[#7a0019]"
+                  : "bg-white text-neutral-700 hover:bg-neutral-50",
+              ].join(" ")}
+            >
+              <span
+                aria-hidden
                 className={[
-                  "relative flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors",
-                  groupActive ? "bg-neutral-100 text-[#7a0019]" : "bg-white text-neutral-700 hover:bg-neutral-50",
+                  "absolute left-1 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-full bg-[#7a0019]",
+                  active ? "opacity-100" : "opacity-0",
                 ].join(" ")}
-              >
-                <span
-                  aria-hidden
-                  className={[
-                    "absolute left-1 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-full bg-[#7a0019]",
-                    groupActive ? "opacity-100" : "opacity-0",
-                  ].join(" ")}
-                />
-                {it.Icon ? (
-                  <it.Icon className={`h-4 w-4 ${groupActive ? "text-[#7a0019]" : "text-neutral-500"}`} />
-                ) : null}
-                <span className="font-medium">{it.label}</span>
-                <ChevronDown
-                  className={[
-                    "ml-auto h-4 w-4 transition-transform",
-                    show ? "rotate-180" : "rotate-0",
-                    groupActive ? "text-[#7a0019]" : "text-neutral-500",
-                  ].join(" ")}
-                />
-              </button>
-
-              {show && (
-                <div className="ml-2 space-y-1 pl-2">
-                  {it.children.map((c) => {
-                    const active = isActive(c.href, (c as any).exact);
-                    return (
-                      <Link
-                        key={c.href}
-                        href={c.href}
-                        className={[
-                          "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-                          active ? "bg-neutral-100 text-[#7a0019]" : "bg-white text-neutral-700 hover:bg-neutral-50",
-                        ].join(" ")}
-                      >
-                        <span
-                          aria-hidden
-                          className={[
-                            "absolute left-1 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-full bg-[#7a0019]",
-                            active ? "opacity-100" : "opacity-0",
-                          ].join(" ")}
-                        />
-                        <c.Icon className={`h-4 w-4 ${active ? "text-[#7a0019]" : "text-neutral-500"}`} />
-                        <span className="font-medium">{c.label}</span>
-                      </Link>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+              />
+              <item.Icon
+                className={`h-4 w-4 ${active ? "text-[#7a0019]" : "text-neutral-500"}`}
+              />
+              <span className="font-medium">{item.label}</span>
+            </Link>
           );
         }
 
-        const active = isActive(it.href, (it as any).exact);
-        const Icon = it.Icon;
-
+        // --- Always-expanded group (no toggle) ---
+        const anyActive = item.children.some((c) => isActive(c.href, c.exact));
         return (
-          <Link
-            key={it.href}
-            href={it.href}
-            className={[
-              "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-              active ? "bg-neutral-100 text-[#7a0019]" : "bg-white text-neutral-700 hover:bg-neutral-50",
-            ].join(" ")}
-          >
-            <span
-              aria-hidden
+          <div key={`group-${idx}`} className="space-y-1">
+            {/* Group header, non-interactive */}
+            <div
               className={[
-                "absolute left-1 top-1/2 -translate-y-1/2 h-6 w-[3px] rounded-full bg-[#7a0019]",
-                active ? "opacity-100" : "opacity-0",
+                "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm",
+                anyActive ? "bg-neutral-100 text-[#7a0019]" : "bg-white text-neutral-700",
               ].join(" ")}
-            />
-            <Icon className={`h-4 w-4 ${active ? "text-[#7a0019]" : "text-neutral-500"}`} />
-            <span className="font-medium">{it.label}</span>
-          </Link>
+            >
+              <span
+                aria-hidden
+                className={[
+                  "absolute left-1 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-full bg-[#7a0019]",
+                  anyActive ? "opacity-100" : "opacity-0",
+                ].join(" ")}
+              />
+              <item.Icon
+                className={`h-4 w-4 ${anyActive ? "text-[#7a0019]" : "text-neutral-500"}`}
+              />
+              <span className="font-medium">Request</span>
+            </div>
+
+            {/* Children shown by default */}
+            <div className="space-y-1 pl-8">
+              {item.children.map((c) => {
+                const active = isActive(c.href, c.exact);
+                return (
+                  <Link
+                    key={c.href}
+                    href={c.href}
+                    className={[
+                      "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
+                      active
+                        ? "bg-neutral-100 text-[#7a0019]"
+                        : "bg-white text-neutral-700 hover:bg-neutral-50",
+                    ].join(" ")}
+                  >
+                    <span
+                      aria-hidden
+                      className={[
+                        "absolute left-1 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-full bg-[#7a0019]",
+                        active ? "opacity-100" : "opacity-0",
+                      ].join(" ")}
+                    />
+                    <c.Icon
+                      className={`h-4 w-4 ${
+                        active ? "text-[#7a0019]" : "text-neutral-500"
+                      }`}
+                    />
+                    <span className="font-medium">{c.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
         );
       })}
     </nav>
@@ -21910,7 +22440,7 @@ import LocationField from "@/components/user/request/ui/LocationField.ui";
 import DepartmentSelect from "@/components/common/inputs/DepartmentSelect.ui";
 // Department → head mapping helper
 import { getDepartmentHead } from "@/lib/org/departments";
-// Signature pad (reusable)
+// Shared signature pad
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 
 function asNum(v: string): number | null {
@@ -21942,23 +22472,12 @@ export default function TravelOrderForm({
   // If user types a head name manually, don’t auto-overwrite next time
   const headEditedRef = React.useRef(false);
 
-  // Simple “saved” badge state for the signature
+  // --- Signature state (UI helpers only; persisted to parent via onChange) ---
+  const [sigDirty, setSigDirty] = React.useState(false);
   const [sigSaved, setSigSaved] = React.useState<boolean>(!!data?.signatureSaved);
   const [sigSavedAt, setSigSavedAt] = React.useState<string | null>(
     data?.signatureSaved ? new Date().toLocaleString() : null
   );
-
-  function handleSignatureSave(dataUrl: string) {
-    onChange({ signatureDataUrl: dataUrl, signatureSaved: true });
-    setSigSaved(true);
-    setSigSavedAt(new Date().toLocaleString());
-  }
-
-  function handleSignatureClear() {
-    onChange({ signatureDataUrl: "", signatureSaved: false });
-    setSigSaved(false);
-    setSigSavedAt(null);
-  }
 
   return (
     <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
@@ -22148,7 +22667,7 @@ export default function TravelOrderForm({
       </div>
 
       {/* Signature block */}
-      <div className="mt-3 rounded-xl border border-neutral-200 bg-neutral-50/60 p-4">
+      <div className="mt-6 rounded-xl border border-neutral-200 bg-neutral-50/60 p-4">
         <div className="mb-2 flex items-center justify-between">
           <span className="text-sm font-medium text-neutral-700">Endorser signature</span>
 
@@ -22161,19 +22680,35 @@ export default function TravelOrderForm({
           )}
         </div>
 
-        {/* The reusable SignaturePad renders canvas + its own Save/Clear controls */}
         <SignaturePad
-          height={220}
-          // If your SignaturePad supports showing an existing signature, pass it here:
-          // initialDataUrl={data?.signatureDataUrl || ""}
-          onSave={handleSignatureSave}
-          onClear={handleSignatureClear}
+          height={200}
+          value={data?.signatureDataUrl || null}
+          onDraw={() => setSigDirty(true)}
+          onSave={(dataUrl) => {
+            onChange({ signatureDataUrl: dataUrl, signatureSaved: true });
+            setSigSaved(true);
+            setSigDirty(false);
+            setSigSavedAt(new Date().toLocaleString());
+          }}
+          onClear={() => {
+            onChange({ signatureDataUrl: "", signatureSaved: false });
+            setSigDirty(false);
+            setSigSaved(false);
+            setSigSavedAt(null);
+          }}
+          onUpload={async (file) => {
+            const buf = await file.arrayBuffer();
+            const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+            const dataUrl = `data:${file.type};base64,${b64}`;
+            onChange({ signatureDataUrl: dataUrl, signatureSaved: true });
+            setSigSaved(true);
+            setSigDirty(false);
+            setSigSavedAt(new Date().toLocaleString());
+          }}
+          saveDisabled={!sigDirty}
         />
 
-        <p className="mt-2 text-[11px] text-neutral-500">
-          Sign with mouse / touch, then click <span className="font-medium">Save signature</span> —
-          or upload an image file of your e-signature (if your SignaturePad component provides it).
-        </p>
+        
       </div>
     </section>
   );
@@ -25825,6 +26360,178 @@ export const DASHBOARD_DATA: DashboardData = {
 };
 
 
+===== lib\admin\requests\pdf.ts =====
+// Simple client-side PDF generator using jsPDF + autoTable.
+// npm i jspdf jspdf-autotable
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import type { RequestFormData, OtherCostItem } from "@/lib/user/request/types";
+
+function money(v?: number | null) {
+  return typeof v === "number" ? `₱ ${v.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : "—";
+}
+
+export function buildRequestPDF(req: RequestFormData): Blob {
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+
+  const H = 18;
+  doc.setFont("helvetica", "bold").setFontSize(16).text("TRAVEL ORDER & SEMINAR APPLICATION", 40, 48);
+  doc.setLineWidth(0.5).line(40, 56, 555, 56);
+  doc.setFontSize(10).setFont("helvetica", "normal");
+
+  // Travel Order
+  const to = req.travelOrder;
+  autoTable(doc, {
+    startY: 72,
+    head: [["Travel Order"]],
+    body: [
+      ["Date", to.date],
+      ["Requesting person", to.requestingPerson],
+      ["Department", to.department],
+      ["Destination", to.destination],
+      ["Departure date", to.departureDate],
+      ["Return date", to.returnDate],
+      ["Purpose of travel", to.purposeOfTravel],
+      ["Endorsed by (Dept Head)", to.endorsedByHeadName ?? "—"],
+      ["Endorsement date", to.endorsedByHeadDate ?? "—"],
+    ],
+    styles: { fontSize: 10, cellPadding: 6 },
+    headStyles: { fillColor: [240, 240, 240], textColor: 20, fontStyle: "bold" },
+    theme: "grid",
+  });
+
+  // Travel Cost
+  const c = to.costs || {};
+  const otherItems: OtherCostItem[] =
+    (c.otherItems && c.otherItems.length ? c.otherItems : []) ||
+    (c.otherLabel ? [{ label: c.otherLabel, amount: c.otherAmount ?? null }] : []);
+  autoTable(doc, {
+    head: [["Travel Cost (estimate)"]],
+    body: [
+      ["Food", money(c.food)],
+      ["Driver’s allowance", money(c.driversAllowance)],
+      ["Rent vehicles", money(c.rentVehicles)],
+      ["Hired drivers", money(c.hiredDrivers)],
+      ["Accommodation", money(c.accommodation)],
+      ...otherItems.map((o) => [o.label || "Other", money(o.amount)]),
+      ["Justification", c.justification || "—"],
+    ],
+    styles: { fontSize: 10, cellPadding: 6 },
+    headStyles: { fillColor: [240, 240, 240], textColor: 20, fontStyle: "bold" },
+    theme: "grid",
+    startY: (doc as any).lastAutoTable.finalY + H,
+  });
+
+  // Seminar (if provided)
+  const s = req.seminar;
+  if (s) {
+    autoTable(doc, {
+      head: [["Seminar Application"]],
+      body: [
+        ["Application date", s.applicationDate],
+        ["Title", s.title],
+        ["Type of training", (s.typeOfTraining ?? []).join(", ") || "—"],
+        ["Training category", s.trainingCategory ?? "—"],
+        ["Date from", s.dateFrom],
+        ["Date to", s.dateTo],
+        ["Sponsor/Provider", s.sponsor ?? "—"],
+        ["Venue", s.venue ?? "—"],
+        ["Modality", s.modality ?? "—"],
+      ],
+      styles: { fontSize: 10, cellPadding: 6 },
+      headStyles: { fillColor: [240, 240, 240], textColor: 20, fontStyle: "bold" },
+      theme: "grid",
+      startY: (doc as any).lastAutoTable.finalY + H,
+    });
+
+    const b = s.breakdown || {};
+    const sOther: OtherCostItem[] =
+      (b.otherItems && b.otherItems.length ? b.otherItems : []) ||
+      (b.otherLabel ? [{ label: b.otherLabel, amount: b.otherAmount ?? null }] : []);
+    autoTable(doc, {
+      head: [["Seminar Cost Breakdown"]],
+      body: [
+        ["Registration", money(b.registration)],
+        ["Accommodation", money(b.accommodation)],
+        ["Per diem / Meals / Driver’s allowance", money(b.perDiemMealsDriversAllowance)],
+        ["Transport / Fare / Gas / Parking / Toll", money(b.transportFareGasParkingToll)],
+        ...sOther.map((o) => [o.label || "Other", money(o.amount)]),
+      ],
+      styles: { fontSize: 10, cellPadding: 6 },
+      headStyles: { fillColor: [240, 240, 240], textColor: 20, fontStyle: "bold" },
+      theme: "grid",
+      startY: (doc as any).lastAutoTable.finalY + H,
+    });
+  }
+
+  return doc.output("blob");
+}
+
+
+===== lib\admin\requests\store.ts =====
+// Lightweight mock repo that persists to localStorage.
+// Swap with your real data layer later.
+
+import type { RequestFormData } from "@/lib/user/request/types";
+
+export type AdminRequest = RequestFormData & {
+  id: string;
+  createdAt: string; // ISO
+  status: "pending" | "approved" | "rejected" | "completed";
+};
+
+const KEY = "tl.admin.requests";
+
+function read(): AdminRequest[] {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(localStorage.getItem(KEY) || "[]") as AdminRequest[];
+  } catch {
+    return [];
+  }
+}
+function write(rows: AdminRequest[]) {
+  localStorage.setItem(KEY, JSON.stringify(rows));
+}
+
+export const AdminRequestsRepo = {
+  list(): AdminRequest[] {
+    return read().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+  get(id: string): AdminRequest | undefined {
+    return read().find((r) => r.id === id);
+  },
+  upsert(row: AdminRequest) {
+    const rows = read();
+    const i = rows.findIndex((r) => r.id === row.id);
+    if (i >= 0) rows[i] = row;
+    else rows.unshift(row);
+    write(rows);
+  },
+  setStatus(id: string, status: AdminRequest["status"]) {
+    const rows = read();
+    const i = rows.findIndex((r) => r.id === id);
+    if (i >= 0) {
+      rows[i].status = status;
+      write(rows);
+    }
+  },
+  // Helper for user submit (call this from user side while DB not ready)
+  acceptFromUser(payload: RequestFormData) {
+    const req: AdminRequest = {
+      ...payload,
+      id: "RQ-" + Math.random().toString(36).slice(2, 8).toUpperCase(),
+      createdAt: new Date().toISOString(),
+      status: "pending",
+    };
+    const rows = read();
+    rows.unshift(req);
+    write(rows);
+    return req.id;
+  },
+};
+
+
 ===== lib\admin\schedule\filters.ts =====
 // src/lib/admin/schedule/filters.ts
 import type { Schedule, ScheduleStatus } from "./types";
@@ -26754,6 +27461,73 @@ export function downloadCsv(filename: string, rows: any[]) {
 export function makeGuard<T extends readonly string[]>(values: T) {
   const set = new Set(values as readonly string[]);
   return (v: string): v is T[number] => set.has(v);
+}
+
+
+===== lib\common\inbox.ts =====
+// Simple localStorage "inbox" used by both User and Admin.
+// Switch this to Supabase later without changing call sites.
+
+export type InboxItem = {
+  id: string;             // e.g., "RQ-2025-0001"
+  createdAt: string;      // ISO
+  unread: boolean;        // drives badges
+  // Minimal fields Admin table needs; add more as you like:
+  dept: string;
+  purpose: string;
+  requester?: string | null;
+  vehicle?: string | null;
+  date: string;           // yyyy-mm-dd (request date)
+  status: "Pending";      // new submissions are pending
+};
+
+const KEY = "travilink_requests_inbox";
+
+function read(): InboxItem[] {
+  try {
+    const raw = localStorage.getItem(KEY);
+    return raw ? (JSON.parse(raw) as InboxItem[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function write(items: InboxItem[]) {
+  localStorage.setItem(KEY, JSON.stringify(items));
+  // let other tabs (Admin/User) react
+  window.dispatchEvent(new StorageEvent("storage", { key: KEY }));
+}
+
+export function inboxCount(): number {
+  return read().filter((i) => i.unread).length;
+}
+
+export function addToInbox(item: Omit<InboxItem, "id" | "createdAt" | "unread" | "status"> & { id?: string }) {
+  const items = read();
+  const id = item.id ?? `RQ-${Date.now()}`;
+  items.unshift({ ...item, id, createdAt: new Date().toISOString(), unread: true, status: "Pending" });
+  write(items);
+  return id;
+}
+
+export function peekAll(): InboxItem[] {
+  return read();
+}
+
+export function takeAll(): InboxItem[] {
+  const items = read();
+  write(items); // no-op, keeps unread
+  return items;
+}
+
+export function markRead(ids: string[]) {
+  if (!ids.length) return;
+  const items = read().map(i => (ids.includes(i.id) ? { ...i, unread: false } : i));
+  write(items);
+}
+
+export function clearInbox() {
+  write([]);
 }
 
 
@@ -27922,95 +28696,215 @@ return ["DEPT_HEAD", "TM", "COMPTROLLER", "HRD", "VP/COO", "TM(close-out)"];
 }
 
 ===== lib\user\request\types.ts =====
-// src/lib/user/request/types.ts
+"use client";
 
-export type Reason = "seminar" | "educational" | "competition" | "visit";
-export type VehicleMode = "institutional" | "owned" | "rent";
-export type RequesterRole = "head" | "faculty" | "org";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import * as React from "react";
+import CollapseToggle from "@/components/common/CollapseToggle";
+import {
+  LayoutDashboard,
+  FileText,
+  CalendarDays,
+  Users,
+  Truck,
+  Wrench,
+  MapPin,
+  History,
+  FileBarChart,
+  Settings,
+  MessageSquare,
+  Search,
+} from "lucide-react";
 
-/** Optional geo data saved when picking from the map */
-export type GeoPoint = { lat: number; lng: number; address?: string };
+/* ---------- constants ---------- */
 
-export type TravelCosts = {
-  food?: number | null;
-  driversAllowance?: number | null;
-  rentVehicles?: number | null;
-  hiredDrivers?: number | null;
-  accommodation?: number | null;
-  otherLabel?: string | null;
-  otherAmount?: number | null;
-  justification?: string | null;
-};
+const BRAND = "#7a1f2a";
+const NAV_W_OPEN = 256;
+const NAV_W_COLLAPSED = 64;
 
-export type TravelOrder = {
-  date: string;
-  requestingPerson: string;
-  department: string;
+type Item = { href: string; label: string; Icon: React.ComponentType<any>; badge?: number | null };
 
-  /** Human-readable destination; filled by user or from the map picker */
-  destination: string;
-  /** Optional coordinates from the map picker */
-  destinationGeo?: GeoPoint | null;
+const BASE: Array<Omit<Item, "badge">> = [
+  { href: "/admin", label: "Dashboard", Icon: LayoutDashboard },
+  { href: "/admin/requests", label: "Requests", Icon: FileText },
+  { href: "/admin/schedule", label: "Schedule", Icon: CalendarDays },
+  { href: "/admin/drivers", label: "Drivers", Icon: Users },
+  { href: "/admin/vehicles", label: "Vehicles", Icon: Truck },
+  { href: "/admin/maintenance", label: "Maintenance", Icon: Wrench },
+  { href: "/admin/track", label: "Track / Live", Icon: MapPin },
+  { href: "/admin/history", label: "History / Logs", Icon: History },
+  { href: "/admin/report", label: "Reports / Exports", Icon: FileBarChart },
+  { href: "/admin/feedback", label: "Feedback", Icon: MessageSquare },
+  { href: "/admin/settings", label: "Settings", Icon: Settings },
+];
 
-  departureDate: string;
-  returnDate: string;
-  purposeOfTravel: string;
-  costs: TravelCosts;
-  endorsedByHeadName?: string | null;
-  endorsedByHeadDate?: string | null;
-};
+/* ---------- component ---------- */
 
-export type SchoolService = {
-  driver: string;
-  vehicle: string;
-  vehicleDispatcherSigned: boolean;
-  vehicleDispatcherDate: string;
-};
+export default function AdminLeftNav() {
+  const pathname = usePathname();
+  const [collapsed, setCollapsed] = React.useState(false);
 
-export type SeminarApplication = {
-  applicationDate: string;
-  title: string;
-  typeOfTraining?: string[];
-  trainingCategory?: "local" | "regional" | "national" | "international";
-  dateFrom: string;
-  dateTo: string;
-  days?: number | null;
-  sponsor?: string | null;
+  // Optional: small badge for pending requests (read from localStorage mock)
+  const [pending, setPending] = React.useState<number | null>(null);
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem("tl.admin.requests");
+      if (raw) {
+        const rows = JSON.parse(raw) as Array<{ status?: string }>;
+        setPending(rows.filter((r) => (r.status ?? "pending") === "pending").length || null);
+      }
+    } catch {
+      setPending(null);
+    }
+  }, []);
 
-  /** Human-readable venue; filled by user or from the map picker */
-  venue?: string | null;
-  /** Optional coordinates from the map picker */
-  venueGeo?: GeoPoint | null;
+  // Persist collapse state
+  React.useEffect(() => {
+    const raw = localStorage.getItem("tl.nav.collapsed");
+    if (raw) setCollapsed(raw === "1");
+  }, []);
+  React.useEffect(() => {
+    localStorage.setItem("tl.nav.collapsed", collapsed ? "1" : "0");
+  }, [collapsed]);
 
-  modality?: string | null;
-  fees?: { registrationFee?: number | null; totalAmount?: number | null };
-  breakdown?: {
-    registration?: number | null;
-    accommodation?: number | null;
-    perDiemMealsDriversAllowance?: number | null;
-    transportFareGasParkingToll?: number | null;
-    otherLabel?: string | null;
-    otherAmount?: number | null;
-  };
-  makeUpClassSchedule?: string | null;
-  applicantUndertaking?: boolean;
-  applicants?: Array<{
-    name: string;
-    availableFDP?: string | null;
-    departmentOffice?: string | null;
-    signature?: string | null;
-  }>;
-  fundReleaseLine?: number | null;
-};
+  // Hotkey: Ctrl+B (or Meta+B) and '['
+  React.useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        setCollapsed((v) => !v);
+      }
+      if (!e.ctrlKey && !e.metaKey && e.key === "[") {
+        setCollapsed((v) => !v);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
-export type RequestFormData = {
-  requesterRole: RequesterRole;
-  reason: Reason;
-  vehicleMode: VehicleMode;
-  travelOrder: TravelOrder;
-  schoolService?: SchoolService;
-  seminar?: SeminarApplication;
-};
+  // Expand when clicking the rail (but not links/toggle)
+  function onRootClick(e: React.MouseEvent) {
+    if (!collapsed) return;
+    const el = e.target as HTMLElement;
+    const hitInteractive = el.closest("[data-nav-link='true']") || el.closest("[data-nav-toggle='true']");
+    if (!hitInteractive) setCollapsed(false);
+  }
+
+  // Build nav with optional badges
+  const NAV: Item[] = BASE.map((i) =>
+    i.href === "/admin/requests" ? { ...i, badge: pending } : { ...i, badge: null }
+  );
+
+  return (
+    <div
+      onClick={onRootClick}
+      style={
+        {
+          width: collapsed ? NAV_W_COLLAPSED : NAV_W_OPEN,
+          background: collapsed ? BRAND : "white",
+        } as React.CSSProperties
+      }
+      className={[
+        "relative h-full select-none border-r border-neutral-200",
+        "overflow-y-auto no-scrollbar",
+        collapsed ? "text-white" : "text-neutral-800",
+      ].join(" ")}
+    >
+      {/* Top row: Search + Toggle */}
+      <div className={collapsed ? "px-2 pt-2 pb-1" : "px-3 pt-3 pb-2"}>
+        <div className="flex items-center gap-2">
+          {!collapsed && (
+            <div className="flex-1">
+              <label className="sr-only">Search</label>
+              <div className="flex items-center rounded-lg border border-neutral-300 bg-white px-2 py-1.5 shadow-sm">
+                <Search className="mr-2 h-4 w-4 text-neutral-400" />
+                <input
+                  placeholder="Search…"
+                  className="w-full bg-transparent text-sm outline-none placeholder:text-neutral-400"
+                />
+              </div>
+            </div>
+          )}
+
+          <CollapseToggle
+            collapsed={collapsed}
+            onClick={() => setCollapsed((v) => !v)}
+            data-nav-toggle="true"
+          />
+        </div>
+
+        {!collapsed && (
+          <div className="mt-3 px-1 text-[11px] font-semibold tracking-wider text-neutral-500">
+            TRAVILINK
+          </div>
+        )}
+      </div>
+
+      {/* Nav list */}
+      <ul className="space-y-1 px-2">
+        {NAV.map(({ href, label, Icon, badge }) => {
+          const active =
+            pathname === href || (href !== "/admin" && (pathname ?? "").startsWith(href));
+
+          const itemBase = collapsed ? "flex items-center justify-center" : "flex items-center gap-3";
+          const activeBg = collapsed ? "bg-white/12" : "bg-neutral-100";
+          const hoverBg = collapsed ? "hover:bg-white/10" : "hover:bg-neutral-50";
+
+          return (
+            <li key={href}>
+              <Link
+                href={href}
+                data-nav-link="true"
+                title={collapsed ? label : undefined}
+                onClick={(e) => {
+                  if (collapsed) e.stopPropagation();
+                }}
+                className={[
+                  "group relative rounded-lg px-3 py-2 text-sm transition",
+                  itemBase,
+                  active ? activeBg : hoverBg,
+                ].join(" ")}
+                style={{ ["--brand" as any]: BRAND }}
+              >
+                {!collapsed && (
+                  <span
+                    className={[
+                      "pointer-events-none absolute left-0 top-1/2 -translate-y-1/2",
+                      "h-5 w-0.5 rounded",
+                      active ? "bg-[var(--brand)]" : "bg-transparent group-hover:bg-neutral-300",
+                    ].join(" ")}
+                  />
+                )}
+
+                <Icon
+                  className={[
+                    "h-5 w-5 transition-colors",
+                    collapsed ? "text-white" : "text-[var(--brand)]",
+                    !collapsed ? "group-hover:text-[#5e1620]" : "",
+                  ].join(" ")}
+                />
+
+                {!collapsed && (
+                  <>
+                    <span className="truncate">{label}</span>
+                    {badge && badge > 0 && (
+                      <span className="ml-auto inline-flex min-w-[20px] items-center justify-center rounded-full bg-[#7a1f2a] px-1.5 text-[11px] font-semibold text-white">
+                        {badge}
+                      </span>
+                    )}
+                  </>
+                )}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+
+      <div className="h-6" />
+    </div>
+  );
+}
 
 
 ===== lib\user\request\validation.ts =====
@@ -28272,8 +29166,5 @@ export function useRequestStore() {
   if (!ctx) throw new Error("useRequestStore must be used within <RequestProvider>");
   return ctx;
 }
-
-
-===== user\requestStore.ts =====
 
 
