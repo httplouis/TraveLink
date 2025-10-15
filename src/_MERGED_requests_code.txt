@@ -375,7 +375,7 @@ import {
 } from "@/lib/admin/maintenance/handlers";
 
 /* Common primitives */
-import Modal from "@/components/common/Modal/Modal";
+import Modal from "@/components/common/modal/Modal";
 import { useConfirm } from "@/components/common/hooks/useConfirm";
 import { useHotkeys } from "@/lib/common/useHotkeys";
 
@@ -636,6 +636,229 @@ export default function ReportPage() {
 }
 
 
+===== app\(protected)\admin\requests\PageInner.tsx =====
+// src/app/(protected)/admin/requests/PageInner.tsx
+"use client";
+
+import React, { useEffect, useMemo, useState } from "react";
+import { useToast } from "@/components/common/ui/ToastProvider.ui";
+
+import ConfirmUI from "@/components/admin/requests/ui/Confirm.ui";
+import RequestsSummaryUI from "@/components/admin/requests/ui/RequestsSummary.ui";
+import RequestsTableUI from "@/components/admin/requests/ui/RequestsTable.ui";
+import RequestsCardGridUI from "@/components/admin/requests/ui/RequestsCardGrid.ui";
+import RequestDetailsModalUI from "@/components/admin/requests/ui/RequestDetailsModal.ui";
+import ViewToggleUI from "@/components/admin/requests/ui/ViewToggle.ui";
+
+import FiltersBarContainer from "@/components/admin/requests/containers/FiltersBar.container";
+import { RequestsURLSync } from "./RequestsURLSync";
+
+import { useDebouncedValue } from "@/lib/common/useDebouncedValue";
+import { toggleAllOnPage as selToggleAllOnPage, clearSelection as selClear } from "@/lib/common/selection";
+
+import { AdminRequestsRepo, type AdminRequest } from "@/lib/admin/requests/store";
+import type { RequestRow, Pagination as Pg } from "@/lib/admin/types";
+
+/* ========== Mapper ========== */
+function toRequestRow(req: AdminRequest): RequestRow {
+  return {
+    id: req.id,
+    dept: req.travelOrder?.department || "",
+    purpose: req.travelOrder?.purposeOfTravel || "",
+    requester: req.travelOrder?.requestingPerson || "",
+    driver: req.driver || "—",
+    vehicle: req.vehicle || "—",
+    date: req.createdAt,
+    status:
+      req.status === "pending"
+        ? "Pending"
+        : req.status === "approved"
+        ? "Approved"
+        : req.status === "rejected"
+        ? "Rejected"
+        : "Completed",
+  };
+}
+
+/* ========== Main Component ========== */
+export default function PageInner() {
+  const toast = useToast();
+
+  // ✅ Hydration guard
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  if (!mounted) return null;
+
+  const [allRows, setAllRows] = useState<RequestRow[]>([]);
+  useEffect(() => {
+    setAllRows(AdminRequestsRepo.list().map(toRequestRow));
+    const interval = setInterval(() => {
+      setAllRows(AdminRequestsRepo.list().map(toRequestRow));
+    }, 2000); // mas safe, bawas flicker
+    return () => clearInterval(interval);
+  }, []);
+
+  const [filteredRows, setFilteredRows] = useState<RequestRow[]>([]);
+  useEffect(() => setFilteredRows(allRows), [allRows]);
+
+  const [tableSearch, setTableSearch] = useState("");
+  const debouncedQ = useDebouncedValue(tableSearch, 300);
+  const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
+
+  const postFilterRows = useMemo(() => {
+    const q = debouncedQ.trim().toLowerCase();
+    const searched = q
+      ? filteredRows.filter((r) =>
+          [r.id, r.purpose, r.dept, r.requester ?? "", r.driver ?? "", r.vehicle ?? ""]
+            .join(" ")
+            .toLowerCase()
+            .includes(q)
+        )
+      : filteredRows;
+
+    return [...searched].sort((a, b) =>
+      sortDir === "desc" ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date)
+    );
+  }, [filteredRows, debouncedQ, sortDir]);
+
+  const [view, setView] = useState<"table" | "card">("table");
+
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const clearSelection = () => selClear(setSelected);
+
+  const PAGE_SIZES = { table: 15, card: 9 } as const;
+  const [pagination, setPagination] = useState<Pg>({
+    page: 1,
+    pageSize: PAGE_SIZES.table,
+    total: 0,
+  });
+
+  useEffect(() => {
+    setPagination((p) => ({ ...p, page: 1, pageSize: PAGE_SIZES[view] }));
+    clearSelection();
+  }, [view]);
+
+  useEffect(() => {
+    setPagination((p) => {
+      const total = postFilterRows.length;
+      const maxPage = Math.max(1, Math.ceil(total / p.pageSize) || 1);
+      return { ...p, total, page: Math.min(p.page, maxPage) };
+    });
+    clearSelection();
+  }, [postFilterRows]);
+
+  const pageRows = useMemo(() => {
+    const start = (pagination.page - 1) * pagination.pageSize;
+    return postFilterRows.slice(start, start + pagination.pageSize);
+  }, [postFilterRows, pagination.page, pagination.pageSize]);
+
+  const [openDetails, setOpenDetails] = useState(false);
+  const [activeRow, setActiveRow] = useState<AdminRequest | undefined>();
+
+  const openRow = (r: RequestRow) => {
+    const full = AdminRequestsRepo.get(r.id);
+    if (full) setActiveRow(full);
+    setOpenDetails(true);
+  };
+
+  const summary = useMemo(
+    () => ({
+      pending: filteredRows.filter((r) => r.status === "Pending").length,
+      approved: filteredRows.filter((r) => r.status === "Approved").length,
+      completed: filteredRows.filter((r) => r.status === "Completed").length,
+      rejected: filteredRows.filter((r) => r.status === "Rejected").length,
+    }),
+    [filteredRows]
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="admin-sticky-kpi">
+        <div className="space-y-2 pr-2">
+          <RequestsSummaryUI summary={summary} />
+          <div className="flex justify-end">
+            <ViewToggleUI view={view} onChange={setView} />
+          </div>
+        </div>
+      </div>
+
+      <FiltersBarContainer rows={allRows} onFiltered={setFilteredRows}>
+        {(controls) => (
+          <>
+            <RequestsURLSync draft={controls.draft} onDraftChange={controls.onDraftChange} />
+
+            {view === "table" && (
+              <RequestsTableUI
+                rows={pageRows}
+                tableSearch={tableSearch}
+                onTableSearch={setTableSearch}
+                sortDir={sortDir}
+                onSortDirChange={setSortDir}
+                pagination={pagination}
+                selectedIds={selected}
+                onToggleOne={(id) =>
+                  setSelected((prev) => {
+                    const next = new Set(prev);
+                    next.has(id) ? next.delete(id) : next.add(id);
+                    return next;
+                  })
+                }
+                onToggleAllOnPage={(checked, idsOnPage) =>
+                  selToggleAllOnPage(setSelected, idsOnPage, checked)
+                }
+                onRowClick={openRow}
+                onRowViewDetails={(row) => openRow(row)}
+                onPageChange={(page) => setPagination((p) => ({ ...p, page }))}
+                onPageSizeChange={(pageSize) => setPagination((p) => ({ ...p, page: 1, pageSize }))}
+                filterControls={{
+                  draft: controls.draft,
+                  onDraftChange: controls.onDraftChange,
+                  onApply: controls.onApply,
+                  onClearAll: controls.onClearAll,
+                }}
+              />
+            )}
+
+            {view === "card" && (
+              <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
+                <RequestsCardGridUI
+                  rows={pageRows}
+                  pagination={pagination}
+                  onPageChange={(page) => setPagination((p) => ({ ...p, page }))}
+                  selectedIds={selected}
+                  onToggleOne={(id) =>
+                    setSelected((prev) => {
+                      const next = new Set(prev);
+                      next.has(id) ? next.delete(id) : next.add(id);
+                      return next;
+                    })
+                  }
+                  onRowClick={openRow}
+                />
+              </div>
+            )}
+          </>
+        )}
+      </FiltersBarContainer>
+
+      <RequestDetailsModalUI open={openDetails} onClose={() => setOpenDetails(false)} row={activeRow} />
+
+      <ConfirmUI
+        open={false}
+        title="Confirm"
+        message="Confirm action"
+        confirmText="OK"
+        confirmClass="bg-green-600 text-white"
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />
+    </div>
+  );
+}
+
+
 ===== app\(protected)\admin\requests\RequestsURLSync.tsx =====
 "use client";
 
@@ -731,379 +954,16 @@ export function RequestsURLSync({ draft, onDraftChange }: Props) {
 
 
 ===== app\(protected)\admin\requests\page.tsx =====
+// src/app/(protected)/admin/requests/page.tsx
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import ToastProvider from "@/components/common/ui/ToastProvider.ui";
 
-/* UI */
-import ToastProvider, { useToast } from "@/components/common/ui/ToastProvider.ui";
-import ConfirmUI from "@/components/admin/requests/ui/Confirm.ui";
-import RequestsSummaryUI from "@/components/admin/requests/ui/RequestsSummary.ui";
-import RequestsTableUI from "@/components/admin/requests/ui/RequestsTable.ui";
-import RequestsCardGridUI from "@/components/admin/requests/ui/RequestsCardGrid.ui";
-import RequestDetailsModalUI from "@/components/admin/requests/ui/RequestDetailsModal.ui";
-import ViewToggleUI from "@/components/admin/requests/ui/ViewToggle.ui";
-
-/* Containers */
-import FiltersBarContainer from "@/components/admin/requests/containers/FiltersBar.container";
-import BulkBarContainer, { BulkBarHandle } from "@/components/admin/requests/containers/BulkBar.container";
-
-/* URL-sync (filters-only, named export) */
-import { RequestsURLSync } from "./RequestsURLSync";
-
-/* Logic & utils */
-import { useHotkeys } from "@/lib/common/useHotkeys";
-import { clampPage } from "@/lib/common/pagination";
-import { useDebouncedValue } from "@/lib/common/useDebouncedValue";
-import { toggleAllOnPage as selToggleAllOnPage, clearSelection as selClear } from "@/lib/common/selection";
-
-/* Data + Actions */
-import { REQUESTS } from "@/lib/admin/requests/data";
-import { approveRequests, rejectRequests, deleteRequests } from "@/lib/admin/requests/action";
-import { exportRequestsCsv } from "@/lib/admin/export";
-
-/* Types */
-import type { RequestRow, Pagination as Pg } from "@/lib/admin/types";
-
-/* ======================================================================= */
-/* =========================== INNER PAGE LOGIC =========================== */
-/* ======================================================================= */
-
-function PageInner() {
-  const toast = useToast();
-  const bulkRef = useRef<BulkBarHandle>(null);
-
-  // SOURCE rows (mock)
-  const [allRows, setAllRows] = useState<RequestRow[]>(() => [...REQUESTS]);
-
-  // FILTERED rows (from FiltersBarContainer)
-  const [filteredRows, setFilteredRows] = useState<RequestRow[]>(() => allRows);
-  useEffect(() => setFilteredRows(allRows), [allRows]);
-
-  // LOCAL table/card search + sort (applied after Filters)
-  const [tableSearch, setTableSearch] = useState("");
-  const debouncedQ = useDebouncedValue(tableSearch, 300);
-  const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
-
-  const postFilterRows = useMemo(() => {
-    const q = debouncedQ.trim().toLowerCase();
-    const searched = q
-      ? filteredRows.filter((r) => {
-          const s = [r.id, r.purpose, r.dept, r.requester ?? "", r.driver ?? "", r.vehicle ?? ""]
-            .join(" ")
-            .toLowerCase();
-          return s.includes(q);
-        })
-      : filteredRows;
-
-    return [...searched].sort((a, b) =>
-      sortDir === "desc" ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date)
-    );
-  }, [filteredRows, debouncedQ, sortDir]);
-
-  // VIEW TOGGLE
-  const [view, setView] = useState<"table" | "card">("table");
-
-  // SELECTION (shared across views)
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const clearSelection = () => selClear(setSelected);
-
-  // PAGINATION (table 15/page; card 9/page)
-  const PAGE_SIZES = { table: 15, card: 9 } as const;
-  const [pagination, setPagination] = useState<Pg>({
-    page: 1,
-    pageSize: PAGE_SIZES.table,
-    total: postFilterRows.length,
-  });
-
-  // when view changes
-  useEffect(() => {
-    setPagination((p) => ({ ...p, page: 1, pageSize: PAGE_SIZES[view] }));
-    clearSelection();
-  }, [view]);
-
-  // keep pagination with rows
-  useEffect(() => {
-    setPagination((p) => {
-      const total = postFilterRows.length;
-      const maxPage = Math.max(1, Math.ceil(total / p.pageSize) || 1);
-      return { ...p, total, page: Math.min(p.page, maxPage) };
-    });
-    clearSelection();
-  }, [postFilterRows]);
-
-  const pageRows = useMemo(() => {
-    const start = (pagination.page - 1) * pagination.pageSize;
-    return postFilterRows.slice(start, start + pagination.pageSize);
-  }, [postFilterRows, pagination.page, pagination.pageSize]);
-
-  // DETAILS + CONFIRM
-  const [openDetails, setOpenDetails] = useState(false);
-  const [activeRow, setActiveRow] = useState<RequestRow | undefined>();
-  const openRow = (r: RequestRow) => {
-    setActiveRow(r);
-    setOpenDetails(true);
-  };
-
-  const [confirm, setConfirm] = useState<{ open: boolean; kind?: "approve" | "reject"; id?: string }>({ open: false });
-
-  // ---------- PATCH HELPERS (optimistic) ----------
-  function patchStatus(ids: string[], status?: "Approved" | "Rejected") {
-    setAllRows((prev) =>
-      status ? prev.map((r) => (ids.includes(r.id) ? { ...r, status } : r)) : prev.filter((r) => !ids.includes(r.id))
-    );
-    setFilteredRows((prev) =>
-      status ? prev.map((r) => (ids.includes(r.id) ? { ...r, status } : r)) : prev.filter((r) => !ids.includes(r.id))
-    );
-  }
-
-  async function approveOne(id: string) {
-    const snapAll = [...allRows];
-    const snapFiltered = [...filteredRows];
-    patchStatus([id], "Approved");
-    try {
-      await approveRequests([id]);
-      toast({ kind: "success", message: `Request ${id} approved.` });
-    } catch {
-      setAllRows(snapAll);
-      setFilteredRows(snapFiltered);
-      toast({ kind: "error", message: `Failed to approve ${id}.` });
-    }
-  }
-
-  async function rejectOne(id: string) {
-    const snapAll = [...allRows];
-    const snapFiltered = [...filteredRows];
-    patchStatus([id], "Rejected");
-    try {
-      await rejectRequests([id]);
-      toast({ kind: "success", message: `Request ${id} rejected.` });
-    } catch {
-      setAllRows(snapAll);
-      setFilteredRows(snapFiltered);
-      toast({ kind: "error", message: `Failed to reject ${id}.` });
-    }
-  }
-
-  const doConfirm = async () => {
-    const id = confirm.id!;
-    if (confirm.kind === "approve") await approveOne(id);
-    if (confirm.kind === "reject") await rejectOne(id);
-    setConfirm({ open: false });
-    setOpenDetails(false);
-  };
-
-  // ---------- BULK ----------
-  async function bulkApprove(ids: string[]) {
-    if (!ids.length) return;
-    const snapAll = [...allRows];
-    const snapFiltered = [...filteredRows];
-    patchStatus(ids, "Approved");
-    try {
-      await approveRequests(ids);
-      toast({ kind: "success", message: `Approved ${ids.length} selected.` });
-    } catch {
-      setAllRows(snapAll);
-      setFilteredRows(snapFiltered);
-      toast({ kind: "error", message: "Failed to approve selected." });
-    }
-  }
-
-  async function bulkReject(ids: string[]) {
-    if (!ids.length) return;
-    const snapAll = [...allRows];
-    const snapFiltered = [...filteredRows];
-    patchStatus(ids, "Rejected");
-    try {
-      await rejectRequests(ids);
-      toast({ kind: "success", message: `Rejected ${ids.length} selected.` });
-    } catch {
-      setAllRows(snapAll);
-      setFilteredRows(snapFiltered);
-      toast({ kind: "error", message: "Failed to reject selected." });
-    }
-  }
-
-  async function bulkDelete(ids: string[]) {
-    if (!ids.length) return;
-    const snapAll = [...allRows];
-    const snapFiltered = [...filteredRows];
-    patchStatus(ids, undefined);
-    try {
-      await deleteRequests(ids);
-      toast({ kind: "success", message: `Deleted ${ids.length} selected.` });
-    } catch {
-      setAllRows(snapAll);
-      setFilteredRows(snapFiltered);
-      toast({ kind: "error", message: "Failed to delete selected." });
-    }
-  }
-
-  function bulkExport(rows: RequestRow[]) {
-    try {
-      exportRequestsCsv(rows);
-      toast({ kind: "success", message: `Exported ${rows.length} row(s).` });
-    } catch {
-      toast({ kind: "error", message: "Export failed." });
-    }
-  }
-
-  // ---------- Keyboard shortcuts ----------
-  useHotkeys(
-    [
-      { key: "Enter", ctrl: true, handler: () => bulkRef.current?.approveSelected() },
-      {
-        key: "a",
-        handler: () =>
-          setSelected((prev) => {
-            const next = new Set(prev);
-            pageRows.forEach((r) => next.add(r.id));
-            return next;
-          }),
-      },
-      { key: "x", handler: () => selClear(setSelected) },
-      { key: "ArrowLeft", handler: () => setPagination((p) => ({ ...p, page: Math.max(1, p.page - 1) })) },
-      {
-        key: "ArrowRight",
-        handler: () =>
-          setPagination((p) => ({
-            ...p,
-            page: clampPage(p.total, p.pageSize, p.page + 1),
-          })),
-      },
-      { key: "t", handler: () => setView("table") },
-      { key: "c", handler: () => setView("card") },
-    ],
-    { ignoreWhileTyping: true }
-  );
-
-  // KPI summary uses filteredRows (pre-search)
-  const summary = useMemo(
-    () => ({
-      pending: filteredRows.filter((r) => r.status === "Pending").length,
-      approved: filteredRows.filter((r) => r.status === "Approved").length,
-      completed: filteredRows.filter((r) => r.status === "Completed").length,
-      rejected: filteredRows.filter((r) => r.status === "Rejected").length,
-    }),
-    [filteredRows]
-  );
-
-  return (
-    <div className="space-y-4">
-      {/* Sticky KPI + View toggle */}
-      <div className="admin-sticky-kpi">
-        <div className="space-y-2 pr-2">
-          <RequestsSummaryUI summary={summary} />
-          <div className="flex justify-end">
-            <ViewToggleUI view={view} onChange={setView} />
-          </div>
-        </div>
-      </div>
-
-      {/* Filters container provides filtering logic to both views */}
-      <FiltersBarContainer rows={allRows} onFiltered={setFilteredRows}>
-        {(controls) => (
-          <>
-            {/* Filters URL sync (filters only) */}
-            <RequestsURLSync draft={controls.draft} onDraftChange={controls.onDraftChange} />
-
-            {/* Bulk bar */}
-            {selected.size > 0 && (
-              <BulkBarContainer
-                ref={bulkRef}
-                allRows={postFilterRows}
-                selectedIds={selected}
-                clearSelection={clearSelection}
-                onApproveSelected={bulkApprove}
-                onRejectSelected={bulkReject}
-                onDeleteSelected={bulkDelete}
-                onExportSelected={bulkExport}
-              />
-            )}
-
-            {/* TABLE VIEW */}
-            {view === "table" && (
-              <RequestsTableUI
-                tableSearch={tableSearch}
-                onTableSearch={setTableSearch}
-                sortDir={sortDir}
-                onSortDirChange={setSortDir}
-                onAddNew={() => toast({ kind: "success", message: "Add New clicked" })}
-                filterControls={{
-                  draft: controls.draft,
-                  onDraftChange: controls.onDraftChange,
-                  onApply: controls.onApply,
-                  onClearAll: controls.onClearAll,
-                }}
-                rows={pageRows}
-                pagination={pagination}
-                selectedIds={selected}
-                onToggleOne={(id) =>
-                  setSelected((prev) => {
-                    const next = new Set(prev);
-                    next.has(id) ? next.delete(id) : next.add(id);
-                    return next;
-                  })
-                }
-                onToggleAllOnPage={(checked, idsOnPage) => selToggleAllOnPage(setSelected, idsOnPage, checked)}
-                onRowClick={openRow}
-                onRowViewDetails={(row) => openRow(row)}
-                onPageChange={(page) => setPagination((p) => ({ ...p, page }))}
-                onPageSizeChange={(pageSize) => setPagination((p) => ({ ...p, page: 1, pageSize }))}
-                onApproveRow={(id) => approveOne(id)}
-                onRejectRow={(id) => rejectOne(id)}
-              />
-            )}
-
-            {/* CARD VIEW */}
-            {view === "card" && (
-              <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
-                <RequestsCardGridUI
-                  rows={pageRows}
-                  pagination={pagination}
-                  onPageChange={(page) => setPagination((p) => ({ ...p, page }))}
-                  selectedIds={selected}
-                  onToggleOne={(id) =>
-                    setSelected((prev) => {
-                      const next = new Set(prev);
-                      next.has(id) ? next.delete(id) : next.add(id);
-                      return next;
-                    })
-                  }
-                  onRowClick={openRow}
-                  onApproveRow={(id) => approveOne(id)}
-                  onRejectRow={(id) => rejectOne(id)}
-                />
-              </div>
-            )}
-          </>
-        )}
-      </FiltersBarContainer>
-
-      <RequestDetailsModalUI
-        open={openDetails}
-        onClose={() => setOpenDetails(false)}
-        row={activeRow}
-        onApprove={() => activeRow && setConfirm({ open: true, kind: "approve", id: activeRow.id })}
-        onReject={() => activeRow && setConfirm({ open: true, kind: "reject", id: activeRow.id })}
-      />
-
-      <ConfirmUI
-        open={confirm.open}
-        title={confirm.kind === "approve" ? "Approve request?" : "Reject request?"}
-        message={confirm.kind === "approve" ? "This will mark the request as Approved." : "This will mark the request as Rejected."}
-        confirmText={confirm.kind === "approve" ? "Approve" : "Reject"}
-        confirmClass={confirm.kind === "approve" ? "bg-green-600 text-white" : "bg-red-600 text-white"}
-        onCancel={() => setConfirm({ open: false })}
-        onConfirm={doConfirm}
-      />
-    </div>
-  );
-}
-
-/* ======================================================================= */
-/* ============================== PAGE WRAP =============================== */
-/* ======================================================================= */
+/* ⚡ Client-only import for PageInner */
+const PageInner = dynamic(() => import("./PageInner"), {
+  ssr: false, // ✅ prevent hydration mismatch
+});
 
 export default function AdminRequestsPage() {
   return (
@@ -9195,11 +9055,9 @@ export default function RequestDetails({ id }: { id: string }) {
     );
   }
 
-  const { form } = data;
-
   function handleDownload() {
     try {
-      buildRequestPDF(form);
+      buildRequestPDF(data!); // ✅ non-null assertion since above guard ensures data exists
     } catch (err: any) {
       alert(err?.message || "Failed to generate PDF");
     }
@@ -9219,77 +9077,78 @@ export default function RequestDetails({ id }: { id: string }) {
 
       {/* Top-level meta */}
       <section className="space-y-1">
-        <div><strong>Reason:</strong> {form.reason}</div>
-        <div><strong>Vehicle Mode:</strong> {form.vehicleMode}</div>
-        <div><strong>Requester Role:</strong> {form.requesterRole}</div>
+        <div><strong>ID:</strong> {data.id}</div>
+        <div><strong>Status:</strong> {data.status}</div>
+        <div><strong>Created At:</strong> {data.createdAt}</div>
+        <div><strong>Reason:</strong> {data.reason}</div>
+        <div><strong>Vehicle Mode:</strong> {data.vehicleMode}</div>
+        <div><strong>Requester Role:</strong> {data.requesterRole}</div>
       </section>
 
       {/* Travel Order */}
-      {form.travelOrder && (
+      {data.travelOrder && (
         <section className="space-y-1 border-t pt-4">
           <h3 className="font-medium">Travel Order</h3>
-          <div><strong>Date:</strong> {form.travelOrder.date}</div>
-          <div><strong>Requesting Person:</strong> {form.travelOrder.requestingPerson}</div>
-          <div><strong>Department:</strong> {form.travelOrder.department}</div>
-          <div><strong>Destination:</strong> {form.travelOrder.destination}</div>
+          <div><strong>Date:</strong> {data.travelOrder.date}</div>
+          <div><strong>Requesting Person:</strong> {data.travelOrder.requestingPerson}</div>
+          <div><strong>Department:</strong> {data.travelOrder.department}</div>
+          <div><strong>Destination:</strong> {data.travelOrder.destination}</div>
           <div>
-            <strong>Departure:</strong> {form.travelOrder.departureDate} •{" "}
-            <strong>Return:</strong> {form.travelOrder.returnDate}
+            <strong>Departure:</strong> {data.travelOrder.departureDate} •{" "}
+            <strong>Return:</strong> {data.travelOrder.returnDate}
           </div>
-          <div><strong>Purpose:</strong> {form.travelOrder.purposeOfTravel}</div>
+          <div><strong>Purpose:</strong> {data.travelOrder.purposeOfTravel}</div>
           <div>
             <strong>Costs:</strong>{" "}
-            {form.travelOrder.costs &&
-              JSON.stringify(form.travelOrder.costs)}
+            {data.travelOrder.costs && JSON.stringify(data.travelOrder.costs)}
           </div>
-          {form.travelOrder.endorsedByHeadName && (
+          {data.travelOrder.endorsedByHeadName && (
             <div>
               <strong>Endorsed By:</strong>{" "}
-              {form.travelOrder.endorsedByHeadName} (
-              {form.travelOrder.endorsedByHeadDate})
+              {data.travelOrder.endorsedByHeadName} (
+              {data.travelOrder.endorsedByHeadDate})
             </div>
           )}
         </section>
       )}
 
       {/* School Service */}
-      {form.schoolService && (
+      {data.schoolService && (
         <section className="space-y-1 border-t pt-4">
           <h3 className="font-medium">School Service</h3>
-          <div><strong>Driver:</strong> {form.schoolService.driver}</div>
-          <div><strong>Vehicle:</strong> {form.schoolService.vehicle}</div>
+          <div><strong>Driver:</strong> {data.schoolService.driver}</div>
+          <div><strong>Vehicle:</strong> {data.schoolService.vehicle}</div>
           <div>
             <strong>Dispatcher Signed:</strong>{" "}
-            {form.schoolService.vehicleDispatcherSigned ? "Yes" : "No"}
+            {data.schoolService.vehicleDispatcherSigned ? "Yes" : "No"}
           </div>
           <div>
-            <strong>Date:</strong> {form.schoolService.vehicleDispatcherDate}
+            <strong>Date:</strong> {data.schoolService.vehicleDispatcherDate}
           </div>
         </section>
       )}
 
       {/* Seminar Application */}
-      {form.seminar && (
+      {data.seminar && (
         <section className="space-y-1 border-t pt-4">
           <h3 className="font-medium">Seminar Application</h3>
-          <div><strong>Title:</strong> {form.seminar.title}</div>
-          <div><strong>Application Date:</strong> {form.seminar.applicationDate}</div>
+          <div><strong>Title:</strong> {data.seminar.title}</div>
+          <div><strong>Application Date:</strong> {data.seminar.applicationDate}</div>
           <div>
-            <strong>Dates:</strong> {form.seminar.dateFrom} → {form.seminar.dateTo}
+            <strong>Dates:</strong> {data.seminar.dateFrom} → {data.seminar.dateTo}
           </div>
-          <div><strong>Category:</strong> {form.seminar.trainingCategory}</div>
-          <div><strong>Sponsor:</strong> {form.seminar.sponsor}</div>
-          <div><strong>Venue:</strong> {form.seminar.venue}</div>
-          {form.seminar.breakdown && (
+          <div><strong>Category:</strong> {data.seminar.trainingCategory}</div>
+          <div><strong>Sponsor:</strong> {data.seminar.sponsor}</div>
+          <div><strong>Venue:</strong> {data.seminar.venue}</div>
+          {data.seminar.breakdown && (
             <div>
-              <strong>Breakdown:</strong>{" "}
-              {JSON.stringify(form.seminar.breakdown)}
+              <strong>Breakdown:</strong> {JSON.stringify(data.seminar.breakdown)}
             </div>
           )}
-          {form.seminar.applicants && (
+          {data.seminar.applicants && data.seminar.applicants.length > 0 && (
             <div>
               <strong>Applicants:</strong>{" "}
-              {form.seminar.applicants.map((a) => a.name).join(", ")}
+              {data.seminar.applicants.map((a) => a.name).join(", ")}
             </div>
           )}
         </section>
@@ -10367,14 +10226,25 @@ function statusTag(s: RequestRow["status"]) {
 
 
 ===== components\admin\requests\ui\RequestDetailsModal.ui.tsx =====
+// src/components/admin/requests/ui/RequestDetailsModal.ui.tsx
 "use client";
+
 import * as React from "react";
-import { RequestRow } from "@/lib/admin/types";
+import { Dialog } from "@headlessui/react";
+import { X, FileDown } from "lucide-react";
+
+import type { AdminRequest } from "@/lib/admin/requests/store";
+import { AdminRequestsRepo } from "@/lib/admin/requests/store";
+import { generateRequestPDF } from "@/lib/admin/requests/pdf"; // ✅ fixed import
+
+// Mock options (replace later with real data from repo)
+const DRIVERS = ["Juan Dela Cruz", "Pedro Santos", "Maria Reyes"];
+const VEHICLES = ["Van 01", "Bus 02", "SUV 03"];
 
 type Props = {
   open: boolean;
   onClose: () => void;
-  row?: RequestRow;
+  row?: AdminRequest;
   onApprove?: () => void;
   onReject?: () => void;
 };
@@ -10386,138 +10256,279 @@ export default function RequestDetailsModalUI({
   onApprove,
   onReject,
 }: Props) {
-  React.useEffect(() => {
-    function onEsc(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    if (open) window.addEventListener("keydown", onEsc);
-    return () => window.removeEventListener("keydown", onEsc);
-  }, [open, onClose]);
+  if (!row) return null;
 
-  if (!open || !row) return null;
-  const canAct = row.status === "Pending";
+  const to = row.travelOrder;
+
+  const [driver, setDriver] = React.useState(row.driver || "");
+  const [vehicle, setVehicle] = React.useState(row.vehicle || "");
+
+  // auto-save driver
+  React.useEffect(() => {
+    if (row?.id && driver) {
+      AdminRequestsRepo.setDriver(row.id, driver);
+    }
+  }, [driver, row?.id]);
+
+  // auto-save vehicle
+  React.useEffect(() => {
+    if (row?.id && vehicle) {
+      AdminRequestsRepo.setVehicle(row.id, vehicle);
+    }
+  }, [vehicle, row?.id]);
+
+  // compute total cost
+  const totalCost = React.useMemo(() => {
+    if (!to?.costs) return 0;
+    let sum = 0;
+    Object.entries(to.costs).forEach(([k, v]) => {
+      if (typeof v === "number") sum += v;
+      if (Array.isArray(v)) {
+        v.forEach((item) => {
+          if (item.amount) sum += item.amount;
+        });
+      }
+    });
+    return sum;
+  }, [to?.costs]);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center p-4 md:p-6"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="req-modal-title"
+    <Dialog
+      open={open}
+      onClose={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center"
     >
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px]" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
 
-      <div className="relative w-[680px] max-w-[95vw] rounded-2xl bg-white shadow-2xl ring-1 ring-black/5">
+      <div className="relative z-50 w-full max-w-3xl rounded-xl bg-white p-6 shadow-lg">
         {/* Header */}
-        <div className="flex items-center justify-between border-b px-5 py-3.5 md:px-6">
-          <div className="flex items-center gap-3">
-            <div className="grid h-9 w-9 place-items-center rounded-xl bg-neutral-100 text-neutral-700 text-sm font-semibold">
-              TL
-            </div>
-            <div>
-              <h2 id="req-modal-title" className="text-base md:text-lg font-semibold text-neutral-900">
-                Request {row.id}
-              </h2>
-              <div className="mt-0.5 text-xs text-neutral-500">Details overview</div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <StatusBadge status={row.status} />
-            <button
-              aria-label="Close"
-              onClick={onClose}
-              className="rounded-lg border bg-white px-2.5 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 active:scale-[0.98]"
-            >
-              Close
-            </button>
-          </div>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Request Details</h2>
+          <button
+            onClick={onClose}
+            className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100"
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
 
-        {/* Body */}
-        <div className="max-h-[70vh] overflow-auto px-5 py-5 md:px-6 md:py-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-            <Field label="Department" value={row.dept} />
-            <Field label="Date" value={row.date} />
-            <Field label="Requester" value={row.requester ?? "—"} />
-            <Field label="Driver" value={row.driver ?? "—"} />
-            <Field label="Vehicle" value={row.vehicle ?? "—"} />
-            <Field label="Purpose" value={row.purpose} className="md:col-span-2" tall />
-          </div>
+        {/* Sections */}
+        <div className="space-y-6 max-h-[70vh] overflow-y-auto pr-2">
+          {/* Travel Order */}
+          <section>
+            <h3 className="mb-2 text-sm font-semibold text-neutral-700">
+              Travel Order
+            </h3>
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+              <dt className="font-semibold">Date</dt>
+              <dd>{to?.date || "—"}</dd>
+              <dt className="font-semibold">Requesting Person</dt>
+              <dd>{to?.requestingPerson || "—"}</dd>
+              <dt className="font-semibold">Department</dt>
+              <dd>{to?.department || "—"}</dd>
+              <dt className="font-semibold">Destination</dt>
+              <dd>{to?.destination || "—"}</dd>
+              <dt className="font-semibold">Departure Date</dt>
+              <dd>{to?.departureDate || "—"}</dd>
+              <dt className="font-semibold">Return Date</dt>
+              <dd>{to?.returnDate || "—"}</dd>
+              <dt className="font-semibold">Purpose of Travel</dt>
+              <dd>{to?.purposeOfTravel || "—"}</dd>
+            </dl>
+
+            {to?.costs && (
+              <div className="mt-4">
+                <h4 className="text-sm font-semibold text-neutral-700 mb-2">
+                  Estimated Costs
+                </h4>
+                <table className="w-full text-sm border border-neutral-200 rounded">
+                  <tbody>
+                    <tr>
+                      <td className="px-2 py-1">Food</td>
+                      <td className="px-2 py-1 text-right">
+                        ₱{to.costs.food ?? 0}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1">Driver’s allowance</td>
+                      <td className="px-2 py-1 text-right">
+                        ₱{to.costs.driversAllowance ?? 0}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1">Rent vehicles</td>
+                      <td className="px-2 py-1 text-right">
+                        ₱{to.costs.rentVehicles ?? 0}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1">Hired drivers</td>
+                      <td className="px-2 py-1 text-right">
+                        ₱{to.costs.hiredDrivers ?? 0}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1">Accommodation</td>
+                      <td className="px-2 py-1 text-right">
+                        ₱{to.costs.accommodation ?? 0}
+                      </td>
+                    </tr>
+
+                    {to.costs.otherLabel && to.costs.otherAmount && (
+                      <tr>
+                        <td className="px-2 py-1">{to.costs.otherLabel}</td>
+                        <td className="px-2 py-1 text-right">
+                          ₱{to.costs.otherAmount}
+                        </td>
+                      </tr>
+                    )}
+
+                    {Array.isArray(to.costs.otherItems) &&
+                      to.costs.otherItems.map((item, i) => (
+                        <tr key={i}>
+                          <td className="px-2 py-1">{item.label}</td>
+                          <td className="px-2 py-1 text-right">
+                            ₱{item.amount}
+                          </td>
+                        </tr>
+                      ))}
+
+                    <tr className="border-t font-semibold">
+                      <td className="px-2 py-1">Total</td>
+                      <td className="px-2 py-1 text-right">₱{totalCost}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Signature */}
+            <div className="mt-6 grid grid-cols-2 gap-4 items-center">
+              <div>
+                <p className="text-sm font-medium text-neutral-700">
+                  Endorsed By:
+                </p>
+                <p className="text-sm">{to?.endorsedByHeadName || "—"}</p>
+                <p className="text-xs text-neutral-500">
+                  {to?.endorsedByHeadDate || ""}
+                </p>
+              </div>
+              <div className="flex flex-col items-center">
+                {to?.endorsedByHeadSignature ? (
+                  <>
+                    <img
+                      src={to.endorsedByHeadSignature}
+                      alt="Signature"
+                      className="h-12 object-contain border rounded bg-white p-1"
+                    />
+                    <p className="text-xs text-neutral-500 mt-1">Signature</p>
+                  </>
+                ) : (
+                  <p className="text-xs text-neutral-500 italic">Not signed</p>
+                )}
+              </div>
+            </div>
+          </section>
+
+          {/* Assignments */}
+          <section>
+            <h3 className="mb-2 text-sm font-semibold text-neutral-700">
+              Assignments
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-neutral-600 mb-1">
+                  Driver
+                </label>
+                <select
+                  value={driver}
+                  onChange={(e) => setDriver(e.target.value)}
+                  className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#7A0010]"
+                >
+                  <option value="">— Select Driver —</option>
+                  {DRIVERS.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-neutral-600 mb-1">
+                  Vehicle
+                </label>
+                <select
+                  value={vehicle}
+                  onChange={(e) => setVehicle(e.target.value)}
+                  className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#7A0010]"
+                >
+                  <option value="">— Select Vehicle —</option>
+                  {VEHICLES.map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </section>
+
+          {/* Seminar */}
+          {row.seminar && (
+            <section>
+              <h3 className="mb-2 text-sm font-semibold text-neutral-700">
+                Seminar Application
+              </h3>
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                <dt className="font-semibold">Application Date</dt>
+                <dd>{row.seminar.applicationDate || "—"}</dd>
+                <dt className="font-semibold">Title</dt>
+                <dd>{row.seminar.title || "—"}</dd>
+                <dt className="font-semibold">Category</dt>
+                <dd>{row.seminar.trainingCategory || "—"}</dd>
+                <dt className="font-semibold">Date From</dt>
+                <dd>{row.seminar.dateFrom || "—"}</dd>
+                <dt className="font-semibold">Date To</dt>
+                <dd>{row.seminar.dateTo || "—"}</dd>
+                <dt className="font-semibold">Venue</dt>
+                <dd>{row.seminar.venue || "—"}</dd>
+                <dt className="font-semibold">Modality</dt>
+                <dd>{row.seminar.modality || "—"}</dd>
+              </dl>
+            </section>
+          )}
         </div>
 
         {/* Footer */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border-t px-5 py-3.5 md:px-6">
-          <div className="text-xs text-neutral-500">
-            Updated just now • Read-only view
-          </div>
-
-          {canAct ? (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={onReject}
-                className="rounded-lg bg-red-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-red-700 active:scale-[0.98]"
-              >
-                Reject
-              </button>
+        <div className="mt-6 flex justify-between">
+          <button
+            onClick={() => generateRequestPDF(row)} // ✅ fixed function call
+            className="flex items-center gap-2 rounded-md bg-[#7A0010] hover:bg-[#5c000c] px-4 py-2 text-sm text-white transition"
+          >
+            <FileDown className="h-4 w-4" />
+            Download PDF
+          </button>
+          <div className="flex gap-2">
+            {onApprove && (
               <button
                 onClick={onApprove}
-                className="rounded-lg bg-green-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-green-700 active:scale-[0.98]"
+                className="rounded-md bg-green-600 hover:bg-green-700 px-4 py-2 text-sm text-white transition"
               >
                 Approve
               </button>
-            </div>
-          ) : (
-            <span className="text-sm text-neutral-500">No actions available</span>
-          )}
+            )}
+            {onReject && (
+              <button
+                onClick={onReject}
+                className="rounded-md bg-red-600 hover:bg-red-700 px-4 py-2 text-sm text-white transition"
+              >
+                Reject
+              </button>
+            )}
+          </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-/* ---- small pieces ---- */
-
-function Field({
-  label,
-  value,
-  className = "",
-  tall = false,
-}: {
-  label: string;
-  value: React.ReactNode;
-  className?: string;
-  tall?: boolean;
-}) {
-  return (
-    <div className={className}>
-      <div className="mb-1 text-[11px] font-semibold tracking-wide text-neutral-500">
-        {label.toUpperCase()}
-      </div>
-      <div
-        className={
-          "w-full rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2 text-[14px] text-neutral-900 " +
-          (tall ? "min-h-[56px]" : "h-10 flex items-center")
-        }
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function StatusBadge({ status }: { status: RequestRow["status"] }) {
-  const map: Record<RequestRow["status"], string> = {
-    Pending: "bg-amber-100 text-amber-800 ring-amber-200",
-    Approved: "bg-emerald-100 text-emerald-800 ring-emerald-200",
-    Completed: "bg-blue-100 text-blue-800 ring-blue-200",
-    Rejected: "bg-rose-100 text-rose-800 ring-rose-200",
-  };
-  return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${map[status]}`}
-    >
-      {status}
-    </span>
+    </Dialog>
   );
 }
 
@@ -10792,10 +10803,16 @@ function StatusBadge({ status }: { status: RequestRow["status"] }) {
 
 
 ===== components\admin\requests\ui\RequestsSummary.ui.tsx =====
+"use client";
+
 import { RequestsSummary } from "@/lib/admin/types";
 import { Clock, CheckCircle2, Flag, XCircle } from "lucide-react";
 
-export default function RequestsSummaryUI({ summary }: { summary: RequestsSummary }) {
+type Props = {
+  summary: RequestsSummary;
+};
+
+export default function RequestsSummaryUI({ summary }: Props) {
   return (
     <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
       <Card
@@ -10857,7 +10874,7 @@ function Card({
       <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-neutral-100">
         <div
           className={`h-full ${barColor}`}
-          style={{ width: `${Math.min(100, value * 20)}%` }} // mock width (adjust as needed)
+          style={{ width: `${Math.min(100, value * 20)}%` }} // mock width
         />
       </div>
     </div>
@@ -16680,16 +16697,22 @@ export function useToast() {
 
 export default function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = React.useState<Toast[]>([]);
+  const idSeed = React.useId(); // ✅ stable seed per provider instance
+  const counterRef = React.useRef(0);
 
-  const toast = React.useCallback((t: Omit<Toast, "id">) => {
-    const id = crypto.randomUUID();
-    const ms = t.ms ?? 4000;
-    const next: Toast = { id, kind: "info", ...t };
-    setToasts((prev) => [next, ...prev]);
-    window.setTimeout(() => {
-      setToasts((prev) => prev.filter((x) => x.id !== id));
-    }, ms);
-  }, []);
+  const toast = React.useCallback(
+    (t: Omit<Toast, "id">) => {
+      counterRef.current++;
+      const id = `${idSeed}-${counterRef.current}`;
+      const ms = t.ms ?? 4000;
+      const next: Toast = { id, kind: "info", ...t };
+      setToasts((prev) => [next, ...prev]);
+      window.setTimeout(() => {
+        setToasts((prev) => prev.filter((x) => x.id !== id));
+      }, ms);
+    },
+    [idSeed]
+  );
 
   return (
     <ToastContext.Provider value={{ toast }}>
@@ -20890,7 +20913,6 @@ import { canSubmit } from "@/lib/user/request/validation";
 import { firstReceiver, fullApprovalPath } from "@/lib/user/request/routing";
 import {
   saveDraft,
-  submitRequest,
   updateSubmission,
   getDraft,
   getSubmission,
@@ -20909,6 +20931,9 @@ import {
   QuickFillCurrentButton,
   QuickFillMenu,
 } from "@/components/user/request/dev/QuickFillButton.ui";
+
+// ✅ import AdminRequestsRepo
+import { AdminRequestsRepo } from "@/lib/admin/requests/store";
 
 export default function RequestWizard() {
   const search = useSearchParams(); // may be null
@@ -20940,18 +20965,20 @@ export default function RequestWizard() {
   React.useEffect(() => {
     let did = false;
 
-    // 1) Handoff (from Drafts/Submissions)
     const h = consumeHandoff();
     if (h?.data) {
       hardSet(h.data);
       clearIds();
       if (h.from === "draft") setCurrentDraftId(h.id);
       if (h.from === "submission") setCurrentSubmissionId(h.id);
-      toast({ kind: "success", title: "Loaded", message: `Form populated from ${h.from}.` });
+      toast({
+        kind: "success",
+        title: "Loaded",
+        message: `Form populated from ${h.from}.`,
+      });
       did = true;
     }
 
-    // 2) URL fallback if handoff not present (e.g., page refresh)
     const tryUrlFetch = async () => {
       if (did) return;
 
@@ -20964,7 +20991,11 @@ export default function RequestWizard() {
           hardSet(d.data);
           clearIds();
           setCurrentDraftId(draftId);
-          toast({ kind: "success", title: "Draft loaded", message: "Form populated from draft." });
+          toast({
+            kind: "success",
+            title: "Draft loaded",
+            message: "Form populated from draft.",
+          });
           did = true;
         }
       } else if (subId) {
@@ -20973,17 +21004,24 @@ export default function RequestWizard() {
           hardSet(s.data);
           clearIds();
           setCurrentSubmissionId(subId);
-          toast({ kind: "info", title: "Editing submission", message: "Form populated from submission." });
+          toast({
+            kind: "info",
+            title: "Editing submission",
+            message: "Form populated from submission.",
+          });
           did = true;
         }
       }
 
-      // 3) Autosave (only if nothing else)
       if (!did) {
         const autosaved = loadAutosave();
         if (autosaved) {
           hardSet(autosaved);
-          toast({ kind: "info", title: "Restored", message: "Unsaved form recovered." });
+          toast({
+            kind: "info",
+            title: "Restored",
+            message: "Unsaved form recovered.",
+          });
         }
       }
     };
@@ -20992,7 +21030,11 @@ export default function RequestWizard() {
       const autosaved = loadAutosave();
       if (autosaved) {
         hardSet(autosaved);
-        toast({ kind: "info", title: "Restored", message: "Unsaved form recovered." });
+        toast({
+          kind: "info",
+          title: "Restored",
+          message: "Unsaved form recovered.",
+        });
       }
     });
 
@@ -21005,7 +21047,6 @@ export default function RequestWizard() {
     return () => clearTimeout(id);
   }, [data]);
 
-  // Clear autosave after successful submit
   function afterSuccessfulSubmitReset() {
     clearAutosave();
     hardSet({
@@ -21021,6 +21062,9 @@ export default function RequestWizard() {
         returnDate: "",
         purposeOfTravel: "",
         costs: {},
+        endorsedByHeadName: "",
+        endorsedByHeadDate: "",
+        endorsedByHeadSignature: "", // ✅ include signature
       },
       schoolService: undefined,
       seminar: undefined,
@@ -21029,7 +21073,6 @@ export default function RequestWizard() {
     clearIds();
   }
 
-  // ----- CLEAR FORM BUTTON HANDLER -----
   async function handleClear() {
     const yes = await ask(
       "Clear the form?",
@@ -21041,7 +21084,7 @@ export default function RequestWizard() {
 
     clearAutosave();
     hardSet({
-      requesterRole: data.requesterRole, // keep current role
+      requesterRole: data.requesterRole,
       reason: "visit",
       vehicleMode: "owned",
       travelOrder: {
@@ -21053,6 +21096,9 @@ export default function RequestWizard() {
         returnDate: "",
         purposeOfTravel: "",
         costs: {},
+        endorsedByHeadName: "",
+        endorsedByHeadDate: "",
+        endorsedByHeadSignature: "", // ✅ include signature
       },
       schoolService: undefined,
       seminar: undefined,
@@ -21085,9 +21131,17 @@ export default function RequestWizard() {
     try {
       const res = await saveDraft(data, currentDraftId || undefined);
       if (!currentDraftId) setCurrentDraftId(res.id);
-      toast({ kind: "success", title: "Draft saved", message: "Your draft has been saved." });
+      toast({
+        kind: "success",
+        title: "Draft saved",
+        message: "Your draft has been saved.",
+      });
     } catch {
-      toast({ kind: "error", title: "Save failed", message: "Could not save draft." });
+      toast({
+        kind: "error",
+        title: "Save failed",
+        message: "Could not save draft.",
+      });
     } finally {
       setSaving(false);
     }
@@ -21125,21 +21179,29 @@ export default function RequestWizard() {
     setErrors(v.errors);
     if (!v.ok) {
       scrollToFirstError(v.errors);
-      toast({ kind: "error", title: "Cannot submit", message: "Please complete required fields." });
+      toast({
+        kind: "error",
+        title: "Cannot submit",
+        message: "Please complete required fields.",
+      });
       return;
     }
     setSubmitting(true);
     try {
-      if (currentSubmissionId) {
-        await updateSubmission(currentSubmissionId, data);
-        toast({ kind: "success", title: "Submission updated", message: "Your submission was updated." });
-      } else {
-        await submitRequest(data);
-        toast({ kind: "success", title: "Submitted", message: "Request has been submitted." });
-      }
+      // ✅ directly save to AdminRequestsRepo
+      AdminRequestsRepo.acceptFromUser(data);
+      toast({
+        kind: "success",
+        title: "Submitted",
+        message: "Request has been submitted and sent to Admin.",
+      });
       afterSuccessfulSubmitReset();
     } catch {
-      toast({ kind: "error", title: "Submit failed", message: "Please try again." });
+      toast({
+        kind: "error",
+        title: "Submit failed",
+        message: "Please try again.",
+      });
     } finally {
       setSubmitting(false);
     }
@@ -21161,7 +21223,6 @@ export default function RequestWizard() {
               {currentSubmissionId ? "Edit Submission" : "Request Form"}
             </h2>
             <div className="flex items-center gap-2">
-              {/* Clear */}
               <button
                 onClick={handleClear}
                 type="button"
@@ -21170,12 +21231,8 @@ export default function RequestWizard() {
               >
                 Clear
               </button>
-
-              {/* Dev helper buttons */}
               <QuickFillCurrentButton />
               <QuickFillMenu />
-
-              {/* Links */}
               <Link href="/user/drafts" className="text-sm text-neutral-600 underline">
                 View drafts
               </Link>
@@ -22472,18 +22529,22 @@ export default function TravelOrderForm({
   // If user types a head name manually, don’t auto-overwrite next time
   const headEditedRef = React.useRef(false);
 
-  // --- Signature state (UI helpers only; persisted to parent via onChange) ---
+  // --- Signature state ---
   const [sigDirty, setSigDirty] = React.useState(false);
-  const [sigSaved, setSigSaved] = React.useState<boolean>(!!data?.signatureSaved);
+  const [sigSaved, setSigSaved] = React.useState<boolean>(
+    !!data?.endorsedByHeadSignature
+  );
   const [sigSavedAt, setSigSavedAt] = React.useState<string | null>(
-    data?.signatureSaved ? new Date().toLocaleString() : null
+    data?.endorsedByHeadSignature ? new Date().toLocaleString() : null
   );
 
   return (
     <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-lg font-semibold">Travel Order</h3>
-        <span className="text-xs text-neutral-500">Required fields marked with *</span>
+        <span className="text-xs text-neutral-500">
+          Required fields marked with *
+        </span>
       </div>
 
       {/* Top grid */}
@@ -22529,7 +22590,9 @@ export default function TravelOrderForm({
             }}
           />
           {errors["travelOrder.department"] && (
-            <span className="text-xs text-red-600">{errors["travelOrder.department"]}</span>
+            <span className="text-xs text-red-600">
+              {errors["travelOrder.department"]}
+            </span>
           )}
         </div>
 
@@ -22546,7 +22609,9 @@ export default function TravelOrderForm({
             placeholder="City / Venue / School / Company"
           />
           {errors["travelOrder.destination"] && (
-            <span className="text-xs text-red-600">{errors["travelOrder.destination"]}</span>
+            <span className="text-xs text-red-600">
+              {errors["travelOrder.destination"]}
+            </span>
           )}
         </div>
 
@@ -22594,25 +22659,33 @@ export default function TravelOrderForm({
             label="Driver’s allowance"
             placeholder="0.00"
             value={c.driversAllowance ?? ""}
-            onChange={(e) => onChangeCosts({ driversAllowance: asNum(e.target.value) })}
+            onChange={(e) =>
+              onChangeCosts({ driversAllowance: asNum(e.target.value) })
+            }
           />
           <CurrencyInput
             label="Rent vehicles"
             placeholder="0.00"
             value={c.rentVehicles ?? ""}
-            onChange={(e) => onChangeCosts({ rentVehicles: asNum(e.target.value) })}
+            onChange={(e) =>
+              onChangeCosts({ rentVehicles: asNum(e.target.value) })
+            }
           />
           <CurrencyInput
             label="Hired drivers"
             placeholder="0.00"
             value={c.hiredDrivers ?? ""}
-            onChange={(e) => onChangeCosts({ hiredDrivers: asNum(e.target.value) })}
+            onChange={(e) =>
+              onChangeCosts({ hiredDrivers: asNum(e.target.value) })
+            }
           />
           <CurrencyInput
             label="Accommodation"
             placeholder="0.00"
             value={c.accommodation ?? ""}
-            onChange={(e) => onChangeCosts({ accommodation: asNum(e.target.value) })}
+            onChange={(e) =>
+              onChangeCosts({ accommodation: asNum(e.target.value) })
+            }
           />
 
           <div className="grid grid-cols-3 gap-3 md:col-span-2">
@@ -22626,7 +22699,9 @@ export default function TravelOrderForm({
               label="Amount"
               placeholder="0.00"
               value={c.otherAmount ?? ""}
-              onChange={(e) => onChangeCosts({ otherAmount: asNum(e.target.value) })}
+              onChange={(e) =>
+                onChangeCosts({ otherAmount: asNum(e.target.value) })
+              }
               className="col-span-2 sm:col-span-1"
             />
           </div>
@@ -22640,7 +22715,9 @@ export default function TravelOrderForm({
               required
               placeholder="State reasons for renting or hiring a driver"
               value={c.justification ?? ""}
-              onChange={(e) => onChangeCosts({ justification: e.target.value })}
+              onChange={(e) =>
+                onChangeCosts({ justification: e.target.value })
+              }
               error={errors["travelOrder.costs.justification"]}
             />
           </div>
@@ -22654,7 +22731,6 @@ export default function TravelOrderForm({
           placeholder="Name of Department Head"
           value={data.endorsedByHeadName ?? ""}
           onChange={(e) => {
-            // mark as manually edited so future dept changes won't overwrite
             headEditedRef.current = true;
             onChange({ endorsedByHeadName: e.target.value });
           }}
@@ -22669,11 +22745,16 @@ export default function TravelOrderForm({
       {/* Signature block */}
       <div className="mt-6 rounded-xl border border-neutral-200 bg-neutral-50/60 p-4">
         <div className="mb-2 flex items-center justify-between">
-          <span className="text-sm font-medium text-neutral-700">Endorser signature</span>
+          <span className="text-sm font-medium text-neutral-700">
+            Endorser signature
+          </span>
 
           {sigSaved ? (
             <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
-              ✓ Saved{sigSavedAt ? <span className="text-green-700/80"> · {sigSavedAt}</span> : null}
+              ✓ Saved
+              {sigSavedAt ? (
+                <span className="text-green-700/80"> · {sigSavedAt}</span>
+              ) : null}
             </span>
           ) : (
             <span className="text-xs text-neutral-500">Not saved</span>
@@ -22682,16 +22763,16 @@ export default function TravelOrderForm({
 
         <SignaturePad
           height={200}
-          value={data?.signatureDataUrl || null}
+          value={data?.endorsedByHeadSignature || null}
           onDraw={() => setSigDirty(true)}
           onSave={(dataUrl) => {
-            onChange({ signatureDataUrl: dataUrl, signatureSaved: true });
+            onChange({ endorsedByHeadSignature: dataUrl });
             setSigSaved(true);
             setSigDirty(false);
             setSigSavedAt(new Date().toLocaleString());
           }}
           onClear={() => {
-            onChange({ signatureDataUrl: "", signatureSaved: false });
+            onChange({ endorsedByHeadSignature: "" });
             setSigDirty(false);
             setSigSaved(false);
             setSigSavedAt(null);
@@ -22700,15 +22781,13 @@ export default function TravelOrderForm({
             const buf = await file.arrayBuffer();
             const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
             const dataUrl = `data:${file.type};base64,${b64}`;
-            onChange({ signatureDataUrl: dataUrl, signatureSaved: true });
+            onChange({ endorsedByHeadSignature: dataUrl });
             setSigSaved(true);
             setSigDirty(false);
             setSigSavedAt(new Date().toLocaleString());
           }}
           saveDisabled={!sigDirty}
         />
-
-        
       </div>
     </section>
   );
@@ -22941,7 +23020,7 @@ export function CurrencyInput({
 
 import Link from "next/link";
 import { PageHeader, PageBody } from "@/components/common/Page";
-import type { Trip, Vehicle, Status } from "@/components/faculty/schedule/types";
+import type { Trip, Vehicle, Status } from "@/components/user/schedule/types";
 
 export type Filters = {
   q: string;
@@ -24716,18 +24795,21 @@ export type RequestStatus = "Pending" | "Approved" | "Completed" | "Rejected";
 
 export type RequestRow = {
   id: string;
-  dept: "CCMS" | "HR" | "Registrar" | "Finance";
+  dept: string;                 // allow dynamic dept (ex: CITE, CBA, CCMS…)
   purpose: string;
-  date: string;                // YYYY-MM-DD (scheduled date)
+  date: string;                 // YYYY-MM-DD (scheduled date)
   status: RequestStatus;
   requester?: string;
   vehicle?: string;
   driver?: string;
 
   // When the request was submitted/received (optional)
-  receivedAt?: string;         // e.g., "2025-09-04 10:15 AM"
-  createdAt?: string;          // ISO (used by mocks for sorting)
-  updatedAt?: string;          // ISO
+  receivedAt?: string;          // e.g., "2025-09-04 10:15 AM"
+  createdAt?: string;           // ISO (used by mocks for sorting)
+  updatedAt?: string;           // ISO
+
+  // Keep full AdminRequest object for modal/details
+  raw?: any;                    // ← contains AdminRequest
 };
 
 export type RequestsSummary = {
@@ -24740,7 +24822,7 @@ export type RequestsSummary = {
 // ---- Filters / Paging ----
 export type FilterState = {
   status: "All" | RequestStatus;
-  dept: "All" | "CCMS" | "HR" | "Registrar" | "Finance";
+  dept: "All" | string;         // allow flexible dept filter
   from?: string;
   to?: string;
   search: string;
@@ -26360,124 +26442,131 @@ export const DASHBOARD_DATA: DashboardData = {
 };
 
 
-===== lib\admin\requests\pdf.ts =====
-// Simple client-side PDF generator using jsPDF + autoTable.
-// npm i jspdf jspdf-autotable
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
-import type { RequestFormData, OtherCostItem } from "@/lib/user/request/types";
+===== lib\admin\requests\mapper.ts =====
+import type { AdminRequest } from "./store";
+import type { RequestRow } from "@/lib/admin/types";
 
-function money(v?: number | null) {
-  return typeof v === "number" ? `₱ ${v.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : "—";
+export function toRequestRow(req: AdminRequest): RequestRow {
+  return {
+    id: req.id,
+    dept: (req.travelOrder?.department as RequestRow["dept"]) || "—",
+    purpose: req.travelOrder?.purposeOfTravel || "—",
+    requester: req.travelOrder?.requestingPerson || "—",
+    driver: req.driver || "—",      // editable later
+    vehicle: req.vehicle || "—",    // editable later
+    date: req.createdAt,
+    status:
+      req.status === "pending"
+        ? "Pending"
+        : req.status === "approved"
+        ? "Approved"
+        : req.status === "rejected"
+        ? "Rejected"
+        : "Completed",
+    raw: req, // keep full object para sa modal
+  };
 }
 
-export function buildRequestPDF(req: RequestFormData): Blob {
-  const doc = new jsPDF({ unit: "pt", format: "a4" });
 
-  const H = 18;
-  doc.setFont("helvetica", "bold").setFontSize(16).text("TRAVEL ORDER & SEMINAR APPLICATION", 40, 48);
-  doc.setLineWidth(0.5).line(40, 56, 555, 56);
-  doc.setFontSize(10).setFont("helvetica", "normal");
+===== lib\admin\requests\pdf.ts =====
+// src/lib/admin/requests/pdf.ts
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import type { AdminRequest } from "@/lib/admin/requests/store";
 
-  // Travel Order
-  const to = req.travelOrder;
+export function generateRequestPDF(req: AdminRequest) {
+  const doc = new jsPDF();
+
+  // Title
+  doc.setFontSize(16);
+  doc.text("Travel Order", 105, 20, { align: "center" });
+
+  // Basic info table
   autoTable(doc, {
-    startY: 72,
-    head: [["Travel Order"]],
+    startY: 30,
+    head: [["Field", "Details"]],
     body: [
-      ["Date", to.date],
-      ["Requesting person", to.requestingPerson],
-      ["Department", to.department],
-      ["Destination", to.destination],
-      ["Departure date", to.departureDate],
-      ["Return date", to.returnDate],
-      ["Purpose of travel", to.purposeOfTravel],
-      ["Endorsed by (Dept Head)", to.endorsedByHeadName ?? "—"],
-      ["Endorsement date", to.endorsedByHeadDate ?? "—"],
+      ["Date", req.travelOrder?.date || ""],
+      ["Requesting Person", req.travelOrder?.requestingPerson || ""],
+      ["Department", req.travelOrder?.department || ""],
+      ["Destination", req.travelOrder?.destination || ""],
+      ["Departure Date", req.travelOrder?.departureDate || ""],
+      ["Return Date", req.travelOrder?.returnDate || ""],
+      ["Purpose of Travel", req.travelOrder?.purposeOfTravel || ""],
     ],
-    styles: { fontSize: 10, cellPadding: 6 },
-    headStyles: { fillColor: [240, 240, 240], textColor: 20, fontStyle: "bold" },
     theme: "grid",
+    styles: { fontSize: 10 },
   });
 
-  // Travel Cost
-  const c = to.costs || {};
-  const otherItems: OtherCostItem[] =
-    (c.otherItems && c.otherItems.length ? c.otherItems : []) ||
-    (c.otherLabel ? [{ label: c.otherLabel, amount: c.otherAmount ?? null }] : []);
-  autoTable(doc, {
-    head: [["Travel Cost (estimate)"]],
-    body: [
-      ["Food", money(c.food)],
-      ["Driver’s allowance", money(c.driversAllowance)],
-      ["Rent vehicles", money(c.rentVehicles)],
-      ["Hired drivers", money(c.hiredDrivers)],
-      ["Accommodation", money(c.accommodation)],
-      ...otherItems.map((o) => [o.label || "Other", money(o.amount)]),
-      ["Justification", c.justification || "—"],
-    ],
-    styles: { fontSize: 10, cellPadding: 6 },
-    headStyles: { fillColor: [240, 240, 240], textColor: 20, fontStyle: "bold" },
-    theme: "grid",
-    startY: (doc as any).lastAutoTable.finalY + H,
+  // Costs
+  const costRows = Object.entries(req.travelOrder?.costs || {}).map(([k, v]) => {
+    if (typeof v === "number") return [k, `₱${v.toFixed(2)}`];
+    return [k, String(v)];
   });
 
-  // Seminar (if provided)
-  const s = req.seminar;
-  if (s) {
-    autoTable(doc, {
-      head: [["Seminar Application"]],
-      body: [
-        ["Application date", s.applicationDate],
-        ["Title", s.title],
-        ["Type of training", (s.typeOfTraining ?? []).join(", ") || "—"],
-        ["Training category", s.trainingCategory ?? "—"],
-        ["Date from", s.dateFrom],
-        ["Date to", s.dateTo],
-        ["Sponsor/Provider", s.sponsor ?? "—"],
-        ["Venue", s.venue ?? "—"],
-        ["Modality", s.modality ?? "—"],
-      ],
-      styles: { fontSize: 10, cellPadding: 6 },
-      headStyles: { fillColor: [240, 240, 240], textColor: 20, fontStyle: "bold" },
-      theme: "grid",
-      startY: (doc as any).lastAutoTable.finalY + H,
-    });
+  autoTable(doc, {
+    startY: ((doc as any).lastAutoTable?.finalY || 60) + 5,
+    head: [["Travel Cost Item", "Amount"]],
+    body: costRows,
+    theme: "grid",
+    styles: { fontSize: 10 },
+  });
 
-    const b = s.breakdown || {};
-    const sOther: OtherCostItem[] =
-      (b.otherItems && b.otherItems.length ? b.otherItems : []) ||
-      (b.otherLabel ? [{ label: b.otherLabel, amount: b.otherAmount ?? null }] : []);
-    autoTable(doc, {
-      head: [["Seminar Cost Breakdown"]],
-      body: [
-        ["Registration", money(b.registration)],
-        ["Accommodation", money(b.accommodation)],
-        ["Per diem / Meals / Driver’s allowance", money(b.perDiemMealsDriversAllowance)],
-        ["Transport / Fare / Gas / Parking / Toll", money(b.transportFareGasParkingToll)],
-        ...sOther.map((o) => [o.label || "Other", money(o.amount)]),
-      ],
-      styles: { fontSize: 10, cellPadding: 6 },
-      headStyles: { fillColor: [240, 240, 240], textColor: 20, fontStyle: "bold" },
-      theme: "grid",
-      startY: (doc as any).lastAutoTable.finalY + H,
-    });
-  }
+  // Endorsements
+  doc.setFontSize(12);
+  let y = ((doc as any).lastAutoTable?.finalY || 120) + 15;
 
-  return doc.output("blob");
+  doc.text("Endorsed By:", 14, y);
+  y += 10;
+  doc.text("__________________________", 14, y);
+  y += 6;
+  doc.text("Engr. Maria DeptHead", 14, y);
+  y += 15;
+
+  doc.text("For Travel Cost: If none, proceed to School Service Request", 14, y);
+  y += 15;
+  doc.text("Recommending Approval:", 14, y);
+  y += 10;
+  doc.text("__________________________", 14, y);
+  y += 6;
+  doc.text("CARLOS JAYRON A. REMIENDO (Comptroller)", 14, y);
+  y += 15;
+
+  doc.text("Noted:", 14, y);
+  y += 10;
+  doc.text("__________________________", 14, y);
+  y += 6;
+  doc.text("HR Director", 14, y);
+  y += 15;
+
+  doc.text("Recommended for Approval:", 14, y);
+  y += 10;
+  doc.text("__________________________", 14, y);
+  y += 6;
+  doc.text("VP/COO", 14, y);
+  y += 15;
+
+  doc.text("Approved:", 14, y);
+  y += 10;
+  doc.text("__________________________", 14, y);
+  y += 6;
+  doc.text("President", 14, y);
+
+  // Save
+  doc.save(`TravelOrder_${req.id}.pdf`);
 }
 
 
 ===== lib\admin\requests\store.ts =====
-// Lightweight mock repo that persists to localStorage.
-// Swap with your real data layer later.
-
+// src/lib/admin/requests/store.ts
 import type { RequestFormData } from "@/lib/user/request/types";
 
 export type AdminRequest = RequestFormData & {
   id: string;
-  createdAt: string; // ISO
+  createdAt: string;
   status: "pending" | "approved" | "rejected" | "completed";
+  driver?: string;
+  vehicle?: string;
 };
 
 const KEY = "tl.admin.requests";
@@ -26490,6 +26579,7 @@ function read(): AdminRequest[] {
     return [];
   }
 }
+
 function write(rows: AdminRequest[]) {
   localStorage.setItem(KEY, JSON.stringify(rows));
 }
@@ -26516,14 +26606,37 @@ export const AdminRequestsRepo = {
       write(rows);
     }
   },
-  // Helper for user submit (call this from user side while DB not ready)
+  setDriver(id: string, driver: string) {
+    const rows = read();
+    const i = rows.findIndex((r) => r.id === id);
+    if (i >= 0) {
+      rows[i].driver = driver;
+      write(rows);
+    }
+  },
+  setVehicle(id: string, vehicle: string) {
+    const rows = read();
+    const i = rows.findIndex((r) => r.id === id);
+    if (i >= 0) {
+      rows[i].vehicle = vehicle;
+      write(rows);
+    }
+  },
+
+  // Save user submission into Admin side repo
   acceptFromUser(payload: RequestFormData) {
     const req: AdminRequest = {
-      ...payload,
+      ...payload, // copy lahat (reason, vehicleMode, requesterRole, travelOrder, seminar, schoolService)
       id: "RQ-" + Math.random().toString(36).slice(2, 8).toUpperCase(),
       createdAt: new Date().toISOString(),
       status: "pending",
     };
+
+    // inject test signature kung wala pa
+    if (!req.travelOrder.endorsedByHeadSignature) {
+      req.travelOrder.endorsedByHeadSignature = "/signatures/sample-signature.jpg";
+    }
+
     const rows = read();
     rows.unshift(req);
     write(rows);
@@ -28696,215 +28809,123 @@ return ["DEPT_HEAD", "TM", "COMPTROLLER", "HRD", "VP/COO", "TM(close-out)"];
 }
 
 ===== lib\user\request\types.ts =====
-"use client";
+// src/lib/user/request/types.ts
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import * as React from "react";
-import CollapseToggle from "@/components/common/CollapseToggle";
-import {
-  LayoutDashboard,
-  FileText,
-  CalendarDays,
-  Users,
-  Truck,
-  Wrench,
-  MapPin,
-  History,
-  FileBarChart,
-  Settings,
-  MessageSquare,
-  Search,
-} from "lucide-react";
+export type Reason = "seminar" | "educational" | "competition" | "visit";
+export type VehicleMode = "institutional" | "owned" | "rent";
+export type RequesterRole = "head" | "faculty" | "org";
 
-/* ---------- constants ---------- */
+/** Optional geo data saved when picking from the map */
+export type GeoPoint = { lat: number; lng: number; address?: string };
 
-const BRAND = "#7a1f2a";
-const NAV_W_OPEN = 256;
-const NAV_W_COLLAPSED = 64;
+/** Repeatable "other costs" item */
+export type OtherCostItem = {
+  label: string;
+  amount: number | null;
+};
 
-type Item = { href: string; label: string; Icon: React.ComponentType<any>; badge?: number | null };
+export type TravelCosts = {
+  food?: number | null;
+  driversAllowance?: number | null;
+  rentVehicles?: number | null;
+  hiredDrivers?: number | null;
+  accommodation?: number | null;
 
-const BASE: Array<Omit<Item, "badge">> = [
-  { href: "/admin", label: "Dashboard", Icon: LayoutDashboard },
-  { href: "/admin/requests", label: "Requests", Icon: FileText },
-  { href: "/admin/schedule", label: "Schedule", Icon: CalendarDays },
-  { href: "/admin/drivers", label: "Drivers", Icon: Users },
-  { href: "/admin/vehicles", label: "Vehicles", Icon: Truck },
-  { href: "/admin/maintenance", label: "Maintenance", Icon: Wrench },
-  { href: "/admin/track", label: "Track / Live", Icon: MapPin },
-  { href: "/admin/history", label: "History / Logs", Icon: History },
-  { href: "/admin/report", label: "Reports / Exports", Icon: FileBarChart },
-  { href: "/admin/feedback", label: "Feedback", Icon: MessageSquare },
-  { href: "/admin/settings", label: "Settings", Icon: Settings },
-];
+  /**
+   * Preferred structure (repeatable list).
+   * UI should write here going forward.
+   */
+  otherItems?: OtherCostItem[];
 
-/* ---------- component ---------- */
+  /**
+   * Legacy single-pair fields (kept for old drafts).
+   * UI can read then migrate these into `otherItems`.
+   */
+  otherLabel?: string | null;
+  otherAmount?: number | null;
 
-export default function AdminLeftNav() {
-  const pathname = usePathname();
-  const [collapsed, setCollapsed] = React.useState(false);
+  justification?: string | null;
+};
 
-  // Optional: small badge for pending requests (read from localStorage mock)
-  const [pending, setPending] = React.useState<number | null>(null);
-  React.useEffect(() => {
-    try {
-      const raw = localStorage.getItem("tl.admin.requests");
-      if (raw) {
-        const rows = JSON.parse(raw) as Array<{ status?: string }>;
-        setPending(rows.filter((r) => (r.status ?? "pending") === "pending").length || null);
-      }
-    } catch {
-      setPending(null);
-    }
-  }, []);
+export type TravelOrder = {
+  date: string;
+  requestingPerson: string;
+  department: string;
 
-  // Persist collapse state
-  React.useEffect(() => {
-    const raw = localStorage.getItem("tl.nav.collapsed");
-    if (raw) setCollapsed(raw === "1");
-  }, []);
-  React.useEffect(() => {
-    localStorage.setItem("tl.nav.collapsed", collapsed ? "1" : "0");
-  }, [collapsed]);
+  /** Human-readable destination; filled by user or from the map picker */
+  destination: string;
+  /** Optional coordinates from the map picker */
+  destinationGeo?: GeoPoint | null;
 
-  // Hotkey: Ctrl+B (or Meta+B) and '['
-  React.useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
-        e.preventDefault();
-        setCollapsed((v) => !v);
-      }
-      if (!e.ctrlKey && !e.metaKey && e.key === "[") {
-        setCollapsed((v) => !v);
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  departureDate: string;
+  returnDate: string;
+  purposeOfTravel: string;
+  costs: TravelCosts;
 
-  // Expand when clicking the rail (but not links/toggle)
-  function onRootClick(e: React.MouseEvent) {
-    if (!collapsed) return;
-    const el = e.target as HTMLElement;
-    const hitInteractive = el.closest("[data-nav-link='true']") || el.closest("[data-nav-toggle='true']");
-    if (!hitInteractive) setCollapsed(false);
-  }
+  /** Endorsement info */
+  endorsedByHeadName?: string | null;
+  endorsedByHeadDate?: string | null;
 
-  // Build nav with optional badges
-  const NAV: Item[] = BASE.map((i) =>
-    i.href === "/admin/requests" ? { ...i, badge: pending } : { ...i, badge: null }
-  );
+  /** Signature image (base64 string or file URL) */
+  endorsedByHeadSignature?: string | null;
+};
 
-  return (
-    <div
-      onClick={onRootClick}
-      style={
-        {
-          width: collapsed ? NAV_W_COLLAPSED : NAV_W_OPEN,
-          background: collapsed ? BRAND : "white",
-        } as React.CSSProperties
-      }
-      className={[
-        "relative h-full select-none border-r border-neutral-200",
-        "overflow-y-auto no-scrollbar",
-        collapsed ? "text-white" : "text-neutral-800",
-      ].join(" ")}
-    >
-      {/* Top row: Search + Toggle */}
-      <div className={collapsed ? "px-2 pt-2 pb-1" : "px-3 pt-3 pb-2"}>
-        <div className="flex items-center gap-2">
-          {!collapsed && (
-            <div className="flex-1">
-              <label className="sr-only">Search</label>
-              <div className="flex items-center rounded-lg border border-neutral-300 bg-white px-2 py-1.5 shadow-sm">
-                <Search className="mr-2 h-4 w-4 text-neutral-400" />
-                <input
-                  placeholder="Search…"
-                  className="w-full bg-transparent text-sm outline-none placeholder:text-neutral-400"
-                />
-              </div>
-            </div>
-          )}
+export type SchoolService = {
+  driver: string;
+  vehicle: string;
+  vehicleDispatcherSigned: boolean;
+  vehicleDispatcherDate: string;
+};
 
-          <CollapseToggle
-            collapsed={collapsed}
-            onClick={() => setCollapsed((v) => !v)}
-            data-nav-toggle="true"
-          />
-        </div>
+export type SeminarApplication = {
+  applicationDate: string;
+  title: string;
+  typeOfTraining?: string[];
+  trainingCategory?: "local" | "regional" | "national" | "international";
+  dateFrom: string;
+  dateTo: string;
+  days?: number | null;
+  sponsor?: string | null;
 
-        {!collapsed && (
-          <div className="mt-3 px-1 text-[11px] font-semibold tracking-wider text-neutral-500">
-            TRAVILINK
-          </div>
-        )}
-      </div>
+  /** Human-readable venue; filled by user or from the map picker */
+  venue?: string | null;
+  /** Optional coordinates from the map picker */
+  venueGeo?: GeoPoint | null;
 
-      {/* Nav list */}
-      <ul className="space-y-1 px-2">
-        {NAV.map(({ href, label, Icon, badge }) => {
-          const active =
-            pathname === href || (href !== "/admin" && (pathname ?? "").startsWith(href));
+  modality?: string | null;
+  fees?: { registrationFee?: number | null; totalAmount?: number | null };
+  breakdown?: {
+    registration?: number | null;
+    accommodation?: number | null;
+    perDiemMealsDriversAllowance?: number | null;
+    transportFareGasParkingToll?: number | null;
 
-          const itemBase = collapsed ? "flex items-center justify-center" : "flex items-center gap-3";
-          const activeBg = collapsed ? "bg-white/12" : "bg-neutral-100";
-          const hoverBg = collapsed ? "hover:bg-white/10" : "hover:bg-neutral-50";
+    /** Repeatable "other" cost lines for seminars */
+    otherItems?: OtherCostItem[];
 
-          return (
-            <li key={href}>
-              <Link
-                href={href}
-                data-nav-link="true"
-                title={collapsed ? label : undefined}
-                onClick={(e) => {
-                  if (collapsed) e.stopPropagation();
-                }}
-                className={[
-                  "group relative rounded-lg px-3 py-2 text-sm transition",
-                  itemBase,
-                  active ? activeBg : hoverBg,
-                ].join(" ")}
-                style={{ ["--brand" as any]: BRAND }}
-              >
-                {!collapsed && (
-                  <span
-                    className={[
-                      "pointer-events-none absolute left-0 top-1/2 -translate-y-1/2",
-                      "h-5 w-0.5 rounded",
-                      active ? "bg-[var(--brand)]" : "bg-transparent group-hover:bg-neutral-300",
-                    ].join(" ")}
-                  />
-                )}
+    /** Legacy single-pair (kept for back-compat) */
+    otherLabel?: string | null;
+    otherAmount?: number | null;
+  };
+  makeUpClassSchedule?: string | null;
+  applicantUndertaking?: boolean;
+  applicants?: Array<{
+    name: string;
+    availableFDP?: string | null;
+    departmentOffice?: string | null;
+    signature?: string | null;
+  }>;
+  fundReleaseLine?: number | null;
+};
 
-                <Icon
-                  className={[
-                    "h-5 w-5 transition-colors",
-                    collapsed ? "text-white" : "text-[var(--brand)]",
-                    !collapsed ? "group-hover:text-[#5e1620]" : "",
-                  ].join(" ")}
-                />
-
-                {!collapsed && (
-                  <>
-                    <span className="truncate">{label}</span>
-                    {badge && badge > 0 && (
-                      <span className="ml-auto inline-flex min-w-[20px] items-center justify-center rounded-full bg-[#7a1f2a] px-1.5 text-[11px] font-semibold text-white">
-                        {badge}
-                      </span>
-                    )}
-                  </>
-                )}
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-
-      <div className="h-6" />
-    </div>
-  );
-}
+export type RequestFormData = {
+  requesterRole: RequesterRole;
+  reason: Reason;
+  vehicleMode: VehicleMode;
+  travelOrder: TravelOrder;
+  schoolService?: SchoolService;
+  seminar?: SeminarApplication;
+};
 
 
 ===== lib\user\request\validation.ts =====
@@ -29038,8 +29059,8 @@ export function getDayStatus(trips: Trip[], day: Date): DayStatus {
 
 
 ===== store\user\requestStore.tsx =====
-// store/user/requestStore.tsx
-// COMPLETE FILE — adds currentDraftId/currentSubmissionId helpers
+// src/store/user/requestStore.tsx
+// COMPLETE FILE — with endorsedByHeadSignature included in state
 
 "use client";
 import * as React from "react";
@@ -29065,6 +29086,9 @@ const initial: RequestFormData = {
     returnDate: "",
     purposeOfTravel: "",
     costs: {},
+    endorsedByHeadName: "",
+    endorsedByHeadDate: "",
+    endorsedByHeadSignature: "", // ✅ always initialize signature field
   },
   schoolService: undefined,
   seminar: undefined,
@@ -29146,7 +29170,15 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
       },
 
       patch: (p) => setData({ ...data, ...p }),
-      hardSet: (n) => setData(n),
+      hardSet: (n) =>
+        setData({
+          ...n,
+          travelOrder: {
+            ...n.travelOrder,
+            // ✅ guarantee that signature is always part of state
+            endorsedByHeadSignature: n.travelOrder.endorsedByHeadSignature ?? "",
+          },
+        }),
 
       setCurrentDraftId: (id) => setDraftId(id),
       setCurrentSubmissionId: (id) => setSubmissionId(id),

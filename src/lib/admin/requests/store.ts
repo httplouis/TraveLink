@@ -1,4 +1,6 @@
 // src/lib/admin/requests/store.ts
+"use client";
+
 import type { RequestFormData } from "@/lib/user/request/types";
 
 export type AdminRequest = RequestFormData & {
@@ -21,16 +23,20 @@ function read(): AdminRequest[] {
 }
 
 function write(rows: AdminRequest[]) {
-  localStorage.setItem(KEY, JSON.stringify(rows));
+  if (typeof window !== "undefined") {
+    localStorage.setItem(KEY, JSON.stringify(rows));
+  }
 }
 
 export const AdminRequestsRepo = {
   list(): AdminRequest[] {
     return read().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
+
   get(id: string): AdminRequest | undefined {
     return read().find((r) => r.id === id);
   },
+
   upsert(row: AdminRequest) {
     const rows = read();
     const i = rows.findIndex((r) => r.id === row.id);
@@ -38,6 +44,7 @@ export const AdminRequestsRepo = {
     else rows.unshift(row);
     write(rows);
   },
+
   setStatus(id: string, status: AdminRequest["status"]) {
     const rows = read();
     const i = rows.findIndex((r) => r.id === id);
@@ -46,6 +53,7 @@ export const AdminRequestsRepo = {
       write(rows);
     }
   },
+
   setDriver(id: string, driver: string) {
     const rows = read();
     const i = rows.findIndex((r) => r.id === id);
@@ -54,6 +62,7 @@ export const AdminRequestsRepo = {
       write(rows);
     }
   },
+
   setVehicle(id: string, vehicle: string) {
     const rows = read();
     const i = rows.findIndex((r) => r.id === id);
@@ -66,14 +75,30 @@ export const AdminRequestsRepo = {
   // Save user submission into Admin side repo
   acceptFromUser(payload: RequestFormData) {
     const req: AdminRequest = {
-      ...payload, // copy lahat (reason, vehicleMode, requesterRole, travelOrder, seminar, schoolService)
-      id: "RQ-" + Math.random().toString(36).slice(2, 8).toUpperCase(),
-      createdAt: new Date().toISOString(),
+      ...payload,
+      id:
+        typeof window !== "undefined"
+          ? "RQ-" + crypto.randomUUID().slice(0, 6).toUpperCase()
+          : "RQ-PLACEHOLDER",
+      createdAt:
+        typeof window !== "undefined"
+          ? new Date().toISOString()
+          : "1970-01-01T00:00:00.000Z",
       status: "pending",
     };
-    const rows = read();
-    rows.unshift(req);
-    write(rows);
+
+    // inject test signature kung wala pa
+    if (!req.travelOrder.endorsedByHeadSignature) {
+      req.travelOrder.endorsedByHeadSignature =
+        "/signatures/sample-signature.jpg";
+    }
+
+    if (typeof window !== "undefined") {
+      const rows = read();
+      rows.unshift(req);
+      write(rows);
+    }
+
     return req.id;
   },
 };

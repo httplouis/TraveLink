@@ -166,6 +166,9 @@ export default function RequestWizard() {
         returnDate: "",
         purposeOfTravel: "",
         costs: {},
+        endorsedByHeadName: "",
+        endorsedByHeadDate: "",
+        endorsedByHeadSignature: "", // ✅ include signature
       },
       schoolService: undefined,
       seminar: undefined,
@@ -197,6 +200,9 @@ export default function RequestWizard() {
         returnDate: "",
         purposeOfTravel: "",
         costs: {},
+        endorsedByHeadName: "",
+        endorsedByHeadDate: "",
+        endorsedByHeadSignature: "", // ✅ include signature
       },
       schoolService: undefined,
       seminar: undefined,

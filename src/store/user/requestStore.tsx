@@ -1,5 +1,5 @@
-// store/user/requestStore.tsx
-// COMPLETE FILE — adds currentDraftId/currentSubmissionId helpers
+// src/store/user/requestStore.tsx
+// COMPLETE FILE — with endorsedByHeadSignature included in state
 
 "use client";
 import * as React from "react";
@@ -25,6 +25,9 @@ const initial: RequestFormData = {
     returnDate: "",
     purposeOfTravel: "",
     costs: {},
+    endorsedByHeadName: "",
+    endorsedByHeadDate: "",
+    endorsedByHeadSignature: "", // ✅ always initialize signature field
   },
   schoolService: undefined,
   seminar: undefined,
@@ -106,7 +109,15 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
       },
 
       patch: (p) => setData({ ...data, ...p }),
-      hardSet: (n) => setData(n),
+      hardSet: (n) =>
+        setData({
+          ...n,
+          travelOrder: {
+            ...n.travelOrder,
+            // ✅ guarantee that signature is always part of state
+            endorsedByHeadSignature: n.travelOrder.endorsedByHeadSignature ?? "",
+          },
+        }),
 
       setCurrentDraftId: (id) => setDraftId(id),
       setCurrentSubmissionId: (id) => setSubmissionId(id),

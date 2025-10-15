@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { PageHeader, PageBody } from "@/components/common/Page";
-import type { Trip, Vehicle, Status } from "@/components/faculty/schedule/types";
+import type { Trip, Vehicle, Status } from "@/components/user/schedule/types";
 
 export type Filters = {
   q: string;

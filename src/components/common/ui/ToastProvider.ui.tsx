@@ -23,16 +23,22 @@ export function useToast() {
 
 export default function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = React.useState<Toast[]>([]);
+  const idSeed = React.useId(); // ✅ stable seed per provider instance
+  const counterRef = React.useRef(0);
 
-  const toast = React.useCallback((t: Omit<Toast, "id">) => {
-    const id = crypto.randomUUID();
-    const ms = t.ms ?? 4000;
-    const next: Toast = { id, kind: "info", ...t };
-    setToasts((prev) => [next, ...prev]);
-    window.setTimeout(() => {
-      setToasts((prev) => prev.filter((x) => x.id !== id));
-    }, ms);
-  }, []);
+  const toast = React.useCallback(
+    (t: Omit<Toast, "id">) => {
+      counterRef.current++;
+      const id = `${idSeed}-${counterRef.current}`;
+      const ms = t.ms ?? 4000;
+      const next: Toast = { id, kind: "info", ...t };
+      setToasts((prev) => [next, ...prev]);
+      window.setTimeout(() => {
+        setToasts((prev) => prev.filter((x) => x.id !== id));
+      }, ms);
+    },
+    [idSeed]
+  );
 
   return (
     <ToastContext.Provider value={{ toast }}>

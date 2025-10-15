@@ -20,7 +20,7 @@ import {
 } from "@/lib/admin/maintenance/handlers";
 
 /* Common primitives */
-import Modal from "@/components/common/Modal/Modal";
+import Modal from "@/components/common/modal/Modal";
 import { useConfirm } from "@/components/common/hooks/useConfirm";
 import { useHotkeys } from "@/lib/common/useHotkeys";
 

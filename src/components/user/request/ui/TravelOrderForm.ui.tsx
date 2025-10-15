@@ -47,18 +47,22 @@ export default function TravelOrderForm({
   // If user types a head name manually, don’t auto-overwrite next time
   const headEditedRef = React.useRef(false);
 
-  // --- Signature state (UI helpers only; persisted to parent via onChange) ---
+  // --- Signature state ---
   const [sigDirty, setSigDirty] = React.useState(false);
-  const [sigSaved, setSigSaved] = React.useState<boolean>(!!data?.signatureSaved);
+  const [sigSaved, setSigSaved] = React.useState<boolean>(
+    !!data?.endorsedByHeadSignature
+  );
   const [sigSavedAt, setSigSavedAt] = React.useState<string | null>(
-    data?.signatureSaved ? new Date().toLocaleString() : null
+    data?.endorsedByHeadSignature ? new Date().toLocaleString() : null
   );
 
   return (
     <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-lg font-semibold">Travel Order</h3>
-        <span className="text-xs text-neutral-500">Required fields marked with *</span>
+        <span className="text-xs text-neutral-500">
+          Required fields marked with *
+        </span>
       </div>
 
       {/* Top grid */}
@@ -104,7 +108,9 @@ export default function TravelOrderForm({
             }}
           />
           {errors["travelOrder.department"] && (
-            <span className="text-xs text-red-600">{errors["travelOrder.department"]}</span>
+            <span className="text-xs text-red-600">
+              {errors["travelOrder.department"]}
+            </span>
           )}
         </div>
 
@@ -121,7 +127,9 @@ export default function TravelOrderForm({
             placeholder="City / Venue / School / Company"
           />
           {errors["travelOrder.destination"] && (
-            <span className="text-xs text-red-600">{errors["travelOrder.destination"]}</span>
+            <span className="text-xs text-red-600">
+              {errors["travelOrder.destination"]}
+            </span>
           )}
         </div>
 
@@ -169,25 +177,33 @@ export default function TravelOrderForm({
             label="Driver’s allowance"
             placeholder="0.00"
             value={c.driversAllowance ?? ""}
-            onChange={(e) => onChangeCosts({ driversAllowance: asNum(e.target.value) })}
+            onChange={(e) =>
+              onChangeCosts({ driversAllowance: asNum(e.target.value) })
+            }
           />
           <CurrencyInput
             label="Rent vehicles"
             placeholder="0.00"
             value={c.rentVehicles ?? ""}
-            onChange={(e) => onChangeCosts({ rentVehicles: asNum(e.target.value) })}
+            onChange={(e) =>
+              onChangeCosts({ rentVehicles: asNum(e.target.value) })
+            }
           />
           <CurrencyInput
             label="Hired drivers"
             placeholder="0.00"
             value={c.hiredDrivers ?? ""}
-            onChange={(e) => onChangeCosts({ hiredDrivers: asNum(e.target.value) })}
+            onChange={(e) =>
+              onChangeCosts({ hiredDrivers: asNum(e.target.value) })
+            }
           />
           <CurrencyInput
             label="Accommodation"
             placeholder="0.00"
             value={c.accommodation ?? ""}
-            onChange={(e) => onChangeCosts({ accommodation: asNum(e.target.value) })}
+            onChange={(e) =>
+              onChangeCosts({ accommodation: asNum(e.target.value) })
+            }
           />
 
           <div className="grid grid-cols-3 gap-3 md:col-span-2">
@@ -201,7 +217,9 @@ export default function TravelOrderForm({
               label="Amount"
               placeholder="0.00"
               value={c.otherAmount ?? ""}
-              onChange={(e) => onChangeCosts({ otherAmount: asNum(e.target.value) })}
+              onChange={(e) =>
+                onChangeCosts({ otherAmount: asNum(e.target.value) })
+              }
               className="col-span-2 sm:col-span-1"
             />
           </div>
@@ -215,7 +233,9 @@ export default function TravelOrderForm({
               required
               placeholder="State reasons for renting or hiring a driver"
               value={c.justification ?? ""}
-              onChange={(e) => onChangeCosts({ justification: e.target.value })}
+              onChange={(e) =>
+                onChangeCosts({ justification: e.target.value })
+              }
               error={errors["travelOrder.costs.justification"]}
             />
           </div>
@@ -229,7 +249,6 @@ export default function TravelOrderForm({
           placeholder="Name of Department Head"
           value={data.endorsedByHeadName ?? ""}
           onChange={(e) => {
-            // mark as manually edited so future dept changes won't overwrite
             headEditedRef.current = true;
             onChange({ endorsedByHeadName: e.target.value });
           }}
@@ -244,11 +263,16 @@ export default function TravelOrderForm({
       {/* Signature block */}
       <div className="mt-6 rounded-xl border border-neutral-200 bg-neutral-50/60 p-4">
         <div className="mb-2 flex items-center justify-between">
-          <span className="text-sm font-medium text-neutral-700">Endorser signature</span>
+          <span className="text-sm font-medium text-neutral-700">
+            Endorser signature
+          </span>
 
           {sigSaved ? (
             <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
-              ✓ Saved{sigSavedAt ? <span className="text-green-700/80"> · {sigSavedAt}</span> : null}
+              ✓ Saved
+              {sigSavedAt ? (
+                <span className="text-green-700/80"> · {sigSavedAt}</span>
+              ) : null}
             </span>
           ) : (
             <span className="text-xs text-neutral-500">Not saved</span>
@@ -257,16 +281,16 @@ export default function TravelOrderForm({
 
         <SignaturePad
           height={200}
-          value={data?.signatureDataUrl || null}
+          value={data?.endorsedByHeadSignature || null}
           onDraw={() => setSigDirty(true)}
           onSave={(dataUrl) => {
-            onChange({ signatureDataUrl: dataUrl, signatureSaved: true });
+            onChange({ endorsedByHeadSignature: dataUrl });
             setSigSaved(true);
             setSigDirty(false);
             setSigSavedAt(new Date().toLocaleString());
           }}
           onClear={() => {
-            onChange({ signatureDataUrl: "", signatureSaved: false });
+            onChange({ endorsedByHeadSignature: "" });
             setSigDirty(false);
             setSigSaved(false);
             setSigSavedAt(null);
@@ -275,15 +299,13 @@ export default function TravelOrderForm({
             const buf = await file.arrayBuffer();
             const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
             const dataUrl = `data:${file.type};base64,${b64}`;
-            onChange({ signatureDataUrl: dataUrl, signatureSaved: true });
+            onChange({ endorsedByHeadSignature: dataUrl });
             setSigSaved(true);
             setSigDirty(false);
             setSigSavedAt(new Date().toLocaleString());
           }}
           saveDisabled={!sigDirty}
         />
-
-        
       </div>
     </section>
   );
