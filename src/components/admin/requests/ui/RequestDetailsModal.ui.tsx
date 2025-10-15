@@ -7,7 +7,8 @@ import { X, FileDown } from "lucide-react";
 
 import type { AdminRequest } from "@/lib/admin/requests/store";
 import { AdminRequestsRepo } from "@/lib/admin/requests/store";
-import { generateRequestPDF } from "@/lib/admin/requests/pdf";
+import { generateRequestPDF } from "@/lib/admin/requests/pdfWithTemplate"; // ✅ now using template
+import { generateSeminarPDF } from "@/lib/admin/requests/pdfSeminar";
 
 const DRIVERS = ["Juan Dela Cruz", "Pedro Santos", "Maria Reyes"];
 const VEHICLES = ["Van 01", "Bus 02", "SUV 03"];
@@ -27,24 +28,20 @@ export default function RequestDetailsModalUI({
   onApprove,
   onReject,
 }: Props) {
-  // ✅ Hooks always run
   const [driver, setDriver] = React.useState("");
   const [vehicle, setVehicle] = React.useState("");
 
-  // sync state kapag may bagong row
   React.useEffect(() => {
     setDriver(row?.driver || "");
     setVehicle(row?.vehicle || "");
   }, [row]);
 
-  // auto-save driver
   React.useEffect(() => {
     if (row?.id && driver) {
       AdminRequestsRepo.setDriver(row.id, driver);
     }
   }, [driver, row?.id]);
 
-  // auto-save vehicle
   React.useEffect(() => {
     if (row?.id && vehicle) {
       AdminRequestsRepo.setVehicle(row.id, vehicle);
@@ -274,13 +271,24 @@ export default function RequestDetailsModalUI({
 
             {/* Footer */}
             <div className="mt-6 flex justify-between">
-              <button
-                onClick={() => row && generateRequestPDF(row)}
-                className="flex items-center gap-2 rounded-md bg-[#7A0010] hover:bg-[#5c000c] px-4 py-2 text-sm text-white transition"
-              >
-                <FileDown className="h-4 w-4" />
-                Download PDF
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => row && generateRequestPDF(row)}
+                  className="flex items-center gap-2 rounded-md bg-[#7A0010] hover:bg-[#5c000c] px-4 py-2 text-sm text-white transition"
+                >
+                  <FileDown className="h-4 w-4" />
+                  Travel Order PDF
+                </button>
+                {row.seminar && (
+                  <button
+                    onClick={() => row && generateSeminarPDF(row)}
+                    className="flex items-center gap-2 rounded-md bg-blue-600 hover:bg-blue-700 px-4 py-2 text-sm text-white transition"
+                  >
+                    <FileDown className="h-4 w-4" />
+                    Seminar PDF
+                  </button>
+                )}
+              </div>
               <div className="flex gap-2">
                 {onApprove && (
                   <button

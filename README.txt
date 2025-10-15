@@ -50,6 +50,7 @@ clsx
 pnpm add framer-motion
 pnpm add zustand
 pnpm add jspdf jspdf-autotable
+pnpm add pdf-lib
 
 
 

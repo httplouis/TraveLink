@@ -20,16 +20,10 @@ export type TravelCosts = {
   hiredDrivers?: number | null;
   accommodation?: number | null;
 
-  /**
-   * Preferred structure (repeatable list).
-   * UI should write here going forward.
-   */
+  /** Preferred structure (repeatable list). */
   otherItems?: OtherCostItem[];
 
-  /**
-   * Legacy single-pair fields (kept for old drafts).
-   * UI can read then migrate these into `otherItems`.
-   */
+  /** Legacy single-pair fields (kept for old drafts). */
   otherLabel?: string | null;
   otherAmount?: number | null;
 
@@ -82,29 +76,19 @@ export type SeminarApplication = {
   venueGeo?: GeoPoint | null;
 
   modality?: string | null;
-  fees?: { registrationFee?: number | null; totalAmount?: number | null };
-  breakdown?: {
-    registration?: number | null;
-    accommodation?: number | null;
-    perDiemMealsDriversAllowance?: number | null;
-    transportFareGasParkingToll?: number | null;
 
-    /** Repeatable "other" cost lines for seminars */
-    otherItems?: OtherCostItem[];
+  /** Cost fields based on official Seminar Application form */
+  registrationCost?: number | null;
+  totalAmount?: number | null;
+  breakdown?: OtherCostItem[];
 
-    /** Legacy single-pair (kept for back-compat) */
-    otherLabel?: string | null;
-    otherAmount?: number | null;
-  };
   makeUpClassSchedule?: string | null;
-  applicantUndertaking?: boolean;
   applicants?: Array<{
     name: string;
     availableFDP?: string | null;
     departmentOffice?: string | null;
     signature?: string | null;
   }>;
-  fundReleaseLine?: number | null;
 };
 
 export type RequestFormData = {
