@@ -4,22 +4,27 @@
 import * as React from "react";
 import { ScheduleRepo } from "@/lib/admin/schedule/store";
 import type { Schedule } from "@/lib/admin/schedule/types";
+import { useHotkeys } from "@/lib/common/useHotkeys";
 
+/* UI */
 import ScheduleTable from "@/components/admin/schedule/ui/ScheduleTable.ui";
 import ScheduleToolbar from "@/components/admin/schedule/toolbar/ScheduleToolbar.ui";
 import ScheduleDetailsModal from "@/components/admin/schedule/ui/ScheduleDetailsModal.ui";
-
-import { useScheduleFilters } from "@/components/admin/schedule/hooks/useScheduleFilters";
-import { DEFAULT_SCH_FILTERS, filterSchedules } from "@/lib/admin/schedule/filters";
-
-import { useScheduleKpis } from "@/components/admin/schedule/kpi/useScheduleKpis";
 import KpiGrid from "@/components/admin/schedule/ui/KpiGrid.ui";
 
-// ✅ Use ONLY the container (it manages form state + validation)
+/* Filters / KPIs */
+import { useScheduleFilters } from "@/components/admin/schedule/hooks/useScheduleFilters";
+import { DEFAULT_SCH_FILTERS, filterSchedules } from "@/lib/admin/schedule/filters";
+import { useScheduleKpis } from "@/components/admin/schedule/kpi/useScheduleKpis";
+
+/* Create/Edit dialog — container only */
 import CreateScheduleDialog from "@/components/admin/schedule/forms/CreateScheduleDialogs.container";
 
+/* URL sync */
+import ScheduleURLSync from "./ScheduleURLSync"; // q + sort only
+import ScheduleFiltersURLSync from "@/components/admin/schedule/ScheduleFiltersURLSync"; // status/dept/from/to/mode
+
 export default function SchedulePageClient() {
-  // Avoid SSR/CSR mismatch for anything touching localStorage
   const [hydrated, setHydrated] = React.useState(false);
   React.useEffect(() => setHydrated(true), []);
 
@@ -36,6 +41,11 @@ export default function SchedulePageClient() {
 
   const filters = useScheduleFilters(DEFAULT_SCH_FILTERS);
   const { kpis, refresh: refreshKpis } = useScheduleKpis();
+   React.useEffect(() => {
+    if (filters.draft.mode === "auto") {
+      filters.apply();
+    }
+  }, [filters.draft, filters]);
 
   // Load repo after mount
   React.useEffect(() => {
@@ -55,12 +65,41 @@ export default function SchedulePageClient() {
     return [...base].sort((a, b) => {
       const tA = `${a.date}T${a.startTime}`;
       const tB = `${b.date}T${b.startTime}`;
-      return sort === "newest" ? (tA < tB ? 1 : -1) : (tA > tB ? 1 : -1);
+      return sort === "newest" ? (tA < tB ? 1 : -1) : tA > tB ? 1 : -1;
     });
   }, [hydrated, rows, filters.applied, q, sort]);
 
   const total = filtered.length;
   const pageRows = filtered.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
+  const maxPage = React.useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [total, pageSize]);
+
+  useHotkeys(
+    [
+      { key: "n", handler: () => { setEditRow(null); setOpen(true); } },
+      {
+        key: "Delete",
+        handler: () => {
+          if (!selected.size) return;
+          ScheduleRepo.removeMany([...selected]);
+          setSelected(new Set());
+          refresh();
+        },
+      },
+      { key: "x", handler: () => setSelected(new Set()) },
+      {
+        key: "a",
+        handler: () => {
+          const next = new Set<string>(selected);
+          pageRows.forEach((r) => next.add(r.id));
+          setSelected(next);
+        },
+      },
+      { key: "ArrowLeft", handler: () => setPage((p) => Math.max(1, p - 1)) },
+      { key: "ArrowRight", handler: () => setPage((p) => Math.min(maxPage, p + 1)) },
+      { key: "t", handler: () => setSort((s) => (s === "newest" ? "oldest" : "newest")) },
+    ],
+    { ignoreWhileTyping: true }
+  );
 
   const onToggleOne = (id: string, checked: boolean) =>
     setSelected((p) => {
@@ -70,13 +109,12 @@ export default function SchedulePageClient() {
     });
 
   const onToggleAll = (checked: boolean) =>
-    setSelected((p) => {
-      const n = new Set(p);
-      pageRows.forEach((r) => (checked ? n.add(r.id) : n.delete(r.id)));
+    setSelected(() => {
+      const n = new Set<string>();
+      if (checked) pageRows.forEach((r) => n.add(r.id));
       return n;
     });
 
-  // Skeleton while hydrating
   if (!hydrated) {
     return (
       <div className="space-y-3">
@@ -98,6 +136,12 @@ export default function SchedulePageClient() {
 
   return (
     <div className="space-y-3">
+      {/* URL sync for q/sort */}
+      <ScheduleURLSync q={q} sort={sort} onQ={setQ} onSort={setSort} />
+      {/* URL sync for filters (status/dept/from/to/mode) */}
+      <ScheduleFiltersURLSync draft={filters.draft} onDraftChange={(patch) => filters.update(patch)} />
+
+      {/* KPI cards */}
       <KpiGrid kpis={kpis} />
 
       <ScheduleTable
@@ -106,16 +150,16 @@ export default function SchedulePageClient() {
         selected={selected}
         onToggleOne={onToggleOne}
         onToggleAll={onToggleAll}
-        onEdit={(r) => {
+        onEdit={(r: Schedule) => {
           setEditRow(r);
           setOpen(true);
         }}
-        onDeleteMany={(ids) => {
+        onDeleteMany={(ids: string[]) => {
           ScheduleRepo.removeMany(ids);
           setSelected(new Set());
           refresh();
         }}
-        onSetStatus={(id, s) => {
+        onSetStatus={(id: string, s: Schedule["status"]) => {
           try {
             ScheduleRepo.setStatus(id, s);
             refresh();
@@ -123,17 +167,17 @@ export default function SchedulePageClient() {
             alert(e?.message || "Cannot change status");
           }
         }}
-        onPageChange={setPage}
-        onView={(r) => setViewRow(r)}
+        onPageChange={(nextPage: number) => setPage(nextPage)}
+        onView={(r: Schedule) => setViewRow(r)}
         toolbar={
           <ScheduleToolbar
             q={q}
-            onQChange={(v) => {
+            onQChange={(v: string) => {
               setQ(v);
               setPage(1);
             }}
             sort={sort}
-            onSortChange={(s) => {
+            onSortChange={(s: "newest" | "oldest") => {
               setSort(s);
               setPage(1);
             }}
@@ -158,7 +202,6 @@ export default function SchedulePageClient() {
         }
       />
 
-      {/* ✅ Only the container dialog here */}
       <CreateScheduleDialog
         open={open}
         initial={editRow ?? undefined}

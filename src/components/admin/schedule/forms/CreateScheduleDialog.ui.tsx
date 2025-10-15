@@ -1,21 +1,21 @@
+// src/components/admin/schedule/forms/CreateScheduleDialog.ui.tsx
 "use client";
 import * as React from "react";
-import MapPicker, { PickedPlace } from "@/components/common/MapPicker.ui";
+import MapPicker, { PickedPlace } from "@/components/common/map/MapPicker.ui";
 
-// ---- types the container will import ----
+
 export type CreateForm = {
   requestId: string | null;
   title: string;
   origin: string;
   destination: string;
-  date: string;         // yyyy-mm-dd
-  startTime: string;    // HH:mm
-  endTime: string;      // HH:mm
+  date: string;       // yyyy-mm-dd
+  startTime: string;  // HH:mm
+  endTime: string;    // HH:mm
   driverId: string;
   vehicleId: string;
   status: "PLANNED" | "ONGOING" | "COMPLETED" | "CANCELLED";
   notes: string;
-  // optional structured places (saved by container if you want)
   originPlace?: PickedPlace | null;
   destinationPlace?: PickedPlace | null;
 };
@@ -25,32 +25,51 @@ export type VehicleOption = { id: string; label: string; plateNo: string; busy?:
 
 type Props = {
   open: boolean;
-  tripIdPreview: string;
-  form: CreateForm;
-  drivers: DriverOption[];
-  vehicles: VehicleOption[];
-  driverConflicts: Array<{ id: string; title: string; date: string; startTime: string; endTime: string }>;
-  vehicleConflicts: Array<{ id: string; title: string; date: string; startTime: string; endTime: string }>;
-  disableSave: boolean;
+  tripIdPreview?: string;
+  form?: CreateForm; // ← tolerant
+  drivers?: DriverOption[];
+  vehicles?: VehicleOption[];
+  driverConflicts?: Array<{ id: string; title: string; date: string; startTime: string; endTime: string }>;
+  vehicleConflicts?: Array<{ id: string; title: string; date: string; startTime: string; endTime: string }>;
+  disableSave?: boolean;
 
-  onChange: (patch: Partial<CreateForm>) => void;
+  onChange?: (patch: Partial<CreateForm>) => void;
   onClose: () => void;
-  onSave: () => void;
+  onSave?: () => void;
 };
 
-export default function CreateScheduleDialogUI({
-  open,
-  tripIdPreview,
-  form,
-  drivers,
-  vehicles,
-  driverConflicts,
-  vehicleConflicts,
-  disableSave,
-  onChange,
-  onClose,
-  onSave,
-}: Props) {
+export default function CreateScheduleDialogUI(props: Props) {
+  const {
+    open,
+    tripIdPreview = "",
+    onClose,
+    onSave = () => {},
+    onChange = () => {},
+  } = props;
+
+  // Safe defaults if anything is missing
+  const form: CreateForm = {
+    requestId: props.form?.requestId ?? null,
+    title: props.form?.title ?? "",
+    origin: props.form?.origin ?? "",
+    destination: props.form?.destination ?? "",
+    date: props.form?.date ?? new Date().toISOString().slice(0, 10),
+    startTime: props.form?.startTime ?? "08:00",
+    endTime: props.form?.endTime ?? "09:00",
+    driverId: props.form?.driverId ?? "",
+    vehicleId: props.form?.vehicleId ?? "",
+    status: props.form?.status ?? "PLANNED",
+    notes: props.form?.notes ?? "",
+    originPlace: props.form?.originPlace ?? null,
+    destinationPlace: props.form?.destinationPlace ?? null,
+  };
+
+  const drivers = props.drivers ?? [];
+  const vehicles = props.vehicles ?? [];
+  const driverConflicts = props.driverConflicts ?? [];
+  const vehicleConflicts = props.vehicleConflicts ?? [];
+  const disableSave = props.disableSave ?? false;
+
   const [openOriginMap, setOpenOriginMap] = React.useState(false);
   const [openDestMap, setOpenDestMap] = React.useState(false);
 
@@ -65,7 +84,7 @@ export default function CreateScheduleDialogUI({
         {/* Header */}
         <div className="flex items-center justify-between border-b px-5 py-4">
           <h3 className="text-lg font-semibold">
-            {form?.requestId ? "Edit schedule" : "Create schedule"}
+            {form.requestId ? "Edit schedule" : "Create schedule"}
           </h3>
           <div className="text-xs text-neutral-500">
             Trip ID (auto):{" "}
@@ -212,9 +231,7 @@ export default function CreateScheduleDialogUI({
 
           {/* Notes */}
           <div className="col-span-2">
-            <label className="mb-1 block text-xs font-medium text-neutral-600">
-              Notes (optional)
-            </label>
+            <label className="mb-1 block text-xs font-medium text-neutral-600">Notes (optional)</label>
             <textarea
               className="min-h-[90px] w-full rounded-lg border px-3 py-2"
               placeholder="Anything the driver needs to know…"
@@ -224,7 +241,7 @@ export default function CreateScheduleDialogUI({
           </div>
 
           {/* Warnings */}
-          {(driverConflicts.length || vehicleConflicts.length) > 0 && (
+          {(driverConflicts.length > 0 || vehicleConflicts.length > 0) && (
             <div className="col-span-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
               <div className="mb-1 font-medium">Conflicts</div>
               {driverConflicts.length > 0 && (
@@ -249,9 +266,7 @@ export default function CreateScheduleDialogUI({
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-2 border-t px-5 py-3">
-          <button onClick={onClose} className="h-10 rounded-lg border px-4">
-            Cancel
-          </button>
+          <button onClick={onClose} className="h-10 rounded-lg border px-4">Cancel</button>
           <button
             onClick={onSave}
             disabled={disableSave}
@@ -266,20 +281,13 @@ export default function CreateScheduleDialogUI({
           open={openOriginMap}
           initial={form.originPlace ?? null}
           onClose={() => setOpenOriginMap(false)}
-          onPick={(p) => {
-            // update both plain text and structured place
-            onChange({ origin: p.address, originPlace: p });
-            setOpenOriginMap(false);
-          }}
+          onPick={(p) => { onChange({ origin: p.address, originPlace: p }); setOpenOriginMap(false); }}
         />
         <MapPicker
           open={openDestMap}
           initial={form.destinationPlace ?? null}
           onClose={() => setOpenDestMap(false)}
-          onPick={(p) => {
-            onChange({ destination: p.address, destinationPlace: p });
-            setOpenDestMap(false);
-          }}
+          onPick={(p) => { onChange({ destination: p.address, destinationPlace: p }); setOpenDestMap(false); }}
         />
       </div>
     </div>

@@ -25,18 +25,21 @@ export type RequestStatus = "Pending" | "Approved" | "Completed" | "Rejected";
 
 export type RequestRow = {
   id: string;
-  dept: "CCMS" | "HR" | "Registrar" | "Finance";
+  dept: string;                 // allow dynamic dept (ex: CITE, CBA, CCMS…)
   purpose: string;
-  date: string;                // YYYY-MM-DD (scheduled date)
+  date: string;                 // YYYY-MM-DD (scheduled date)
   status: RequestStatus;
   requester?: string;
   vehicle?: string;
   driver?: string;
 
   // When the request was submitted/received (optional)
-  receivedAt?: string;         // e.g., "2025-09-04 10:15 AM"
-  createdAt?: string;          // ISO (used by mocks for sorting)
-  updatedAt?: string;          // ISO
+  receivedAt?: string;          // e.g., "2025-09-04 10:15 AM"
+  createdAt?: string;           // ISO (used by mocks for sorting)
+  updatedAt?: string;           // ISO
+
+  // Keep full AdminRequest object for modal/details
+  raw?: any;                    // ← contains AdminRequest
 };
 
 export type RequestsSummary = {
@@ -49,7 +52,7 @@ export type RequestsSummary = {
 // ---- Filters / Paging ----
 export type FilterState = {
   status: "All" | RequestStatus;
-  dept: "All" | "CCMS" | "HR" | "Registrar" | "Finance";
+  dept: "All" | string;         // allow flexible dept filter
   from?: string;
   to?: string;
   search: string;

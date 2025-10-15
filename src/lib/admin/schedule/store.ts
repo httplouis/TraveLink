@@ -1,19 +1,26 @@
-import { Schedule, ScheduleStatus, Driver, Vehicle } from "./types";
+// src/lib/admin/schedule/store.ts
+import type { Schedule, ScheduleStatus, Driver, Vehicle } from "./types";
 
-/* ---------- storage guards ---------- */
+/* ---------- storage keys / guards ---------- */
 const KEY = "travilink.schedules.v1";
-const KEY_SEQ = "travilink.schedules.seq.v1"; // per-day counters
+const KEY_SEQ = "travilink.schedules.seq.v1"; // per-day counters (YYYY-MM-DD -> number)
 const isBrowser = typeof window !== "undefined" && !!globalThis.window?.localStorage;
+
 let MEM: Schedule[] | null = null;
 let MEM_SEQ: Record<string, number> | null = null;
 
 function readSeq(): Record<string, number> {
   if (isBrowser) {
-    const raw = window.localStorage.getItem(KEY_SEQ);
-    return raw ? JSON.parse(raw) : {};
+    try {
+      const raw = window.localStorage.getItem(KEY_SEQ);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
   }
   return MEM_SEQ ?? (MEM_SEQ = {});
 }
+
 function writeSeq(seq: Record<string, number>) {
   if (isBrowser) window.localStorage.setItem(KEY_SEQ, JSON.stringify(seq));
   else MEM_SEQ = seq;
@@ -25,6 +32,7 @@ function fmtTripId(date: string, n: number) {
   const d = date.replaceAll("-", "");
   return `TRIP-${d}-${String(n).padStart(4, "0")}`;
 }
+
 /** Reserve and return the next Trip ID for a given date. */
 function allocateTripId(date: string) {
   const seq = readSeq();
@@ -34,11 +42,30 @@ function allocateTripId(date: string) {
   writeSeq(seq);
   return fmtTripId(date, next);
 }
+
 /** Peek next Trip ID (no increment) for preview. */
 function peekTripId(date: string) {
   const seq = readSeq();
   const next = (seq[date] ?? 0) + 1;
   return fmtTripId(date, next);
+}
+
+/** Rebuild KEY_SEQ from existing rows (idempotent) */
+function rebuildSeq(rows: Schedule[]) {
+  const seq: Record<string, number> = {};
+  for (const r of rows) {
+    // find the numeric part from r.tripId
+    const m = r.tripId?.match(/TRIP-(\d{8})-(\d{4})$/);
+    const date = r.date;
+    if (!date) continue;
+    let n = Number(m?.[2] ?? 0);
+    if (!n) {
+      // fall back to parse by scanning duplicates on same date
+      n = (seq[date] ?? 0) + 1;
+    }
+    seq[date] = Math.max(seq[date] ?? 0, n);
+  }
+  writeSeq(seq);
 }
 
 /* ---------- seed data ---------- */
@@ -112,18 +139,8 @@ function seed(): Schedule[] {
   if (isBrowser) window.localStorage.setItem(KEY, JSON.stringify(rows));
   else MEM = rows;
 
+  rebuildSeq(rows);
   return rows;
-}
-
-function readAll(): Schedule[] {
-  if (isBrowser) {
-    const raw = window.localStorage.getItem(KEY);
-    const parsed: Schedule[] | null = raw ? JSON.parse(raw) : null;
-    const rows = parsed ?? seed();
-    return backfillTripIds(rows);
-  }
-  const rows = MEM ?? seed();
-  return backfillTripIds(rows);
 }
 
 function writeAll(rows: Schedule[]) {
@@ -131,7 +148,29 @@ function writeAll(rows: Schedule[]) {
   else MEM = rows;
 }
 
-/* Backfill missing tripId for legacy rows */
+function readAll(): Schedule[] {
+  let rows: Schedule[] | null = null;
+  if (isBrowser) {
+    try {
+      const raw = window.localStorage.getItem(KEY);
+      rows = raw ? (JSON.parse(raw) as Schedule[]) : null;
+    } catch {
+      rows = null;
+    }
+  } else {
+    rows = MEM;
+  }
+
+  if (!rows || rows.length === 0) {
+    rows = seed();
+  } else {
+    rows = backfillTripIds(rows);
+    rebuildSeq(rows);
+  }
+  return rows;
+}
+
+/* Backfill missing tripId for legacy rows, then persist */
 function backfillTripIds(rows: Schedule[]) {
   let changed = false;
   const out = rows.map((r) => {
@@ -145,7 +184,7 @@ function backfillTripIds(rows: Schedule[]) {
   return out;
 }
 
-/* ---------- conflict helpers (local) ---------- */
+/* ---------- conflict helpers ---------- */
 function overlaps(a: { date: string; startTime: string; endTime: string },
                   b: { date: string; startTime: string; endTime: string }) {
   if (a.date !== b.date) return false;
@@ -175,16 +214,34 @@ function findConflicts(rows: Schedule[], probe: Schedule, ignoreId?: string) {
 
 /* ---------- repo ---------- */
 export const ScheduleRepo = {
+  /** Ensure demo data & sequence exist (call once on page mount) */
+  ensureDemo(): void {
+    try {
+      const raw = isBrowser ? window.localStorage.getItem(KEY) : MEM ? "mem" : null;
+      if (!raw) {
+        seed();
+      } else {
+        const rows = readAll(); // will backfill + rebuild seq
+        if (!rows.length) seed();
+      }
+    } catch {
+      seed();
+    }
+  },
+
   list(): Schedule[] {
     return readAll();
   },
+
   get(id: string): Schedule | undefined {
     return readAll().find((r) => r.id === id);
   },
+
   /** show the next Trip ID for a date without consuming it */
   peekTripId(date: string) {
     return peekTripId(date);
   },
+
   create(input: Omit<Schedule, "id" | "createdAt" | "tripId">): Schedule {
     const rows = readAll();
     const id =
@@ -192,7 +249,7 @@ export const ScheduleRepo = {
     const rec: Schedule = {
       ...input,
       id,
-      tripId: allocateTripId(input.date), // 👈 assign immutable Trip ID
+      tripId: allocateTripId(input.date), // immutable per-date sequence
       createdAt: new Date().toISOString(),
     };
 
@@ -203,9 +260,7 @@ export const ScheduleRepo = {
       const msg = [
         d ? `Driver busy with ${d.title || "another schedule"} (${d.date} ${d.startTime}-${d.endTime})` : "",
         v ? `Vehicle busy with ${v.title || "another schedule"} (${v.date} ${v.startTime}-${v.endTime})` : "",
-      ]
-        .filter(Boolean)
-        .join(" • ");
+      ].filter(Boolean).join(" • ");
       throw new Error(msg || "Conflict");
     }
 
@@ -213,17 +268,16 @@ export const ScheduleRepo = {
     writeAll(rows);
     return rec;
   },
+
   update(id: string, patch: Partial<Schedule>): Schedule | undefined {
     const rows = readAll();
     const idx = rows.findIndex((r) => r.id === id);
     if (idx < 0) return;
 
     const prev = rows[idx];
-    // tripId is immutable; ignore attempts to change it
-    const { tripId: _ignore, ...patchSafe } = patch as any;
+    const { tripId: _ignore, ...patchSafe } = patch as any; // tripId immutable
     const next = { ...prev, ...patchSafe } as Schedule;
 
-    // only validate when changing assignment/time
     const touchesAssignment =
       (patchSafe.date && patchSafe.date !== prev.date) ||
       (patchSafe.startTime && patchSafe.startTime !== prev.startTime) ||
@@ -239,9 +293,7 @@ export const ScheduleRepo = {
         const msg = [
           d ? `Driver busy with ${d.title || "another schedule"} (${d.date} ${d.startTime}-${d.endTime})` : "",
           v ? `Vehicle busy with ${v.title || "another schedule"} (${v.date} ${v.startTime}-${v.endTime})` : "",
-        ]
-          .filter(Boolean)
-          .join(" • ");
+        ].filter(Boolean).join(" • ");
         throw new Error(msg || "Conflict");
       }
     }
@@ -250,10 +302,12 @@ export const ScheduleRepo = {
     writeAll(rows);
     return rows[idx];
   },
+
   removeMany(ids: string[]) {
     const set = new Set(ids);
     writeAll(readAll().filter((r) => !set.has(r.id)));
   },
+
   setStatus(id: string, status: ScheduleStatus) {
     return this.update(id, { status });
   },

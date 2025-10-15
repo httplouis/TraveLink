@@ -1,2 +1,5 @@
-import DriversPageClient from "./DriversPageClient";
-export default function Page() { return <DriversPageClient />; }
+import DriversPageClient from "@/components/admin/drivers/containers/DriversPage.client";
+
+export default function Page() {
+  return <DriversPageClient />;
+}

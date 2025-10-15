@@ -1,11 +1,22 @@
+// src/components/admin/requests/ui/RequestDetailsModal.ui.tsx
 "use client";
+
 import * as React from "react";
-import { RequestRow } from "@/lib/admin/types";
+import { Dialog } from "@headlessui/react";
+import { X } from "lucide-react";
+
+import type { AdminRequest } from "@/lib/admin/requests/store";
+import { AdminRequestsRepo } from "@/lib/admin/requests/store";
+import { buildRequestPDF } from "@/lib/admin/requests/pdf";
+
+// Mock data – replace later with real data from repo
+const DRIVERS = ["Juan Dela Cruz", "Pedro Santos", "Maria Reyes"];
+const VEHICLES = ["Van 01", "Bus 02", "SUV 03"];
 
 type Props = {
   open: boolean;
   onClose: () => void;
-  row?: RequestRow;
+  row?: AdminRequest;
   onApprove?: () => void;
   onReject?: () => void;
 };
@@ -17,133 +28,194 @@ export default function RequestDetailsModalUI({
   onApprove,
   onReject,
 }: Props) {
-  React.useEffect(() => {
-    function onEsc(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
-    if (open) window.addEventListener("keydown", onEsc);
-    return () => window.removeEventListener("keydown", onEsc);
-  }, [open, onClose]);
+  if (!row) return null;
 
-  if (!open || !row) return null;
-  const canAct = row.status === "Pending";
+  const to = row.travelOrder;
+
+  const [driver, setDriver] = React.useState(row.driver || "");
+  const [vehicle, setVehicle] = React.useState(row.vehicle || "");
+
+  // auto-save driver
+  React.useEffect(() => {
+    if (row?.id && driver) {
+      AdminRequestsRepo.setDriver(row.id, driver);
+    }
+  }, [driver, row?.id]);
+
+  // auto-save vehicle
+  React.useEffect(() => {
+    if (row?.id && vehicle) {
+      AdminRequestsRepo.setVehicle(row.id, vehicle);
+    }
+  }, [vehicle, row?.id]);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center p-4 md:p-6"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="req-modal-title"
+    <Dialog
+      open={open}
+      onClose={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center"
     >
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px]" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
 
-      <div className="relative w-[680px] max-w-[95vw] rounded-2xl bg-white shadow-2xl ring-1 ring-black/5">
+      <div className="relative z-50 w-full max-w-3xl rounded-xl bg-white p-6 shadow-lg">
         {/* Header */}
-        <div className="flex items-center justify-between border-b px-5 py-3.5 md:px-6">
-          <div className="flex items-center gap-3">
-            <div className="grid h-9 w-9 place-items-center rounded-xl bg-neutral-100 text-neutral-700 text-sm font-semibold">
-              TL
-            </div>
-            <div>
-              <h2 id="req-modal-title" className="text-base md:text-lg font-semibold text-neutral-900">
-                Request {row.id}
-              </h2>
-              <div className="mt-0.5 text-xs text-neutral-500">Details overview</div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <StatusBadge status={row.status} />
-            <button
-              aria-label="Close"
-              onClick={onClose}
-              className="rounded-lg border bg-white px-2.5 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 active:scale-[0.98]"
-            >
-              Close
-            </button>
-          </div>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Request Details</h2>
+          <button
+            onClick={onClose}
+            className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100"
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
 
-        {/* Body */}
-        <div className="max-h-[70vh] overflow-auto px-5 py-5 md:px-6 md:py-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-            <Field label="Department" value={row.dept} />
-            <Field label="Date" value={row.date} />
-            <Field label="Requester" value={row.requester ?? "—"} />
-            <Field label="Driver" value={row.driver ?? "—"} />
-            <Field label="Vehicle" value={row.vehicle ?? "—"} />
-            <Field label="Purpose" value={row.purpose} className="md:col-span-2" tall />
-          </div>
+        {/* Sections */}
+        <div className="space-y-6 max-h-[70vh] overflow-y-auto pr-2">
+          {/* Travel Order */}
+          <section>
+            <h3 className="mb-2 text-sm font-semibold text-neutral-700">
+              Travel Order
+            </h3>
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+              <dt>Date</dt>
+              <dd>{to?.date || "—"}</dd>
+              <dt>Requesting Person</dt>
+              <dd>{to?.requestingPerson || "—"}</dd>
+              <dt>Department</dt>
+              <dd>{to?.department || "—"}</dd>
+              <dt>Destination</dt>
+              <dd>{to?.destination || "—"}</dd>
+              <dt>Departure Date</dt>
+              <dd>{to?.departureDate || "—"}</dd>
+              <dt>Return Date</dt>
+              <dd>{to?.returnDate || "—"}</dd>
+              <dt>Purpose of Travel</dt>
+              <dd>{to?.purposeOfTravel || "—"}</dd>
+            </dl>
+
+            {to?.costs && (
+              <div className="mt-3">
+                <h4 className="text-xs font-semibold text-neutral-600">
+                  Estimated Costs
+                </h4>
+                <ul className="mt-1 text-sm text-neutral-700">
+                  {Object.entries(to.costs).map(([k, v]) => {
+                    if (!v) return null;
+                    if (Array.isArray(v)) {
+                      return v.map((item, i) => (
+                        <li key={`${k}-${i}`}>
+                          {item.label}: ₱{item.amount}
+                        </li>
+                      ));
+                    }
+                    return (
+                      <li key={k}>
+                        {k}: ₱{v}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+          </section>
+
+          {/* Assignments */}
+          <section>
+            <h3 className="mb-2 text-sm font-semibold text-neutral-700">
+              Assignments
+            </h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-neutral-600">
+                  Driver
+                </label>
+                <select
+                  value={driver}
+                  onChange={(e) => setDriver(e.target.value)}
+                  className="w-full rounded border px-2 py-1 text-sm"
+                >
+                  <option value="">— Select Driver —</option>
+                  {DRIVERS.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-neutral-600">
+                  Vehicle
+                </label>
+                <select
+                  value={vehicle}
+                  onChange={(e) => setVehicle(e.target.value)}
+                  className="w-full rounded border px-2 py-1 text-sm"
+                >
+                  <option value="">— Select Vehicle —</option>
+                  {VEHICLES.map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </section>
+
+          {/* Seminar */}
+          {row.seminar && (
+            <section>
+              <h3 className="mb-2 text-sm font-semibold text-neutral-700">
+                Seminar Application
+              </h3>
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                <dt>Application Date</dt>
+                <dd>{row.seminar.applicationDate || "—"}</dd>
+                <dt>Title</dt>
+                <dd>{row.seminar.title || "—"}</dd>
+                <dt>Category</dt>
+                <dd>{row.seminar.trainingCategory || "—"}</dd>
+                <dt>Date From</dt>
+                <dd>{row.seminar.dateFrom || "—"}</dd>
+                <dt>Date To</dt>
+                <dd>{row.seminar.dateTo || "—"}</dd>
+                <dt>Venue</dt>
+                <dd>{row.seminar.venue || "—"}</dd>
+                <dt>Modality</dt>
+                <dd>{row.seminar.modality || "—"}</dd>
+              </dl>
+            </section>
+          )}
         </div>
 
         {/* Footer */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border-t px-5 py-3.5 md:px-6">
-          <div className="text-xs text-neutral-500">
-            Updated just now • Read-only view
-          </div>
-
-          {canAct ? (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={onReject}
-                className="rounded-lg bg-red-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-red-700 active:scale-[0.98]"
-              >
-                Reject
-              </button>
+        <div className="mt-6 flex justify-between">
+          <button
+            onClick={() => buildRequestPDF(row)}
+            className="rounded-md bg-[#7A0010] px-4 py-2 text-sm text-white hover:opacity-90"
+          >
+            Download PDF
+          </button>
+          <div className="flex gap-2">
+            {onApprove && (
               <button
                 onClick={onApprove}
-                className="rounded-lg bg-green-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-green-700 active:scale-[0.98]"
+                className="rounded-md bg-green-600 px-4 py-2 text-sm text-white hover:opacity-90"
               >
                 Approve
               </button>
-            </div>
-          ) : (
-            <span className="text-sm text-neutral-500">No actions available</span>
-          )}
+            )}
+            {onReject && (
+              <button
+                onClick={onReject}
+                className="rounded-md bg-red-600 px-4 py-2 text-sm text-white hover:opacity-90"
+              >
+                Reject
+              </button>
+            )}
+          </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-/* ---- small pieces ---- */
-
-function Field({
-  label,
-  value,
-  className = "",
-  tall = false,
-}: {
-  label: string;
-  value: React.ReactNode;
-  className?: string;
-  tall?: boolean;
-}) {
-  return (
-    <div className={className}>
-      <div className="mb-1 text-[11px] font-semibold tracking-wide text-neutral-500">
-        {label.toUpperCase()}
-      </div>
-      <div
-        className={
-          "w-full rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2 text-[14px] text-neutral-900 " +
-          (tall ? "min-h-[56px]" : "h-10 flex items-center")
-        }
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function StatusBadge({ status }: { status: RequestRow["status"] }) {
-  const map: Record<RequestRow["status"], string> = {
-    Pending: "bg-amber-100 text-amber-800 ring-amber-200",
-    Approved: "bg-emerald-100 text-emerald-800 ring-emerald-200",
-    Completed: "bg-blue-100 text-blue-800 ring-blue-200",
-    Rejected: "bg-rose-100 text-rose-800 ring-rose-200",
-  };
-  return (
-    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${map[status]}`}>
-      {status}
-    </span>
+    </Dialog>
   );
 }

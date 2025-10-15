@@ -38,3 +38,13 @@
        @apply absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-[#7a0019];
      } */
 }
+/* Make empty date field text opaque in WebKit */
+input[type="date"]:required:invalid::-webkit-datetime-edit {
+  color: #111827;  /* Tailwind neutral-900 */
+  opacity: 1;
+}
+
+/* (Optional) If your design uses lighter text normally, keep the icon visible too */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 0.9;
+}

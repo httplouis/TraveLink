@@ -6,7 +6,7 @@ export function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
 
   // Only guard these routes
-  const protectedPrefixes = ["/admin", "/driver", "/faculty"];
+  const protectedPrefixes = ["/admin", "/driver", "/user"];
   const needsAuth = protectedPrefixes.some((p) => pathname.startsWith(p));
   if (!needsAuth) return NextResponse.next();
 
@@ -29,5 +29,5 @@ export function middleware(req: NextRequest) {
 
 export const config = {
   // Only run on protected routes
-  matcher: ["/admin/:path*", "/driver/:path*", "/faculty/:path*"],
+  matcher: ["/admin/:path*", "/driver/:path*", "/user/:path*"],
 };

@@ -1,4 +1,11 @@
-import VehiclesPageClient from "./page.client";
-export default function Page() {
-  return <VehiclesPageClient />;
+"use client";
+import ToastProvider from "@/components/common/ui/ToastProvider.ui";
+import VehiclesPageClient from "@/components/admin/vehicles/containers/VehiclesPage.client";
+
+export default function AdminVehiclesPage() {
+  return (
+    <ToastProvider>
+      <VehiclesPageClient />
+    </ToastProvider>
+  );
 }

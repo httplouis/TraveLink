@@ -1,3 +1,4 @@
+// src/components/admin/schedule/forms/CreateScheduleDialogs.container.tsx
 "use client";
 import * as React from "react";
 import CreateScheduleDialogUI, {
@@ -5,7 +6,6 @@ import CreateScheduleDialogUI, {
   DriverOption,
   VehicleOption,
 } from "./CreateScheduleDialog.ui";
-
 import { ScheduleRepo } from "@/lib/admin/schedule/store";
 import type { Schedule } from "@/lib/admin/schedule/types";
 import {
@@ -32,17 +32,19 @@ const makeInit = (initial?: Partial<Schedule>): CreateForm => {
     date: initial?.date ?? new Date().toISOString().slice(0, 10),
     startTime: initial?.startTime ?? "08:00",
     endTime: initial?.endTime ?? "09:00",
-    driverId: initial?.driverId ?? drivers[0].id,
-    vehicleId: initial?.vehicleId ?? vehicles[0].id,
-    status: (initial?.status as Schedule["status"]) ?? "PLANNED",
+    driverId: initial?.driverId ?? (drivers[0]?.id ?? ""),
+    vehicleId: initial?.vehicleId ?? (vehicles[0]?.id ?? ""),
+    status: (initial?.status as CreateForm["status"]) ?? "PLANNED",
     notes: initial?.notes ?? "",
-    // fields that CreateForm carries for the map picker
-    originPlace: null,
-    destinationPlace: null,
   };
 };
 
-export default function CreateScheduleDialog({ open, initial, onClose, onSubmit }: Props) {
+export default function CreateScheduleDialog({
+  open,
+  initial,
+  onClose,
+  onSubmit,
+}: Props) {
   const [form, setForm] = React.useState<CreateForm>(makeInit(initial));
 
   React.useEffect(() => {
@@ -50,16 +52,24 @@ export default function CreateScheduleDialog({ open, initial, onClose, onSubmit 
   }, [open, initial]);
 
   const snapshot = ScheduleRepo.list();
-  const editingId = (initial?.id as string | undefined) ?? undefined;
+  const editingId = (initial?.id as string) || undefined;
 
   const probe: Schedule = {
     id: editingId || "new",
     createdAt: new Date().toISOString(),
     tripId: "PREVIEW",
-    ...form,
+    title: form.title,
+    origin: form.origin,
+    destination: form.destination,
+    date: form.date,
+    startTime: form.startTime,
+    endTime: form.endTime,
+    driverId: form.driverId,
+    vehicleId: form.vehicleId,
+    status: form.status,
+    notes: form.notes,
   };
 
-  // options with busy flags
   const drivers: DriverOption[] = ScheduleRepo.constants.drivers.map((d) => ({
     id: d.id,
     name: d.name,
@@ -93,9 +103,8 @@ export default function CreateScheduleDialog({ open, initial, onClose, onSubmit 
       onClose={onClose}
       onSave={() => {
         if (disableSave) return;
-        // Submit only the Schedule fields expected by onSubmit
-        const { originPlace, destinationPlace, ...rest } = form;
-        onSubmit(rest);
+        // No originPlace/destinationPlace here — submit the plain form fields
+        onSubmit(form as Omit<Schedule, "id" | "createdAt" | "tripId">);
       }}
     />
   );

@@ -1,97 +1,91 @@
 import type { Vehicle, VehicleFilters, VehicleStatus, VehicleType } from "./types";
+import { sampleVehicles } from "./data";
 
-const LS_KEY = "tl_vehicles_v1";
+/**
+ * IMPORTANT (SSR-safe):
+ * - We initialize with sample data for BOTH server & client so the first render matches.
+ * - After mount (in your page), call VehiclesRepo.hydrateFromStorage() to replace with persisted data.
+ */
 
-const nowISO = () => new Date().toISOString();
-const uid = () => (globalThis.crypto?.randomUUID?.() ?? `v_${Math.random().toString(36).slice(2)}`);
+// In-memory DB (module-level)
+let db: Vehicle[] = sampleVehicles.map(v => ({ ...v })) as Vehicle[];
 
-const seed: Vehicle[] = [
-  {
-    id: uid(), plateNo: "NAB-1234", code: "BUS-01", brand: "Hyundai", model: "County",
-    type: "Bus", capacity: 30, status: "active", odometerKm: 42133, lastServiceISO: "2025-08-28",
-    notes: "Clean; tires ok", createdAt: nowISO(), updatedAt: nowISO(),
-  },
-  {
-    id: uid(), plateNo: "XAC-9087", code: "VAN-03", brand: "Toyota", model: "HiAce",
-    type: "Van", capacity: 12, status: "maintenance", odometerKm: 72810, lastServiceISO: "2025-09-10",
-    notes: "Brake pads order", createdAt: nowISO(), updatedAt: nowISO(),
-  },
-  {
-    id: uid(), plateNo: "QWE-5678", code: "BUS-02", brand: "Isuzu", model: "Journey",
-    type: "Bus", capacity: 40, status: "active", odometerKm: 189233, lastServiceISO: "2025-08-20",
-    notes: null, createdAt: nowISO(), updatedAt: nowISO(),
-  },
-  {
-    id: uid(), plateNo: "AAA-7777", code: "CAR-01", brand: "Honda", model: "City",
-    type: "Car", capacity: 4, status: "inactive", odometerKm: 32400, lastServiceISO: "2025-07-01",
-    notes: "For registration", createdAt: nowISO(), updatedAt: nowISO(),
-  },
-];
+// ---- localStorage helpers (client only; safe to import on server) ----
+const LS_KEY = "travilink_vehicles";
+const canStorage = () => typeof window !== "undefined" && !!window.localStorage;
 
-function load(): Vehicle[] {
-  if (typeof window === "undefined") return seed;
+function saveToStorage(rows: Vehicle[]) {
+  if (!canStorage()) return;
+  try { localStorage.setItem(LS_KEY, JSON.stringify(rows)); } catch {}
+}
+
+/** Load from localStorage into in-memory DB. Returns true if hydrated. */
+function hydrateFromStorage(): boolean {
+  if (!canStorage()) return false;
   try {
     const raw = localStorage.getItem(LS_KEY);
-    if (!raw) {
-      localStorage.setItem(LS_KEY, JSON.stringify(seed));
-      return seed;
-    }
-    return JSON.parse(raw) as Vehicle[];
-  } catch { return seed; }
+    if (!raw) return false;
+    db = JSON.parse(raw) as Vehicle[];
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-function save(rows: Vehicle[]) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(LS_KEY, JSON.stringify(rows));
+// ---- Utils ----
+function matches(v: Vehicle, f: VehicleFilters) {
+  const s = (f.search ?? "").toLowerCase();
+  const okSearch = !s || [v.plateNo, v.code, v.brand, v.model].some(x => x.toLowerCase().includes(s));
+  const okType = !f.type || v.type === f.type;
+  const okStatus = !f.status || v.status === f.status;
+  return okSearch && okType && okStatus;
 }
 
+// ---- Public API ----
 export const VehiclesRepo = {
-  list(filters?: VehicleFilters): Vehicle[] {
-    const rows = load();
-    if (!filters) return rows;
-    const q = (filters.search ?? "").trim().toLowerCase();
-    return rows.filter(v => {
-      const okQ = !q || [
-        v.plateNo, v.code, v.brand, v.model, v.type, v.status,
-      ].join(" ").toLowerCase().includes(q);
-      const okType = !filters.type || v.type === filters.type;
-      const okStatus = !filters.status || v.status === filters.status;
-      return okQ && okType && okStatus;
-    });
+  // expose so the page can hydrate AFTER mount (prevents hydration mismatch)
+  hydrateFromStorage,
+
+  constants: {
+    types: ["Bus", "Van", "Car", "SUV", "Motorcycle"] as readonly VehicleType[],
+    statuses: ["active", "maintenance", "inactive"] as readonly VehicleStatus[],
   },
 
-  get(id: string) { return load().find(v => v.id === id) ?? null; },
-
-  create(data: Omit<Vehicle,"id"|"createdAt"|"updatedAt">): Vehicle {
-    const next: Vehicle = { ...data, id: uid(), createdAt: nowISO(), updatedAt: nowISO() };
-    const rows = load();
-    rows.unshift(next);
-    save(rows);
-    return next;
+  list(filters: VehicleFilters = {}) {
+    return db.filter(v => matches(v, filters));
   },
 
-  update(id: string, patch: Partial<Vehicle>): Vehicle | null {
-    const rows = load();
-    const idx = rows.findIndex(r => r.id === id);
-    if (idx < 0) return null;
-    rows[idx] = { ...rows[idx], ...patch, updatedAt: nowISO() };
-    save(rows);
-    return rows[idx];
+  get(id: string) {
+    return db.find(v => v.id === id) ?? null;
+  },
+
+  create(data: Omit<Vehicle, "id" | "createdAt" | "updatedAt">) {
+    const now = new Date().toISOString();
+    const v: Vehicle = { ...data, id: crypto.randomUUID(), createdAt: now, updatedAt: now } as Vehicle;
+    db.push(v);
+    saveToStorage(db);
+    return v.id;
+  },
+
+  update(id: string, patch: Partial<Vehicle>) {
+    const i = db.findIndex(v => v.id === id);
+    if (i >= 0) {
+      db[i] = { ...db[i], ...patch, updatedAt: new Date().toISOString() };
+      saveToStorage(db);
+    }
   },
 
   remove(id: string) {
-    const rows = load().filter(r => r.id !== id);
-    save(rows);
+    const i = db.findIndex(v => v.id === id);
+    if (i >= 0) {
+      db.splice(i, 1);
+      saveToStorage(db);
+    }
   },
 
-  bulkRemove(ids: string[]) {
-    const set = new Set(ids);
-    const rows = load().filter(r => !set.has(r.id));
-    save(rows);
+  /** DEV helper: restore sample seed (also persists) */
+  resetToSample() {
+    db = sampleVehicles.map(v => ({ ...v })) as Vehicle[];
+    saveToStorage(db);
   },
-
-  constants: {
-    types: ["Bus","Van","Car","Service"] as VehicleType[],
-    statuses: ["active","maintenance","inactive"] as VehicleStatus[],
-  }
 };

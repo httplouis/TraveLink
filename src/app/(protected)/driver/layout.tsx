@@ -5,7 +5,7 @@ import Sidebar from "@/components/driver/Sidebar";              // container (be
 import Topbar from "@/components/driver/Topbar";
 import ProfilePanel from "@/components/driver/ProfilePanel";
 import MiniCalendar from "@/components/driver/MiniCalendar";
-import "@/app/styles/driver.css";
+import "@/app/styles/driver/driver.css";
 
 const TOPBAR_H = 64; // adjust if your Topbar is not h-16
 
