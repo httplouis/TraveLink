@@ -1,4 +1,3 @@
-// src/app/(protected)/user/submissions/page.tsx
 "use client";
 
 import * as React from "react";
@@ -86,14 +85,21 @@ export default function SubmissionsPage() {
     );
     if (!yes) return;
 
-    await cancelSubmission(id);
-    await refresh();
-
-    toast({
-      kind: "success",
-      title: "Cancelled",
-      message: "Submission was cancelled.",
-    });
+    try {
+      await cancelSubmission(id);
+      await refresh();
+      toast({
+        kind: "success",
+        title: "Cancelled",
+        message: "Submission was cancelled.",
+      });
+    } catch (e: any) {
+      toast({
+        kind: "info",
+        title: "Cannot cancel",
+        message: e?.message || "The request was already received by Admin.",
+      });
+    }
   }
 
   return (

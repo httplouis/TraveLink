@@ -1,4 +1,3 @@
-// src/components/user/request/dev/QuickFillButton.ui.tsx
 "use client";
 
 import * as React from "react";
@@ -14,9 +13,8 @@ import { useToast } from "@/components/common/ui/ToastProvider.ui";
 
 /** ---------- Public exports ---------- */
 
-/** One-click: fills according to your current (reason/vehicle/requester) selections */
 export function QuickFillCurrentButton() {
-  const { data, hardSet } = useRequestStore();
+  const { data, hardSet, clearIds } = useRequestStore();
   const toast = useToast();
 
   function handleClick() {
@@ -25,6 +23,8 @@ export function QuickFillCurrentButton() {
       reason: data.reason,
       vehicleMode: data.vehicleMode,
     });
+    // ✅ important: detach any draft/submission id
+    clearIds?.();
     hardSet(filled);
     toast({
       kind: "success",
@@ -47,7 +47,7 @@ export function QuickFillCurrentButton() {
 
 /** Small menu with a few handy presets */
 export function QuickFillMenu() {
-  const { hardSet } = useRequestStore();
+  const { hardSet, clearIds } = useRequestStore();
   const toast = useToast();
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
@@ -63,6 +63,8 @@ export function QuickFillMenu() {
 
   function pick(p: PresetKey) {
     const filled = buildPreset(p);
+    // ✅ important: detach any draft/submission id
+    clearIds?.();
     hardSet(filled);
     setOpen(false);
     toast({
@@ -168,11 +170,9 @@ function buildFilledData({
   reason: Reason;
   vehicleMode: VehicleMode;
 }): RequestFormData {
-  // enforce vehicle lock based on reason (educational/competition)
   const locked = lockVehicle(reason);
   const v = locked ?? vehicleMode;
 
-  // dates
   const today = new Date();
   const plus = (d: number) => {
     const x = new Date(today);
@@ -180,7 +180,6 @@ function buildFilledData({
     return x.toISOString().slice(0, 10);
   };
 
-  // base Travel Order
   const travelOrder: RequestFormData["travelOrder"] = {
     date: today.toISOString().slice(0, 10),
     requestingPerson: requesterRole === "head" ? "Dr. Jane Head" : "Prof. Juan Dela Cruz",
@@ -217,7 +216,6 @@ function buildFilledData({
     endorsedByHeadDate: requesterRole === "faculty" ? plus(1) : "",
   };
 
-  // school service (if institutional)
   const schoolService: RequestFormData["schoolService"] =
     v === "institutional"
       ? {
@@ -228,10 +226,9 @@ function buildFilledData({
         }
       : undefined;
 
-  // seminar application (if seminar) — typed explicitly to satisfy TS
   const seminar: RequestFormData["seminar"] =
     reason === "seminar"
-      ? ({
+      ? {
           applicationDate: today.toISOString().slice(0, 10),
           title: "National Research Conference 2025",
           dateFrom: plus(14),
@@ -253,7 +250,7 @@ function buildFilledData({
           makeUpClassSchedule: "Make-up classes scheduled next week, Wed/Thu 3–5 PM.",
           applicantUndertaking: true,
           fundReleaseLine: 7200,
-        } as RequestFormData["seminar"])
+        }
       : undefined;
 
   return {

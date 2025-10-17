@@ -257,7 +257,7 @@ export default function RequestsToolbarUI({
         onClick={onAddNew}
       >
         <Plus className="h-4 w-4" />
-        <span>+ Add New</span>
+        <span>Add New</span>
       </button>
     </div>
   );

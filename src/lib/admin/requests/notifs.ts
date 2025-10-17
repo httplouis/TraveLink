@@ -1,81 +1,60 @@
-// src/lib/admin/requests/notifs.ts
-export type Id = string;
+"use client";
 
-const READ_KEY = "tl.requests.read.v1";
-const VISIT_KEY = "tl.requests.lastvisit.v1";
+/**
+ * Tracks:
+ * - last time the Admin Requests page was opened
+ * - a set of ids that were explicitly marked as read (opened in details or “mark read”)
+ */
 
-function canUseStorage() {
-  return typeof window !== "undefined" && !!window.localStorage;
+const KEY_LAST_VISITED = "admin.requests.lastVisited.v1";
+const KEY_READ_IDS = "admin.requests.readIds.v1";
+
+function isBrowser() {
+  return typeof window !== "undefined" && typeof localStorage !== "undefined";
 }
 
-/* read ids */
-export function getReadIds(): Set<Id> {
-  if (!canUseStorage()) return new Set();
+export function markVisitedNow() {
+  if (!isBrowser()) return;
+  localStorage.setItem(KEY_LAST_VISITED, Date.now().toString());
+}
+
+export function getReadIds(): Set<string> {
+  if (!isBrowser()) return new Set();
   try {
-    const raw = localStorage.getItem(READ_KEY);
-    if (!raw) return new Set();
-    return new Set(JSON.parse(raw) as Id[]);
+    const raw = localStorage.getItem(KEY_READ_IDS);
+    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
   } catch {
     return new Set();
   }
 }
-function saveReadIds(set: Set<Id>) {
-  if (!canUseStorage()) return;
-  try {
-    localStorage.setItem(READ_KEY, JSON.stringify(Array.from(set)));
-  } catch {}
-}
-export function markRead(id: Id) {
-  const s = getReadIds();
-  if (!s.has(id)) {
-    s.add(id);
-    saveReadIds(s);
-  }
-}
-export function markManyRead(ids: Id[]) {
-  const s = getReadIds();
-  let changed = false;
-  ids.forEach((id) => {
-    if (!s.has(id)) {
-      s.add(id);
-      changed = true;
-    }
-  });
-  if (changed) saveReadIds(s);
-}
-export function isRead(id: Id) {
-  return getReadIds().has(id);
+
+function saveReadIds(set: Set<string>) {
+  if (!isBrowser()) return;
+  localStorage.setItem(KEY_READ_IDS, JSON.stringify([...set]));
 }
 
-/* last visited (for nav badge) */
-export function getLastVisited(): number {
-  if (!canUseStorage()) return 0;
-  const raw = localStorage.getItem(VISIT_KEY);
-  if (!raw) return 0;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : 0;
-}
-export function markVisitedNow() {
-  if (!canUseStorage()) return;
-  localStorage.setItem(VISIT_KEY, String(Date.now()));
+export function markRead(id: string) {
+  const set = getReadIds();
+  set.add(id);
+  saveReadIds(set);
 }
 
-/* helpers */
-export type LiteRequest = { id: string; createdAt?: string | number | Date };
-function ts(x?: string | number | Date) {
-  if (!x) return 0;
-  const d = new Date(x);
-  return d.getTime() || 0;
+export function markManyRead(ids: string[]) {
+  const set = getReadIds();
+  ids.forEach((x) => set.add(x));
+  saveReadIds(set);
 }
-export function computeUnreadIds(list: LiteRequest[]): Set<Id> {
+
+/** For the nav badge */
+export function computeNavBadgeCount(
+  items: { id: string; createdAt: string }[]
+): number {
+  if (!isBrowser()) return 0;
+  const last = Number(localStorage.getItem(KEY_LAST_VISITED) || "0");
   const read = getReadIds();
-  const out = new Set<Id>();
-  list.forEach((r) => {
-    if (!read.has(r.id)) out.add(r.id);
-  });
-  return out;
-}
-export function computeNavBadgeCount(list: LiteRequest[]): number {
-  const last = getLastVisited();
-  return list.reduce((acc, r) => (ts(r.createdAt) > last ? acc + 1 : acc), 0);
+  return items.filter((it) => {
+    const newer = Date.parse(it.createdAt) > last;
+    const unread = !read.has(it.id);
+    return newer || unread;
+  }).length;
 }

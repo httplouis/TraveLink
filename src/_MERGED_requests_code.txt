@@ -645,20 +645,20 @@ import { useToast } from "@/components/common/ui/ToastProvider.ui";
 
 import ConfirmUI from "@/components/admin/requests/ui/Confirm.ui";
 import RequestsSummaryUI from "@/components/admin/requests/ui/RequestsSummary.ui";
-import RequestsTableUI from "@/components/admin/requests/ui/RequestsTable.ui";
-import RequestsCardGridUI from "@/components/admin/requests/ui/RequestsCardGrid.ui";
 import RequestsReceiverViewUI from "@/components/admin/requests/ui/RequestsReceiverView.ui";
 import RequestDetailsModalUI from "@/components/admin/requests/ui/RequestDetailsModal.ui";
 import RequestsToolbarUI from "@/components/admin/requests/toolbar/RequestsToolbar.ui";
 
 import { useDebouncedValue } from "@/lib/common/useDebouncedValue";
-import {
-  toggleAllOnPage as selToggleAllOnPage,
-  clearSelection as selClear,
-} from "@/lib/common/selection";
-
 import { AdminRequestsRepo, type AdminRequest } from "@/lib/admin/requests/store";
 import type { RequestRow, Pagination as Pg, FilterState } from "@/lib/admin/types";
+import * as TrashRepo from "@/lib/admin/requests/trashRepo";
+import {
+  markVisitedNow,
+  computeUnreadIds,
+  markRead as markReqRead,
+  markManyRead,
+} from "@/lib/admin/requests/notifs";
 
 /* ========== Mapper ========== */
 function toRequestRow(req: AdminRequest): RequestRow {
@@ -681,67 +681,82 @@ function toRequestRow(req: AdminRequest): RequestRow {
   };
 }
 
-/* ========== Main Component ========== */
+const PAGE_SIZE = 12;
+
 export default function PageInner() {
   const toast = useToast();
 
   const [mounted, setMounted] = useState(false);
   const [allRows, setAllRows] = useState<RequestRow[]>([]);
   const [filteredRows, setFilteredRows] = useState<RequestRow[]>([]);
+  const [unreadIds, setUnreadIds] = useState<Set<string>>(new Set());
+
   const [tableSearch, setTableSearch] = useState("");
   const debouncedQ = useDebouncedValue(tableSearch, 300);
   const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
-  const [view, setView] = useState<"table" | "card" | "receiver">("receiver");
+  const [pagination, setPagination] = useState<Pg>({ page: 1, pageSize: PAGE_SIZE, total: 0 });
+
   const [selected, setSelected] = useState<Set<string>>(new Set());
-
-  const PAGE_SIZES = { table: 15, card: 9, receiver: 12 } as const;
-  const [pagination, setPagination] = useState<Pg>({
-    page: 1,
-    pageSize: PAGE_SIZES.receiver,
-    total: 0,
-  });
-
   const [openDetails, setOpenDetails] = useState(false);
   const [activeRow, setActiveRow] = useState<AdminRequest | undefined>();
 
-  // filters state
+  // filters
   const [draft, setDraft] = useState<FilterState>({
-    status: "",
-    dept: "",
+    status: "All",
+    dept: "All",
+    from: "",
+    to: "",
+    search: "",
+    mode: "auto",
   });
 
-  const applyFilters = () => {
-    setFilteredRows(
-      allRows.filter((r) => {
-        let ok = true;
-        if (draft.status && r.status !== draft.status) ok = false;
-        if (draft.dept && !r.dept.toLowerCase().includes(draft.dept.toLowerCase()))
-          ok = false;
-        return ok;
-      })
-    );
-  };
+  useEffect(() => setMounted(true), []);
+  useEffect(() => { markVisitedNow(); }, []);
+  useEffect(() => { TrashRepo.purgeOlderThan(30); }, []);
 
-  const clearFilters = () => {
-    setDraft({ status: "", dept: "" });
-    setFilteredRows(allRows);
-  };
-
-  // hydration guard
+  // poll list + recompute unread set
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  // sync rows
-  useEffect(() => {
-    setAllRows(AdminRequestsRepo.list().map(toRequestRow));
-    const interval = setInterval(() => {
-      setAllRows(AdminRequestsRepo.list().map(toRequestRow));
-    }, 2000);
-    return () => clearInterval(interval);
+    const load = () => {
+      const list = AdminRequestsRepo.list();
+      setAllRows(list.map(toRequestRow));
+      setUnreadIds(computeUnreadIds(list.map((r) => ({ id: r.id, createdAt: r.createdAt }))));
+    };
+    load();
+    const id = setInterval(load, 2000);
+    return () => clearInterval(id);
   }, []);
 
   useEffect(() => setFilteredRows(allRows), [allRows]);
+
+  const applyFilters = () => {
+    setSelected(new Set());
+    setFilteredRows(
+      allRows.filter((r) => {
+        const okStatus = draft.status === "All" || r.status === draft.status;
+        const okDept = draft.dept === "All" || r.dept === draft.dept;
+        const created = new Date(r.date);
+        const fromOk = !draft.from || created >= new Date(draft.from);
+        const toOk = !draft.to || created <= new Date(draft.to);
+        return okStatus && okDept && fromOk && toOk;
+      })
+    );
+    setPagination((p) => ({ ...p, page: 1 }));
+  };
+
+  const clearFilters = () => {
+    setDraft({ status: "All", dept: "All", from: "", to: "", search: "", mode: "auto" });
+    setFilteredRows(allRows);
+    setSelected(new Set());
+    setPagination((p) => ({ ...p, page: 1 }));
+  };
+
+  const handleDraftChange = (patch: Partial<FilterState>) => {
+    setDraft((d) => {
+      const next = { ...d, ...patch };
+      if (next.mode === "auto") queueMicrotask(applyFilters);
+      return next;
+    });
+  };
 
   const postFilterRows = useMemo(() => {
     const q = debouncedQ.trim().toLowerCase();
@@ -759,20 +774,12 @@ export default function PageInner() {
     );
   }, [filteredRows, debouncedQ, sortDir]);
 
-  const clearSelection = () => selClear(setSelected);
-
-  useEffect(() => {
-    setPagination((p) => ({ ...p, page: 1, pageSize: PAGE_SIZES[view] }));
-    clearSelection();
-  }, [view]);
-
   useEffect(() => {
     setPagination((p) => {
       const total = postFilterRows.length;
       const maxPage = Math.max(1, Math.ceil(total / p.pageSize) || 1);
       return { ...p, total, page: Math.min(p.page, maxPage) };
     });
-    clearSelection();
   }, [postFilterRows]);
 
   const pageRows = useMemo(() => {
@@ -780,10 +787,73 @@ export default function PageInner() {
     return postFilterRows.slice(start, start + pagination.pageSize);
   }, [postFilterRows, pagination.page, pagination.pageSize]);
 
+  const markOneRead = (id: string) => {
+    markReqRead(id);
+    setUnreadIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+
   const openRow = (r: RequestRow) => {
     const full = AdminRequestsRepo.get(r.id);
     if (full) setActiveRow(full);
+    markOneRead(r.id);
     setOpenDetails(true);
+  };
+
+  const onToggleOne = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const onToggleAllOnPage = (checked: boolean, idsOnPage: string[]) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      idsOnPage.forEach((id) => (checked ? next.add(id) : next.delete(id)));
+      return next;
+    });
+  };
+
+  const markSelectedRead = () => {
+    const ids = Array.from(selected);
+    if (!ids.length) return;
+    markManyRead(ids);
+    setUnreadIds((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => next.delete(id));
+      return next;
+    });
+    setSelected(new Set());
+    toast({ message: "Marked as read", kind: "success" });
+  };
+
+  const deleteSelected = () => {
+    const ids = Array.from(selected);
+    if (!ids.length) return;
+
+    const items = ids
+      .map((id) => AdminRequestsRepo.get(id))
+      .filter(Boolean) as AdminRequest[];
+
+    if (items.length) {
+      TrashRepo.addMany(items.map((it) => ({ ...it, deletedAt: new Date().toISOString() })));
+    }
+
+    const repoAny = AdminRequestsRepo as unknown as {
+      remove?: (id: string) => void;
+      removeMany?: (ids: string[]) => void;
+    };
+    if (repoAny.removeMany) repoAny.removeMany(ids);
+    else if (repoAny.remove) ids.forEach((id) => repoAny.remove!(id));
+
+    setAllRows(AdminRequestsRepo.list().map(toRequestRow));
+    setSelected(new Set());
+    toast({ message: `Moved ${ids.length} to Trash (kept for 30 days)`, kind: "success" });
   };
 
   const summary = useMemo(
@@ -800,90 +870,41 @@ export default function PageInner() {
 
   return (
     <div className="space-y-4">
-      {/* KPI Summary */}
-      <div className="admin-sticky-kpi">
-        <div className="space-y-2 pr-2">
-          <RequestsSummaryUI summary={summary} />
-        </div>
+      {/* KPI Summary — not sticky anymore */}
+      <div className="space-y-2 pr-2">
+        <RequestsSummaryUI summary={summary} />
       </div>
 
       {/* Toolbar */}
       <RequestsToolbarUI
-        q={tableSearch}
-        onQChange={setTableSearch}
-        sort={sortDir === "desc" ? "newest" : "oldest"}
-        onSortChange={(s) => setSortDir(s === "newest" ? "desc" : "asc")}
-        onAddNew={() =>
-          toast({
-            message: "Add New clicked!",
-            variant: "success",
-          })
-        }
+        tableSearch={tableSearch}
+        onTableSearch={setTableSearch}
+        sortDir={sortDir}
+        onSortDirChange={setSortDir}
+        onAddNew={() => toast({ message: "Add New clicked!", kind: "success" })}
         draft={draft}
-        onDraftChange={(n) => setDraft((d) => ({ ...d, ...n }))}
+        onDraftChange={handleDraftChange}
         onApply={applyFilters}
         onClearAll={clearFilters}
+        selectedCount={selected.size}
+        onDeleteSelected={deleteSelected}
+        /* NEW: bulk mark read */
+        onMarkSelectedRead={markSelectedRead}
       />
 
-      {/* Main Views */}
-      {view === "table" && (
-        <RequestsTableUI
-          rows={pageRows}
-          tableSearch={tableSearch}
-          onTableSearch={setTableSearch}
-          sortDir={sortDir}
-          onSortDirChange={setSortDir}
-          pagination={pagination}
-          selectedIds={selected}
-          onToggleOne={(id) =>
-            setSelected((prev) => {
-              const next = new Set(prev);
-              next.has(id) ? next.delete(id) : next.add(id);
-              return next;
-            })
-          }
-          onToggleAllOnPage={(checked, idsOnPage) =>
-            selToggleAllOnPage(setSelected, idsOnPage, checked)
-          }
-          onRowClick={openRow}
-          onRowViewDetails={(row) => openRow(row)}
-          onPageChange={(page) => setPagination((p) => ({ ...p, page }))}
-          filterControls={{
-            draft,
-            onDraftChange: (n) => setDraft((d) => ({ ...d, ...n })),
-            onApply: applyFilters,
-            onClearAll: clearFilters,
-          }}
-        />
-      )}
-
-      {view === "card" && (
-        <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
-          <RequestsCardGridUI
-            rows={pageRows}
-            pagination={pagination}
-            onPageChange={(page) => setPagination((p) => ({ ...p, page }))}
-            selectedIds={selected}
-            onToggleOne={(id) =>
-              setSelected((prev) => {
-                const next = new Set(prev);
-                next.has(id) ? next.delete(id) : next.add(id);
-                return next;
-              })
-            }
-            onRowClick={openRow}
-          />
-        </div>
-      )}
-
-      {view === "receiver" && (
-        <RequestsReceiverViewUI
-          rows={pageRows as any}
-          pagination={pagination}
-          onPageChange={(page) => setPagination((p) => ({ ...p, page }))}
-          onRowClick={openRow}
-        />
-      )}
+      {/* Receiver view */}
+      <RequestsReceiverViewUI
+        rows={pageRows}
+        pagination={pagination}
+        onPageChange={(page) => setPagination((p) => ({ ...p, page }))}
+        onRowClick={openRow}
+        selectedIds={selected}
+        onToggleOne={onToggleOne}
+        onToggleAllOnPage={onToggleAllOnPage}
+        unreadIds={unreadIds}
+        /* NEW: single mark read from card */
+        onMarkRead={markOneRead}
+      />
 
       {/* Details Modal */}
       <RequestDetailsModalUI
@@ -892,7 +913,7 @@ export default function PageInner() {
         row={activeRow}
       />
 
-      {/* Confirm modal (placeholder) */}
+      {/* Confirm placeholder */}
       <ConfirmUI
         open={false}
         title="Confirm"
@@ -1018,6 +1039,183 @@ export default function AdminRequestsPage() {
     <ToastProvider>
       <PageInner />
     </ToastProvider>
+  );
+}
+
+
+===== app\(protected)\admin\requests\trash\page.tsx =====
+// src/app/(protected)/admin/requests/trash/page.tsx
+"use client";
+
+import * as React from "react";
+import Link from "next/link";
+import * as TrashRepo from "@/lib/admin/requests/trashRepo";
+import { AdminRequestsRepo, type AdminRequest } from "@/lib/admin/requests/store";
+import { ArrowLeft, RotateCcw, Trash2 } from "lucide-react";
+
+type TrashItem = TrashRepo.TrashItem;
+
+export default function TrashPage() {
+  const [items, setItems] = React.useState<TrashItem[]>([]);
+  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const [mounted, setMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+    TrashRepo.purgeOlderThan(30); // housekeeping
+    setItems(TrashRepo.list());
+  }, []);
+
+  const toggleOne = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = (checked: boolean) => {
+    setSelected(checked ? new Set(items.map((i) => i.id)) : new Set());
+  };
+
+  const restoreSelected = () => {
+    const ids = Array.from(selected);
+    if (!ids.length) return;
+
+    // Try to reinsert into main repo (best-effort)
+    const toRestore = TrashRepo.take(ids); // remove from TRASH + return copies
+    const repoAny = AdminRequestsRepo as unknown as {
+      addMany?: (arr: AdminRequest[]) => void;
+      upsertMany?: (arr: AdminRequest[]) => void;
+      add?: (req: AdminRequest) => void;
+      upsert?: (req: AdminRequest) => void;
+    };
+
+    if (repoAny.addMany) repoAny.addMany(toRestore);
+    else if (repoAny.upsertMany) repoAny.upsertMany(toRestore);
+    else if (repoAny.add) toRestore.forEach((x) => repoAny.add!(x));
+    else if (repoAny.upsert) toRestore.forEach((x) => repoAny.upsert!(x));
+
+    setItems(TrashRepo.list());
+    setSelected(new Set());
+  };
+
+  const deleteSelectedForever = () => {
+    const ids = Array.from(selected);
+    if (!ids.length) return;
+    TrashRepo.removeMany(ids);
+    setItems(TrashRepo.list());
+    setSelected(new Set());
+  };
+
+  if (!mounted) return <div />;
+
+  const allChecked = items.length > 0 && items.every((i) => selected.has(i.id));
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Link
+            href="/admin/requests"
+            className="inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Requests
+          </Link>
+          <h1 className="text-lg font-semibold">Trash (kept for 30 days)</h1>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            className="inline-flex items-center gap-2 rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm disabled:opacity-50"
+            onClick={restoreSelected}
+            disabled={!selected.size}
+            title="Restore selected"
+          >
+            <RotateCcw className="h-4 w-4" />
+            Restore selected {selected.size ? `(${selected.size})` : ""}
+          </button>
+          <button
+            className="inline-flex items-center gap-2 rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-800 disabled:opacity-50"
+            onClick={deleteSelectedForever}
+            disabled={!selected.size}
+            title="Delete permanently"
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete permanently
+          </button>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
+        <div className="mb-3 flex items-center justify-between text-sm">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-neutral-300"
+              checked={allChecked}
+              onChange={(e) => toggleAll(e.target.checked)}
+              suppressHydrationWarning
+            />
+            <span>Select all</span>
+          </label>
+          <div className="text-neutral-600">{items.length} item(s)</div>
+        </div>
+
+        <ul className="space-y-3">
+          {items.map((t) => {
+            const created = t.createdAt; // show raw ISO to avoid locale mismatches
+            const deletedAt = t.deletedAt; // ISO from repo
+            return (
+              <li
+                key={t.id}
+                className="relative rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm"
+              >
+                <div className="absolute left-0 top-0 h-full w-1.5 rounded-l-2xl bg-neutral-300" />
+                <div className="absolute right-4 top-4">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-neutral-300"
+                    checked={selected.has(t.id)}
+                    onChange={() => toggleOne(t.id)}
+                    suppressHydrationWarning
+                  />
+                </div>
+
+                <div className="text-sm text-neutral-600">{t.travelOrder?.department || "—"}</div>
+                <div className="mt-0.5 font-semibold leading-tight">
+                  {t.travelOrder?.purposeOfTravel || "—"}
+                </div>
+
+                <div className="mt-2 text-sm text-neutral-700">
+                  <span className="text-neutral-500">Requested by:</span>{" "}
+                  {t.travelOrder?.requestingPerson || "—"}
+                </div>
+
+                <div className="mt-1 text-sm text-neutral-700">
+                  <span className="text-neutral-500">Driver:</span> {t.driver || "—"}{" "}
+                  <span className="mx-2">•</span>
+                  <span className="text-neutral-500">Vehicle:</span> {t.vehicle || "—"}{" "}
+                  <span className="mx-2">•</span>
+                  <span className="text-neutral-500">Created:</span> {created}
+                </div>
+
+                <div className="mt-1 text-xs text-neutral-500">
+                  Deleted: {deletedAt}
+                </div>
+              </li>
+            );
+          })}
+
+          {!items.length && (
+            <li className="rounded-xl border border-dashed p-10 text-center text-sm text-neutral-500">
+              Trash is empty.
+            </li>
+          )}
+        </ul>
+      </div>
+    </div>
   );
 }
 
@@ -1903,48 +2101,45 @@ export default function SubmitMaintenance() {
 
 
 ===== app\(protected)\user\layout.tsx =====
+// app/(protected)/user/layout.tsx
 "use client";
 
 import React from "react";
 import TopBar from "@/components/user/nav/TopBar";
 import UserLeftNav from "@/components/user/nav/UserLeftNav";
-import { RequestProvider } from "@/store/user/requestStore";
 import "leaflet/dist/leaflet.css";
 
-
-// ✅ Default import for the provider (wraps the app)
-import ToastProvider from "@/components/common/ui/ToastProvider.ui"; 
+// Keep Toasts at this level
+import ToastProvider from "@/components/common/ui/ToastProvider.ui";
 
 export default function UserLayout({ children }: { children: React.ReactNode }) {
   const topbarH = "56px";
 
   return (
-    <RequestProvider>
-      <ToastProvider>
-        <div
-          className="bg-[var(--background)] text-[var(--foreground)]"
-          style={{ ["--topbar-h" as any]: topbarH }}
-        >
-          {/* fixed top bar */}
-          <div className="fixed inset-x-0 top-0 z-50 h-[var(--topbar-h)]">
-            <TopBar />
-          </div>
-
-          {/* app body */}
-          <div className="fixed inset-x-0 bottom-0 top-[var(--topbar-h)] grid grid-cols-[260px_minmax(0,1fr)]">
-            <aside className="overflow-y-auto border-r border-neutral-200 bg-white/90">
-              <div className="p-3">
-                <UserLeftNav />
-              </div>
-            </aside>
-
-            <main className="overflow-y-auto px-4 md:px-6">
-              <div className="mx-auto max-w-6xl py-6">{children}</div>
-            </main>
-          </div>
+    <ToastProvider>
+      <div
+        className="bg-[var(--background)] text-[var(--foreground)]"
+        style={{ ["--topbar-h" as any]: topbarH }}
+      >
+        {/* fixed top bar */}
+        <div className="fixed inset-x-0 top-0 z-50 h-[var(--topbar-h)]">
+          <TopBar />
         </div>
-      </ToastProvider>
-    </RequestProvider>
+
+        {/* app body */}
+        <div className="fixed inset-x-0 bottom-0 top-[var(--topbar-h)] grid grid-cols-[260px_minmax(0,1fr)]">
+          <aside className="overflow-y-auto border-r border-neutral-200 bg-white/90">
+            <div className="p-3">
+              <UserLeftNav />
+            </div>
+          </aside>
+
+          <main className="overflow-y-auto px-4 md:px-6">
+            <div className="mx-auto max-w-6xl py-6">{children}</div>
+          </main>
+        </div>
+      </div>
+    </ToastProvider>
   );
 }
 
@@ -2515,16 +2710,14 @@ export default function UserProfilePage() {
 ===== app\(protected)\user\request\page.tsx =====
 // app/(protected)/user/request/page.tsx
 "use client";
-import { RequestProvider } from "@/store/user/requestStore";
+
 import RequestWizard from "@/components/user/request/RequestWizard.client";
 
 export default function UserRequestPage() {
   return (
-    <RequestProvider>
-      <div className="mx-auto max-w-6xl p-4">
-        <RequestWizard />
-      </div>
-    </RequestProvider>
+    <div className="mx-auto max-w-6xl p-4">
+      <RequestWizard />
+    </div>
   );
 }
 
@@ -8449,6 +8642,7 @@ function SplitDropdown({
 
 
 ===== components\admin\nav\AdminLeftNav.tsx =====
+// src/components/admin/layout/AdminLeftNav.tsx
 "use client";
 
 import Link from "next/link";
@@ -8469,6 +8663,9 @@ import {
   MessageSquare,
   Search,
 } from "lucide-react";
+
+// 🔴 Badge count for "Requests"
+import { useRequestsNavBadge } from "@/components/admin/requests/hooks/useRequestsBadge";
 
 /* ---------- constants ---------- */
 
@@ -8497,6 +8694,9 @@ const NAV: Item[] = [
 export default function AdminLeftNav() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = React.useState(false);
+
+  // 🔴 new: number for Requests badge
+  const requestsBadge = useRequestsNavBadge();
 
   // Persist collapse state
   React.useEffect(() => {
@@ -8557,6 +8757,8 @@ export default function AdminLeftNav() {
                 <input
                   placeholder="Search…"
                   className="w-full bg-transparent text-sm outline-none placeholder:text-neutral-400"
+                  autoComplete="off"
+                  suppressHydrationWarning
                 />
               </div>
             </div>
@@ -8579,6 +8781,9 @@ export default function AdminLeftNav() {
           const active =
             pathname === href ||
             (href !== "/admin" && (pathname ?? "").startsWith(href));
+
+          const isRequests = href === "/admin/requests";
+          const showBadge = isRequests && requestsBadge > 0;
 
           const itemBase = collapsed
             ? "flex items-center justify-center"
@@ -8625,7 +8830,20 @@ export default function AdminLeftNav() {
                     !collapsed ? "group-hover:text-[#5e1620]" : "",
                   ].join(" ")}
                 />
+
                 {!collapsed && <span className="truncate">{label}</span>}
+
+                {/* 🔴 Requests badge */}
+                {showBadge &&
+                  (!collapsed ? (
+                    <span className="ml-auto inline-flex min-w-[20px] items-center justify-center rounded-full bg-rose-600 px-1.5 text-xs font-medium text-white">
+                      {requestsBadge}
+                    </span>
+                  ) : (
+                    <span className="pointer-events-none absolute -right-1 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-medium leading-none text-white">
+                      {requestsBadge}
+                    </span>
+                  ))}
               </Link>
             </li>
           );
@@ -9820,35 +10038,241 @@ export default function useOutsideClick<T extends HTMLElement>(
 }
 
 
+===== components\admin\requests\hooks\useRequestsBadge.tsx =====
+"use client";
+
+import * as React from "react";
+import { AdminRequestsRepo } from "@/lib/admin/requests/store";
+
+/** Reactive unread badge count for the Requests nav item. */
+export function useRequestsNavBadge() {
+  const count = React.useSyncExternalStore(
+    AdminRequestsRepo.subscribe,
+    () => AdminRequestsRepo.unreadCount(),
+    () => 0 // SSR fallback
+  );
+  return count;
+}
+
+
+===== components\admin\requests\parts\SeminarDetails.ui.tsx =====
+// src/components/admin/requests/parts/SeminarDetails.ui.tsx
+"use client";
+
+import * as React from "react";
+import type { AdminRequest } from "@/lib/admin/requests/store";
+
+/** Peso formatter */
+function peso(n: number | null | undefined) {
+  if (typeof n !== "number" || !isFinite(n)) return "₱0.00";
+  return `₱${n.toLocaleString("en-PH", { maximumFractionDigits: 2 })}`;
+}
+
+/** Derive the Seminar type from AdminRequest so we stay in sync */
+type Seminar = NonNullable<AdminRequest["seminar"]>;
+
+/** Training category label map (exclude the empty string from the key union) */
+type Category = Exclude<NonNullable<Seminar["trainingCategory"]>, "">;
+const CAT_LABEL: Record<Category, string> = {
+  local: "local",
+  regional: "regional",
+  national: "national",
+  international: "international",
+};
+
+/** Narrow possibly-empty category to a proper union or null */
+function toCategory(v: Seminar["trainingCategory"]): Category | null {
+  return v ? (v as Category) : null;
+}
+
+export default function SeminarDetails({
+  seminar,
+}: {
+  seminar?: AdminRequest["seminar"];
+}) {
+  if (!seminar) return null;
+
+  const cat = toCategory(seminar.trainingCategory);
+
+  return (
+    <section>
+      <h3 className="mb-2 text-sm font-semibold text-neutral-700">
+        Seminar Application
+      </h3>
+
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+        <dt className="font-semibold">Application Date</dt>
+        <dd>{seminar.applicationDate || "—"}</dd>
+
+        <dt className="font-semibold">Title</dt>
+        <dd>{seminar.title || "—"}</dd>
+
+        <dt className="font-semibold">Category</dt>
+        <dd>{cat ? CAT_LABEL[cat] : "—"}</dd>
+
+        <dt className="font-semibold">Date From</dt>
+        <dd>{seminar.dateFrom || "—"}</dd>
+
+        <dt className="font-semibold">Date To</dt>
+        <dd>{seminar.dateTo || "—"}</dd>
+
+        <dt className="font-semibold">Venue</dt>
+        <dd>{seminar.venue || "—"}</dd>
+
+        <dt className="font-semibold">Modality</dt>
+        <dd>{seminar.modality || "—"}</dd>
+
+        {"fees" in seminar && (
+          <>
+            <dt className="font-semibold">Registration cost</dt>
+            <dd>{peso((seminar as any).fees?.registrationFee ?? null)}</dd>
+
+            <dt className="font-semibold">Total amount of expenses</dt>
+            <dd>{peso((seminar as any).fees?.totalAmount ?? null)}</dd>
+          </>
+        )}
+      </dl>
+
+      {/* Optional breakdown (if present in your data) */}
+      {"breakdown" in seminar && seminar.breakdown ? (
+        <div className="mt-3">
+          <h4 className="mb-1 text-sm font-semibold text-neutral-700">
+            Breakdown of Expenses
+          </h4>
+          <table className="w-full text-sm border border-neutral-200 rounded">
+            <tbody>
+              {"registration" in seminar.breakdown && (
+                <tr>
+                  <td className="px-2 py-1">Registration</td>
+                  <td className="px-2 py-1 text-right">
+                    {peso((seminar.breakdown as any).registration ?? null)}
+                  </td>
+                </tr>
+              )}
+              {"accommodation" in seminar.breakdown && (
+                <tr>
+                  <td className="px-2 py-1">Accommodation</td>
+                  <td className="px-2 py-1 text-right">
+                    {peso((seminar.breakdown as any).accommodation ?? null)}
+                  </td>
+                </tr>
+              )}
+              {"perDiemMealsDriversAllowance" in seminar.breakdown && (
+                <tr>
+                  <td className="px-2 py-1">Per diem / Meals / Driver’s allowance</td>
+                  <td className="px-2 py-1 text-right">
+                    {peso(
+                      (seminar.breakdown as any).perDiemMealsDriversAllowance ??
+                        null
+                    )}
+                  </td>
+                </tr>
+              )}
+              {"transportFareGasParkingToll" in seminar.breakdown && (
+                <tr>
+                  <td className="px-2 py-1">Transport / Fare / Gas / Parking / Toll</td>
+                  <td className="px-2 py-1 text-right">
+                    {peso(
+                      (seminar.breakdown as any).transportFareGasParkingToll ??
+                        null
+                    )}
+                  </td>
+                </tr>
+              )}
+              {"otherLabel" in seminar.breakdown &&
+                "otherAmount" in seminar.breakdown &&
+                (seminar.breakdown as any).otherLabel && (
+                  <tr>
+                    <td className="px-2 py-1">
+                      {(seminar.breakdown as any).otherLabel}
+                    </td>
+                    <td className="px-2 py-1 text-right">
+                      {peso((seminar.breakdown as any).otherAmount ?? null)}
+                    </td>
+                  </tr>
+                )}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+
+      {/* Optional undertaking & fund line if you want to show them */}
+      {"applicantUndertaking" in seminar && (
+        <p className="mt-2 text-sm">
+          Applicant’s Undertaking:{" "}
+          {(seminar as any).applicantUndertaking ? "Agreed" : "—"}
+        </p>
+      )}
+      {"fundReleaseLine" in seminar && (
+        <p className="text-sm">
+          Fund release line: {peso((seminar as any).fundReleaseLine ?? null)}
+        </p>
+      )}
+    </section>
+  );
+}
+
+
 ===== components\admin\requests\toolbar\RequestsToolbar.ui.tsx =====
 // src/components/admin/requests/toolbar/RequestsToolbar.ui.tsx
 "use client";
 
 import * as React from "react";
-import { SortAsc, SortDesc, Plus, Filter } from "lucide-react";
+import Link from "next/link";
 import type { FilterState } from "@/lib/admin/types";
-import FilterDropdownUI from "../filters/FilterDropdown.ui";
-
-type Sort = "asc" | "desc"; // ✅ align with PageInner
+import {
+  Search,
+  Filter,
+  ChevronDown,
+  ArrowDownWideNarrow,
+  ArrowUpNarrowWide,
+  Plus,
+  Trash2,
+  Calendar as CalendarIcon,
+  CheckCircle2,
+} from "lucide-react";
+import { DEPARTMENTS as RAW_DEPARTMENTS } from "@/lib/org/departments";
 
 type Props = {
-  // search
   tableSearch: string;
   onTableSearch: (v: string) => void;
 
-  // sort
-  sortDir: Sort;
-  onSortDirChange: (s: Sort) => void;
+  sortDir: "asc" | "desc";
+  onSortDirChange: (v: "asc" | "desc") => void;
 
-  // actions
   onAddNew: () => void;
 
-  // filters
   draft: FilterState;
-  onDraftChange: (n: Partial<FilterState>) => void;
+  onDraftChange: (patch: Partial<FilterState>) => void;
   onApply: () => void;
   onClearAll: () => void;
+
+  selectedCount?: number;
+  onDeleteSelected?: () => void;
+
+  /* NEW */
+  onMarkSelectedRead?: () => void;
 };
+
+function normalizeDepartments(raw: unknown): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) {
+    return raw
+      .map((d) => {
+        if (typeof d === "string") return d.trim();
+        const anyD = d as any;
+        return String(anyD.name ?? anyD.label ?? anyD.title ?? anyD.code ?? anyD.id ?? "").trim();
+      })
+      .filter(Boolean);
+  }
+  return [];
+}
+const DEPARTMENT_OPTIONS: string[] = (() => {
+  const list = normalizeDepartments(RAW_DEPARTMENTS);
+  const seen = new Set<string>();
+  const unique = list.filter((x) => (seen.has(x) ? false : (seen.add(x), true)));
+  return ["All", ...unique];
+})();
 
 export default function RequestsToolbarUI({
   tableSearch,
@@ -9860,53 +10284,197 @@ export default function RequestsToolbarUI({
   onDraftChange,
   onApply,
   onClearAll,
+  selectedCount = 0,
+  onDeleteSelected,
+  onMarkSelectedRead,
 }: Props) {
-  return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      {/* Left: Search + Filter */}
-      <div className="flex items-center gap-2">
-        <div className="relative">
-          <input
-            value={tableSearch}
-            onChange={(e) => onTableSearch(e.target.value)}
-            placeholder="Search requests…"
-            className="h-9 w-[240px] rounded-md border border-neutral-300 bg-white pl-3 pr-9 text-sm outline-none focus:ring-2 focus:ring-[#7a1f2a]/40"
-          />
-          <Filter
-            size={16}
-            className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400"
-          />
-        </div>
+  const [open, setOpen] = React.useState(false);
 
-        <FilterDropdownUI
-          draft={draft}
-          onDraftChange={onDraftChange}
-          onApply={onApply}
-          onClearAll={onClearAll}
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {/* Search */}
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-60" />
+        <input
+          value={tableSearch}
+          onChange={(e) => onTableSearch(e.target.value)}
+          placeholder="Search requests…"
+          className="h-10 w-64 rounded-xl border border-neutral-300 pl-9 pr-3 text-sm outline-none focus:border-neutral-500"
+          autoComplete="off"
+          suppressHydrationWarning
         />
       </div>
 
-      {/* Right: Sort + Add New */}
-      <div className="flex items-center gap-2">
+      {/* Filter */}
+      <div className="relative">
         <button
-          type="button"
-          onClick={() => onSortDirChange(sortDir === "desc" ? "asc" : "desc")}
-          className="inline-flex items-center gap-1 rounded-full border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-700 shadow-sm hover:bg-neutral-50"
-          aria-label="Toggle sort"
+          className="inline-flex h-10 items-center gap-2 rounded-xl border border-neutral-300 bg-white px-3 text-sm"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
         >
-          {sortDir === "desc" ? <SortDesc size={16} /> : <SortAsc size={16} />}
-          {sortDir === "desc" ? "Newest first" : "Oldest first"}
+          <Filter className="h-4 w-4" />
+          <span>Filter</span>
+          <ChevronDown className="h-4 w-4 opacity-70" />
         </button>
 
-        <button
-          type="button"
-          onClick={onAddNew}
-          className="inline-flex items-center gap-2 rounded-md bg-[#7a1f2a] px-3 py-2 text-sm font-medium text-white hover:opacity-95"
-        >
-          <Plus size={16} />
-          Add New
-        </button>
+        {open && (
+          <div className="absolute z-20 mt-2 w-80 rounded-2xl border border-neutral-200 bg-white p-4 shadow-lg">
+            {/* Status */}
+            <label className="mb-2 block text-xs font-medium text-neutral-700">
+              Status
+              <select
+                className="mt-1 w-full rounded-lg border border-neutral-300 px-2 py-2 text-sm"
+                value={draft.status}
+                onChange={(e) => onDraftChange({ status: e.target.value as any })}
+              >
+                <option>All</option>
+                <option>Pending</option>
+                <option>Approved</option>
+                <option>Completed</option>
+                <option>Rejected</option>
+              </select>
+            </label>
+
+            {/* Department — from lib */}
+            <label className="mb-2 block text-xs font-medium text-neutral-700">
+              Department
+              <select
+                className="mt-1 w-full rounded-lg border border-neutral-300 px-2 py-2 text-sm"
+                value={(draft.dept as any) ?? "All"}
+                onChange={(e) => onDraftChange({ dept: e.target.value as any })}
+              >
+                {DEPARTMENT_OPTIONS.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {/* Date range */}
+            <div className="mb-2 grid grid-cols-2 gap-2">
+              <label className="block text-xs font-medium text-neutral-700">
+                From
+                <div className="relative mt-1">
+                  <CalendarIcon className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 opacity-60" />
+                  <input
+                    type="date"
+                    value={draft.from || ""}
+                    onChange={(e) => onDraftChange({ from: e.target.value })}
+                    className="w-full rounded-lg border border-neutral-300 pl-8 pr-2 py-2 text-sm"
+                    autoComplete="off"
+                    suppressHydrationWarning
+                  />
+                </div>
+              </label>
+              <label className="block text-xs font-medium text-neutral-700">
+                To
+                <div className="relative mt-1">
+                  <CalendarIcon className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 opacity-60" />
+                  <input
+                    type="date"
+                    value={draft.to || ""}
+                    onChange={(e) => onDraftChange({ to: e.target.value })}
+                    className="w-full rounded-lg border border-neutral-300 pl-8 pr-2 py-2 text-sm"
+                    autoComplete="off"
+                    suppressHydrationWarning
+                  />
+                </div>
+              </label>
+            </div>
+
+            {/* Mode */}
+            <label className="mb-3 block text-xs font-medium text-neutral-700">
+              Mode
+              <select
+                className="mt-1 w-full rounded-lg border border-neutral-300 px-2 py-2 text-sm"
+                value={draft.mode}
+                onChange={(e) => onDraftChange({ mode: e.target.value as any })}
+              >
+                <option value="auto">Auto (instant)</option>
+                <option value="apply">Apply button</option>
+              </select>
+            </label>
+
+            <div className="mt-3 flex items-center justify-between">
+              <button
+                className="inline-flex items-center gap-2 rounded-xl border border-neutral-300 px-3 py-2 text-sm"
+                onClick={onClearAll}
+              >
+                Clear All
+              </button>
+              <button
+                className="inline-flex items-center gap-2 rounded-xl bg-[#7a1f2a] px-4 py-2 text-sm text-white"
+                onClick={onApply}
+              >
+                Apply
+              </button>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Sort */}
+      <button
+        className="inline-flex h-10 items-center gap-2 rounded-xl border border-neutral-300 bg-white px-3 text-sm"
+        onClick={() => onSortDirChange(sortDir === "desc" ? "asc" : "desc")}
+        title="Toggle sort"
+      >
+        {sortDir === "desc" ? (
+          <>
+            <ArrowDownWideNarrow className="h-4 w-4" />
+            <span>Newest first</span>
+          </>
+        ) : (
+          <>
+            <ArrowUpNarrowWide className="h-4 w-4" />
+            <span>Oldest first</span>
+          </>
+        )}
+      </button>
+
+      <div className="flex-1" />
+
+      {/* Quick link to Trash */}
+      <Link
+        href="/admin/requests/trash"
+        className="inline-flex h-10 items-center gap-2 rounded-xl border border-neutral-300 bg-white px-3 text-sm"
+        title="Open Trash"
+      >
+        <Trash2 className="h-4 w-4" />
+        <span>Trash</span>
+      </Link>
+
+      {/* NEW: Mark as read (bulk) */}
+      <button
+        className="inline-flex h-10 items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-3 text-sm text-emerald-800 disabled:opacity-50"
+        disabled={!selectedCount}
+        onClick={() => onMarkSelectedRead && onMarkSelectedRead()}
+        title="Mark selected as read"
+      >
+        <CheckCircle2 className="h-4 w-4" />
+        <span>Mark as read {selectedCount ? `(${selectedCount})` : ""}</span>
+      </button>
+
+      {/* Delete selected */}
+      <button
+        className="inline-flex h-10 items-center gap-2 rounded-xl border border-rose-300 bg-rose-50 px-3 text-sm text-rose-800 disabled:opacity-50"
+        disabled={!selectedCount}
+        onClick={() => onDeleteSelected && onDeleteSelected()}
+        title="Move selected to Trash (kept 30 days)"
+      >
+        <Trash2 className="h-4 w-4" />
+        <span>Delete selected {selectedCount ? `(${selectedCount})` : ""}</span>
+      </button>
+
+      {/* Add new */}
+      <button
+        className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#7a1f2a] px-3 text-sm text-white"
+        onClick={onAddNew}
+      >
+        <Plus className="h-4 w-4" />
+        <span>+ Add New</span>
+      </button>
     </div>
   );
 }
@@ -10289,11 +10857,20 @@ import { X, FileDown } from "lucide-react";
 
 import type { AdminRequest } from "@/lib/admin/requests/store";
 import { AdminRequestsRepo } from "@/lib/admin/requests/store";
-import { generateRequestPDF } from "@/lib/admin/requests/pdfWithTemplate"; // ✅ now using template
+import { generateRequestPDF } from "@/lib/admin/requests/pdfWithTemplate";
 import { generateSeminarPDF } from "@/lib/admin/requests/pdfSeminar";
+
+// 🔹 Detailed Seminar block (keeps this modal tidy)
+import SeminarDetails from "@/components/admin/requests/parts/SeminarDetails.ui";
 
 const DRIVERS = ["Juan Dela Cruz", "Pedro Santos", "Maria Reyes"];
 const VEHICLES = ["Van 01", "Bus 02", "SUV 03"];
+
+/** Peso formatter */
+function peso(n: number | null | undefined) {
+  if (typeof n !== "number" || !isFinite(n)) return "₱0.00";
+  return `₱${n.toLocaleString("en-PH", { maximumFractionDigits: 2 })}`;
+}
 
 type Props = {
   open: boolean;
@@ -10313,43 +10890,46 @@ export default function RequestDetailsModalUI({
   const [driver, setDriver] = React.useState("");
   const [vehicle, setVehicle] = React.useState("");
 
+  // hydrate local assignment state from selected row
   React.useEffect(() => {
     setDriver(row?.driver || "");
     setVehicle(row?.vehicle || "");
   }, [row]);
 
+  // persist driver/vehicle assignments back to repo
   React.useEffect(() => {
-    if (row?.id && driver) {
+    if (row?.id && driver !== undefined) {
       AdminRequestsRepo.setDriver(row.id, driver);
     }
   }, [driver, row?.id]);
 
   React.useEffect(() => {
-    if (row?.id && vehicle) {
+    if (row?.id && vehicle !== undefined) {
       AdminRequestsRepo.setVehicle(row.id, vehicle);
     }
   }, [vehicle, row?.id]);
 
+  // compute total cost (supports both number fields and optional array items)
   const totalCost = React.useMemo(() => {
-    if (!row?.travelOrder?.costs) return 0;
+    const c = row?.travelOrder?.costs;
+    if (!c) return 0;
     let sum = 0;
-    Object.entries(row.travelOrder.costs).forEach(([_, v]) => {
+    Object.values(c).forEach((v) => {
       if (typeof v === "number") sum += v;
       if (Array.isArray(v)) {
-        v.forEach((item) => item.amount && (sum += item.amount));
+        v.forEach((item) => {
+          if (item && typeof item.amount === "number") sum += item.amount;
+        });
       }
     });
     return sum;
   }, [row?.travelOrder?.costs]);
 
   return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      className="fixed inset-0 z-50 flex items-center justify-center"
-    >
+    <Dialog open={open} onClose={onClose} className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
-      <div className="relative z-50 w-full max-w-3xl rounded-xl bg-white p-6 shadow-lg">
+
+      <div className="relative z-50 w-full max-w-5xl rounded-2xl bg-white p-6 shadow-xl">
         {!row ? (
           <div className="text-center text-sm text-neutral-500">No request selected</div>
         ) : (
@@ -10360,110 +10940,113 @@ export default function RequestDetailsModalUI({
               <button
                 onClick={onClose}
                 className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100"
+                aria-label="Close"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            {/* Sections */}
-            <div className="space-y-6 max-h-[70vh] overflow-y-auto pr-2">
+            {/* Scrollable body */}
+            <div className="space-y-8 max-h-[72vh] overflow-y-auto pr-2">
               {/* Travel Order */}
               <section>
-                <h3 className="mb-2 text-sm font-semibold text-neutral-700">
-                  Travel Order
-                </h3>
+                <h3 className="mb-2 text-sm font-semibold text-neutral-700">Travel Order</h3>
                 <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                   <dt className="font-semibold">Date</dt>
                   <dd>{row.travelOrder?.date || "—"}</dd>
+
                   <dt className="font-semibold">Requesting Person</dt>
                   <dd>{row.travelOrder?.requestingPerson || "—"}</dd>
+
                   <dt className="font-semibold">Department</dt>
                   <dd>{row.travelOrder?.department || "—"}</dd>
+
                   <dt className="font-semibold">Destination</dt>
                   <dd>{row.travelOrder?.destination || "—"}</dd>
+
                   <dt className="font-semibold">Departure Date</dt>
                   <dd>{row.travelOrder?.departureDate || "—"}</dd>
+
                   <dt className="font-semibold">Return Date</dt>
                   <dd>{row.travelOrder?.returnDate || "—"}</dd>
+
                   <dt className="font-semibold">Purpose of Travel</dt>
-                  <dd>{row.travelOrder?.purposeOfTravel || "—"}</dd>
+                  <dd className="col-span-1">{row.travelOrder?.purposeOfTravel || "—"}</dd>
                 </dl>
 
+                {/* Estimated costs */}
                 {row.travelOrder?.costs && (
                   <div className="mt-4">
-                    <h4 className="text-sm font-semibold text-neutral-700 mb-2">
-                      Estimated Costs
-                    </h4>
+                    <h4 className="mb-2 text-sm font-semibold text-neutral-700">Estimated Costs</h4>
                     <table className="w-full text-sm border border-neutral-200 rounded">
                       <tbody>
-                        <tr>
-                          <td className="px-2 py-1">Food</td>
-                          <td className="px-2 py-1 text-right">
-                            ₱{row.travelOrder.costs.food ?? 0}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="px-2 py-1">Driver’s allowance</td>
-                          <td className="px-2 py-1 text-right">
-                            ₱{row.travelOrder.costs.driversAllowance ?? 0}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="px-2 py-1">Rent vehicles</td>
-                          <td className="px-2 py-1 text-right">
-                            ₱{row.travelOrder.costs.rentVehicles ?? 0}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="px-2 py-1">Hired drivers</td>
-                          <td className="px-2 py-1 text-right">
-                            ₱{row.travelOrder.costs.hiredDrivers ?? 0}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="px-2 py-1">Accommodation</td>
-                          <td className="px-2 py-1 text-right">
-                            ₱{row.travelOrder.costs.accommodation ?? 0}
-                          </td>
-                        </tr>
+                        {"food" in row.travelOrder.costs && (
+                          <tr>
+                            <td className="px-2 py-1">Food</td>
+                            <td className="px-2 py-1 text-right">{peso(row.travelOrder.costs.food as any)}</td>
+                          </tr>
+                        )}
+                        {"driversAllowance" in row.travelOrder.costs && (
+                          <tr>
+                            <td className="px-2 py-1">Driver’s allowance</td>
+                            <td className="px-2 py-1 text-right">
+                              {peso(row.travelOrder.costs.driversAllowance as any)}
+                            </td>
+                          </tr>
+                        )}
+                        {"rentVehicles" in row.travelOrder.costs && (
+                          <tr>
+                            <td className="px-2 py-1">Rent vehicles</td>
+                            <td className="px-2 py-1 text-right">{peso(row.travelOrder.costs.rentVehicles as any)}</td>
+                          </tr>
+                        )}
+                        {"hiredDrivers" in row.travelOrder.costs && (
+                          <tr>
+                            <td className="px-2 py-1">Hired drivers</td>
+                            <td className="px-2 py-1 text-right">{peso(row.travelOrder.costs.hiredDrivers as any)}</td>
+                          </tr>
+                        )}
+                        {"accommodation" in row.travelOrder.costs && (
+                          <tr>
+                            <td className="px-2 py-1">Accommodation</td>
+                            <td className="px-2 py-1 text-right">{peso(row.travelOrder.costs.accommodation as any)}</td>
+                          </tr>
+                        )}
 
-                        {row.travelOrder.costs.otherLabel &&
-                          row.travelOrder.costs.otherAmount && (
+                        {"otherLabel" in row.travelOrder.costs &&
+                          "otherAmount" in row.travelOrder.costs &&
+                          (row.travelOrder.costs as any).otherLabel && (
                             <tr>
-                              <td className="px-2 py-1">
-                                {row.travelOrder.costs.otherLabel}
-                              </td>
+                              <td className="px-2 py-1">{(row.travelOrder.costs as any).otherLabel}</td>
                               <td className="px-2 py-1 text-right">
-                                ₱{row.travelOrder.costs.otherAmount}
+                                {peso((row.travelOrder.costs as any).otherAmount)}
                               </td>
                             </tr>
                           )}
 
-                        {Array.isArray(row.travelOrder.costs.otherItems) &&
-                          row.travelOrder.costs.otherItems.map((item, i) => (
-                            <tr key={i}>
-                              <td className="px-2 py-1">{item.label}</td>
-                              <td className="px-2 py-1 text-right">
-                                ₱{item.amount}
-                              </td>
-                            </tr>
-                          ))}
+                        {Array.isArray((row.travelOrder.costs as any).otherItems) &&
+                          (row.travelOrder.costs as any).otherItems.map(
+                            (item: { label: string; amount: number }, i: number) => (
+                              <tr key={i}>
+                                <td className="px-2 py-1">{item.label}</td>
+                                <td className="px-2 py-1 text-right">{peso(item.amount)}</td>
+                              </tr>
+                            )
+                          )}
 
                         <tr className="border-t font-semibold">
                           <td className="px-2 py-1">Total</td>
-                          <td className="px-2 py-1 text-right">₱{totalCost}</td>
+                          <td className="px-2 py-1 text-right">{peso(totalCost)}</td>
                         </tr>
                       </tbody>
                     </table>
                   </div>
                 )}
 
-                {/* Signature */}
-                <div className="mt-6 grid grid-cols-2 gap-4 items-center">
+                {/* Endorsement / Signature */}
+                <div className="mt-6 grid grid-cols-2 gap-4 items-start">
                   <div>
-                    <p className="text-sm font-medium text-neutral-700">
-                      Endorsed By:
-                    </p>
+                    <p className="text-sm font-medium text-neutral-700">Endorsed By</p>
                     <p className="text-sm">{row.travelOrder?.endorsedByHeadName || "—"}</p>
                     <p className="text-xs text-neutral-500">
                       {row.travelOrder?.endorsedByHeadDate || ""}
@@ -10475,7 +11058,7 @@ export default function RequestDetailsModalUI({
                         <img
                           src={row.travelOrder.endorsedByHeadSignature}
                           alt="Signature"
-                          className="h-12 object-contain border rounded bg-white p-1"
+                          className="h-14 object-contain border rounded bg-white p-1"
                         />
                         <p className="text-xs text-neutral-500 mt-1">Signature</p>
                       </>
@@ -10488,9 +11071,7 @@ export default function RequestDetailsModalUI({
 
               {/* Assignments */}
               <section>
-                <h3 className="mb-2 text-sm font-semibold text-neutral-700">
-                  Assignments
-                </h3>
+                <h3 className="mb-2 text-sm font-semibold text-neutral-700">Assignments</h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-medium mb-1">Driver</label>
@@ -10525,34 +11106,12 @@ export default function RequestDetailsModalUI({
                 </div>
               </section>
 
-              {/* Seminar */}
-              {row.seminar && (
-                <section>
-                  <h3 className="mb-2 text-sm font-semibold text-neutral-700">
-                    Seminar Application
-                  </h3>
-                  <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                    <dt className="font-semibold">Application Date</dt>
-                    <dd>{row.seminar.applicationDate || "—"}</dd>
-                    <dt className="font-semibold">Title</dt>
-                    <dd>{row.seminar.title || "—"}</dd>
-                    <dt className="font-semibold">Category</dt>
-                    <dd>{row.seminar.trainingCategory || "—"}</dd>
-                    <dt className="font-semibold">Date From</dt>
-                    <dd>{row.seminar.dateFrom || "—"}</dd>
-                    <dt className="font-semibold">Date To</dt>
-                    <dd>{row.seminar.dateTo || "—"}</dd>
-                    <dt className="font-semibold">Venue</dt>
-                    <dd>{row.seminar.venue || "—"}</dd>
-                    <dt className="font-semibold">Modality</dt>
-                    <dd>{row.seminar.modality || "—"}</dd>
-                  </dl>
-                </section>
-              )}
+              {/* Seminar details (if present) */}
+              <SeminarDetails seminar={row.seminar} />
             </div>
 
             {/* Footer */}
-            <div className="mt-6 flex justify-between">
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
               <div className="flex gap-2">
                 <button
                   onClick={() => row && generateRequestPDF(row)}
@@ -10571,6 +11130,7 @@ export default function RequestDetailsModalUI({
                   </button>
                 )}
               </div>
+
               <div className="flex gap-2">
                 {onApprove && (
                   <button
@@ -10871,15 +11431,36 @@ function StatusBadge({ status }: { status: RequestRow["status"] }) {
 // src/components/admin/requests/ui/RequestsReceiverView.ui.tsx
 "use client";
 
-import React from "react";
-import type { RequestRow, Pagination } from "@/lib/admin/types";
-import { MoreVertical } from "lucide-react";
+import * as React from "react";
+import type { RequestRow, Pagination as Pg } from "@/lib/admin/types";
+import { ChevronLeft, ChevronRight, CheckSquare, CheckCircle2 } from "lucide-react";
+
+/* Status accent & badge (consistent colors) */
+function statusAccent(status: RequestRow["status"]) {
+  switch (status) {
+    case "Approved":
+      return { bar: "bg-emerald-500", badge: "border-emerald-300 bg-emerald-50 text-emerald-800" };
+    case "Completed":
+      return { bar: "bg-sky-500", badge: "border-sky-300 bg-sky-50 text-sky-800" };
+    case "Rejected":
+      return { bar: "bg-rose-500", badge: "border-rose-300 bg-rose-50 text-rose-800" };
+    default: // Pending
+      return { bar: "bg-amber-500", badge: "border-amber-300 bg-amber-50 text-amber-800" };
+  }
+}
 
 type Props = {
   rows: RequestRow[];
-  pagination: Pagination;
+  pagination: Pg;
   onPageChange: (page: number) => void;
   onRowClick: (row: RequestRow) => void;
+
+  selectedIds: Set<string>;
+  onToggleOne: (id: string) => void;
+  onToggleAllOnPage: (checked: boolean, idsOnPage: string[]) => void;
+
+  unreadIds?: Set<string>;
+  onMarkRead?: (id: string) => void;
 };
 
 export default function RequestsReceiverViewUI({
@@ -10887,72 +11468,154 @@ export default function RequestsReceiverViewUI({
   pagination,
   onPageChange,
   onRowClick,
+  selectedIds,
+  onToggleOne,
+  onToggleAllOnPage,
+  unreadIds = new Set(),
+  onMarkRead,
 }: Props) {
-  if (!rows.length) {
-    return (
-      <div className="rounded-xl border border-neutral-200 bg-white p-8 text-center text-sm text-neutral-500 shadow">
-        No requests found
-      </div>
-    );
-  }
+  const allOnPageSelected = rows.length > 0 && rows.every((r) => selectedIds.has(r.id));
+  const idsOnPage = React.useMemo(() => rows.map((r) => r.id), [rows]);
 
   return (
-    <div className="space-y-4">
-      {rows.map((r) => (
-        <div
-          key={r.id}
-          onClick={() => onRowClick(r)}
-          className="relative cursor-pointer rounded-xl border-l-4 bg-white p-5 shadow-sm transition hover:shadow-md"
-          style={{
-            borderColor:
-              r.status === "Pending"
-                ? "#facc15"
-                : r.status === "Approved"
-                ? "#22c55e"
-                : r.status === "Rejected"
-                ? "#ef4444"
-                : "#3b82f6",
-          }}
-        >
-          {/* 3-dots button */}
+    <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
+      {/* header */}
+      <div className="mb-3 flex items-center justify-between">
+        <label className="flex items-center gap-2 text-sm text-neutral-700">
+          <input
+            type="checkbox"
+            className="h-4 w-4 rounded border-neutral-300"
+            checked={allOnPageSelected}
+            onChange={(e) => onToggleAllOnPage(e.target.checked, idsOnPage)}
+            suppressHydrationWarning
+          />
+          <span className="inline-flex items-center gap-1">
+            <CheckSquare className="h-4 w-4 opacity-70" />
+            Select all on page
+          </span>
+        </label>
+
+        <div className="flex items-center gap-2 text-sm">
           <button
-            className="absolute right-3 top-3 rounded-md p-1 text-neutral-500 hover:bg-neutral-100"
-            onClick={(e) => {
-              e.stopPropagation();
-              alert(`Options for ${r.id}`);
-            }}
+            className="inline-flex items-center gap-1 rounded-md border px-2 py-1"
+            onClick={() => onPageChange(Math.max(1, pagination.page - 1))}
+            disabled={pagination.page <= 1}
           >
-            <MoreVertical className="h-4 w-4" />
+            <ChevronLeft className="h-4 w-4" />
+            Prev
           </button>
-
-          <div className="text-xs font-medium text-neutral-600">{r.dept}</div>
-          <div className="text-sm font-semibold text-neutral-900">{r.purpose}</div>
-          <div className="mt-1 text-xs text-neutral-500">
-            Requested by {r.requester || "—"}
-          </div>
-          <div className="mt-2 flex items-center gap-4 text-xs text-neutral-600">
-            <span>Driver: {r.driver}</span>
-            <span>Vehicle: {r.vehicle}</span>
-            <span>Date: {r.date}</span>
-          </div>
-
-          <div className="absolute right-3 bottom-3">
-            <span
-              className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                r.status === "Pending"
-                  ? "bg-yellow-100 text-yellow-800"
-                  : r.status === "Approved"
-                  ? "bg-green-100 text-green-800"
-                  : r.status === "Rejected"
-                  ? "bg-red-100 text-red-800"
-                  : "bg-blue-100 text-blue-800"
-              }`}
-            >
-              {r.status}
-            </span>
-          </div>
+          <span className="min-w-[120px] text-center">
+            Page {pagination.page} / {Math.max(1, Math.ceil(pagination.total / pagination.pageSize))}
+          </span>
+          <button
+            className="inline-flex items-center gap-1 rounded-md border px-2 py-1"
+            onClick={() =>
+              onPageChange(
+                Math.min(
+                  Math.max(1, Math.ceil(pagination.total / pagination.pageSize)),
+                  pagination.page + 1
+                )
+              )
+            }
+            disabled={pagination.page >= Math.max(1, Math.ceil(pagination.total / pagination.pageSize))}
+          >
+            Next
+            <ChevronRight className="h-4 w-4" />
+          </button>
         </div>
-      ))}
+      </div>
+
+      {/* cards */}
+      <ul className="space-y-3">
+        {rows.map((r) => {
+          const isUnread = unreadIds.has(r.id);
+          const { bar, badge } = statusAccent(r.status);
+
+          const cardBase =
+            "group relative overflow-hidden rounded-2xl border p-4 shadow-sm transition-colors hover:shadow-md";
+          const cardVariant = isUnread
+            ? "bg-neutral-50 border-neutral-300"
+            : "bg-white border-neutral-200";
+
+          return (
+            <li key={r.id} className={[cardBase, cardVariant].join(" ")}>
+              {/* left status accent */}
+              <div className={`pointer-events-none absolute inset-y-0 left-0 w-1.5 ${bar}`} />
+
+              {/* controls */}
+              <div className="absolute right-4 top-3 flex items-center gap-2">
+                {isUnread && onMarkRead && (
+                  <button
+                    className="inline-flex items-center gap-1 rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs text-neutral-700 opacity-0 transition-opacity hover:bg-neutral-50 group-hover:opacity-100"
+                    title="Mark as read"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onMarkRead(r.id);
+                    }}
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    Mark read
+                  </button>
+                )}
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-neutral-300"
+                  checked={selectedIds.has(r.id)}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    onToggleOne(r.id);
+                  }}
+                  suppressHydrationWarning
+                />
+              </div>
+
+              {/* content: consistent typography (no mixed bolds) */}
+              <button className="w-full text-left" onClick={() => onRowClick(r)} aria-label="Open details">
+                {/* department */}
+                <div className="text-xs font-normal uppercase tracking-wide text-neutral-500">
+                  {r.dept || "—"}
+                </div>
+
+                {/* title */}
+                <div
+                  className={[
+                    "mt-1 text-[15px] leading-snug text-neutral-900",
+                    isUnread ? "font-semibold" : "font-medium",
+                  ].join(" ")}
+                >
+                  {r.purpose || "—"}
+                </div>
+
+                {/* meta rows */}
+                <div className="mt-2 text-sm font-normal text-neutral-700">
+                  <span className="text-neutral-500">Requested by:</span> {r.requester || "—"}
+                </div>
+
+                <div className="mt-1 text-sm font-normal text-neutral-700">
+                  <span className="text-neutral-500">Driver:</span> {r.driver || "—"}{" "}
+                  <span className="mx-2">•</span>
+                  <span className="text-neutral-500">Vehicle:</span> {r.vehicle || "—"}{" "}
+                  <span className="mx-2">•</span>
+                  <span className="text-neutral-500">Date:</span> {r.date}
+                </div>
+
+                {/* status badge */}
+                <div className="mt-2">
+                  <span className={["inline-flex rounded-full border px-2.5 py-0.5 text-xs", badge].join(" ")}>
+                    {r.status}
+                  </span>
+                </div>
+              </button>
+            </li>
+          );
+        })}
+
+        {rows.length === 0 && (
+          <li className="rounded-xl border border-dashed p-10 text-center text-sm text-neutral-500">
+            No results.
+          </li>
+        )}
+      </ul>
     </div>
   );
 }
@@ -16027,31 +16690,30 @@ type Props = {
 
   /** Existing signature (data URL) to preload onto the canvas */
   value?: string | null;
-  /** @deprecated Use `value` instead. Still supported to avoid breaking callers. */
+  /** @deprecated Use `value` instead. Kept for compatibility. */
   initialImage?: string | null;
 
-  /** Fired the first time the user starts drawing (mouse/touch down) */
+  /** Fired the first time the user starts drawing */
   onDraw?: () => void;
-  /** Called when user clicks “Save signature”; gives you PNG data URL */
+  /** Called when a save is requested (button or auto-save on pointerup) */
   onSave?: (dataUrl: string) => void;
   /** Called when user clicks “Clear” */
   onClear?: () => void;
-  /** Optional: if you want to handle file upload yourself */
+  /** Optional: handle file upload yourself */
   onUpload?: (file: File) => void;
 
-  /** Disable the Save button (e.g. until something was drawn) */
+  /** Disable the Save button (manual save) */
   saveDisabled?: boolean;
 
-  /** className for outer wrapper */
   className?: string;
 };
 
 export default function SignaturePad({
   height = 160,
   lineWidth = 3,
-  color = "#1f2937", // neutral-800
+  color = "#1f2937",
   value = null,
-  initialImage = null, // kept for compatibility
+  initialImage = null,
   onDraw,
   onSave,
   onClear,
@@ -16068,20 +16730,19 @@ export default function SignaturePad({
   const lastXRef = React.useRef(0);
   const lastYRef = React.useRef(0);
 
-  // Fit the canvas to the wrapper (retina aware)
+  // Size canvas to wrapper; keep resolution crisp on HiDPI
   const resizeCanvas = React.useCallback(() => {
     const wrapper = wrapperRef.current;
     const canvas = canvasRef.current;
     if (!wrapper || !canvas) return;
 
     const dpr = window.devicePixelRatio || 1;
-    const cssW = wrapper.clientWidth;
-    const cssH = height;
+    const rect = wrapper.getBoundingClientRect();
 
-    canvas.width = Math.max(1, Math.floor(cssW * dpr));
-    canvas.height = Math.max(1, Math.floor(cssH * dpr));
-    canvas.style.width = `${cssW}px`;
-    canvas.style.height = `${cssH}px`;
+    canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+    canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+    canvas.style.width = `${rect.width}px`;
+    canvas.style.height = `${rect.height}px`;
 
     const ctx = canvas.getContext("2d");
     if (!ctx) {
@@ -16089,11 +16750,10 @@ export default function SignaturePad({
       return;
     }
     ctxRef.current = ctx;
-    ctx.setTransform(1, 0, 0, 1, 0, 0); // reset
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.scale(dpr, dpr);
-  }, [height]);
+  }, []);
 
-  // Init / resize
   React.useEffect(() => {
     resizeCanvas();
     const onResize = () => resizeCanvas();
@@ -16101,52 +16761,51 @@ export default function SignaturePad({
     return () => window.removeEventListener("resize", onResize);
   }, [resizeCanvas]);
 
-  // Draw a provided image (data URL) to the canvas
-  const drawImageToCanvas = React.useCallback(
-    (dataUrl: string) => {
-      const canvas = canvasRef.current;
-      const ctx = ctxRef.current;
-      if (!canvas || !ctx) return;
-      const img = new Image();
-      img.onload = () => {
-        const w = canvas.clientWidth;
-        const h = height;
-        ctx.clearRect(0, 0, w, h);
-        const scale = Math.min(w / img.width, h / img.height);
-        const dw = img.width * scale;
-        const dh = img.height * scale;
-        const dx = (w - dw) / 2;
-        const dy = (h - dh) / 2;
-        ctx.drawImage(img, dx, dy, dw, dh);
-      };
-      img.src = dataUrl;
-    },
-    [height]
-  );
+  // Draw a dataURL image to canvas (for preload & uploads)
+  const drawImageToCanvas = React.useCallback((dataUrl: string) => {
+    const wrapper = wrapperRef.current;
+    const canvas = canvasRef.current;
+    const ctx = ctxRef.current;
+    if (!wrapper || !canvas || !ctx) return;
 
-  // Load initial value / legacy initialImage
+    const img = new Image();
+    img.onload = () => {
+      const rect = wrapper.getBoundingClientRect();
+      const w = rect.width;
+      const h = rect.height;
+      ctx.clearRect(0, 0, w, h);
+      const scale = Math.min(w / img.width, h / img.height);
+      const dw = img.width * scale;
+      const dh = img.height * scale;
+      const dx = (w - dw) / 2;
+      const dy = (h - dh) / 2;
+      ctx.drawImage(img, dx, dy, dw, dh);
+    };
+    img.src = dataUrl;
+  }, []);
+
+  // Preload existing signature if any
   React.useEffect(() => {
     if (value) drawImageToCanvas(value);
     else if (initialImage) drawImageToCanvas(initialImage);
   }, [value, initialImage, drawImageToCanvas]);
 
-  // Helpers
-  function getPos(e: MouseEvent | TouchEvent) {
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
-    const rect = canvas.getBoundingClientRect();
-    const touch = (e as TouchEvent).touches?.[0];
-    const clientX = touch?.clientX ?? (e as MouseEvent).clientX;
-    const clientY = touch?.clientY ?? (e as MouseEvent).clientY;
-    // Clamp to edges so drawing can continue when the pointer re-enters
-    const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
-    const y = Math.max(0, Math.min(clientY - rect.top, rect.height));
+  // Pointer utilities
+  function getPos(e: PointerEvent) {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return { x: 0, y: 0 };
+    const rect = wrapper.getBoundingClientRect();
+    const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+    const y = Math.max(0, Math.min(e.clientY - rect.top, rect.height));
     return { x, y };
   }
 
-  function begin(e: MouseEvent | TouchEvent) {
+  function begin(e: PointerEvent) {
     const ctx = ctxRef.current;
     if (!ctx) return;
+
+    e.preventDefault();
+    (e.target as Element).setPointerCapture?.(e.pointerId);
 
     drawingRef.current = true;
     const p = getPos(e);
@@ -16159,10 +16818,11 @@ export default function SignaturePad({
     }
   }
 
-  function move(e: MouseEvent | TouchEvent) {
+  function move(e: PointerEvent) {
     const ctx = ctxRef.current;
     if (!ctx || !drawingRef.current) return;
 
+    e.preventDefault();
     const p = getPos(e);
 
     ctx.lineCap = "round";
@@ -16179,66 +16839,54 @@ export default function SignaturePad({
     lastYRef.current = p.y;
   }
 
+  function saveNow() {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dataUrl = canvas.toDataURL("image/png");
+    onSave?.(dataUrl);
+  }
+
   function end() {
     drawingRef.current = false;
+    // Auto-save on pen/mouse up
+    if (drewOnceRef.current) saveNow();
   }
 
   // Pointer wiring
   React.useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    const el = wrapperRef.current;
+    if (!el) return;
 
-    const opts = { passive: false } as AddEventListenerOptions;
+    const down = (e: PointerEvent) => begin(e);
+    const moveL = (e: PointerEvent) => move(e);
+    const up = () => end();
+    const leave = () => end();
+    const cancel = () => end();
 
-    const mdown = (e: MouseEvent) => begin(e);
-    const mmove = (e: MouseEvent) => move(e);
-    const mup = () => end();
-
-    const tstart = (e: TouchEvent) => {
-      e.preventDefault();
-      begin(e);
-    };
-    const tmove = (e: TouchEvent) => {
-      e.preventDefault();
-      move(e);
-    };
-    const tend = () => end();
-
-    canvas.addEventListener("mousedown", mdown);
-    canvas.addEventListener("mousemove", mmove);
-    window.addEventListener("mouseup", mup);
-
-    canvas.addEventListener("touchstart", tstart, opts);
-    canvas.addEventListener("touchmove", tmove, opts);
-    window.addEventListener("touchend", tend);
+    el.addEventListener("pointerdown", down, { passive: false });
+    window.addEventListener("pointermove", moveL, { passive: false });
+    window.addEventListener("pointerup", up, { passive: false });
+    window.addEventListener("pointerleave", leave, { passive: false });
+    window.addEventListener("pointercancel", cancel, { passive: false });
 
     return () => {
-      canvas.removeEventListener("mousedown", mdown);
-      canvas.removeEventListener("mousemove", mmove);
-      window.removeEventListener("mouseup", mup);
-
-      canvas.removeEventListener("touchstart", tstart);
-      canvas.removeEventListener("touchmove", tmove);
-      window.removeEventListener("touchend", tend);
+      el.removeEventListener("pointerdown", down);
+      window.removeEventListener("pointermove", moveL);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointerleave", leave);
+      window.removeEventListener("pointercancel", cancel);
     };
   }, [color, lineWidth]);
 
   // Public actions
   function clear() {
     const ctx = ctxRef.current;
-    const canvas = canvasRef.current;
-    if (!ctx || !canvas) return;
-    ctx.clearRect(0, 0, canvas.clientWidth, height);
+    const wrapper = wrapperRef.current;
+    if (!ctx || !wrapper) return;
+    const rect = wrapper.getBoundingClientRect();
+    ctx.clearRect(0, 0, rect.width, rect.height);
     onClear?.();
-    // allow onDraw to fire again after clearing
     drewOnceRef.current = false;
-  }
-
-  function save() {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const dataUrl = canvas.toDataURL("image/png");
-    onSave?.(dataUrl);
   }
 
   function onFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
@@ -16251,24 +16899,28 @@ export default function SignaturePad({
       return;
     }
 
-    // default behavior: preview it on canvas
     const reader = new FileReader();
     reader.onload = () => {
       const url = String(reader.result || "");
       drawImageToCanvas(url);
+      onSave?.(url); // persist uploaded image
+      drewOnceRef.current = true;
     };
     reader.readAsDataURL(file);
     e.currentTarget.value = "";
   }
 
   return (
-    <div className={`grid gap-2 ${className}`} ref={wrapperRef}>
+    <div className={`grid gap-2 ${className}`}>
       <div className="rounded-lg border border-neutral-300 bg-white p-2">
-        <canvas
-          ref={canvasRef}
-          className="block w-full"
-          style={{ height, touchAction: "none", cursor: "crosshair" }}
-        />
+        {/* Fixed-height container to prevent any layout shift while drawing */}
+        <div ref={wrapperRef} className="relative w-full" style={{ height }}>
+          <canvas
+            ref={canvasRef}
+            className="absolute inset-0 block h-full w-full"
+            style={{ touchAction: "none", cursor: "crosshair" }}
+          />
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -16282,7 +16934,7 @@ export default function SignaturePad({
 
         <button
           type="button"
-          onClick={save}
+          onClick={saveNow}
           disabled={saveDisabled}
           className={`h-9 rounded-md px-4 text-sm font-medium text-white ${
             saveDisabled ? "bg-neutral-400" : "bg-[#7A0010] hover:opacity-95"
@@ -16293,19 +16945,13 @@ export default function SignaturePad({
 
         <label className="ml-auto inline-flex h-9 cursor-pointer items-center justify-center rounded-md border border-neutral-300 bg-white px-3 text-sm hover:bg-neutral-50">
           Upload e-sign
-          <input
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={onFilePicked}
-          />
+          <input type="file" accept="image/*" className="hidden" onChange={onFilePicked} />
         </label>
       </div>
 
       <p className="text-[11px] text-neutral-500">
-        Sign with mouse / touch, then click{" "}
-        <span className="font-medium">Save signature</span> — or upload an image
-        file of your e-signature.
+        Sign with mouse / touch — it auto-saves when you lift your pen. You can
+        also click <span className="font-medium">Save signature</span> or upload an image file.
       </p>
     </div>
   );
@@ -21076,20 +21722,10 @@ import SubmitBar from "@/components/user/request/ui/SubmitBar.ui";
 import { useRequestStore } from "@/store/user/requestStore";
 import { canSubmit } from "@/lib/user/request/validation";
 import { firstReceiver, fullApprovalPath } from "@/lib/user/request/routing";
-import {
-  saveDraft,
-  updateSubmission,
-  getDraft,
-  getSubmission,
-} from "@/lib/user/request/mockApi";
+import { saveDraft, getDraft, getSubmission } from "@/lib/user/request/mockApi";
 import type { RequesterRole } from "@/lib/user/request/types";
 import { useToast } from "@/components/common/ui/ToastProvider.ui";
-import {
-  consumeHandoff,
-  loadAutosave,
-  saveAutosave,
-  clearAutosave,
-} from "@/lib/user/request/persist";
+import { consumeHandoff, loadAutosave, saveAutosave, clearAutosave } from "@/lib/user/request/persist";
 import { useConfirm } from "@/components/common/hooks/useConfirm";
 
 import {
@@ -21097,11 +21733,11 @@ import {
   QuickFillMenu,
 } from "@/components/user/request/dev/QuickFillButton.ui";
 
-// ✅ import AdminRequestsRepo
+// ✅ use AdminRequestsRepo upsert (create + update)
 import { AdminRequestsRepo } from "@/lib/admin/requests/store";
 
 export default function RequestWizard() {
-  const search = useSearchParams(); // may be null
+  const search = useSearchParams();
   const toast = useToast();
   const { ask, ui: confirmUI } = useConfirm();
 
@@ -21136,11 +21772,7 @@ export default function RequestWizard() {
       clearIds();
       if (h.from === "draft") setCurrentDraftId(h.id);
       if (h.from === "submission") setCurrentSubmissionId(h.id);
-      toast({
-        kind: "success",
-        title: "Loaded",
-        message: `Form populated from ${h.from}.`,
-      });
+      toast({ kind: "success", title: "Loaded", message: `Form populated from ${h.from}.` });
       did = true;
     }
 
@@ -21156,11 +21788,7 @@ export default function RequestWizard() {
           hardSet(d.data);
           clearIds();
           setCurrentDraftId(draftId);
-          toast({
-            kind: "success",
-            title: "Draft loaded",
-            message: "Form populated from draft.",
-          });
+          toast({ kind: "success", title: "Draft loaded", message: "Form populated from draft." });
           did = true;
         }
       } else if (subId) {
@@ -21169,11 +21797,7 @@ export default function RequestWizard() {
           hardSet(s.data);
           clearIds();
           setCurrentSubmissionId(subId);
-          toast({
-            kind: "info",
-            title: "Editing submission",
-            message: "Form populated from submission.",
-          });
+          toast({ kind: "info", title: "Editing submission", message: "Form populated from submission." });
           did = true;
         }
       }
@@ -21182,11 +21806,7 @@ export default function RequestWizard() {
         const autosaved = loadAutosave();
         if (autosaved) {
           hardSet(autosaved);
-          toast({
-            kind: "info",
-            title: "Restored",
-            message: "Unsaved form recovered.",
-          });
+          toast({ kind: "info", title: "Restored", message: "Unsaved form recovered." });
         }
       }
     };
@@ -21195,14 +21815,9 @@ export default function RequestWizard() {
       const autosaved = loadAutosave();
       if (autosaved) {
         hardSet(autosaved);
-        toast({
-          kind: "info",
-          title: "Restored",
-          message: "Unsaved form recovered.",
-        });
+        toast({ kind: "info", title: "Restored", message: "Unsaved form recovered." });
       }
     });
-
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -21229,7 +21844,7 @@ export default function RequestWizard() {
         costs: {},
         endorsedByHeadName: "",
         endorsedByHeadDate: "",
-        endorsedByHeadSignature: "", // ✅ include signature
+        endorsedByHeadSignature: "",
       },
       schoolService: undefined,
       seminar: undefined,
@@ -21239,37 +21854,9 @@ export default function RequestWizard() {
   }
 
   async function handleClear() {
-    const yes = await ask(
-      "Clear the form?",
-      "All unsaved values will be removed.",
-      "Clear form",
-      "Keep"
-    );
+    const yes = await ask("Clear the form?", "All unsaved values will be removed.", "Clear form", "Keep");
     if (!yes) return;
-
-    clearAutosave();
-    hardSet({
-      requesterRole: data.requesterRole,
-      reason: "visit",
-      vehicleMode: "owned",
-      travelOrder: {
-        date: "",
-        requestingPerson: "",
-        department: "",
-        destination: "",
-        departureDate: "",
-        returnDate: "",
-        purposeOfTravel: "",
-        costs: {},
-        endorsedByHeadName: "",
-        endorsedByHeadDate: "",
-        endorsedByHeadSignature: "", // ✅ include signature
-      },
-      schoolService: undefined,
-      seminar: undefined,
-    });
-    setErrors({});
-    clearIds();
+    afterSuccessfulSubmitReset();
     toast({ kind: "success", title: "Cleared", message: "Form reset." });
   }
 
@@ -21277,12 +21864,7 @@ export default function RequestWizard() {
     patch({ travelOrder: { ...data.travelOrder, ...p } as any });
   }
   function onChangeCosts(p: any) {
-    patch({
-      travelOrder: {
-        ...data.travelOrder,
-        costs: { ...(data.travelOrder.costs || {}), ...p },
-      } as any,
-    });
+    patch({ travelOrder: { ...data.travelOrder, costs: { ...(data.travelOrder.costs || {}), ...p } } as any });
   }
   function onChangeSchoolService(p: any) {
     patch({ schoolService: { ...(data.schoolService || {}), ...p } as any });
@@ -21296,17 +21878,9 @@ export default function RequestWizard() {
     try {
       const res = await saveDraft(data, currentDraftId || undefined);
       if (!currentDraftId) setCurrentDraftId(res.id);
-      toast({
-        kind: "success",
-        title: "Draft saved",
-        message: "Your draft has been saved.",
-      });
+      toast({ kind: "success", title: "Draft saved", message: "Your draft has been saved." });
     } catch {
-      toast({
-        kind: "error",
-        title: "Save failed",
-        message: "Could not save draft.",
-      });
+      toast({ kind: "error", title: "Save failed", message: "Could not save draft." });
     } finally {
       setSaving(false);
     }
@@ -21344,29 +21918,29 @@ export default function RequestWizard() {
     setErrors(v.errors);
     if (!v.ok) {
       scrollToFirstError(v.errors);
-      toast({
-        kind: "error",
-        title: "Cannot submit",
-        message: "Please complete required fields.",
-      });
+      toast({ kind: "error", title: "Cannot submit", message: "Please complete required fields." });
       return;
     }
+
     setSubmitting(true);
     try {
-      // ✅ directly save to AdminRequestsRepo
-      AdminRequestsRepo.acceptFromUser(data);
-      toast({
-        kind: "success",
-        title: "Submitted",
-        message: "Request has been submitted and sent to Admin.",
+      // 🔴 key change: upsert into Admin repo, so edits trigger an Admin unread + update
+      const id = AdminRequestsRepo.upsertFromUser({
+        id: currentSubmissionId || undefined,
+        data,
       });
-      afterSuccessfulSubmitReset();
+
+      if (!currentSubmissionId) {
+        setCurrentSubmissionId(id);
+        toast({ kind: "success", title: "Submitted", message: "Request was sent to Admin." });
+        // for new submission, reset the form
+        afterSuccessfulSubmitReset();
+      } else {
+        // editing an existing submission — keep the form, just notify
+        toast({ kind: "success", title: "Updated", message: "Changes sent to Admin." });
+      }
     } catch {
-      toast({
-        kind: "error",
-        title: "Submit failed",
-        message: "Please try again.",
-      });
+      toast({ kind: "error", title: "Submit failed", message: "Please try again." });
     } finally {
       setSubmitting(false);
     }
@@ -21428,19 +22002,11 @@ export default function RequestWizard() {
           />
 
           {showSchoolService && (
-            <SchoolServiceSection
-              data={data.schoolService}
-              onChange={onChangeSchoolService}
-              errors={errors}
-            />
+            <SchoolServiceSection data={data.schoolService} onChange={onChangeSchoolService} errors={errors} />
           )}
 
           {showSeminar && (
-            <SeminarApplicationForm
-              data={data.seminar}
-              onChange={onChangeSeminar}
-              errors={errors}
-            />
+            <SeminarApplicationForm data={data.seminar} onChange={onChangeSeminar} errors={errors} />
           )}
 
           <SubmitBar
@@ -21455,10 +22021,7 @@ export default function RequestWizard() {
         <SummarySidebar
           data={data}
           firstHop={firstHop}
-          path={fullApprovalPath({
-            requesterRole: data.requesterRole,
-            vehicleMode: data.vehicleMode,
-          })}
+          path={fullApprovalPath({ requesterRole: data.requesterRole, vehicleMode: data.vehicleMode })}
         />
       </div>
 
@@ -21469,7 +22032,6 @@ export default function RequestWizard() {
 
 
 ===== components\user\request\dev\QuickFillButton.ui.tsx =====
-// src/components/user/request/dev/QuickFillButton.ui.tsx
 "use client";
 
 import * as React from "react";
@@ -21485,9 +22047,8 @@ import { useToast } from "@/components/common/ui/ToastProvider.ui";
 
 /** ---------- Public exports ---------- */
 
-/** One-click: fills according to your current (reason/vehicle/requester) selections */
 export function QuickFillCurrentButton() {
-  const { data, hardSet } = useRequestStore();
+  const { data, hardSet, clearIds } = useRequestStore();
   const toast = useToast();
 
   function handleClick() {
@@ -21496,6 +22057,8 @@ export function QuickFillCurrentButton() {
       reason: data.reason,
       vehicleMode: data.vehicleMode,
     });
+    // ✅ important: detach any draft/submission id
+    clearIds?.();
     hardSet(filled);
     toast({
       kind: "success",
@@ -21518,7 +22081,7 @@ export function QuickFillCurrentButton() {
 
 /** Small menu with a few handy presets */
 export function QuickFillMenu() {
-  const { hardSet } = useRequestStore();
+  const { hardSet, clearIds } = useRequestStore();
   const toast = useToast();
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
@@ -21534,6 +22097,8 @@ export function QuickFillMenu() {
 
   function pick(p: PresetKey) {
     const filled = buildPreset(p);
+    // ✅ important: detach any draft/submission id
+    clearIds?.();
     hardSet(filled);
     setOpen(false);
     toast({
@@ -21639,11 +22204,9 @@ function buildFilledData({
   reason: Reason;
   vehicleMode: VehicleMode;
 }): RequestFormData {
-  // enforce vehicle lock based on reason (educational/competition)
   const locked = lockVehicle(reason);
   const v = locked ?? vehicleMode;
 
-  // dates
   const today = new Date();
   const plus = (d: number) => {
     const x = new Date(today);
@@ -21651,7 +22214,6 @@ function buildFilledData({
     return x.toISOString().slice(0, 10);
   };
 
-  // base Travel Order
   const travelOrder: RequestFormData["travelOrder"] = {
     date: today.toISOString().slice(0, 10),
     requestingPerson: requesterRole === "head" ? "Dr. Jane Head" : "Prof. Juan Dela Cruz",
@@ -21688,7 +22250,6 @@ function buildFilledData({
     endorsedByHeadDate: requesterRole === "faculty" ? plus(1) : "",
   };
 
-  // school service (if institutional)
   const schoolService: RequestFormData["schoolService"] =
     v === "institutional"
       ? {
@@ -21699,10 +22260,9 @@ function buildFilledData({
         }
       : undefined;
 
-  // seminar application (if seminar) — typed explicitly to satisfy TS
   const seminar: RequestFormData["seminar"] =
     reason === "seminar"
-      ? ({
+      ? {
           applicationDate: today.toISOString().slice(0, 10),
           title: "National Research Conference 2025",
           dateFrom: plus(14),
@@ -21724,7 +22284,7 @@ function buildFilledData({
           makeUpClassSchedule: "Make-up classes scheduled next week, Wed/Thu 3–5 PM.",
           applicantUndertaking: true,
           fundReleaseLine: 7200,
-        } as RequestFormData["seminar"])
+        }
       : undefined;
 
   return {
@@ -21739,18 +22299,15 @@ function buildFilledData({
 
 
 ===== components\user\request\ui\ChoicesBar.ui.tsx =====
-// components/user/request/ui/ChoicesBar.ui.tsx
 "use client";
 
 import * as React from "react";
-import type { Reason, VehicleMode, RequesterRole } from "@/lib/user/request/types";
-
-const REASONS: { label: string; value: Reason }[] = [
-  { label: "Seminar / Meeting", value: "seminar" },
-  { label: "Educational Trip", value: "educational" },
-  { label: "Competition", value: "competition" },
-  { label: "Visit", value: "visit" },
-];
+import {
+  type Reason,
+  type VehicleMode,
+  type RequesterRole,
+  REASON_OPTIONS,
+} from "@/lib/user/request/types";
 
 const VEHICLES: { label: string; value: VehicleMode }[] = [
   { label: "Institutional vehicle", value: "institutional" },
@@ -21785,7 +22342,7 @@ export default function ChoicesBar({
         <ChoiceGroup<Reason>
           label="Reason of trip"
           value={value.reason}
-          options={REASONS}
+          options={REASON_OPTIONS}
           columns={1}
           onChange={onReason}
         />
@@ -21831,7 +22388,7 @@ function ChoiceGroup<T extends string>({
 }: {
   label: string;
   value: T;
-  options: { label: string; value: T; disabled?: boolean; title?: string }[];
+  options: ReadonlyArray<{ label: string; value: T; disabled?: boolean; title?: string }>;
   onChange: (v: T) => void;
   columns?: 1 | 2 | 3;
 }) {
@@ -21858,13 +22415,10 @@ function ChoiceGroup<T extends string>({
           const state = selected
             ? "border-[#7A0010] bg-[#7A0010]/5 text-[#7A0010] ring-1 ring-[#7A0010]/20"
             : "border-neutral-300 hover:bg-neutral-50";
-        const disabled = opt.disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer";
+          const disabledCls = opt.disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer";
+
           return (
-            <label
-              key={String(opt.value)}
-              className={`${base} ${state} ${disabled}`}
-              title={opt.title}
-            >
+            <label key={String(opt.value)} className={`${base} ${state} ${disabledCls}`} title={opt.title}>
               <input
                 type="radio"
                 className="sr-only"
@@ -21881,12 +22435,7 @@ function ChoiceGroup<T extends string>({
                   selected ? "border-[#7A0010]" : "border-neutral-400",
                 ].join(" ")}
               >
-                <span
-                  className={[
-                    "h-2.5 w-2.5 rounded-full",
-                    selected ? "bg-[#7A0010]" : "bg-transparent",
-                  ].join(" ")}
-                />
+                <span className={["h-2.5 w-2.5 rounded-full", selected ? "bg-[#7A0010]" : "bg-transparent"].join(" ")} />
               </span>
               <span className="truncate">{opt.label}</span>
             </label>
@@ -22023,7 +22572,7 @@ export default function LocationField({
 
 
 ===== components\user\request\ui\SchoolServiceSection.ui.tsx =====
-// components/user/request/ui/SchoolServiceSection.ui.tsx
+// src/components/user/request/ui/SchoolServiceSection.ui.tsx
 "use client";
 
 import * as React from "react";
@@ -22100,7 +22649,7 @@ export default function SchoolServiceSection({
 
 
 ===== components\user\request\ui\SeminarApplicationForm.ui.tsx =====
-// components/user/request/ui/SeminarApplicationForm.ui.tsx
+// src/components/user/request/ui/SeminarApplicationForm.ui.tsx
 "use client";
 
 import * as React from "react";
@@ -22111,8 +22660,31 @@ import {
   CurrencyInput,
 } from "@/components/user/request/ui/controls";
 import LocationField from "@/components/user/request/ui/LocationField.ui";
+import DepartmentSelect from "@/components/common/inputs/DepartmentSelect.ui";
+import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 
 const MODALITY_OPTIONS = ["Onsite", "Online", "Hybrid"] as const;
+const TRAINING_TYPES = ["Compliance", "Professional Development"] as const;
+
+type Errors = Record<string, string>;
+
+function asNum(v: string): number | null {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function computeDays(from?: string, to?: string): number | null {
+  if (!from || !to) return null;
+  const a = new Date(from);
+  const b = new Date(to);
+  if (Number.isNaN(a.valueOf()) || Number.isNaN(b.valueOf())) return null;
+  // inclusive day count (ignores time components)
+  const ms =
+    Date.UTC(b.getFullYear(), b.getMonth(), b.getDate()) -
+    Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());
+  const diff = Math.floor(ms / 86400000) + 1;
+  return diff >= 1 ? diff : null;
+}
 
 export default function SeminarApplicationForm({
   data,
@@ -22121,18 +22693,19 @@ export default function SeminarApplicationForm({
 }: {
   data: any;
   onChange: (patch: any) => void;
-  errors: Record<string, string>;
+  errors: Errors;
 }) {
+  const selectedType =
+    (data?.typeOfTraining?.[0] as (typeof TRAINING_TYPES)[number]) ?? "";
+
   return (
     <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-lg font-semibold">Seminar Application</h3>
-        <span className="text-xs text-neutral-500">
-          Required fields marked with *
-        </span>
+        <span className="text-xs text-neutral-500">Required fields marked with *</span>
       </div>
 
-      {/* Required basics */}
+      {/* Basics */}
       <div className="grid gap-4 md:grid-cols-2">
         <DateInput
           id="sem-applicationDate"
@@ -22147,7 +22720,7 @@ export default function SeminarApplicationForm({
 
         <TextInput
           id="sem-title"
-          label="Title"
+          label="Seminar / Training / Workshop / Conference (full title)"
           required
           placeholder="e.g., National Research Conference 2025"
           value={data?.title || ""}
@@ -22160,45 +22733,69 @@ export default function SeminarApplicationForm({
           label="Date from"
           required
           value={data?.dateFrom || ""}
-          onChange={(e) =>
-            onChange({ dateFrom: (e.target as HTMLInputElement).value })
-          }
+          onChange={(e) => {
+            const dateFrom = (e.target as HTMLInputElement).value;
+            onChange({ dateFrom, days: computeDays(dateFrom, data?.dateTo ?? "") });
+          }}
           error={errors["seminar.dateFrom"]}
         />
 
-        <DateInput
-          id="sem-dateTo"
-          label="Date to"
-          required
-          value={data?.dateTo || ""}
-          onChange={(e) =>
-            onChange({ dateTo: (e.target as HTMLInputElement).value })
-          }
-          error={errors["seminar.dateTo"]}
-        />
+        <div className="grid gap-2 md:grid-cols-[1fr_140px]">
+          <DateInput
+            id="sem-dateTo"
+            label="Date to"
+            required
+            value={data?.dateTo || ""}
+            onChange={(e) => {
+              const dateTo = (e.target as HTMLInputElement).value;
+              onChange({ dateTo, days: computeDays(data?.dateFrom ?? "", dateTo) });
+            }}
+            error={errors["seminar.dateTo"]}
+          />
+          {/* read-only days */}
+          <div className="grid gap-1">
+            <span className="text-[13px] font-medium text-neutral-700">No. of Day/s</span>
+            <input
+              id="sem-days"
+              value={data?.days ?? ""}
+              readOnly
+              className="h-10 w-full rounded-xl border border-neutral-300 bg-neutral-50 px-3 text-sm text-neutral-700"
+            />
+          </div>
+        </div>
       </div>
 
-      {/* Tags + category */}
+      {/* Type + category */}
       <div className="mt-3 grid gap-4 md:grid-cols-2">
-        <TextInput
-          label="Type of Training (tags)"
-          placeholder="Comma-separated, e.g., Workshop, Webinar"
-          value={(data?.typeOfTraining || []).join(", ")}
-          onChange={(e) =>
-            onChange({
-              typeOfTraining: e.target.value
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean),
-            })
-          }
-        />
+        {/* Type of Training */}
+        <fieldset className="rounded-xl border border-neutral-200 p-3">
+          <legend className="px-1 text-[13px] font-medium text-neutral-700">
+            Type of Training
+          </legend>
+          <div className="mt-1 grid gap-2 sm:grid-cols-2">
+            {TRAINING_TYPES.map((t) => (
+              <label key={t} className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="trainingType"
+                  value={t}
+                  checked={selectedType === t}
+                  onChange={() => onChange({ typeOfTraining: [t] })}
+                />
+                <span className="text-sm">{t}</span>
+              </label>
+            ))}
+          </div>
+          {errors["seminar.typeOfTraining"] && (
+            <div className="mt-1 text-xs text-red-600">
+              {errors["seminar.typeOfTraining"]}
+            </div>
+          )}
+        </fieldset>
 
         {/* Training category */}
         <label className="grid w-full gap-1">
-          <span className="text-[13px] font-medium text-neutral-700">
-            Training category
-          </span>
+          <span className="text-[13px] font-medium text-neutral-700">Training category</span>
           <select
             className="h-10 w-full rounded-xl border border-neutral-300 bg-white px-3 text-sm outline-none focus:border-neutral-400 focus:ring-2 focus:ring-neutral-200"
             value={data?.trainingCategory || ""}
@@ -22216,13 +22813,12 @@ export default function SeminarApplicationForm({
       {/* Provider / Venue / Modality */}
       <div className="mt-3 grid gap-4 md:grid-cols-3">
         <TextInput
-          label="Sponsor/Provider"
+          label="Sponsor / Provider"
           placeholder="Organization / Agency"
           value={data?.sponsor || ""}
           onChange={(e) => onChange({ sponsor: e.target.value })}
         />
 
-        {/* VENUE — LocationField with embedded map picker */}
         <LocationField
           label="Venue"
           value={data?.venue || ""}
@@ -22234,11 +22830,8 @@ export default function SeminarApplicationForm({
           placeholder="Type address or pick on map"
         />
 
-        {/* NEW: Modality dropdown */}
         <label className="grid gap-1">
-          <span className="text-[13px] font-medium text-neutral-700">
-            Modality
-          </span>
+          <span className="text-[13px] font-medium text-neutral-700">Modality</span>
           <select
             className="h-10 w-full rounded-xl border border-neutral-300 bg-white px-3 text-sm outline-none focus:border-neutral-400 focus:ring-2 focus:ring-neutral-200"
             value={data?.modality || ""}
@@ -22252,9 +22845,7 @@ export default function SeminarApplicationForm({
             ))}
           </select>
           {errors["seminar.modality"] && (
-            <span className="text-xs text-red-600">
-              {errors["seminar.modality"]}
-            </span>
+            <span className="text-xs text-red-600">{errors["seminar.modality"]}</span>
           )}
         </label>
       </div>
@@ -22262,119 +22853,39 @@ export default function SeminarApplicationForm({
       {/* Fees summary */}
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         <CurrencyInput
-          label="Registration Fee"
+          label="Registration cost"
           placeholder="0.00"
-          value={data?.fees?.registrationFee ?? ""}
+          value={data?.registrationCost ?? ""}
           onChange={(e) =>
             onChange({
-              fees: {
-                ...(data?.fees || {}),
-                registrationFee: asNum(e.target.value),
-              },
+              registrationCost: asNum(e.target.value),
             })
           }
         />
         <CurrencyInput
-          label="Total Amount"
+          label="Total amount of expenses"
           placeholder="0.00"
-          value={data?.fees?.totalAmount ?? ""}
-          onChange={(e) =>
-            onChange({
-              fees: {
-                ...(data?.fees || {}),
-                totalAmount: asNum(e.target.value),
-              },
-            })
-          }
+          value={data?.totalAmount ?? ""}
+          onChange={(e) => onChange({ totalAmount: asNum(e.target.value) })}
         />
       </div>
 
-      {/* Breakdown */}
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
-        <CurrencyInput
-          label="Registration"
-          placeholder="0.00"
-          value={data?.breakdown?.registration ?? ""}
-          onChange={(e) =>
-            onChange({
-              breakdown: {
-                ...(data?.breakdown || {}),
-                registration: asNum(e.target.value),
-              },
-            })
-          }
-        />
-        <CurrencyInput
-          label="Accommodation"
-          placeholder="0.00"
-          value={data?.breakdown?.accommodation ?? ""}
-          onChange={(e) =>
-            onChange({
-              breakdown: {
-                ...(data?.breakdown || {}),
-                accommodation: asNum(e.target.value),
-              },
-            })
-          }
-        />
-        <CurrencyInput
-          label="Per diem / Meals / Driver’s allowance"
-          placeholder="0.00"
-          value={data?.breakdown?.perDiemMealsDriversAllowance ?? ""}
-          onChange={(e) =>
-            onChange({
-              breakdown: {
-                ...(data?.breakdown || {}),
-                perDiemMealsDriversAllowance: asNum(e.target.value),
-              },
-            })
-          }
-        />
-        <CurrencyInput
-          label="Transport / Fare / Gas / Parking / Toll"
-          placeholder="0.00"
-          value={data?.breakdown?.transportFareGasParkingToll ?? ""}
-          onChange={(e) =>
-            onChange({
-              breakdown: {
-                ...(data?.breakdown || {}),
-                transportFareGasParkingToll: asNum(e.target.value),
-              },
-            })
-          }
-        />
+      {/* Breakdown list */}
+      <BreakdownEditor
+        items={Array.isArray(data?.breakdown) ? data.breakdown : []}
+        onChange={(items) => onChange({ breakdown: items })}
+      />
 
-        <div className="md:col-span-2 grid gap-4 md:grid-cols-[1fr_180px]">
-          <TextInput
-            label="Other (label)"
-            placeholder="e.g., Materials, Printing"
-            value={data?.breakdown?.otherLabel || ""}
-            onChange={(e) =>
-              onChange({
-                breakdown: { ...(data?.breakdown || {}), otherLabel: e.target.value },
-              })
-            }
-          />
-          <CurrencyInput
-            label="Amount"
-            placeholder="0.00"
-            value={data?.breakdown?.otherAmount ?? ""}
-            onChange={(e) =>
-              onChange({
-                breakdown: {
-                  ...(data?.breakdown || {}),
-                  otherAmount: asNum(e.target.value),
-                },
-              })
-            }
-          />
-        </div>
-      </div>
+      {/* Applicants (multi) */}
+      <ApplicantsEditor
+        list={Array.isArray(data?.applicants) ? data.applicants : []}
+        onChange={(list) => onChange({ applicants: list })}
+      />
 
       {/* Others */}
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         <TextArea
-          label="Make-up Class Schedule"
+          label="Make-up Class Schedule (for faculty)"
           placeholder="If faculty, indicate proposed make-up classes"
           value={data?.makeUpClassSchedule || ""}
           onChange={(e) => onChange({ makeUpClassSchedule: e.target.value })}
@@ -22389,11 +22900,9 @@ export default function SeminarApplicationForm({
               type="checkbox"
               className="h-4 w-4"
               checked={!!data?.applicantUndertaking}
-              onChange={(e) =>
-                onChange({ applicantUndertaking: e.target.checked })
-              }
+              onChange={(e) => onChange({ applicantUndertaking: e.target.checked })}
             />
-            <span className="text-sm text-neutral-700">Agree</span>
+            <span className="text-sm text-neutral-700">I agree to the undertaking terms.</span>
           </label>
         </label>
       </div>
@@ -22410,9 +22919,229 @@ export default function SeminarApplicationForm({
   );
 }
 
-function asNum(v: string): number | null {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
+function BreakdownEditor({
+  items,
+  onChange,
+}: {
+  items: { label: string; amount: number | null }[];
+  onChange: (items: { label: string; amount: number | null }[]) => void;
+}) {
+  function setItem(i: number, patch: Partial<{ label: string; amount: number | null }>) {
+    const next = [...items];
+    next[i] = { ...next[i], ...patch };
+    onChange(next);
+  }
+  function add() {
+    onChange([...(items || []), { label: "", amount: null }]);
+  }
+  function remove(i: number) {
+    const next = [...items];
+    next.splice(i, 1);
+    onChange(next);
+  }
+  return (
+    <div className="mt-4 rounded-xl border border-neutral-200 p-3">
+      <div className="mb-2 text-sm font-semibold">Breakdown of Expenses</div>
+      <div className="grid gap-3">
+        {items?.length ? null : <div className="text-xs text-neutral-500">No items yet.</div>}
+
+        {items?.map((it, i) => (
+          <div key={i} className="grid grid-cols-[1fr_160px_32px] items-end gap-2">
+            <TextInput
+              label={i === 0 ? "Label" : ""}
+              placeholder="e.g., Accommodation / Transport / Materials"
+              value={it.label}
+              onChange={(e) => setItem(i, { label: e.target.value })}
+            />
+            <CurrencyInput
+              label={i === 0 ? "Amount" : ""}
+              placeholder="0.00"
+              value={it.amount ?? ""}
+              onChange={(e) => setItem(i, { amount: asNum(e.target.value) })}
+            />
+            <button
+              type="button"
+              onClick={() => remove(i)}
+              className="mb-2 h-10 rounded-lg border border-neutral-300 text-sm"
+              aria-label="Remove row"
+              title="Remove"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+
+        <div>
+          <button type="button" onClick={add} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm">
+            + Add item
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ApplicantsEditor({
+  list,
+  onChange,
+}: {
+  list: Array<{ name: string; department: string; availableFdp?: number | null; signature?: string | null }>;
+  onChange: (list: Array<{ name: string; department: string; availableFdp?: number | null; signature?: string | null }>) => void;
+}) {
+  function setRow(i: number, patch: Partial<{ name: string; department: string; availableFdp?: number | null; signature?: string | null }>) {
+    const next = [...list];
+    next[i] = { ...next[i], ...patch };
+    onChange(next);
+  }
+  function add() {
+    onChange([...(list || []), { name: "", department: "", availableFdp: null, signature: null }]);
+  }
+  function remove(i: number) {
+    const next = [...list];
+    next.splice(i, 1);
+    onChange(next);
+  }
+
+  return (
+    <div className="mt-6 rounded-xl border border-neutral-200 p-3">
+      <div className="mb-2 text-sm font-semibold">Applicants</div>
+      <div className="grid gap-3">
+        {list?.length ? null : <div className="text-xs text-neutral-500">No applicants yet.</div>}
+        {list?.map((row, i) => (
+          <div key={i} className="grid gap-2 md:grid-cols-[1.1fr_1fr_160px]">
+            <TextInput
+              label={i === 0 ? "Name" : ""}
+              placeholder="Full name"
+              value={row.name}
+              onChange={(e) => setRow(i, { name: e.target.value })}
+            />
+            {/* Department with searchable select */}
+            <div className="grid gap-1">
+              <DepartmentSelect
+                id={`app-dept-${i}`}
+                label={i === 0 ? "Department / Office" : ""}
+                value={row.department}
+                placeholder="e.g., CCMS"
+                onChange={(dept) => setRow(i, { department: dept })}
+              />
+            </div>
+            <TextInput
+              label={i === 0 ? "Available FDP" : ""}
+              placeholder="e.g., 12"
+              value={row.availableFdp ?? ""}
+              onChange={(e) => setRow(i, { availableFdp: asNum(e.target.value) })}
+            />
+
+            <div className="md:col-span-3 flex items-center gap-2">
+              <SignatureInline
+                value={row.signature || null}
+                onChange={(sig) => setRow(i, { signature: sig })}
+              />
+              <button
+                type="button"
+                className="rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+                onClick={() => remove(i)}
+                title="Remove applicant"
+              >
+                Remove
+              </button>
+            </div>
+
+            <hr className="md:col-span-3 mt-1 border-neutral-200" />
+          </div>
+        ))}
+        <div>
+          <button
+            type="button"
+            onClick={add}
+            className="rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+          >
+            + Add applicant
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SignatureInline({
+  value,
+  onChange,
+}: {
+  value: string | null;
+  onChange: (dataUrl: string | null) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [dirty, setDirty] = React.useState(false);
+
+  return (
+    <div className="flex items-center gap-3">
+      <div className="text-sm font-medium">Signature:</div>
+      {value ? (
+        <img
+          src={value}
+          alt="Signature"
+          className="h-10 rounded border border-neutral-300 bg-white"
+        />
+      ) : (
+        <span className="text-xs text-neutral-500">None</span>
+      )}
+      <button
+        type="button"
+        className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm"
+        onClick={() => setOpen(true)}
+      >
+        Capture
+      </button>
+      {value && (
+        <button
+          type="button"
+          className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm"
+          onClick={() => onChange(null)}
+        >
+          Clear
+        </button>
+      )}
+
+      {open && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
+          <div className="w-full max-w-2xl rounded-2xl bg-white p-4 shadow-xl">
+            <div className="mb-2 text-sm font-semibold">Sign here</div>
+            <SignaturePad
+              height={220}
+              value={value}
+              onDraw={() => setDirty(true)}
+              onSave={(dataUrl) => {
+                onChange(dataUrl);
+                setDirty(false);
+                setOpen(false);
+              }}
+              onClear={() => {
+                onChange(null);
+                setDirty(false);
+              }}
+              onUpload={async (file) => {
+                const buf = await file.arrayBuffer();
+                const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+                onChange(`data:${file.type};base64,${b64}`);
+                setDirty(false);
+                setOpen(false);
+              }}
+              saveDisabled={!dirty}
+            />
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                className="rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+                onClick={() => setOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 
@@ -22658,11 +23387,11 @@ import {
 } from "@/components/user/request/ui/controls";
 import LocationField from "@/components/user/request/ui/LocationField.ui";
 
-// Searchable department input
+// Department input & helpers
 import DepartmentSelect from "@/components/common/inputs/DepartmentSelect.ui";
-// Department → head mapping helper
 import { getDepartmentHead } from "@/lib/org/departments";
-// Shared signature pad
+
+// Signature pad
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 
 function asNum(v: string): number | null {
@@ -22694,7 +23423,7 @@ export default function TravelOrderForm({
   // If user types a head name manually, don’t auto-overwrite next time
   const headEditedRef = React.useRef(false);
 
-  // --- Signature state ---
+  // Signature UI state
   const [sigDirty, setSigDirty] = React.useState(false);
   const [sigSaved, setSigSaved] = React.useState<boolean>(
     !!data?.endorsedByHeadSignature
@@ -22702,6 +23431,13 @@ export default function TravelOrderForm({
   const [sigSavedAt, setSigSavedAt] = React.useState<string | null>(
     data?.endorsedByHeadSignature ? new Date().toLocaleString() : null
   );
+
+  // ✅ Keep badge in sync with store updates (autosave, fill current, load draft, etc.)
+  React.useEffect(() => {
+    const has = !!data?.endorsedByHeadSignature;
+    setSigSaved(has);
+    if (has) setSigSavedAt(new Date().toLocaleString());
+  }, [data?.endorsedByHeadSignature]);
 
   return (
     <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
@@ -26633,6 +27369,90 @@ export function toRequestRow(req: AdminRequest): RequestRow {
 }
 
 
+===== lib\admin\requests\notifs.ts =====
+// src/lib/admin/requests/notifs.ts
+export type Id = string;
+
+const READ_KEY = "tl.requests.read.v1";
+const VISIT_KEY = "tl.requests.lastvisit.v1";
+
+function canUseStorage() {
+  return typeof window !== "undefined" && !!window.localStorage;
+}
+
+/* read ids */
+export function getReadIds(): Set<Id> {
+  if (!canUseStorage()) return new Set();
+  try {
+    const raw = localStorage.getItem(READ_KEY);
+    if (!raw) return new Set();
+    return new Set(JSON.parse(raw) as Id[]);
+  } catch {
+    return new Set();
+  }
+}
+function saveReadIds(set: Set<Id>) {
+  if (!canUseStorage()) return;
+  try {
+    localStorage.setItem(READ_KEY, JSON.stringify(Array.from(set)));
+  } catch {}
+}
+export function markRead(id: Id) {
+  const s = getReadIds();
+  if (!s.has(id)) {
+    s.add(id);
+    saveReadIds(s);
+  }
+}
+export function markManyRead(ids: Id[]) {
+  const s = getReadIds();
+  let changed = false;
+  ids.forEach((id) => {
+    if (!s.has(id)) {
+      s.add(id);
+      changed = true;
+    }
+  });
+  if (changed) saveReadIds(s);
+}
+export function isRead(id: Id) {
+  return getReadIds().has(id);
+}
+
+/* last visited (for nav badge) */
+export function getLastVisited(): number {
+  if (!canUseStorage()) return 0;
+  const raw = localStorage.getItem(VISIT_KEY);
+  if (!raw) return 0;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : 0;
+}
+export function markVisitedNow() {
+  if (!canUseStorage()) return;
+  localStorage.setItem(VISIT_KEY, String(Date.now()));
+}
+
+/* helpers */
+export type LiteRequest = { id: string; createdAt?: string | number | Date };
+function ts(x?: string | number | Date) {
+  if (!x) return 0;
+  const d = new Date(x);
+  return d.getTime() || 0;
+}
+export function computeUnreadIds(list: LiteRequest[]): Set<Id> {
+  const read = getReadIds();
+  const out = new Set<Id>();
+  list.forEach((r) => {
+    if (!read.has(r.id)) out.add(r.id);
+  });
+  return out;
+}
+export function computeNavBadgeCount(list: LiteRequest[]): number {
+  const last = getLastVisited();
+  return list.reduce((acc, r) => (ts(r.createdAt) > last ? acc + 1 : acc), 0);
+}
+
+
 ===== lib\admin\requests\pdf.ts =====
 // src/lib/admin/requests/pdf.ts
 import jsPDF from "jspdf";
@@ -27104,105 +27924,249 @@ URL.revokeObjectURL(url);
 
 import type { RequestFormData } from "@/lib/user/request/types";
 
-export type AdminRequest = RequestFormData & {
+/* ---------- Types ---------- */
+
+export type AdminRequest = {
   id: string;
-  createdAt: string;
   status: "pending" | "approved" | "rejected" | "completed";
+  createdAt: string;  // ISO
+  updatedAt: string;  // ISO
+
+  // quick-access fields for UI
   driver?: string;
   vehicle?: string;
+
+  travelOrder?: RequestFormData["travelOrder"];
+  schoolService?: RequestFormData["schoolService"];
+  seminar?: RequestFormData["seminar"];
+
+  unread?: boolean;
 };
 
-const KEY = "tl.admin.requests";
+/* ---------- Storage utils ---------- */
 
-function read(): AdminRequest[] {
+const KEY = "travilink_admin_requests";
+
+function safeRead(): AdminRequest[] {
   if (typeof window === "undefined") return [];
   try {
-    return JSON.parse(localStorage.getItem(KEY) || "[]") as AdminRequest[];
+    const raw = localStorage.getItem(KEY);
+    return raw ? (JSON.parse(raw) as AdminRequest[]) : [];
   } catch {
     return [];
   }
 }
 
-function write(rows: AdminRequest[]) {
-  if (typeof window !== "undefined") {
-    localStorage.setItem(KEY, JSON.stringify(rows));
+function tryWrite(list: AdminRequest[]): boolean {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(list));
+    return true;
+  } catch {
+    return false;
   }
 }
 
+/** keep preview but trim huge base64s */
+function shorten(dataUrl: string): string {
+  const MAX = 100_000; // ~75 KB
+  return dataUrl && dataUrl.length > MAX ? dataUrl.slice(0, MAX) : dataUrl;
+}
+
+/** strip big fields if present (schema-agnostic, safe for TS) */
+function stripHeavy(r: AdminRequest): AdminRequest {
+  const c: AdminRequest = structuredClone(r);
+
+  // Travel Order signature
+  if (c.travelOrder?.endorsedByHeadSignature) {
+    c.travelOrder.endorsedByHeadSignature = shorten(
+      c.travelOrder.endorsedByHeadSignature
+    );
+  }
+
+  // Seminar applicants signatures — only if the property exists at runtime
+  const sem: unknown = c.seminar as unknown;
+  if (
+    sem &&
+    typeof sem === "object" &&
+    "applicants" in (sem as any) &&
+    Array.isArray((sem as any).applicants)
+  ) {
+    (sem as any).applicants = (sem as any).applicants.map((a: any) => ({
+      ...a,
+      signature: a?.signature ? shorten(a.signature) : a?.signature,
+    }));
+    c.seminar = sem as any;
+  }
+
+  return c;
+}
+
+/* ---------- Simple pub/sub ---------- */
+
+const subs = new Set<() => void>();
+function notify() {
+  subs.forEach((fn) => fn());
+}
+
+/* ---------- Repo ---------- */
+
 export const AdminRequestsRepo = {
+  subscribe(cb: () => void) {
+    subs.add(cb);
+    return () => {
+      subs.delete(cb);
+      return true;
+    };
+  },
+
   list(): AdminRequest[] {
-    return read().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return safeRead().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   },
 
   get(id: string): AdminRequest | undefined {
-    return read().find((r) => r.id === id);
+    return safeRead().find((r) => r.id === id);
   },
 
-  upsert(row: AdminRequest) {
-    const rows = read();
-    const i = rows.findIndex((r) => r.id === row.id);
-    if (i >= 0) rows[i] = row;
-    else rows.unshift(row);
-    write(rows);
+  unreadCount(): number {
+    return this.list().filter((r) => r.unread).length;
   },
 
-  setStatus(id: string, status: AdminRequest["status"]) {
-    const rows = read();
-    const i = rows.findIndex((r) => r.id === id);
+  markAllRead() {
+    const list = safeRead().map((r) => ({ ...r, unread: false }));
+    tryWrite(list);
+    notify();
+  },
+
+  markRead(id: string) {
+    const list = safeRead();
+    const i = list.findIndex((r) => r.id === id);
     if (i >= 0) {
-      rows[i].status = status;
-      write(rows);
+      list[i].unread = false;
+      tryWrite(list);
+      notify();
     }
   },
 
+  /** Accept a new request from the user form */
+  acceptFromUser(data: RequestFormData): string {
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    const item: AdminRequest = {
+      id,
+      status: "pending",
+      createdAt: now,
+      updatedAt: now,
+      driver: "",
+      vehicle: "",
+      travelOrder: data.travelOrder,
+      schoolService: data.schoolService,
+      seminar: data.seminar,
+      unread: true,
+    };
+
+    // 1) try write
+    let list = safeRead();
+    list.unshift(item);
+    if (tryWrite(list)) {
+      notify();
+      return id;
+    }
+
+    // 2) prune heavy data and retry
+    list = list.map(stripHeavy);
+    if (tryWrite(list)) {
+      notify();
+      return id;
+    }
+
+    // 3) evict oldest until it fits
+    while (list.length > 0 && !tryWrite(list)) list.pop();
+    if (list.length === 0) throw new Error("QUOTA");
+
+    notify();
+    return id;
+  },
+
   setDriver(id: string, driver: string) {
-    const rows = read();
-    const i = rows.findIndex((r) => r.id === id);
+    const list = safeRead();
+    const i = list.findIndex((r) => r.id === id);
     if (i >= 0) {
-      rows[i].driver = driver;
-      write(rows);
+      list[i].driver = driver;
+      list[i].updatedAt = new Date().toISOString();
+      tryWrite(list);
+      notify();
     }
   },
 
   setVehicle(id: string, vehicle: string) {
-    const rows = read();
-    const i = rows.findIndex((r) => r.id === id);
+    const list = safeRead();
+    const i = list.findIndex((r) => r.id === id);
     if (i >= 0) {
-      rows[i].vehicle = vehicle;
-      write(rows);
+      list[i].vehicle = vehicle;
+      list[i].updatedAt = new Date().toISOString();
+      tryWrite(list);
+      notify();
     }
   },
 
-  // Save user submission into Admin side repo
-  acceptFromUser(payload: RequestFormData) {
-    const req: AdminRequest = {
-      ...payload,
-      id:
-        typeof window !== "undefined"
-          ? "RQ-" + crypto.randomUUID().slice(0, 6).toUpperCase()
-          : "RQ-PLACEHOLDER",
-      createdAt:
-        typeof window !== "undefined"
-          ? new Date().toISOString()
-          : "1970-01-01T00:00:00.000Z",
-      status: "pending",
-    };
-
-    // inject test signature kung wala pa
-    if (!req.travelOrder.endorsedByHeadSignature) {
-      req.travelOrder.endorsedByHeadSignature =
-        "/signatures/sample-signature.jpg";
+  updatePayload(id: string, patch: Partial<AdminRequest>) {
+    const list = safeRead();
+    const i = list.findIndex((r) => r.id === id);
+    if (i >= 0) {
+      list[i] = { ...list[i], ...patch, updatedAt: new Date().toISOString() };
+      tryWrite(list);
+      notify();
     }
+  },
 
-    if (typeof window !== "undefined") {
-      const rows = read();
-      rows.unshift(req);
-      write(rows);
-    }
+  remove(id: string) {
+    const list = safeRead().filter((r) => r.id !== id);
+    tryWrite(list);
+    notify();
+  },
 
-    return req.id;
+  removeMany(ids: string[]) {
+    const set = new Set(ids);
+    const list = safeRead().filter((r) => !set.has(r.id));
+    tryWrite(list);
+    notify();
   },
 };
+
+
+===== lib\admin\requests\trashRepo.ts =====
+// src/lib/admin/requests/trashRepo.ts
+// Only needed because PageInner uses it (Trash feature). If you already have this file, keep yours.
+import type { AdminRequest } from "@/lib/admin/requests/store";
+export type TrashItem = AdminRequest & { deletedAt: string };
+
+let TRASH: TrashItem[] = [];
+
+export function addMany(items: TrashItem[]) { TRASH = [...items, ...TRASH]; }
+export function list(): TrashItem[] { return [...TRASH]; }
+export function removeMany(ids: string[]) {
+  const s = new Set(ids);
+  TRASH = TRASH.filter((t) => !s.has(t.id));
+}
+export function clear() { TRASH = []; }
+export function purgeOlderThan(days: number) {
+  const now = Date.now(), ms = days * 24 * 60 * 60 * 1000;
+  TRASH = TRASH.filter((t) => now - new Date(t.deletedAt).getTime() < ms);
+}
+export function take(ids: string[]): AdminRequest[] {
+  const s = new Set(ids);
+  const keep: TrashItem[] = [];
+  const picked: AdminRequest[] = [];
+  for (const t of TRASH) {
+    if (s.has(t.id)) {
+      const { deletedAt, ...rest } = t;
+      picked.push(rest);
+    } else keep.push(t);
+  }
+  TRASH = keep;
+  return picked;
+}
 
 
 ===== lib\admin\schedule\filters.ts =====
@@ -29133,10 +30097,9 @@ export const FleetRepo = {
 
 
 ===== lib\user\request\mockApi.ts =====
-// lib/user/request/mockApi.ts
-// COMPLETE FILE — handles drafts + submissions
-
+// src/lib/user/request/mockApi.ts
 import type { RequestFormData } from "@/lib/user/request/types";
+import { reasonLabel } from "@/lib/user/request/types";
 import { firstReceiver, fullApprovalPath } from "@/lib/user/request/routing";
 
 const DRAFTS_KEY = "travilink_user_request_drafts";
@@ -29161,7 +30124,6 @@ export type Submission = {
   updatedAt: string; // ISO
 };
 
-// ---------- helpers
 function safeRead<T>(key: string): T[] {
   if (typeof window === "undefined") return [];
   try {
@@ -29171,62 +30133,92 @@ function safeRead<T>(key: string): T[] {
     return [];
   }
 }
+
 function safeWrite<T>(key: string, list: T[]) {
   if (typeof window === "undefined") return;
   localStorage.setItem(key, JSON.stringify(list));
 }
 
 function buildTitle(data: RequestFormData) {
-  return `${data.requesterRole.toUpperCase()} • ${data.reason} • ${data.travelOrder?.destination || "No destination"} (${data.travelOrder?.date || "no date"})`;
+  const reason = reasonLabel[data.reason] ?? data.reason;
+  const dest = data.travelOrder?.destination || "No destination";
+  const dt = data.travelOrder?.date || "no date";
+  return `${data.requesterRole.toUpperCase()} • ${reason} • ${dest} (${dt})`;
 }
 
-// ---------- Drafts
+/* ---------- Drafts ---------- */
+
 export async function listDrafts(): Promise<Draft[]> {
-  return safeRead<Draft>(DRAFTS_KEY).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return safeRead<Draft>(DRAFTS_KEY).sort((a, b) =>
+    b.updatedAt.localeCompare(a.updatedAt)
+  );
 }
+
 export async function getDraft(id: string): Promise<Draft | undefined> {
   return safeRead<Draft>(DRAFTS_KEY).find((d) => d.id === id);
 }
+
 export async function deleteDraft(id: string): Promise<void> {
-  safeWrite(DRAFTS_KEY, safeRead<Draft>(DRAFTS_KEY).filter((d) => d.id !== id));
+  safeWrite<Draft>(
+    DRAFTS_KEY,
+    safeRead<Draft>(DRAFTS_KEY).filter((d) => d.id !== id)
+  );
 }
-export async function saveDraft(data: RequestFormData, draftId?: string) {
+
+export async function saveDraft(
+  data: RequestFormData,
+  draftId?: string
+) {
   const now = new Date().toISOString();
   const title = buildTitle(data);
   const list = safeRead<Draft>(DRAFTS_KEY);
+
   if (draftId) {
     const i = list.findIndex((d) => d.id === draftId);
     if (i >= 0) {
       list[i] = { ...list[i], title, data, updatedAt: now };
-      safeWrite(DRAFTS_KEY, list);
+      safeWrite<Draft>(DRAFTS_KEY, list);
       return { id: draftId, savedAt: now };
     }
   }
+
   const id = crypto.randomUUID();
   list.unshift({ id, title, data, createdAt: now, updatedAt: now });
-  safeWrite(DRAFTS_KEY, list);
+  safeWrite<Draft>(DRAFTS_KEY, list);
   return { id, savedAt: now };
 }
 
-// ---------- Submissions
+/* ---------- Submissions ---------- */
+
 export async function listSubmissions(): Promise<Submission[]> {
-  return safeRead<Submission>(SUBMITS_KEY).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return safeRead<Submission>(SUBMITS_KEY).sort((a, b) =>
+    b.updatedAt.localeCompare(a.updatedAt)
+  );
 }
-export async function getSubmission(id: string): Promise<Submission | undefined> {
+
+export async function getSubmission(
+  id: string
+): Promise<Submission | undefined> {
   return safeRead<Submission>(SUBMITS_KEY).find((s) => s.id === id);
 }
+
 export async function cancelSubmission(id: string) {
   const list = safeRead<Submission>(SUBMITS_KEY);
   const i = list.findIndex((s) => s.id === id);
   if (i >= 0) {
-    list[i] = { ...list[i], status: "cancelled", updatedAt: new Date().toISOString() };
-    safeWrite(SUBMITS_KEY, list);
+    list[i] = {
+      ...list[i],
+      status: "cancelled",
+      updatedAt: new Date().toISOString(),
+    };
+    safeWrite<Submission>(SUBMITS_KEY, list);
   }
 }
+
 export async function submitRequest(data: RequestFormData) {
-  // create new submission
   const now = new Date().toISOString();
   const title = buildTitle(data);
+
   const first = firstReceiver({
     requesterRole: data.requesterRole,
     vehicleMode: data.vehicleMode,
@@ -29236,6 +30228,7 @@ export async function submitRequest(data: RequestFormData) {
     requesterRole: data.requesterRole,
     vehicleMode: data.vehicleMode,
   });
+
   const list = safeRead<Submission>(SUBMITS_KEY);
   const id = crypto.randomUUID();
   list.unshift({
@@ -29248,15 +30241,19 @@ export async function submitRequest(data: RequestFormData) {
     createdAt: now,
     updatedAt: now,
   });
-  safeWrite(SUBMITS_KEY, list);
+  safeWrite<Submission>(SUBMITS_KEY, list);
   return { id, firstReceiver: first, approvalPath: path, submittedAt: now };
 }
-export async function updateSubmission(id: string, data: RequestFormData) {
-  // modify existing submission if still pending
+
+export async function updateSubmission(
+  id: string,
+  data: RequestFormData
+) {
   const list = safeRead<Submission>(SUBMITS_KEY);
   const i = list.findIndex((s) => s.id === id);
   if (i < 0) throw new Error("Submission not found");
-  if (list[i].status !== "pending") throw new Error("Only pending submissions can be edited");
+  if (list[i].status !== "pending")
+    throw new Error("Only pending submissions can be edited");
 
   const now = new Date().toISOString();
   const title = buildTitle(data);
@@ -29278,7 +30275,7 @@ export async function updateSubmission(id: string, data: RequestFormData) {
     approvalPath: path,
     updatedAt: now,
   };
-  safeWrite(SUBMITS_KEY, list);
+  safeWrite<Submission>(SUBMITS_KEY, list);
   return { id, updatedAt: now };
 }
 
@@ -29342,47 +30339,81 @@ export function clearAutosave() {
 
 
 ===== lib\user\request\routing.ts =====
+// src/lib/user/request/routing.ts
 import type { RequesterRole, VehicleMode, Reason } from "./types";
-
 
 export type FirstReceiver = "OSAS_ADMIN" | "DEPT_HEAD" | "TM" | "COMPTROLLER";
 
-
+/** Force vehicle mode for specific reasons (policy). */
 export function lockVehicle(reason: Reason): VehicleMode | null {
-return reason === "educational" || reason === "competition" ? "institutional" : null;
+  return reason === "educational" || reason === "competition" ? "institutional" : null;
 }
 
-
-export function firstReceiver({ requesterRole, vehicleMode }: { requesterRole: RequesterRole; vehicleMode: VehicleMode; reason: Reason; }): FirstReceiver {
-if (requesterRole === "org") return "OSAS_ADMIN";
-if (vehicleMode === "institutional") return requesterRole === "faculty" ? "DEPT_HEAD" : "TM";
-return requesterRole === "faculty" ? "DEPT_HEAD" : "COMPTROLLER";
+export function firstReceiver({
+  requesterRole,
+  vehicleMode,
+}: {
+  requesterRole: RequesterRole;
+  vehicleMode: VehicleMode;
+  reason: Reason;
+}): FirstReceiver {
+  if (requesterRole === "org") return "OSAS_ADMIN";
+  if (vehicleMode === "institutional") return requesterRole === "faculty" ? "DEPT_HEAD" : "TM";
+  return requesterRole === "faculty" ? "DEPT_HEAD" : "COMPTROLLER";
 }
 
-
-export function fullApprovalPath({ requesterRole, vehicleMode }: { requesterRole: RequesterRole; vehicleMode: VehicleMode; }): string[] {
-if (requesterRole === "org") return ["OSAS_ADMIN", "TM", "COMPTROLLER", "HRD", "VP/COO", "TM(close-out)"];
-if (requesterRole === "head" && vehicleMode !== "institutional") return ["COMPTROLLER", "HRD", "VP/COO"];
-if (requesterRole === "head" && vehicleMode === "institutional") return ["TM", "COMPTROLLER", "HRD", "VP/COO", "TM(close-out)"];
-if (requesterRole === "faculty" && vehicleMode !== "institutional") return ["DEPT_HEAD", "COMPTROLLER", "HRD", "VP/COO"];
-return ["DEPT_HEAD", "TM", "COMPTROLLER", "HRD", "VP/COO", "TM(close-out)"];
+export function fullApprovalPath({
+  requesterRole,
+  vehicleMode,
+}: {
+  requesterRole: RequesterRole;
+  vehicleMode: VehicleMode;
+}): string[] {
+  if (requesterRole === "org") return ["OSAS_ADMIN", "TM", "COMPTROLLER", "HRD", "VP/COO", "TM(close-out)"];
+  if (requesterRole === "head" && vehicleMode !== "institutional") return ["COMPTROLLER", "HRD", "VP/COO"];
+  if (requesterRole === "head" && vehicleMode === "institutional")
+    return ["TM", "COMPTROLLER", "HRD", "VP/COO", "TM(close-out)"];
+  if (requesterRole === "faculty" && vehicleMode !== "institutional")
+    return ["DEPT_HEAD", "COMPTROLLER", "HRD", "VP/COO"];
+  return ["DEPT_HEAD", "TM", "COMPTROLLER", "HRD", "VP/COO", "TM(close-out)"];
 }
+
 
 ===== lib\user\request\types.ts =====
 // src/lib/user/request/types.ts
 
-export type Reason = "seminar" | "educational" | "competition" | "visit";
+export type Reason =
+  | "official"        // Official business
+  | "ces"             // CES
+  | "seminar"         // Seminar / Training / Meeting
+  | "educational"     // Educational Trip
+  | "competition"     // Competition
+  | "visit";          // Visit / Coordination
+
 export type VehicleMode = "institutional" | "owned" | "rent";
-export type RequesterRole = "head" | "faculty" | "org";
+export type RequesterRole = "faculty" | "head" | "org";
 
-/** Optional geo data saved when picking from the map */
-export type GeoPoint = { lat: number; lng: number; address?: string };
+/** Source of truth for UI choices (readonly/frozen) */
+export const REASON_OPTIONS = [
+  { label: "Official business", value: "official" },
+  { label: "CES", value: "ces" },
+  { label: "Seminar / Training", value: "seminar" },
+  { label: "Educational Trip", value: "educational" },
+  { label: "Competition", value: "competition" },
+  { label: "Visit", value: "visit" },
+] as const satisfies ReadonlyArray<{ label: string; value: Reason }>;
 
-/** Repeatable "other costs" item */
-export type OtherCostItem = {
-  label: string;
-  amount: number | null;
-};
+/** 
+ * Map of reason → label for convenient imports.
+ * Example: reasonLabel["seminar"] === "Seminar / Training"
+ */
+export const reasonLabel: Record<Reason, string> = REASON_OPTIONS
+  .reduce((acc, o) => {
+    acc[o.value] = o.label;
+    return acc;
+  }, {} as Record<Reason, string>);
+
+/* ---------- Travel Order ---------- */
 
 export type TravelCosts = {
   food?: number | null;
@@ -29390,86 +30421,79 @@ export type TravelCosts = {
   rentVehicles?: number | null;
   hiredDrivers?: number | null;
   accommodation?: number | null;
-
-  /** Preferred structure (repeatable list). */
-  otherItems?: OtherCostItem[];
-
-  /** Legacy single-pair fields (kept for old drafts). */
-  otherLabel?: string | null;
+  otherLabel?: string;
   otherAmount?: number | null;
-
-  justification?: string | null;
+  justification?: string;
 };
 
-export type TravelOrder = {
+export interface TravelOrder {
   date: string;
   requestingPerson: string;
   department: string;
-
-  /** Human-readable destination; filled by user or from the map picker */
   destination: string;
-  /** Optional coordinates from the map picker */
-  destinationGeo?: GeoPoint | null;
-
+  destinationGeo?: { lat: number; lng: number } | null;
   departureDate: string;
   returnDate: string;
   purposeOfTravel: string;
   costs: TravelCosts;
+  endorsedByHeadName?: string;
+  endorsedByHeadDate?: string;
+  endorsedByHeadSignature?: string; // data URL
+}
 
-  /** Endorsement info */
-  endorsedByHeadName?: string | null;
-  endorsedByHeadDate?: string | null;
+/* ---------- School Service (only for institutional) ---------- */
 
-  /** Signature image (base64 string or file URL) */
-  endorsedByHeadSignature?: string | null;
-};
-
-export type SchoolService = {
+export interface SchoolService {
   driver: string;
   vehicle: string;
-  vehicleDispatcherSigned: boolean;
-  vehicleDispatcherDate: string;
+  vehicleDispatcherSigned?: boolean;
+  vehicleDispatcherDate?: string;
+}
+
+/* ---------- Seminar Application ---------- */
+
+export type SeminarFees = {
+  registrationFee?: number | null;
+  totalAmount?: number | null;
 };
 
-export type SeminarApplication = {
+export type SeminarBreakdown = {
+  registration?: number | null;
+  accommodation?: number | null;
+  perDiemMealsDriversAllowance?: number | null;
+  transportFareGasParkingToll?: number | null;
+  otherLabel?: string;
+  otherAmount?: number | null;
+};
+
+export interface SeminarApplication {
   applicationDate: string;
   title: string;
-  typeOfTraining?: string[];
-  trainingCategory?: "local" | "regional" | "national" | "international";
   dateFrom: string;
   dateTo: string;
-  days?: number | null;
-  sponsor?: string | null;
+  typeOfTraining: string[];
+  trainingCategory?: "local" | "regional" | "national" | "international" | "";
+  sponsor?: string;
+  venue?: string;
+  venueGeo?: { lat: number; lng: number } | null;
+  modality?: "Onsite" | "Online" | "Hybrid" | "";
+  fees?: SeminarFees;
+  breakdown?: SeminarBreakdown;
+  makeUpClassSchedule?: string;
+  applicantUndertaking?: boolean;
+  fundReleaseLine?: number | null;
+}
 
-  /** Human-readable venue; filled by user or from the map picker */
-  venue?: string | null;
-  /** Optional coordinates from the map picker */
-  venueGeo?: GeoPoint | null;
+/* ---------- Whole request ---------- */
 
-  modality?: string | null;
-
-  /** Cost fields based on official Seminar Application form */
-  registrationCost?: number | null;
-  totalAmount?: number | null;
-  breakdown?: OtherCostItem[];
-
-  makeUpClassSchedule?: string | null;
-  applicants?: Array<{
-    name: string;
-    availableFDP?: string | null;
-    departmentOffice?: string | null;
-    signature?: string | null;
-  }>;
-};
-
-export type RequestFormData = {
+export interface RequestFormData {
   requesterRole: RequesterRole;
   reason: Reason;
   vehicleMode: VehicleMode;
   travelOrder: TravelOrder;
   schoolService?: SchoolService;
   seminar?: SeminarApplication;
-};
+}
 
 
 ===== lib\user\request\validation.ts =====
@@ -29603,21 +30627,19 @@ export function getDayStatus(trips: Trip[], day: Date): DayStatus {
 
 
 ===== store\user\requestStore.tsx =====
-// src/store/user/requestStore.tsx
-// COMPLETE FILE — with endorsedByHeadSignature included in state
-
+// src/store/user/requestStore.ts
 "use client";
-import * as React from "react";
-import { createContext, useContext, useMemo, useState } from "react";
+
+import { create } from "zustand";
+import { lockVehicle } from "@/lib/user/request/routing";
 import type {
   RequestFormData,
   Reason,
   VehicleMode,
   RequesterRole,
 } from "@/lib/user/request/types";
-import { lockVehicle } from "@/lib/user/request/routing";
 
-const initial: RequestFormData = {
+const initialData: RequestFormData = {
   requesterRole: "faculty",
   reason: "visit",
   vehicleMode: "owned",
@@ -29632,115 +30654,119 @@ const initial: RequestFormData = {
     costs: {},
     endorsedByHeadName: "",
     endorsedByHeadDate: "",
-    endorsedByHeadSignature: "", // ✅ always initialize signature field
+    endorsedByHeadSignature: "",
   },
   schoolService: undefined,
   seminar: undefined,
 };
 
-type Ctx = {
+type Store = {
   data: RequestFormData;
   lockedVehicle: VehicleMode | null;
+
   currentDraftId: string | null;
   currentSubmissionId: string | null;
+
+  // top-level setters
   setReason: (r: Reason) => void;
   setVehicleMode: (v: VehicleMode) => void;
+  setRequesterRole: (r: RequesterRole) => void;
+
+  // nested safe patchers (avoid stale-closure)
+  patchTravelOrder: (p: Partial<RequestFormData["travelOrder"]>) => void;
+  patchCosts: (
+    p: Partial<NonNullable<RequestFormData["travelOrder"]["costs"]>>
+  ) => void;
+  patchSchoolService: (
+    p: Partial<NonNullable<RequestFormData["schoolService"]>>
+  ) => void;
+  patchSeminar: (p: Partial<NonNullable<RequestFormData["seminar"]>>) => void;
+
+  // generic
   patch: (p: Partial<RequestFormData>) => void;
-  hardSet: (n: RequestFormData) => void;
+  hardSet: (d: RequestFormData) => void;
+
   setCurrentDraftId: (id: string | null) => void;
   setCurrentSubmissionId: (id: string | null) => void;
   clearIds: () => void;
 };
 
-const RequestCtx = createContext<Ctx | null>(null);
+export const useRequestStore = create<Store>((set, get) => ({
+  data: initialData,
+  lockedVehicle: lockVehicle(initialData.reason) ?? null,
 
-export function RequestProvider({ children }: { children: React.ReactNode }) {
-  const [data, setData] = useState<RequestFormData>(initial);
-  const [lockedVehicle, setLocked] = useState<VehicleMode | null>(null);
-  const [currentDraftId, setDraftId] = useState<string | null>(null);
-  const [currentSubmissionId, setSubmissionId] = useState<string | null>(null);
+  currentDraftId: null,
+  currentSubmissionId: null,
 
-  const api = useMemo<Ctx>(
-    () => ({
-      data,
-      lockedVehicle,
-      currentDraftId,
-      currentSubmissionId,
-
-      setReason: (r) => {
-        const locked = lockVehicle(r);
-        const vehicleMode = locked ?? data.vehicleMode;
-        setLocked(locked);
-        setData({
-          ...data,
-          reason: r,
-          vehicleMode,
-          schoolService:
-            vehicleMode === "institutional"
-              ? data.schoolService ?? {
-                  driver: "",
-                  vehicle: "",
-                  vehicleDispatcherSigned: false,
-                  vehicleDispatcherDate: "",
-                }
-              : undefined,
-          seminar:
-            r === "seminar"
-              ? data.seminar ?? {
-                  applicationDate: "",
-                  title: "",
-                  dateFrom: "",
-                  dateTo: "",
-                }
-              : undefined,
-        });
-      },
-
-      setVehicleMode: (v) => {
-        const nextV = lockedVehicle ?? v;
-        setData({
-          ...data,
-          vehicleMode: nextV,
-          schoolService:
-            nextV === "institutional"
-              ? data.schoolService ?? {
-                  driver: "",
-                  vehicle: "",
-                  vehicleDispatcherSigned: false,
-                  vehicleDispatcherDate: "",
-                }
-              : undefined,
-        });
-      },
-
-      patch: (p) => setData({ ...data, ...p }),
-      hardSet: (n) =>
-        setData({
-          ...n,
-          travelOrder: {
-            ...n.travelOrder,
-            // ✅ guarantee that signature is always part of state
-            endorsedByHeadSignature: n.travelOrder.endorsedByHeadSignature ?? "",
-          },
-        }),
-
-      setCurrentDraftId: (id) => setDraftId(id),
-      setCurrentSubmissionId: (id) => setSubmissionId(id),
-      clearIds: () => {
-        setDraftId(null);
-        setSubmissionId(null);
-      },
+  setReason: (r) =>
+    set((s) => {
+      const locked = lockVehicle(r);
+      const nextVehicle = locked ?? s.data.vehicleMode;
+      return {
+        data: { ...s.data, reason: r, vehicleMode: nextVehicle },
+        lockedVehicle: locked ?? null,
+      };
     }),
-    [data, lockedVehicle, currentDraftId, currentSubmissionId]
-  );
 
-  return React.createElement(RequestCtx.Provider, { value: api }, children);
-}
+  setVehicleMode: (v) =>
+    set((s) => {
+      const next = s.lockedVehicle ? s.lockedVehicle : v;
+      return { data: { ...s.data, vehicleMode: next } };
+    }),
 
-export function useRequestStore() {
-  const ctx = useContext(RequestCtx);
-  if (!ctx) throw new Error("useRequestStore must be used within <RequestProvider>");
-  return ctx;
-}
+  setRequesterRole: (r) =>
+    set((s) => ({ data: { ...s.data, requesterRole: r } })),
+
+  // ---------- nested patchers (always derive from latest state) ----------
+  patchTravelOrder: (p) =>
+    set((s) => ({
+      data: {
+        ...s.data,
+        travelOrder: { ...(s.data.travelOrder || {}), ...p },
+      },
+    })),
+
+  patchCosts: (p) =>
+    set((s) => ({
+      data: {
+        ...s.data,
+        travelOrder: {
+          ...(s.data.travelOrder || {}),
+          costs: { ...(s.data.travelOrder?.costs || {}), ...p },
+        },
+      },
+    })),
+
+  patchSchoolService: (p) =>
+    set((s) => {
+      const next = {
+        ...(s.data.schoolService || {}),
+        ...p,
+      } as NonNullable<RequestFormData["schoolService"]>;
+      return { data: { ...s.data, schoolService: next } };
+    }),
+
+  patchSeminar: (p) =>
+    set((s) => {
+      const next = {
+        ...(s.data.seminar || {}),
+        ...p,
+      } as NonNullable<RequestFormData["seminar"]>;
+      return { data: { ...s.data, seminar: next } };
+    }),
+
+  // ---------- generic ----------
+  patch: (p) => set((s) => ({ data: { ...s.data, ...p } })),
+
+  hardSet: (d) =>
+    set(() => ({
+      data: d,
+      lockedVehicle: lockVehicle(d.reason) ?? null,
+    })),
+
+  setCurrentDraftId: (id) => set(() => ({ currentDraftId: id })),
+  setCurrentSubmissionId: (id) => set(() => ({ currentSubmissionId: id })),
+  clearIds: () => set(() => ({ currentDraftId: null, currentSubmissionId: null })),
+}));
 
 

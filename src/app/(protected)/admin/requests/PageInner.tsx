@@ -1,4 +1,3 @@
-// src/app/(protected)/admin/requests/PageInner.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -15,13 +14,13 @@ import { AdminRequestsRepo, type AdminRequest } from "@/lib/admin/requests/store
 import type { RequestRow, Pagination as Pg, FilterState } from "@/lib/admin/types";
 import * as TrashRepo from "@/lib/admin/requests/trashRepo";
 import {
-  markVisitedNow,
-  computeUnreadIds,
+  markVisitedNow,           // keep for badge
+  getReadIds,               // NEW: highlight uses this
   markRead as markReqRead,
   markManyRead,
 } from "@/lib/admin/requests/notifs";
 
-/* ========== Mapper ========== */
+/* mapper omitted for brevity – unchanged */
 function toRequestRow(req: AdminRequest): RequestRow {
   return {
     id: req.id,
@@ -32,13 +31,10 @@ function toRequestRow(req: AdminRequest): RequestRow {
     vehicle: req.vehicle || "—",
     date: req.createdAt,
     status:
-      req.status === "pending"
-        ? "Pending"
-        : req.status === "approved"
-        ? "Approved"
-        : req.status === "rejected"
-        ? "Rejected"
-        : "Completed",
+      req.status === "pending" ? "Pending"
+      : req.status === "approved" ? "Approved"
+      : req.status === "rejected" ? "Rejected"
+      : "Completed",
   };
 }
 
@@ -61,29 +57,29 @@ export default function PageInner() {
   const [openDetails, setOpenDetails] = useState(false);
   const [activeRow, setActiveRow] = useState<AdminRequest | undefined>();
 
-  // filters
   const [draft, setDraft] = useState<FilterState>({
-    status: "All",
-    dept: "All",
-    from: "",
-    to: "",
-    search: "",
-    mode: "auto",
+    status: "All", dept: "All", from: "", to: "", search: "", mode: "auto",
   });
 
   useEffect(() => setMounted(true), []);
+
+  // Keep this so the LEFT-NAV badge resets when you visit the page
   useEffect(() => { markVisitedNow(); }, []);
+
   useEffect(() => { TrashRepo.purgeOlderThan(30); }, []);
 
-  // poll list + recompute unread set
+  // Poll list; highlight = ids NOT in the read set (doesn't clear on page view)
   useEffect(() => {
     const load = () => {
       const list = AdminRequestsRepo.list();
       setAllRows(list.map(toRequestRow));
-      setUnreadIds(computeUnreadIds(list.map((r) => ({ id: r.id, createdAt: r.createdAt }))));
+
+      const read = getReadIds();
+      const unread = new Set(list.filter(r => !read.has(r.id)).map(r => r.id));
+      setUnreadIds(unread);
     };
     load();
-    const id = setInterval(load, 2000);
+    const id = setInterval(load, 1500);
     return () => clearInterval(id);
   }, []);
 
@@ -160,6 +156,7 @@ export default function PageInner() {
   const openRow = (r: RequestRow) => {
     const full = AdminRequestsRepo.get(r.id);
     if (full) setActiveRow(full);
+    // Only mark as read when the user actually opened the details
     markOneRead(r.id);
     setOpenDetails(true);
   };
@@ -231,12 +228,10 @@ export default function PageInner() {
 
   return (
     <div className="space-y-4">
-      {/* KPI Summary — not sticky anymore */}
       <div className="space-y-2 pr-2">
         <RequestsSummaryUI summary={summary} />
       </div>
 
-      {/* Toolbar */}
       <RequestsToolbarUI
         tableSearch={tableSearch}
         onTableSearch={setTableSearch}
@@ -249,11 +244,9 @@ export default function PageInner() {
         onClearAll={clearFilters}
         selectedCount={selected.size}
         onDeleteSelected={deleteSelected}
-        /* NEW: bulk mark read */
         onMarkSelectedRead={markSelectedRead}
       />
 
-      {/* Receiver view */}
       <RequestsReceiverViewUI
         rows={pageRows}
         pagination={pagination}
@@ -262,19 +255,16 @@ export default function PageInner() {
         selectedIds={selected}
         onToggleOne={onToggleOne}
         onToggleAllOnPage={onToggleAllOnPage}
-        unreadIds={unreadIds}
-        /* NEW: single mark read from card */
+        unreadIds={unreadIds}    // highlight driven by read-set now
         onMarkRead={markOneRead}
       />
 
-      {/* Details Modal */}
       <RequestDetailsModalUI
         open={openDetails}
         onClose={() => setOpenDetails(false)}
         row={activeRow}
       />
 
-      {/* Confirm placeholder */}
       <ConfirmUI
         open={false}
         title="Confirm"

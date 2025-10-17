@@ -20,6 +20,7 @@ import {
   updateSubmission,
   getDraft,
   getSubmission,
+  createSubmission, // ⬅ NEW
 } from "@/lib/user/request/mockApi";
 import type { RequesterRole } from "@/lib/user/request/types";
 import { useToast } from "@/components/common/ui/ToastProvider.ui";
@@ -36,11 +37,11 @@ import {
   QuickFillMenu,
 } from "@/components/user/request/dev/QuickFillButton.ui";
 
-// ✅ import AdminRequestsRepo
+// Admin inbox (local repo)
 import { AdminRequestsRepo } from "@/lib/admin/requests/store";
 
 export default function RequestWizard() {
-  const search = useSearchParams(); // may be null
+  const search = useSearchParams();
   const toast = useToast();
   const { ask, ui: confirmUI } = useConfirm();
 
@@ -49,7 +50,13 @@ export default function RequestWizard() {
     lockedVehicle,
     setReason,
     setVehicleMode,
-    patch,
+    setRequesterRole,
+
+    patchTravelOrder,
+    patchCosts,
+    patchSchoolService,
+    patchSeminar,
+
     hardSet,
     currentDraftId,
     setCurrentDraftId,
@@ -65,7 +72,7 @@ export default function RequestWizard() {
   const showSeminar = data.reason === "seminar";
   const showSchoolService = data.vehicleMode === "institutional";
 
-  // ---------- restore in this order: handoff → URL → autosave ----------
+  // Restore: handoff → URL (draft/submission) → autosave
   React.useEffect(() => {
     let did = false;
 
@@ -75,11 +82,7 @@ export default function RequestWizard() {
       clearIds();
       if (h.from === "draft") setCurrentDraftId(h.id);
       if (h.from === "submission") setCurrentSubmissionId(h.id);
-      toast({
-        kind: "success",
-        title: "Loaded",
-        message: `Form populated from ${h.from}.`,
-      });
+      toast({ kind: "success", title: "Loaded", message: `Form populated from ${h.from}.` });
       did = true;
     }
 
@@ -95,11 +98,7 @@ export default function RequestWizard() {
           hardSet(d.data);
           clearIds();
           setCurrentDraftId(draftId);
-          toast({
-            kind: "success",
-            title: "Draft loaded",
-            message: "Form populated from draft.",
-          });
+          toast({ kind: "success", title: "Draft loaded", message: "Form populated from draft." });
           did = true;
         }
       } else if (subId) {
@@ -108,11 +107,7 @@ export default function RequestWizard() {
           hardSet(s.data);
           clearIds();
           setCurrentSubmissionId(subId);
-          toast({
-            kind: "info",
-            title: "Editing submission",
-            message: "Form populated from submission.",
-          });
+          toast({ kind: "info", title: "Editing submission", message: "Form populated from submission." });
           did = true;
         }
       }
@@ -121,11 +116,7 @@ export default function RequestWizard() {
         const autosaved = loadAutosave();
         if (autosaved) {
           hardSet(autosaved);
-          toast({
-            kind: "info",
-            title: "Restored",
-            message: "Unsaved form recovered.",
-          });
+          toast({ kind: "info", title: "Restored", message: "Unsaved form recovered." });
         }
       }
     };
@@ -134,18 +125,13 @@ export default function RequestWizard() {
       const autosaved = loadAutosave();
       if (autosaved) {
         hardSet(autosaved);
-        toast({
-          kind: "info",
-          title: "Restored",
-          message: "Unsaved form recovered.",
-        });
+        toast({ kind: "info", title: "Restored", message: "Unsaved form recovered." });
       }
     });
-
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---------- autosave whenever data changes (debounced) ----------
+  // Autosave (debounced)
   React.useEffect(() => {
     const id = setTimeout(() => saveAutosave(data), 400);
     return () => clearTimeout(id);
@@ -168,7 +154,7 @@ export default function RequestWizard() {
         costs: {},
         endorsedByHeadName: "",
         endorsedByHeadDate: "",
-        endorsedByHeadSignature: "", // ✅ include signature
+        endorsedByHeadSignature: "",
       },
       schoolService: undefined,
       seminar: undefined,
@@ -187,65 +173,24 @@ export default function RequestWizard() {
     if (!yes) return;
 
     clearAutosave();
-    hardSet({
-      requesterRole: data.requesterRole,
-      reason: "visit",
-      vehicleMode: "owned",
-      travelOrder: {
-        date: "",
-        requestingPerson: "",
-        department: "",
-        destination: "",
-        departureDate: "",
-        returnDate: "",
-        purposeOfTravel: "",
-        costs: {},
-        endorsedByHeadName: "",
-        endorsedByHeadDate: "",
-        endorsedByHeadSignature: "", // ✅ include signature
-      },
-      schoolService: undefined,
-      seminar: undefined,
-    });
-    setErrors({});
-    clearIds();
+    afterSuccessfulSubmitReset();
     toast({ kind: "success", title: "Cleared", message: "Form reset." });
   }
 
-  function onChangeTravelOrder(p: any) {
-    patch({ travelOrder: { ...data.travelOrder, ...p } as any });
-  }
-  function onChangeCosts(p: any) {
-    patch({
-      travelOrder: {
-        ...data.travelOrder,
-        costs: { ...(data.travelOrder.costs || {}), ...p },
-      } as any,
-    });
-  }
-  function onChangeSchoolService(p: any) {
-    patch({ schoolService: { ...(data.schoolService || {}), ...p } as any });
-  }
-  function onChangeSeminar(p: any) {
-    patch({ seminar: { ...(data.seminar || {}), ...p } as any });
-  }
+  // Pass-through patchers from the store (fresh state inside)
+  const onChangeTravelOrder = (p: any) => patchTravelOrder(p);
+  const onChangeCosts = (p: any) => patchCosts(p);
+  const onChangeSchoolService = (p: any) => patchSchoolService(p);
+  const onChangeSeminar = (p: any) => patchSeminar(p);
 
   async function handleSaveDraft() {
     setSaving(true);
     try {
       const res = await saveDraft(data, currentDraftId || undefined);
       if (!currentDraftId) setCurrentDraftId(res.id);
-      toast({
-        kind: "success",
-        title: "Draft saved",
-        message: "Your draft has been saved.",
-      });
+      toast({ kind: "success", title: "Draft saved", message: "Your draft has been saved." });
     } catch {
-      toast({
-        kind: "error",
-        title: "Save failed",
-        message: "Could not save draft.",
-      });
+      toast({ kind: "error", title: "Save failed", message: "Could not save draft." });
     } finally {
       setSaving(false);
     }
@@ -263,6 +208,7 @@ export default function RequestWizard() {
       "travelOrder.returnDate": "to-return",
       "travelOrder.purposeOfTravel": "to-purpose",
       "travelOrder.costs.justification": "to-justification",
+      "travelOrder.endorsedByHeadSignature": "to-signature",
       "schoolService.driver": "ss-driver",
       "schoolService.vehicle": "ss-vehicle",
       "schoolService.vehicleDispatcherDate": "ss-dispatcher-date",
@@ -283,17 +229,17 @@ export default function RequestWizard() {
     setErrors(v.errors);
     if (!v.ok) {
       scrollToFirstError(v.errors);
-      toast({
-        kind: "error",
-        title: "Cannot submit",
-        message: "Please complete required fields.",
-      });
+      toast({ kind: "error", title: "Cannot submit", message: "Please complete required fields." });
       return;
     }
     setSubmitting(true);
     try {
-      // ✅ directly save to AdminRequestsRepo
-      AdminRequestsRepo.acceptFromUser(data);
+      // 1) Add to Admin inbox — keep the id
+      const id = AdminRequestsRepo.acceptFromUser(data);
+
+      // 2) Mirror to user's Submission History with the SAME id
+      await createSubmission(data, id);
+
       toast({
         kind: "success",
         title: "Submitted",
@@ -301,11 +247,7 @@ export default function RequestWizard() {
       });
       afterSuccessfulSubmitReset();
     } catch {
-      toast({
-        kind: "error",
-        title: "Submit failed",
-        message: "Please try again.",
-      });
+      toast({ kind: "error", title: "Submit failed", message: "Please try again." });
     } finally {
       setSubmitting(false);
     }
@@ -355,7 +297,7 @@ export default function RequestWizard() {
             lockedVehicle={lockedVehicle}
             onReason={setReason}
             onVehicle={setVehicleMode}
-            onRequester={(r: RequesterRole) => patch({ requesterRole: r })}
+            onRequester={(r: RequesterRole) => setRequesterRole(r)}
           />
 
           <TravelOrderForm

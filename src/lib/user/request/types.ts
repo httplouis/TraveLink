@@ -1,17 +1,37 @@
 // src/lib/user/request/types.ts
 
-export type Reason = "seminar" | "educational" | "competition" | "visit";
+export type Reason =
+  | "official"        // Official business
+  | "ces"             // CES
+  | "seminar"         // Seminar / Training / Meeting
+  | "educational"     // Educational Trip
+  | "competition"     // Competition
+  | "visit";          // Visit / Coordination
+
 export type VehicleMode = "institutional" | "owned" | "rent";
-export type RequesterRole = "head" | "faculty" | "org";
+export type RequesterRole = "faculty" | "head" | "org";
 
-/** Optional geo data saved when picking from the map */
-export type GeoPoint = { lat: number; lng: number; address?: string };
+/** Source of truth for UI choices (readonly/frozen) */
+export const REASON_OPTIONS = [
+  { label: "Official business", value: "official" },
+  { label: "CES", value: "ces" },
+  { label: "Seminar / Training", value: "seminar" },
+  { label: "Educational Trip", value: "educational" },
+  { label: "Competition", value: "competition" },
+  { label: "Visit", value: "visit" },
+] as const satisfies ReadonlyArray<{ label: string; value: Reason }>;
 
-/** Repeatable "other costs" item */
-export type OtherCostItem = {
-  label: string;
-  amount: number | null;
-};
+/** 
+ * Map of reason → label for convenient imports.
+ * Example: reasonLabel["seminar"] === "Seminar / Training"
+ */
+export const reasonLabel: Record<Reason, string> = REASON_OPTIONS
+  .reduce((acc, o) => {
+    acc[o.value] = o.label;
+    return acc;
+  }, {} as Record<Reason, string>);
+
+/* ---------- Travel Order ---------- */
 
 export type TravelCosts = {
   food?: number | null;
@@ -19,83 +39,76 @@ export type TravelCosts = {
   rentVehicles?: number | null;
   hiredDrivers?: number | null;
   accommodation?: number | null;
-
-  /** Preferred structure (repeatable list). */
-  otherItems?: OtherCostItem[];
-
-  /** Legacy single-pair fields (kept for old drafts). */
-  otherLabel?: string | null;
+  otherLabel?: string;
   otherAmount?: number | null;
-
-  justification?: string | null;
+  justification?: string;
 };
 
-export type TravelOrder = {
+export interface TravelOrder {
   date: string;
   requestingPerson: string;
   department: string;
-
-  /** Human-readable destination; filled by user or from the map picker */
   destination: string;
-  /** Optional coordinates from the map picker */
-  destinationGeo?: GeoPoint | null;
-
+  destinationGeo?: { lat: number; lng: number } | null;
   departureDate: string;
   returnDate: string;
   purposeOfTravel: string;
   costs: TravelCosts;
+  endorsedByHeadName?: string;
+  endorsedByHeadDate?: string;
+  endorsedByHeadSignature?: string; // data URL
+}
 
-  /** Endorsement info */
-  endorsedByHeadName?: string | null;
-  endorsedByHeadDate?: string | null;
+/* ---------- School Service (only for institutional) ---------- */
 
-  /** Signature image (base64 string or file URL) */
-  endorsedByHeadSignature?: string | null;
-};
-
-export type SchoolService = {
+export interface SchoolService {
   driver: string;
   vehicle: string;
-  vehicleDispatcherSigned: boolean;
-  vehicleDispatcherDate: string;
+  vehicleDispatcherSigned?: boolean;
+  vehicleDispatcherDate?: string;
+}
+
+/* ---------- Seminar Application ---------- */
+
+export type SeminarFees = {
+  registrationFee?: number | null;
+  totalAmount?: number | null;
 };
 
-export type SeminarApplication = {
+export type SeminarBreakdown = {
+  registration?: number | null;
+  accommodation?: number | null;
+  perDiemMealsDriversAllowance?: number | null;
+  transportFareGasParkingToll?: number | null;
+  otherLabel?: string;
+  otherAmount?: number | null;
+};
+
+export interface SeminarApplication {
   applicationDate: string;
   title: string;
-  typeOfTraining?: string[];
-  trainingCategory?: "local" | "regional" | "national" | "international";
   dateFrom: string;
   dateTo: string;
-  days?: number | null;
-  sponsor?: string | null;
+  typeOfTraining: string[];
+  trainingCategory?: "local" | "regional" | "national" | "international" | "";
+  sponsor?: string;
+  venue?: string;
+  venueGeo?: { lat: number; lng: number } | null;
+  modality?: "Onsite" | "Online" | "Hybrid" | "";
+  fees?: SeminarFees;
+  breakdown?: SeminarBreakdown;
+  makeUpClassSchedule?: string;
+  applicantUndertaking?: boolean;
+  fundReleaseLine?: number | null;
+}
 
-  /** Human-readable venue; filled by user or from the map picker */
-  venue?: string | null;
-  /** Optional coordinates from the map picker */
-  venueGeo?: GeoPoint | null;
+/* ---------- Whole request ---------- */
 
-  modality?: string | null;
-
-  /** Cost fields based on official Seminar Application form */
-  registrationCost?: number | null;
-  totalAmount?: number | null;
-  breakdown?: OtherCostItem[];
-
-  makeUpClassSchedule?: string | null;
-  applicants?: Array<{
-    name: string;
-    availableFDP?: string | null;
-    departmentOffice?: string | null;
-    signature?: string | null;
-  }>;
-};
-
-export type RequestFormData = {
+export interface RequestFormData {
   requesterRole: RequesterRole;
   reason: Reason;
   vehicleMode: VehicleMode;
   travelOrder: TravelOrder;
   schoolService?: SchoolService;
   seminar?: SeminarApplication;
-};
+}

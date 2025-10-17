@@ -1,4 +1,3 @@
-// src/components/admin/requests/hooks/useRequestsBadge.tsx
 "use client";
 
 import * as React from "react";
@@ -11,11 +10,22 @@ export function useRequestsNavBadge() {
   React.useEffect(() => {
     const tick = () => {
       const list = AdminRequestsRepo.list();
-      setCount(computeNavBadgeCount(list.map((r) => ({ id: r.id, createdAt: r.createdAt }))));
+      setCount(computeNavBadgeCount(list));
     };
+
     tick();
-    const id = setInterval(tick, 2000);
-    return () => clearInterval(id);
+
+    // update when repo changes + little poll fallback
+    const unsub = AdminRequestsRepo.subscribe?.(() => {
+      tick();
+      return true;
+    });
+    const id = setInterval(tick, 1500);
+
+    return () => {
+      clearInterval(id);
+      unsub?.();
+    };
   }, []);
 
   return count;

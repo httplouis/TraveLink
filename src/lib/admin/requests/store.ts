@@ -1,104 +1,152 @@
-// src/lib/admin/requests/store.ts
 "use client";
 
 import type { RequestFormData } from "@/lib/user/request/types";
 
-export type AdminRequest = RequestFormData & {
+/* ---------- Types ---------- */
+
+export type AdminRequestStatus = "pending" | "approved" | "rejected" | "completed" | "cancelled";
+
+export type AdminRequest = {
   id: string;
-  createdAt: string;
-  status: "pending" | "approved" | "rejected" | "completed";
+  createdAt: string;  // ISO
+  updatedAt: string;  // ISO
+  status: AdminRequestStatus;
   driver?: string;
   vehicle?: string;
+  // flattened fields for convenience (copied from user data at submit time)
+  travelOrder?: RequestFormData["travelOrder"];
+  seminar?: RequestFormData["seminar"];
+  schoolService?: RequestFormData["schoolService"];
+  // keep whole payload for future editing
+  payload: RequestFormData;
 };
 
-const KEY = "tl.admin.requests";
+const STORAGE_KEY = "admin.requests.v1";
 
-function read(): AdminRequest[] {
-  if (typeof window === "undefined") return [];
+/* ---------- utils ---------- */
+
+function isBrowser() {
+  return typeof window !== "undefined" && typeof localStorage !== "undefined";
+}
+
+function readAll(): AdminRequest[] {
+  if (!isBrowser()) return [];
   try {
-    return JSON.parse(localStorage.getItem(KEY) || "[]") as AdminRequest[];
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? (arr as AdminRequest[]) : [];
   } catch {
     return [];
   }
 }
 
-function write(rows: AdminRequest[]) {
-  if (typeof window !== "undefined") {
-    localStorage.setItem(KEY, JSON.stringify(rows));
-  }
+function writeAll(list: AdminRequest[]) {
+  if (!isBrowser()) return;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
 }
 
+/* ---------- small pub/sub for screens that are open together ---------- */
+
+type Unsub = () => boolean;
+const listeners = new Set<() => void>();
+
+function notify() {
+  listeners.forEach((cb) => {
+    try { cb(); } catch {}
+  });
+}
+
+/* ---------- Repo ---------- */
+
 export const AdminRequestsRepo = {
+  subscribe(cb: () => void): Unsub {
+    listeners.add(cb);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY) cb();
+    };
+    if (isBrowser()) window.addEventListener("storage", onStorage);
+    return () => {
+      listeners.delete(cb);
+      if (isBrowser()) window.removeEventListener("storage", onStorage);
+      return true;
+    };
+  },
+
   list(): AdminRequest[] {
-    return read().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    // newest first
+    return readAll().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
 
   get(id: string): AdminRequest | undefined {
-    return read().find((r) => r.id === id);
+    return readAll().find((x) => x.id === id);
   },
 
-  upsert(row: AdminRequest) {
-    const rows = read();
-    const i = rows.findIndex((r) => r.id === row.id);
-    if (i >= 0) rows[i] = row;
-    else rows.unshift(row);
-    write(rows);
+  upsert(req: AdminRequest) {
+    const list = readAll();
+    const i = list.findIndex((x) => x.id === req.id);
+    if (i >= 0) list[i] = req; else list.unshift(req);
+    writeAll(list);
+    notify();
   },
 
-  setStatus(id: string, status: AdminRequest["status"]) {
-    const rows = read();
-    const i = rows.findIndex((r) => r.id === id);
-    if (i >= 0) {
-      rows[i].status = status;
-      write(rows);
-    }
+  upsertMany(arr: AdminRequest[]) {
+    const map = new Map(readAll().map((x) => [x.id, x] as const));
+    for (const it of arr) map.set(it.id, it);
+    writeAll([...map.values()]);
+    notify();
+  },
+
+  addMany(arr: AdminRequest[]) {
+    const list = readAll();
+    writeAll([...arr, ...list]);
+    notify();
+  },
+
+  remove(id: string) {
+    const list = readAll().filter((x) => x.id !== id);
+    writeAll(list);
+    notify();
+  },
+
+  removeMany(ids: string[]) {
+    const set = new Set(ids);
+    const list = readAll().filter((x) => !set.has(x.id));
+    writeAll(list);
+    notify();
   },
 
   setDriver(id: string, driver: string) {
-    const rows = read();
-    const i = rows.findIndex((r) => r.id === id);
-    if (i >= 0) {
-      rows[i].driver = driver;
-      write(rows);
-    }
+    const it = this.get(id);
+    if (!it) return;
+    it.driver = driver;
+    it.updatedAt = new Date().toISOString();
+    this.upsert(it);
   },
 
   setVehicle(id: string, vehicle: string) {
-    const rows = read();
-    const i = rows.findIndex((r) => r.id === id);
-    if (i >= 0) {
-      rows[i].vehicle = vehicle;
-      write(rows);
-    }
+    const it = this.get(id);
+    if (!it) return;
+    it.vehicle = vehicle;
+    it.updatedAt = new Date().toISOString();
+    this.upsert(it);
   },
 
-  // Save user submission into Admin side repo
-  acceptFromUser(payload: RequestFormData) {
-    const req: AdminRequest = {
-      ...payload,
-      id:
-        typeof window !== "undefined"
-          ? "RQ-" + crypto.randomUUID().slice(0, 6).toUpperCase()
-          : "RQ-PLACEHOLDER",
-      createdAt:
-        typeof window !== "undefined"
-          ? new Date().toISOString()
-          : "1970-01-01T00:00:00.000Z",
+  /** Called by user form on submit */
+  acceptFromUser(data: RequestFormData): string {
+    const id = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+    const now = new Date().toISOString();
+    const rec: AdminRequest = {
+      id,
+      createdAt: now,
+      updatedAt: now,
       status: "pending",
+      payload: data,
+      travelOrder: data.travelOrder,
+      seminar: data.seminar,
+      schoolService: data.schoolService,
     };
-
-    // inject test signature kung wala pa
-    if (!req.travelOrder.endorsedByHeadSignature) {
-      req.travelOrder.endorsedByHeadSignature =
-        "/signatures/sample-signature.jpg";
-    }
-
-    if (typeof window !== "undefined") {
-      const rows = read();
-      rows.unshift(req);
-      write(rows);
-    }
-
-    return req.id;
+    this.upsert(rec);
+    return id;
   },
 };
