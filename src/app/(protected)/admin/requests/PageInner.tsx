@@ -6,22 +6,20 @@ import { useToast } from "@/components/common/ui/ToastProvider.ui";
 
 import ConfirmUI from "@/components/admin/requests/ui/Confirm.ui";
 import RequestsSummaryUI from "@/components/admin/requests/ui/RequestsSummary.ui";
-import RequestsTableUI from "@/components/admin/requests/ui/RequestsTable.ui";
-import RequestsCardGridUI from "@/components/admin/requests/ui/RequestsCardGrid.ui";
+import RequestsReceiverViewUI from "@/components/admin/requests/ui/RequestsReceiverView.ui";
 import RequestDetailsModalUI from "@/components/admin/requests/ui/RequestDetailsModal.ui";
-import ViewToggleUI from "@/components/admin/requests/ui/ViewToggle.ui";
-
-import FiltersBarContainer from "@/components/admin/requests/containers/FiltersBar.container";
-import { RequestsURLSync } from "./RequestsURLSync";
+import RequestsToolbarUI from "@/components/admin/requests/toolbar/RequestsToolbar.ui";
 
 import { useDebouncedValue } from "@/lib/common/useDebouncedValue";
-import {
-  toggleAllOnPage as selToggleAllOnPage,
-  clearSelection as selClear,
-} from "@/lib/common/selection";
-
 import { AdminRequestsRepo, type AdminRequest } from "@/lib/admin/requests/store";
-import type { RequestRow, Pagination as Pg } from "@/lib/admin/types";
+import type { RequestRow, Pagination as Pg, FilterState } from "@/lib/admin/types";
+import * as TrashRepo from "@/lib/admin/requests/trashRepo";
+import {
+  markVisitedNow,
+  computeUnreadIds,
+  markRead as markReqRead,
+  markManyRead,
+} from "@/lib/admin/requests/notifs";
 
 /* ========== Mapper ========== */
 function toRequestRow(req: AdminRequest): RequestRow {
@@ -44,44 +42,82 @@ function toRequestRow(req: AdminRequest): RequestRow {
   };
 }
 
-/* ========== Main Component ========== */
+const PAGE_SIZE = 12;
+
 export default function PageInner() {
   const toast = useToast();
 
   const [mounted, setMounted] = useState(false);
   const [allRows, setAllRows] = useState<RequestRow[]>([]);
   const [filteredRows, setFilteredRows] = useState<RequestRow[]>([]);
+  const [unreadIds, setUnreadIds] = useState<Set<string>>(new Set());
+
   const [tableSearch, setTableSearch] = useState("");
   const debouncedQ = useDebouncedValue(tableSearch, 300);
   const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
-  const [view, setView] = useState<"table" | "card">("table");
+  const [pagination, setPagination] = useState<Pg>({ page: 1, pageSize: PAGE_SIZE, total: 0 });
+
   const [selected, setSelected] = useState<Set<string>>(new Set());
-
-  const PAGE_SIZES = { table: 15, card: 9 } as const;
-  const [pagination, setPagination] = useState<Pg>({
-    page: 1,
-    pageSize: PAGE_SIZES.table,
-    total: 0,
-  });
-
   const [openDetails, setOpenDetails] = useState(false);
   const [activeRow, setActiveRow] = useState<AdminRequest | undefined>();
 
-  // hydration guard
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  // filters
+  const [draft, setDraft] = useState<FilterState>({
+    status: "All",
+    dept: "All",
+    from: "",
+    to: "",
+    search: "",
+    mode: "auto",
+  });
 
-  // sync rows
+  useEffect(() => setMounted(true), []);
+  useEffect(() => { markVisitedNow(); }, []);
+  useEffect(() => { TrashRepo.purgeOlderThan(30); }, []);
+
+  // poll list + recompute unread set
   useEffect(() => {
-    setAllRows(AdminRequestsRepo.list().map(toRequestRow));
-    const interval = setInterval(() => {
-      setAllRows(AdminRequestsRepo.list().map(toRequestRow));
-    }, 2000);
-    return () => clearInterval(interval);
+    const load = () => {
+      const list = AdminRequestsRepo.list();
+      setAllRows(list.map(toRequestRow));
+      setUnreadIds(computeUnreadIds(list.map((r) => ({ id: r.id, createdAt: r.createdAt }))));
+    };
+    load();
+    const id = setInterval(load, 2000);
+    return () => clearInterval(id);
   }, []);
 
   useEffect(() => setFilteredRows(allRows), [allRows]);
+
+  const applyFilters = () => {
+    setSelected(new Set());
+    setFilteredRows(
+      allRows.filter((r) => {
+        const okStatus = draft.status === "All" || r.status === draft.status;
+        const okDept = draft.dept === "All" || r.dept === draft.dept;
+        const created = new Date(r.date);
+        const fromOk = !draft.from || created >= new Date(draft.from);
+        const toOk = !draft.to || created <= new Date(draft.to);
+        return okStatus && okDept && fromOk && toOk;
+      })
+    );
+    setPagination((p) => ({ ...p, page: 1 }));
+  };
+
+  const clearFilters = () => {
+    setDraft({ status: "All", dept: "All", from: "", to: "", search: "", mode: "auto" });
+    setFilteredRows(allRows);
+    setSelected(new Set());
+    setPagination((p) => ({ ...p, page: 1 }));
+  };
+
+  const handleDraftChange = (patch: Partial<FilterState>) => {
+    setDraft((d) => {
+      const next = { ...d, ...patch };
+      if (next.mode === "auto") queueMicrotask(applyFilters);
+      return next;
+    });
+  };
 
   const postFilterRows = useMemo(() => {
     const q = debouncedQ.trim().toLowerCase();
@@ -99,20 +135,12 @@ export default function PageInner() {
     );
   }, [filteredRows, debouncedQ, sortDir]);
 
-  const clearSelection = () => selClear(setSelected);
-
-  useEffect(() => {
-    setPagination((p) => ({ ...p, page: 1, pageSize: PAGE_SIZES[view] }));
-    clearSelection();
-  }, [view]);
-
   useEffect(() => {
     setPagination((p) => {
       const total = postFilterRows.length;
       const maxPage = Math.max(1, Math.ceil(total / p.pageSize) || 1);
       return { ...p, total, page: Math.min(p.page, maxPage) };
     });
-    clearSelection();
   }, [postFilterRows]);
 
   const pageRows = useMemo(() => {
@@ -120,10 +148,73 @@ export default function PageInner() {
     return postFilterRows.slice(start, start + pagination.pageSize);
   }, [postFilterRows, pagination.page, pagination.pageSize]);
 
+  const markOneRead = (id: string) => {
+    markReqRead(id);
+    setUnreadIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+
   const openRow = (r: RequestRow) => {
     const full = AdminRequestsRepo.get(r.id);
     if (full) setActiveRow(full);
+    markOneRead(r.id);
     setOpenDetails(true);
+  };
+
+  const onToggleOne = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const onToggleAllOnPage = (checked: boolean, idsOnPage: string[]) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      idsOnPage.forEach((id) => (checked ? next.add(id) : next.delete(id)));
+      return next;
+    });
+  };
+
+  const markSelectedRead = () => {
+    const ids = Array.from(selected);
+    if (!ids.length) return;
+    markManyRead(ids);
+    setUnreadIds((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => next.delete(id));
+      return next;
+    });
+    setSelected(new Set());
+    toast({ message: "Marked as read", kind: "success" });
+  };
+
+  const deleteSelected = () => {
+    const ids = Array.from(selected);
+    if (!ids.length) return;
+
+    const items = ids
+      .map((id) => AdminRequestsRepo.get(id))
+      .filter(Boolean) as AdminRequest[];
+
+    if (items.length) {
+      TrashRepo.addMany(items.map((it) => ({ ...it, deletedAt: new Date().toISOString() })));
+    }
+
+    const repoAny = AdminRequestsRepo as unknown as {
+      remove?: (id: string) => void;
+      removeMany?: (ids: string[]) => void;
+    };
+    if (repoAny.removeMany) repoAny.removeMany(ids);
+    else if (repoAny.remove) ids.forEach((id) => repoAny.remove!(id));
+
+    setAllRows(AdminRequestsRepo.list().map(toRequestRow));
+    setSelected(new Set());
+    toast({ message: `Moved ${ids.length} to Trash (kept for 30 days)`, kind: "success" });
   };
 
   const summary = useMemo(
@@ -136,87 +227,54 @@ export default function PageInner() {
     [filteredRows]
   );
 
-  // ✅ hydration-safe return
   if (!mounted) return <div />;
 
   return (
     <div className="space-y-4">
-      <div className="admin-sticky-kpi">
-        <div className="space-y-2 pr-2">
-          <RequestsSummaryUI summary={summary} />
-          <div className="flex justify-end">
-            <ViewToggleUI view={view} onChange={setView} />
-          </div>
-        </div>
+      {/* KPI Summary — not sticky anymore */}
+      <div className="space-y-2 pr-2">
+        <RequestsSummaryUI summary={summary} />
       </div>
 
-      <FiltersBarContainer rows={allRows} onFiltered={setFilteredRows}>
-        {(controls) => (
-          <>
-            <RequestsURLSync draft={controls.draft} onDraftChange={controls.onDraftChange} />
+      {/* Toolbar */}
+      <RequestsToolbarUI
+        tableSearch={tableSearch}
+        onTableSearch={setTableSearch}
+        sortDir={sortDir}
+        onSortDirChange={setSortDir}
+        onAddNew={() => toast({ message: "Add New clicked!", kind: "success" })}
+        draft={draft}
+        onDraftChange={handleDraftChange}
+        onApply={applyFilters}
+        onClearAll={clearFilters}
+        selectedCount={selected.size}
+        onDeleteSelected={deleteSelected}
+        /* NEW: bulk mark read */
+        onMarkSelectedRead={markSelectedRead}
+      />
 
-            {view === "table" && (
-              <RequestsTableUI
-                rows={pageRows}
-                tableSearch={tableSearch}
-                onTableSearch={setTableSearch}
-                sortDir={sortDir}
-                onSortDirChange={setSortDir}
-                pagination={pagination}
-                selectedIds={selected}
-                onToggleOne={(id) =>
-                  setSelected((prev) => {
-                    const next = new Set(prev);
-                    next.has(id) ? next.delete(id) : next.add(id);
-                    return next;
-                  })
-                }
-                onToggleAllOnPage={(checked, idsOnPage) =>
-                  selToggleAllOnPage(setSelected, idsOnPage, checked)
-                }
-                onRowClick={openRow}
-                onRowViewDetails={(row) => openRow(row)}
-                onPageChange={(page) => setPagination((p) => ({ ...p, page }))}
-                onPageSizeChange={(pageSize) =>
-                  setPagination((p) => ({ ...p, page: 1, pageSize }))
-                }
-                filterControls={{
-                  draft: controls.draft,
-                  onDraftChange: controls.onDraftChange,
-                  onApply: controls.onApply,
-                  onClearAll: controls.onClearAll,
-                }}
-              />
-            )}
+      {/* Receiver view */}
+      <RequestsReceiverViewUI
+        rows={pageRows}
+        pagination={pagination}
+        onPageChange={(page) => setPagination((p) => ({ ...p, page }))}
+        onRowClick={openRow}
+        selectedIds={selected}
+        onToggleOne={onToggleOne}
+        onToggleAllOnPage={onToggleAllOnPage}
+        unreadIds={unreadIds}
+        /* NEW: single mark read from card */
+        onMarkRead={markOneRead}
+      />
 
-            {view === "card" && (
-              <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
-                <RequestsCardGridUI
-                  rows={pageRows}
-                  pagination={pagination}
-                  onPageChange={(page) => setPagination((p) => ({ ...p, page }))}
-                  selectedIds={selected}
-                  onToggleOne={(id) =>
-                    setSelected((prev) => {
-                      const next = new Set(prev);
-                      next.has(id) ? next.delete(id) : next.add(id);
-                      return next;
-                    })
-                  }
-                  onRowClick={openRow}
-                />
-              </div>
-            )}
-          </>
-        )}
-      </FiltersBarContainer>
-
+      {/* Details Modal */}
       <RequestDetailsModalUI
         open={openDetails}
         onClose={() => setOpenDetails(false)}
         row={activeRow}
       />
 
+      {/* Confirm placeholder */}
       <ConfirmUI
         open={false}
         title="Confirm"

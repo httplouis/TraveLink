@@ -24,7 +24,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       {/* 2-column shell: LeftNav • Main */}
       <div className="tl-shell flex flex-1 overflow-hidden">
-        {/* LeftNav rail – its width is controlled inside AdminLeftNav */}
+        {/* LeftNav rail */}
         <aside className="tl-leftnav shrink-0 overflow-y-auto bg-transparent">
           <AdminLeftNav />
         </aside>

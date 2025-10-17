@@ -1,3 +1,4 @@
+// src/components/admin/layout/AdminLeftNav.tsx
 "use client";
 
 import Link from "next/link";
@@ -18,6 +19,9 @@ import {
   MessageSquare,
   Search,
 } from "lucide-react";
+
+// 🔴 Badge count for "Requests"
+import { useRequestsNavBadge } from "@/components/admin/requests/hooks/useRequestsBadge";
 
 /* ---------- constants ---------- */
 
@@ -46,6 +50,9 @@ const NAV: Item[] = [
 export default function AdminLeftNav() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = React.useState(false);
+
+  // 🔴 new: number for Requests badge
+  const requestsBadge = useRequestsNavBadge();
 
   // Persist collapse state
   React.useEffect(() => {
@@ -106,6 +113,8 @@ export default function AdminLeftNav() {
                 <input
                   placeholder="Search…"
                   className="w-full bg-transparent text-sm outline-none placeholder:text-neutral-400"
+                  autoComplete="off"
+                  suppressHydrationWarning
                 />
               </div>
             </div>
@@ -128,6 +137,9 @@ export default function AdminLeftNav() {
           const active =
             pathname === href ||
             (href !== "/admin" && (pathname ?? "").startsWith(href));
+
+          const isRequests = href === "/admin/requests";
+          const showBadge = isRequests && requestsBadge > 0;
 
           const itemBase = collapsed
             ? "flex items-center justify-center"
@@ -174,7 +186,20 @@ export default function AdminLeftNav() {
                     !collapsed ? "group-hover:text-[#5e1620]" : "",
                   ].join(" ")}
                 />
+
                 {!collapsed && <span className="truncate">{label}</span>}
+
+                {/* 🔴 Requests badge */}
+                {showBadge &&
+                  (!collapsed ? (
+                    <span className="ml-auto inline-flex min-w-[20px] items-center justify-center rounded-full bg-rose-600 px-1.5 text-xs font-medium text-white">
+                      {requestsBadge}
+                    </span>
+                  ) : (
+                    <span className="pointer-events-none absolute -right-1 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-medium leading-none text-white">
+                      {requestsBadge}
+                    </span>
+                  ))}
               </Link>
             </li>
           );
