@@ -1,3 +1,4 @@
+// src/components/common/nav/UserLeftNav.tsx
 "use client";
 
 import Link from "next/link";
@@ -39,7 +40,6 @@ const NAV: Item[] = [
   { type: "link", href: "/user", label: "Dashboard", Icon: LayoutGrid, exact: true },
   { type: "link", href: "/user/schedule", label: "Schedule", Icon: CalendarDays },
 
-  // Always expanded group
   {
     type: "group",
     label: "Request",
@@ -59,7 +59,6 @@ const NAV: Item[] = [
 
 export default function UserLeftNav() {
   const pathname = usePathname() ?? "";
-
   const isActive = (href: string, exact?: boolean) =>
     exact ? pathname === href : pathname === href || pathname.startsWith(href + "/");
 
@@ -86,24 +85,24 @@ export default function UserLeftNav() {
                   active ? "opacity-100" : "opacity-0",
                 ].join(" ")}
               />
-              <item.Icon
-                className={`h-4 w-4 ${active ? "text-[#7a0019]" : "text-neutral-500"}`}
-              />
+              <item.Icon className={`h-4 w-4 ${active ? "text-[#7a0019]" : "text-neutral-500"}`} />
               <span className="font-medium">{item.label}</span>
             </Link>
           );
         }
 
-        // --- Always-expanded group (no toggle) ---
+        // --- Clickable group header → first child (/user/request) ---
         const anyActive = item.children.some((c) => isActive(c.href, c.exact));
+        const firstChild = item.children[0]; // /user/request
         return (
           <div key={`group-${idx}`} className="space-y-1">
-            {/* Group header, non-interactive */}
-            <div
+            <Link
+              href={firstChild.href}
               className={[
-                "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm",
-                anyActive ? "bg-neutral-100 text-[#7a0019]" : "bg-white text-neutral-700",
+                "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
+                anyActive ? "bg-neutral-100 text-[#7a0019]" : "bg-white text-neutral-700 hover:bg-neutral-50",
               ].join(" ")}
+              title="New request"
             >
               <span
                 aria-hidden
@@ -112,11 +111,9 @@ export default function UserLeftNav() {
                   anyActive ? "opacity-100" : "opacity-0",
                 ].join(" ")}
               />
-              <item.Icon
-                className={`h-4 w-4 ${anyActive ? "text-[#7a0019]" : "text-neutral-500"}`}
-              />
+              <item.Icon className={`h-4 w-4 ${anyActive ? "text-[#7a0019]" : "text-neutral-500"}`} />
               <span className="font-medium">Request</span>
-            </div>
+            </Link>
 
             {/* Children shown by default */}
             <div className="space-y-1 pl-8">
@@ -140,11 +137,7 @@ export default function UserLeftNav() {
                         active ? "opacity-100" : "opacity-0",
                       ].join(" ")}
                     />
-                    <c.Icon
-                      className={`h-4 w-4 ${
-                        active ? "text-[#7a0019]" : "text-neutral-500"
-                      }`}
-                    />
+                    <c.Icon className={`h-4 w-4 ${active ? "text-[#7a0019]" : "text-neutral-500"}`} />
                     <span className="font-medium">{c.label}</span>
                   </Link>
                 );

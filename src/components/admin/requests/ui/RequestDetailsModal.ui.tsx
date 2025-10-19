@@ -18,8 +18,8 @@ const VEHICLES = ["Van 01", "Bus 02", "SUV 03"];
 
 /** Peso formatter */
 function peso(n: number | null | undefined) {
-  if (typeof n !== "number" || !isFinite(n)) return "₱0.00";
-  return `₱${n.toLocaleString("en-PH", { maximumFractionDigits: 2 })}`;
+  const num = typeof n === "number" && isFinite(n) ? n : 0;
+  return `₱${num.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 type Props = {
@@ -40,42 +40,96 @@ export default function RequestDetailsModalUI({
   const [driver, setDriver] = React.useState("");
   const [vehicle, setVehicle] = React.useState("");
 
-  // hydrate local assignment state from selected row
+  // -------- Hydrate local assignment state from the selected row (robust over many shapes)
   React.useEffect(() => {
-    setDriver(row?.driver || "");
-    setVehicle(row?.vehicle || "");
+    if (!row) {
+      setDriver("");
+      setVehicle("");
+      return;
+    }
+    const t: any = row.travelOrder ?? {};
+    const drv =
+      row.driver ||
+      t.driver ||
+      t.schoolService?.driverName ||
+      t.schoolService?.driver ||
+      t.selectedDriverName ||
+      t.selectedDriver ||
+      t.assignedDriverName ||
+      t.assignedDriver ||
+      "";
+    const veh =
+      row.vehicle ||
+      t.vehicle ||
+      t.schoolService?.vehicleName ||
+      t.schoolService?.vehicle ||
+      t.selectedVehicleName ||
+      t.selectedVehicle ||
+      t.assignedVehicleName ||
+      t.assignedVehicle ||
+      "";
+    setDriver(drv);
+    setVehicle(veh);
   }, [row]);
 
-  // persist driver/vehicle assignments back to repo
+  // -------- Persist driver/vehicle assignments back to repo when changed
   React.useEffect(() => {
-    if (row?.id && driver !== undefined) {
-      AdminRequestsRepo.setDriver(row.id, driver);
-    }
+    if (row?.id) AdminRequestsRepo.setDriver(row.id, driver);
   }, [driver, row?.id]);
 
   React.useEffect(() => {
-    if (row?.id && vehicle !== undefined) {
-      AdminRequestsRepo.setVehicle(row.id, vehicle);
-    }
+    if (row?.id) AdminRequestsRepo.setVehicle(row.id, vehicle);
   }, [vehicle, row?.id]);
 
-  // compute total cost (supports both number fields and optional array items)
+  // -------- Compute total cost (numbers + optional arrays)
   const totalCost = React.useMemo(() => {
-    const c = row?.travelOrder?.costs;
+    const c: any = row?.travelOrder?.costs;
     if (!c) return 0;
+
     let sum = 0;
-    Object.values(c).forEach((v) => {
-      if (typeof v === "number") sum += v;
-      if (Array.isArray(v)) {
-        v.forEach((item) => {
-          if (item && typeof item.amount === "number") sum += item.amount;
-        });
-      }
+    // add number-like leaf values
+    Object.keys(c).forEach((k) => {
+      const v = c[k];
+      if (typeof v === "number" && isFinite(v)) sum += v;
     });
+    // add otherItems[]
+    if (Array.isArray(c.otherItems)) {
+      c.otherItems.forEach((it: any) => {
+        if (it && typeof it.amount === "number" && isFinite(it.amount)) sum += it.amount;
+      });
+    }
+    // add single otherAmount if present
+    if (c.otherLabel && typeof c.otherAmount === "number" && isFinite(c.otherAmount)) {
+      sum += c.otherAmount;
+    }
     return sum;
   }, [row?.travelOrder?.costs]);
 
   const deptName = row?.travelOrder?.department || "";
+
+  // -------- Build a merged payload for PDF so it always includes current dropdown selections
+  const handlePrintTravelPDF = React.useCallback(() => {
+    if (!row) return;
+    const printable: AdminRequest = {
+      ...row,
+      // put chosen values at top-level
+      driver,
+      vehicle,
+      // and mirror into nested shapes so the PDF resolver will definitely find them
+      travelOrder: {
+        ...row.travelOrder,
+        schoolService: {
+          ...row.travelOrder?.schoolService,
+          driver: driver || row.travelOrder?.schoolService?.driver,
+          driverName: driver || row.travelOrder?.schoolService?.driverName,
+          vehicle: vehicle || row.travelOrder?.schoolService?.vehicle,
+          vehicleName: vehicle || row.travelOrder?.schoolService?.vehicleName,
+        },
+      },
+    } as AdminRequest;
+
+    generateRequestPDF(printable);
+  }, [row, driver, vehicle]);
 
   return (
     <Dialog open={open} onClose={onClose} className="fixed inset-0 z-50 flex items-center justify-center">
@@ -132,42 +186,55 @@ export default function RequestDetailsModalUI({
                     <h4 className="mb-2 text-sm font-semibold text-neutral-700">Estimated Costs</h4>
                     <table className="w-full text-sm border border-neutral-200 rounded">
                       <tbody>
-                        {"food" in row.travelOrder.costs && (
+                        {"food" in row.travelOrder.costs && (row.travelOrder.costs as any).food > 0 && (
                           <tr>
                             <td className="px-2 py-1">Food</td>
-                            <td className="px-2 py-1 text-right">{peso(row.travelOrder.costs.food as any)}</td>
-                          </tr>
-                        )}
-                        {"driversAllowance" in row.travelOrder.costs && (
-                          <tr>
-                            <td className="px-2 py-1">Driver’s allowance</td>
                             <td className="px-2 py-1 text-right">
-                              {peso(row.travelOrder.costs.driversAllowance as any)}
+                              {peso((row.travelOrder.costs as any).food)}
                             </td>
                           </tr>
                         )}
-                        {"rentVehicles" in row.travelOrder.costs && (
-                          <tr>
-                            <td className="px-2 py-1">Rent vehicles</td>
-                            <td className="px-2 py-1 text-right">{peso(row.travelOrder.costs.rentVehicles as any)}</td>
-                          </tr>
-                        )}
-                        {"hiredDrivers" in row.travelOrder.costs && (
-                          <tr>
-                            <td className="px-2 py-1">Hired drivers</td>
-                            <td className="px-2 py-1 text-right">{peso(row.travelOrder.costs.hiredDrivers as any)}</td>
-                          </tr>
-                        )}
-                        {"accommodation" in row.travelOrder.costs && (
-                          <tr>
-                            <td className="px-2 py-1">Accommodation</td>
-                            <td className="px-2 py-1 text-right">{peso(row.travelOrder.costs.accommodation as any)}</td>
-                          </tr>
-                        )}
+                        {"driversAllowance" in row.travelOrder.costs &&
+                          (row.travelOrder.costs as any).driversAllowance > 0 && (
+                            <tr>
+                              <td className="px-2 py-1">Driver’s allowance</td>
+                              <td className="px-2 py-1 text-right">
+                                {peso((row.travelOrder.costs as any).driversAllowance)}
+                              </td>
+                            </tr>
+                          )}
+                        {"rentVehicles" in row.travelOrder.costs &&
+                          (row.travelOrder.costs as any).rentVehicles > 0 && (
+                            <tr>
+                              <td className="px-2 py-1">Rent vehicles</td>
+                              <td className="px-2 py-1 text-right">
+                                {peso((row.travelOrder.costs as any).rentVehicles)}
+                              </td>
+                            </tr>
+                          )}
+                        {"hiredDrivers" in row.travelOrder.costs &&
+                          (row.travelOrder.costs as any).hiredDrivers > 0 && (
+                            <tr>
+                              <td className="px-2 py-1">Hired drivers</td>
+                              <td className="px-2 py-1 text-right">
+                                {peso((row.travelOrder.costs as any).hiredDrivers)}
+                              </td>
+                            </tr>
+                          )}
+                        {"accommodation" in row.travelOrder.costs &&
+                          (row.travelOrder.costs as any).accommodation > 0 && (
+                            <tr>
+                              <td className="px-2 py-1">Accommodation</td>
+                              <td className="px-2 py-1 text-right">
+                                {peso((row.travelOrder.costs as any).accommodation)}
+                              </td>
+                            </tr>
+                          )}
 
                         {"otherLabel" in row.travelOrder.costs &&
                           "otherAmount" in row.travelOrder.costs &&
-                          (row.travelOrder.costs as any).otherLabel && (
+                          (row.travelOrder.costs as any).otherLabel &&
+                          (row.travelOrder.costs as any).otherAmount > 0 && (
                             <tr>
                               <td className="px-2 py-1">{(row.travelOrder.costs as any).otherLabel}</td>
                               <td className="px-2 py-1 text-right">
@@ -178,12 +245,13 @@ export default function RequestDetailsModalUI({
 
                         {Array.isArray((row.travelOrder.costs as any).otherItems) &&
                           (row.travelOrder.costs as any).otherItems.map(
-                            (item: { label: string; amount: number }, i: number) => (
-                              <tr key={i}>
-                                <td className="px-2 py-1">{item.label}</td>
-                                <td className="px-2 py-1 text-right">{peso(item.amount)}</td>
-                              </tr>
-                            )
+                            (item: { label: string; amount: number }, i: number) =>
+                              item?.amount > 0 && (
+                                <tr key={i}>
+                                  <td className="px-2 py-1">{item.label}</td>
+                                  <td className="px-2 py-1 text-right">{peso(item.amount)}</td>
+                                </tr>
+                              )
                           )}
 
                         <tr className="border-t font-semibold">
@@ -205,7 +273,7 @@ export default function RequestDetailsModalUI({
                       <img
                         src={row.travelOrder.endorsedByHeadSignature}
                         alt="Signature"
-                        className="h-16 object-contain -mb-3"  /* pull signature closer to the line (overlap a bit) */
+                        className="h-16 object-contain -mb-3"
                       />
                     ) : (
                       <div className="h-16" />
@@ -219,7 +287,7 @@ export default function RequestDetailsModalUI({
                       {row.travelOrder?.endorsedByHeadName || "—"}
                     </p>
 
-                    {/* role + department (so “Dept. Head, CITE” for example) */}
+                    {/* role + department */}
                     <p className="text-xs text-neutral-500 text-center">
                       Dept. Head{deptName ? `, ${deptName}` : ""}
                     </p>
@@ -279,7 +347,7 @@ export default function RequestDetailsModalUI({
             <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
               <div className="flex gap-2">
                 <button
-                  onClick={() => row && generateRequestPDF(row)}
+                  onClick={handlePrintTravelPDF}
                   className="flex items-center gap-2 rounded-md bg-[#7A0010] hover:bg-[#5c000c] px-4 py-2 text-sm text-white transition"
                 >
                   <FileDown className="h-4 w-4" />
@@ -287,7 +355,7 @@ export default function RequestDetailsModalUI({
                 </button>
                 {row.seminar && (
                   <button
-                    onClick={() => row && generateSeminarPDF(row)}
+                    onClick={() => generateSeminarPDF(row)}
                     className="flex items-center gap-2 rounded-md bg-blue-600 hover:bg-blue-700 px-4 py-2 text-sm text-white transition"
                   >
                     <FileDown className="h-4 w-4" />

@@ -1,8 +1,7 @@
-// src/components/admin/layout/AdminLeftNav.tsx
+// src/components/admin/nav/AdminLeftNav.tsx
 "use client";
 
 import Link from "next/link";
-import CollapseToggle from "@/components/common/CollapseToggle";
 import { usePathname } from "next/navigation";
 import * as React from "react";
 import {
@@ -18,194 +17,235 @@ import {
   Settings,
   MessageSquare,
   Search,
+  ChevronLeft,
+  X,
 } from "lucide-react";
-
-// 🔴 Badge count for "Requests"
 import { useRequestsNavBadge } from "@/components/admin/requests/hooks/useRequestsBadge";
 
-/* ---------- constants ---------- */
-
+/* Brand tokens */
 const BRAND = "#7a1f2a";
-const NAV_W_OPEN = 256;
-const NAV_W_COLLAPSED = 64;
+const BRAND_DARK = "#6A0E17";
+const NAV_W_OPEN = 280;
+const NAV_W_COLLAPSED = 72;
 
-type Item = { href: string; label: string; Icon: React.ComponentType<any> };
+type Item = { href: string; label: string; Icon: React.ComponentType<any>; section?: string };
 
 const NAV: Item[] = [
-  { href: "/admin", label: "Dashboard", Icon: LayoutDashboard },
-  { href: "/admin/requests", label: "Requests", Icon: FileText },
-  { href: "/admin/schedule", label: "Schedule", Icon: CalendarDays },
-  { href: "/admin/drivers", label: "Drivers", Icon: Users },
-  { href: "/admin/vehicles", label: "Vehicles", Icon: Truck },
-  { href: "/admin/maintenance", label: "Maintenance", Icon: Wrench },
-  { href: "/admin/track", label: "Track / Live", Icon: MapPin },
-  { href: "/admin/history", label: "History / Logs", Icon: History },
-  { href: "/admin/report", label: "Reports / Exports", Icon: FileBarChart },
-  { href: "/admin/feedback", label: "Feedback", Icon: MessageSquare },
-  { href: "/admin/settings", label: "Settings", Icon: Settings },
+  { href: "/admin", label: "Dashboard", Icon: LayoutDashboard, section: "CORE" },
+  { href: "/admin/requests", label: "Requests", Icon: FileText, section: "CORE" },
+
+  { href: "/admin/schedule", label: "Schedule", Icon: CalendarDays, section: "MANAGEMENT" },
+  { href: "/admin/drivers", label: "Drivers", Icon: Users, section: "MANAGEMENT" },
+  { href: "/admin/vehicles", label: "Vehicles", Icon: Truck, section: "MANAGEMENT" },
+  { href: "/admin/maintenance", label: "Maintenance", Icon: Wrench, section: "MANAGEMENT" },
+
+  { href: "/admin/track", label: "Track / Live", Icon: MapPin, section: "MONITORING" },
+  { href: "/admin/history", label: "History / Logs", Icon: History, section: "MONITORING" },
+
+  { href: "/admin/report", label: "Reports / Exports", Icon: FileBarChart, section: "ANALYTICS" },
+  { href: "/admin/feedback", label: "Feedback", Icon: MessageSquare, section: "COMMUNICATION" },
+  { href: "/admin/settings", label: "Settings", Icon: Settings, section: "SYSTEM" },
 ];
 
-/* ---------- component ---------- */
+function CollapseToggle({ collapsed, onClick }: { collapsed: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      data-nav-toggle="true"
+      type="button"
+      aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
+      title={collapsed ? "Expand (Ctrl+B)" : "Collapse (Ctrl+B)"}
+      className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/15 text-white transition hover:bg-white/25"
+    >
+      <ChevronLeft className={["h-5 w-5 transition-transform", collapsed ? "rotate-180" : ""].join(" ")} />
+    </button>
+  );
+}
 
 export default function AdminLeftNav() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = React.useState(false);
-
-  // 🔴 new: number for Requests badge
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
   const requestsBadge = useRequestsNavBadge();
 
-  // Persist collapse state
+  /* Init + CSS vars: make sidebar MAROON in both states */
   React.useEffect(() => {
-    const raw = localStorage.getItem("tl.nav.collapsed");
-    if (raw) setCollapsed(raw === "1");
+    const raw = typeof window !== "undefined" ? localStorage.getItem("tl.nav.collapsed") : null;
+    const initial = raw === "1";
+    setCollapsed(initial);
+    applyVars(initial);
   }, []);
+
   React.useEffect(() => {
-    localStorage.setItem("tl.nav.collapsed", collapsed ? "1" : "0");
+    try { localStorage.setItem("tl.nav.collapsed", collapsed ? "1" : "0"); } catch {}
+    applyVars(collapsed);
   }, [collapsed]);
 
-  // Hotkey: Ctrl+B or “[”
+  function applyVars(isCollapsed: boolean) {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    root.style.setProperty("--tl-nav-w", `${isCollapsed ? NAV_W_COLLAPSED : NAV_W_OPEN}px`);
+    // Always maroon gradient (expanded & collapsed)
+    root.style.setProperty("--tl-nav-bg", `linear-gradient(180deg, ${BRAND} 0%, ${BRAND_DARK} 100%)`);
+    root.style.setProperty("--tl-nav-fg", "#ffffff");
+    root.style.setProperty("--tl-nav-border", "transparent");
+    root.style.setProperty("--brand", BRAND);
+  }
+
+  // Hotkeys
   React.useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") { e.preventDefault(); setCollapsed(v => !v); }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        setCollapsed((v) => !v);
+        if (collapsed) setCollapsed(false);
+        setTimeout(() => searchInputRef.current?.focus(), 0);
       }
-      if (!e.ctrlKey && !e.metaKey && e.key === "[") {
-        setCollapsed((v) => !v);
-      }
-    }
+      if (!e.ctrlKey && !e.metaKey && e.key === "[") setCollapsed(v => !v);
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [collapsed]);
 
   function onRootClick(e: React.MouseEvent) {
     if (!collapsed) return;
     const el = e.target as HTMLElement;
-    const hitInteractive =
-      el.closest("[data-nav-link='true']") ||
-      el.closest("[data-nav-toggle='true']");
-    if (!hitInteractive) setCollapsed(false);
+    const hit = el.closest("[data-nav-link='true']") || el.closest("[data-nav-toggle='true']");
+    if (!hit) setCollapsed(false);
   }
 
+  const filtered = searchQuery.trim()
+    ? NAV.filter(i => i.label.toLowerCase().includes(searchQuery.toLowerCase()))
+    : NAV;
+
+  const grouped = React.useMemo(() => {
+    if (collapsed) return { ALL: filtered };
+    const g: Record<string, Item[]> = {};
+    filtered.forEach(i => { (g[i.section || "OTHER"] ||= []).push(i); });
+    return g;
+  }, [filtered, collapsed]);
+
   return (
-    <div
+    <nav
+      role="navigation"
+      aria-label="Admin navigation"
       onClick={onRootClick}
-      style={
-        {
-          width: collapsed ? NAV_W_COLLAPSED : NAV_W_OPEN,
-          background: collapsed ? BRAND : "white",
-        } as React.CSSProperties
-      }
-      className={[
-        "relative h-full select-none border-r border-neutral-200",
-        "overflow-y-auto no-scrollbar",
-        collapsed ? "text-white" : "text-neutral-800",
-      ].join(" ")}
+      className="h-full w-full select-none flex flex-col overflow-hidden text-white"
     >
-      {/* ---------- Top row: Search + Toggle ---------- */}
-      <div className={collapsed ? "px-2 pt-2 pb-1" : "px-3 pt-3 pb-2"}>
+      {/* Top: transparent so gradient shows (expanded & collapsed) */}
+      <div className="sticky top-0 z-20 px-3 pt-3 pb-2 bg-transparent">
         <div className="flex items-center gap-2">
           {!collapsed && (
             <div className="flex-1">
-              <label className="sr-only">Search</label>
-              <div className="flex items-center rounded-lg border border-neutral-300 bg-white px-2 py-1.5 shadow-sm">
-                <Search className="mr-2 h-4 w-4 text-neutral-400" />
+              <div className="relative mb-3">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/75" />
                 <input
-                  placeholder="Search…"
-                  className="w-full bg-transparent text-sm outline-none placeholder:text-neutral-400"
+                  ref={searchInputRef}
+                  placeholder="Search… (⌘K)"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="
+                    w-full rounded-lg border border-white/20 bg-white/10
+                    py-2 pl-9 pr-9 text-sm text-white placeholder-white/70
+                    outline-none backdrop-blur-[2px]
+                    hover:bg-white/12 focus:bg-white/14 focus:ring-1 focus:ring-white/30
+                  "
                   autoComplete="off"
-                  suppressHydrationWarning
                 />
+                {searchQuery && (
+                  <button
+                    onClick={() => { setSearchQuery(""); searchInputRef.current?.focus(); }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-white/80 hover:text-white"
+                    aria-label="Clear search"
+                    type="button"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+              <div className="px-1 text-[10px] font-semibold uppercase tracking-widest text-white/70">
+                TRAVILINK
               </div>
             </div>
           )}
-          <CollapseToggle
-            collapsed={collapsed}
-            onClick={() => setCollapsed((v) => !v)}
-          />
+          <CollapseToggle collapsed={collapsed} onClick={() => setCollapsed(v => !v)} />
         </div>
-        {!collapsed && (
-          <div className="mt-3 px-1 text-[11px] font-semibold tracking-wider text-neutral-500">
-            TRAVILINK
-          </div>
-        )}
       </div>
 
-      {/* ---------- Nav list ---------- */}
-      <ul className="space-y-1 px-2">
-        {NAV.map(({ href, label, Icon }) => {
-          const active =
-            pathname === href ||
-            (href !== "/admin" && (pathname ?? "").startsWith(href));
+      {/* Menu */}
+      <div className="flex-1 overflow-y-auto no-scrollbar px-2 py-4">
+        {Object.entries(grouped).map(([section, items]) => (
+          <div key={section} className={collapsed ? "mb-0" : "mb-6"}>
+            {!collapsed && (
+              <div className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-white/70">
+                {section}
+              </div>
+            )}
 
-          const isRequests = href === "/admin/requests";
-          const showBadge = isRequests && requestsBadge > 0;
+            <ul className="space-y-1">
+              {items.map(({ href, label, Icon }) => {
+                const active = pathname === href || (href !== "/admin" && (pathname ?? "").startsWith(href));
+                const showBadge = href === "/admin/requests" && (requestsBadge ?? 0) > 0;
 
-          const itemBase = collapsed
-            ? "flex items-center justify-center"
-            : "flex items-center gap-3";
+                const base = collapsed
+                  ? "relative flex h-11 w-full items-center justify-center rounded-lg px-0"
+                  : "relative flex items-center gap-3 rounded-lg px-3 py-2.5";
 
-          const activeBg = collapsed ? "bg-white/12" : "bg-neutral-100";
-          const hoverBg = collapsed ? "hover:bg-white/10" : "hover:bg-neutral-50";
+                // On maroon: white hover/active pills
+                const hoverBg = active ? "bg-white/15" : "hover:bg-white/10";
 
-          return (
-            <li key={href}>
-              <Link
-                href={href}
-                data-nav-link="true"
-                title={collapsed ? label : undefined}
-                onClick={(e) => {
-                  if (collapsed) e.stopPropagation();
-                }}
-                className={[
-                  "group relative rounded-lg px-3 py-2 text-sm transition",
-                  itemBase,
-                  active ? activeBg : hoverBg,
-                ].join(" ")}
-                style={{ ["--brand" as any]: BRAND }}
-              >
-                {!collapsed && (
-                  <span
-                    className={[
-                      "pointer-events-none absolute left-0 top-1/2 -translate-y-1/2",
-                      "h-5 w-0.5 rounded",
-                      active
-                        ? "bg-[var(--brand)]"
-                        : "bg-transparent group-hover:bg-neutral-300",
-                    ].join(" ")}
-                  />
-                )}
-                <Icon
-                  className={[
-                    "h-5 w-5 transition-colors",
-                    collapsed
-                      ? "text-white"
-                      : active
-                      ? "text-[var(--brand)]"
-                      : "text-[var(--brand)]",
-                    !collapsed ? "group-hover:text-[#5e1620]" : "",
-                  ].join(" ")}
-                />
+                return (
+                  <li key={href}>
+                    <Link
+                      href={href}
+                      data-nav-link="true"
+                      aria-current={active ? "page" : undefined}
+                      title={collapsed ? label : undefined}
+                      onClick={(e) => { if (collapsed) e.stopPropagation(); }}
+                      className={["group text-sm font-medium transition-colors", base, hoverBg].join(" ")}
+                    >
+                      {/* Left accent (expanded only) */}
+                      {!collapsed && (
+                        <span
+                          className={[
+                            "pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded",
+                            active ? "bg-white" : "bg-transparent group-hover:bg-white/50",
+                          ].join(" ")}
+                        />
+                      )}
 
-                {!collapsed && <span className="truncate">{label}</span>}
+                      {/* Icon */}
+                      <Icon className="h-5 w-5 shrink-0 text-white" />
 
-                {/* 🔴 Requests badge */}
-                {showBadge &&
-                  (!collapsed ? (
-                    <span className="ml-auto inline-flex min-w-[20px] items-center justify-center rounded-full bg-rose-600 px-1.5 text-xs font-medium text-white">
-                      {requestsBadge}
-                    </span>
-                  ) : (
-                    <span className="pointer-events-none absolute -right-1 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-medium leading-none text-white">
-                      {requestsBadge}
-                    </span>
-                  ))}
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-      <div className="h-6" />
-    </div>
+                      {/* Label */}
+                      {!collapsed && (
+                        <span className={["truncate", active ? "font-semibold text-white" : "text-white/90"].join(" ")}>
+                          {label}
+                        </span>
+                      )}
+
+                      {/* Badge */}
+                      {showBadge && !collapsed && (
+                        <span className="ml-auto inline-flex h-5 shrink-0 items-center rounded-full bg-rose-600 px-2 text-xs font-semibold leading-none text-white">
+                          {requestsBadge}
+                        </span>
+                      )}
+                      {showBadge && collapsed && (
+                        <span className="pointer-events-none absolute -right-1 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-semibold leading-none text-white">
+                          {requestsBadge}
+                        </span>
+                      )}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
+
+      <div className="h-2" />
+    </nav>
   );
 }

@@ -15,21 +15,11 @@ import SubmitBar from "@/components/user/request/ui/SubmitBar.ui";
 import { useRequestStore } from "@/store/user/requestStore";
 import { canSubmit } from "@/lib/user/request/validation";
 import { firstReceiver, fullApprovalPath } from "@/lib/user/request/routing";
-import {
-  saveDraft,
-  updateSubmission,
-  getDraft,
-  getSubmission,
-  createSubmission, // ⬅ NEW
-} from "@/lib/user/request/mockApi";
+import { saveDraft, getDraft, getSubmission } from "@/lib/user/request/mockApi";
 import type { RequesterRole } from "@/lib/user/request/types";
+
 import { useToast } from "@/components/common/ui/ToastProvider.ui";
-import {
-  consumeHandoff,
-  loadAutosave,
-  saveAutosave,
-  clearAutosave,
-} from "@/lib/user/request/persist";
+import { consumeHandoff, loadAutosave, saveAutosave, clearAutosave } from "@/lib/user/request/persist";
 import { useConfirm } from "@/components/common/hooks/useConfirm";
 
 import {
@@ -37,7 +27,7 @@ import {
   QuickFillMenu,
 } from "@/components/user/request/dev/QuickFillButton.ui";
 
-// Admin inbox (local repo)
+// Admin list sink (mock inbox)
 import { AdminRequestsRepo } from "@/lib/admin/requests/store";
 
 export default function RequestWizard() {
@@ -52,6 +42,7 @@ export default function RequestWizard() {
     setVehicleMode,
     setRequesterRole,
 
+    // safe nested patchers
     patchTravelOrder,
     patchCosts,
     patchSchoolService,
@@ -72,21 +63,28 @@ export default function RequestWizard() {
   const showSeminar = data.reason === "seminar";
   const showSchoolService = data.vehicleMode === "institutional";
 
-  // Restore: handoff → URL (draft/submission) → autosave
+  // -------- restore on first mount only (guard against StrictMode double run) --------
+  const didHydrateRef = React.useRef(false);
+
   React.useEffect(() => {
+    if (didHydrateRef.current) return;
+    didHydrateRef.current = true;
+
     let did = false;
 
+    // 1) session handoff (edit-from-history)
     const h = consumeHandoff();
     if (h?.data) {
       hardSet(h.data);
       clearIds();
       if (h.from === "draft") setCurrentDraftId(h.id);
       if (h.from === "submission") setCurrentSubmissionId(h.id);
-      toast({ kind: "success", title: "Loaded", message: `Form populated from ${h.from}.` });
+      toast({ kind: "success", title: "Draft loaded", message: "Form populated from draft." });
       did = true;
     }
 
-    const tryUrlFetch = async () => {
+    // 2) URL based restore (fallback)
+    (async () => {
       if (did) return;
 
       const draftId = search?.get("draft") ?? null;
@@ -112,6 +110,7 @@ export default function RequestWizard() {
         }
       }
 
+      // 3) Autosave fallback
       if (!did) {
         const autosaved = loadAutosave();
         if (autosaved) {
@@ -119,9 +118,7 @@ export default function RequestWizard() {
           toast({ kind: "info", title: "Restored", message: "Unsaved form recovered." });
         }
       }
-    };
-
-    tryUrlFetch().catch(() => {
+    })().catch(() => {
       const autosaved = loadAutosave();
       if (autosaved) {
         hardSet(autosaved);
@@ -131,7 +128,7 @@ export default function RequestWizard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Autosave (debounced)
+  // autosave on change (debounced)
   React.useEffect(() => {
     const id = setTimeout(() => saveAutosave(data), 400);
     return () => clearTimeout(id);
@@ -177,7 +174,7 @@ export default function RequestWizard() {
     toast({ kind: "success", title: "Cleared", message: "Form reset." });
   }
 
-  // Pass-through patchers from the store (fresh state inside)
+  // pass patchers (latest state inside store)
   const onChangeTravelOrder = (p: any) => patchTravelOrder(p);
   const onChangeCosts = (p: any) => patchCosts(p);
   const onChangeSchoolService = (p: any) => patchSchoolService(p);
@@ -199,6 +196,7 @@ export default function RequestWizard() {
   function scrollToFirstError(errs: Record<string, string>) {
     const firstKey = Object.keys(errs)[0];
     if (!firstKey) return;
+
     const idMap: Record<string, string> = {
       "travelOrder.date": "to-date",
       "travelOrder.requestingPerson": "to-requester",
@@ -208,7 +206,6 @@ export default function RequestWizard() {
       "travelOrder.returnDate": "to-return",
       "travelOrder.purposeOfTravel": "to-purpose",
       "travelOrder.costs.justification": "to-justification",
-      "travelOrder.endorsedByHeadSignature": "to-signature",
       "schoolService.driver": "ss-driver",
       "schoolService.vehicle": "ss-vehicle",
       "schoolService.vehicleDispatcherDate": "ss-dispatcher-date",
@@ -216,7 +213,9 @@ export default function RequestWizard() {
       "seminar.title": "sem-title",
       "seminar.dateFrom": "sem-dateFrom",
       "seminar.dateTo": "sem-dateTo",
+      "travelOrder.endorsedByHeadSignature": "", // no direct focus target; section is visible
     };
+
     const el = document.getElementById(idMap[firstKey] || "");
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -225,26 +224,31 @@ export default function RequestWizard() {
   }
 
   async function handleSubmit() {
+    // library validation
     const v = canSubmit(data);
-    setErrors(v.errors);
-    if (!v.ok) {
-      scrollToFirstError(v.errors);
+
+    // local extra rule: signature required
+    const extra: Record<string, string> = {};
+    const sig = data?.travelOrder?.endorsedByHeadSignature;
+    if (!sig || typeof sig !== "string" || sig.trim().length < 20) {
+      extra["travelOrder.endorsedByHeadSignature"] = "Endorser signature is required.";
+    }
+
+    const mergedErrors = { ...v.errors, ...extra };
+    setErrors(mergedErrors);
+
+    const ok = v.ok && Object.keys(extra).length === 0;
+    if (!ok) {
+      scrollToFirstError(mergedErrors);
       toast({ kind: "error", title: "Cannot submit", message: "Please complete required fields." });
       return;
     }
+
     setSubmitting(true);
     try {
-      // 1) Add to Admin inbox — keep the id
-      const id = AdminRequestsRepo.acceptFromUser(data);
-
-      // 2) Mirror to user's Submission History with the SAME id
-      await createSubmission(data, id);
-
-      toast({
-        kind: "success",
-        title: "Submitted",
-        message: "Request has been submitted and sent to Admin.",
-      });
+      // push to admin inbox (mock sink)
+      AdminRequestsRepo.acceptFromUser(data);
+      toast({ kind: "success", title: "Submitted", message: "Request has been submitted and sent to Admin." });
       afterSuccessfulSubmitReset();
     } catch {
       toast({ kind: "error", title: "Submit failed", message: "Please try again." });
