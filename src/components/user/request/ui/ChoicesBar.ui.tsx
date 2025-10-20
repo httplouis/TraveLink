@@ -1,15 +1,12 @@
-// components/user/request/ui/ChoicesBar.ui.tsx
 "use client";
 
 import * as React from "react";
-import type { Reason, VehicleMode, RequesterRole } from "@/lib/user/request/types";
-
-const REASONS: { label: string; value: Reason }[] = [
-  { label: "Seminar / Meeting", value: "seminar" },
-  { label: "Educational Trip", value: "educational" },
-  { label: "Competition", value: "competition" },
-  { label: "Visit", value: "visit" },
-];
+import {
+  type Reason,
+  type VehicleMode,
+  type RequesterRole,
+  REASON_OPTIONS,
+} from "@/lib/user/request/types";
 
 const VEHICLES: { label: string; value: VehicleMode }[] = [
   { label: "Institutional vehicle", value: "institutional" },
@@ -44,7 +41,7 @@ export default function ChoicesBar({
         <ChoiceGroup<Reason>
           label="Reason of trip"
           value={value.reason}
-          options={REASONS}
+          options={REASON_OPTIONS}
           columns={1}
           onChange={onReason}
         />
@@ -90,7 +87,7 @@ function ChoiceGroup<T extends string>({
 }: {
   label: string;
   value: T;
-  options: { label: string; value: T; disabled?: boolean; title?: string }[];
+  options: ReadonlyArray<{ label: string; value: T; disabled?: boolean; title?: string }>;
   onChange: (v: T) => void;
   columns?: 1 | 2 | 3;
 }) {
@@ -117,13 +114,10 @@ function ChoiceGroup<T extends string>({
           const state = selected
             ? "border-[#7A0010] bg-[#7A0010]/5 text-[#7A0010] ring-1 ring-[#7A0010]/20"
             : "border-neutral-300 hover:bg-neutral-50";
-        const disabled = opt.disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer";
+          const disabledCls = opt.disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer";
+
           return (
-            <label
-              key={String(opt.value)}
-              className={`${base} ${state} ${disabled}`}
-              title={opt.title}
-            >
+            <label key={String(opt.value)} className={`${base} ${state} ${disabledCls}`} title={opt.title}>
               <input
                 type="radio"
                 className="sr-only"
@@ -140,12 +134,7 @@ function ChoiceGroup<T extends string>({
                   selected ? "border-[#7A0010]" : "border-neutral-400",
                 ].join(" ")}
               >
-                <span
-                  className={[
-                    "h-2.5 w-2.5 rounded-full",
-                    selected ? "bg-[#7A0010]" : "bg-transparent",
-                  ].join(" ")}
-                />
+                <span className={["h-2.5 w-2.5 rounded-full", selected ? "bg-[#7A0010]" : "bg-transparent"].join(" ")} />
               </span>
               <span className="truncate">{opt.label}</span>
             </label>

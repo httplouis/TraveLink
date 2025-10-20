@@ -1,0 +1,2356 @@
+===== RequestWizard.client.tsx =====
+// src/components/user/request/RequestWizard.client.tsx
+"use client";
+
+import * as React from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+
+import ChoicesBar from "@/components/user/request/ui/ChoicesBar.ui";
+import TravelOrderForm from "@/components/user/request/ui/TravelOrderForm.ui";
+import SchoolServiceSection from "@/components/user/request/ui/SchoolServiceSection.ui";
+import SeminarApplicationForm from "@/components/user/request/ui/SeminarApplicationForm.ui";
+import SummarySidebar from "@/components/user/request/ui/SummarySidebar.ui";
+import SubmitBar from "@/components/user/request/ui/SubmitBar.ui";
+import {
+  QuickFillCurrentButton,
+  QuickFillMenu,
+} from "@/components/user/request/dev/QuickFillButton.ui";
+
+
+import { useRequestStore } from "@/store/user/requestStore";
+import { canSubmit } from "@/lib/user/request/validation";
+import { firstReceiver, fullApprovalPath } from "@/lib/user/request/routing";
+import {
+  saveDraft,
+  updateSubmission,
+  getDraft,
+  getSubmission,
+} from "@/lib/user/request/mockApi";
+import type { RequesterRole } from "@/lib/user/request/types";
+import { useToast } from "@/components/common/ui/ToastProvider.ui";
+import {
+  consumeHandoff,
+  loadAutosave,
+  saveAutosave,
+  clearAutosave,
+} from "@/lib/user/request/persist";
+import { useConfirm } from "@/components/common/hooks/useConfirm";
+
+// Admin sink (mock)
+import { AdminRequestsRepo } from "@/lib/admin/requests/store";
+
+export default function RequestWizard() {
+  const search = useSearchParams();
+  const toast = useToast();
+  const { ask, ui: confirmUI } = useConfirm();
+
+  const {
+    data,
+    lockedVehicle,
+    setReason,
+    setVehicleMode,
+    patch,
+    hardSet,
+    currentDraftId,
+    setCurrentDraftId,
+    currentSubmissionId,
+    setCurrentSubmissionId,
+    clearIds,
+  } = useRequestStore();
+
+  const [errors, setErrors] = React.useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+
+  const showSeminar = data.reason === "seminar";
+  const showSchoolService = data.vehicleMode === "institutional";
+
+  // ---------- restore in this order: handoff → URL → autosave ----------
+  // Guard: only restore if form is still effectively empty (prevents clobbering edits/fill-current).
+  function isEffectivelyEmpty(d: typeof data) {
+    const to = d?.travelOrder ?? {};
+    return !(
+      to.date ||
+      to.requestingPerson ||
+      to.department ||
+      to.destination ||
+      to.departureDate ||
+      to.returnDate ||
+      to.purposeOfTravel ||
+      d?.seminar ||
+      d?.schoolService
+    );
+  }
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      if (!isEffectivelyEmpty(data)) return;
+
+      // 1) handoff
+      const h = consumeHandoff();
+      if (!cancelled && h?.data && isEffectivelyEmpty(data)) {
+        hardSet(h.data);
+        clearIds();
+        if (h.from === "draft") setCurrentDraftId(h.id);
+        if (h.from === "submission") setCurrentSubmissionId(h.id);
+        toast({
+          kind: "success",
+          title: "Loaded",
+          message: `Form populated from ${h.from}.`,
+        });
+        return;
+      }
+
+      // 2) URL (draft/submission)
+      if (!cancelled && isEffectivelyEmpty(data)) {
+        const draftId = search?.get("draft") ?? null;
+        const subId = search?.get("submission") ?? null;
+
+        if (draftId) {
+          const d = await getDraft(draftId);
+          if (!cancelled && d?.data && isEffectivelyEmpty(data)) {
+            hardSet(d.data);
+            clearIds();
+            setCurrentDraftId(draftId);
+            toast({
+              kind: "success",
+              title: "Draft loaded",
+              message: "Form populated from draft.",
+            });
+            return;
+          }
+        } else if (subId) {
+          const s = await getSubmission(subId);
+          if (!cancelled && s?.data && isEffectivelyEmpty(data)) {
+            hardSet(s.data);
+            clearIds();
+            setCurrentSubmissionId(subId);
+            toast({
+              kind: "info",
+              title: "Editing submission",
+              message: "Form populated from submission.",
+            });
+            return;
+          }
+        }
+      }
+
+      // 3) autosave
+      if (!cancelled && isEffectivelyEmpty(data)) {
+        const autosaved = loadAutosave();
+        if (autosaved) {
+          hardSet(autosaved);
+          toast({
+            kind: "info",
+            title: "Restored",
+            message: "Unsaved form recovered.",
+          });
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // run once
+
+  // ---------- autosave whenever data changes (debounced) ----------
+  React.useEffect(() => {
+    const id = setTimeout(() => saveAutosave(data), 400);
+    return () => clearTimeout(id);
+  }, [data]);
+
+  function afterSuccessfulSubmitReset() {
+    clearAutosave();
+    hardSet({
+      requesterRole: data.requesterRole,
+      reason: "visit",
+      vehicleMode: "owned",
+      travelOrder: {
+        date: "",
+        requestingPerson: "",
+        department: "",
+        destination: "",
+        departureDate: "",
+        returnDate: "",
+        purposeOfTravel: "",
+        costs: {},
+        endorsedByHeadName: "",
+        endorsedByHeadDate: "",
+        endorsedByHeadSignature: "",
+      },
+      schoolService: undefined,
+      seminar: undefined,
+    });
+    setErrors({});
+    clearIds();
+  }
+
+  async function handleClear() {
+    const yes = await ask(
+      "Clear the form?",
+      "All unsaved values will be removed.",
+      "Clear form",
+      "Keep"
+    );
+    if (!yes) return;
+
+    clearAutosave();
+    hardSet({
+      requesterRole: data.requesterRole,
+      reason: "visit",
+      vehicleMode: "owned",
+      travelOrder: {
+        date: "",
+        requestingPerson: "",
+        department: "",
+        destination: "",
+        departureDate: "",
+        returnDate: "",
+        purposeOfTravel: "",
+        costs: {},
+        endorsedByHeadName: "",
+        endorsedByHeadDate: "",
+        endorsedByHeadSignature: "",
+      },
+      schoolService: undefined,
+      seminar: undefined,
+    });
+    setErrors({});
+    clearIds();
+    toast({ kind: "success", title: "Cleared", message: "Form reset." });
+  }
+
+  function onChangeTravelOrder(p: any) {
+    patch({ travelOrder: { ...data.travelOrder, ...p } as any });
+  }
+  function onChangeCosts(p: any) {
+    patch({
+      travelOrder: {
+        ...data.travelOrder,
+        costs: { ...(data.travelOrder.costs || {}), ...p },
+      } as any,
+    });
+  }
+  function onChangeSchoolService(p: any) {
+    patch({ schoolService: { ...(data.schoolService || {}), ...p } as any });
+  }
+  function onChangeSeminar(p: any) {
+    patch({ seminar: { ...(data.seminar || {}), ...p } as any });
+  }
+
+  async function handleSaveDraft() {
+    setSaving(true);
+    try {
+      const res = await saveDraft(data, currentDraftId || undefined);
+      if (!currentDraftId) setCurrentDraftId(res.id);
+      toast({
+        kind: "success",
+        title: "Draft saved",
+        message: "Your draft has been saved.",
+      });
+    } catch {
+      toast({
+        kind: "error",
+        title: "Save failed",
+        message: "Could not save draft.",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function scrollToFirstError(errs: Record<string, string>) {
+    const firstKey = Object.keys(errs)[0];
+    if (!firstKey) return;
+    const idMap: Record<string, string> = {
+      "travelOrder.date": "to-date",
+      "travelOrder.requestingPerson": "to-requester",
+      "travelOrder.department": "to-department",
+      "travelOrder.destination": "to-destination",
+      "travelOrder.departureDate": "to-departure",
+      "travelOrder.returnDate": "to-return",
+      "travelOrder.purposeOfTravel": "to-purpose",
+      "travelOrder.costs.justification": "to-justification",
+      "schoolService.driver": "ss-driver",
+      "schoolService.vehicle": "ss-vehicle",
+      "schoolService.vehicleDispatcherDate": "ss-dispatcher-date",
+      "seminar.applicationDate": "sem-applicationDate",
+      "seminar.title": "sem-title",
+      "seminar.dateFrom": "sem-dateFrom",
+      "seminar.dateTo": "sem-dateTo",
+    };
+    const el = document.getElementById(idMap[firstKey] || "");
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      (el as HTMLInputElement | HTMLTextAreaElement).focus?.();
+    }
+  }
+
+  async function handleSubmit() {
+    const v = canSubmit(data);
+    setErrors(v.errors);
+    if (!v.ok) {
+      scrollToFirstError(v.errors);
+      toast({
+        kind: "error",
+        title: "Cannot submit",
+        message: "Please complete required fields.",
+      });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      AdminRequestsRepo.acceptFromUser(data);
+      toast({
+        kind: "success",
+        title: "Submitted",
+        message: "Request has been submitted and sent to Admin.",
+      });
+      afterSuccessfulSubmitReset();
+    } catch {
+      toast({
+        kind: "error",
+        title: "Submit failed",
+        message: "Please try again.",
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const firstHop = firstReceiver({
+    requesterRole: data.requesterRole,
+    vehicleMode: data.vehicleMode,
+    reason: data.reason,
+  });
+  const validation = canSubmit(data);
+
+  return (
+    <>
+      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">
+              {currentSubmissionId ? "Edit Submission" : "Request Form"}
+            </h2>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleClear}
+                type="button"
+                className="rounded-xl border border-neutral-300 bg-white px-3 py-1.5 text-sm shadow-sm transition hover:bg-neutral-50 active:scale-[0.99]"
+                title="Clear all fields"
+              >
+                Clear
+              </button>
+              <QuickFillCurrentButton />
+  <QuickFillMenu />
+              {/* dev helpers if you use them */}
+              {/* <QuickFillCurrentButton />
+              <QuickFillMenu /> */}
+              <Link href="/user/drafts" className="text-sm text-neutral-600 underline">
+                View drafts
+              </Link>
+              <Link href="/user/submissions" className="text-sm text-neutral-600 underline">
+                View submissions
+              </Link>
+            </div>
+          </div>
+
+          <ChoicesBar
+            value={{
+              reason: data.reason,
+              vehicleMode: data.vehicleMode,
+              requesterRole: data.requesterRole,
+            }}
+            lockedVehicle={lockedVehicle}
+            onReason={setReason}
+            onVehicle={setVehicleMode}
+            onRequester={(r: RequesterRole) => patch({ requesterRole: r })}
+          />
+
+          <TravelOrderForm
+            data={data.travelOrder}
+            onChange={onChangeTravelOrder}
+            onChangeCosts={onChangeCosts}
+            errors={errors}
+            vehicleMode={data.vehicleMode}
+          />
+
+          {showSchoolService && (
+            <SchoolServiceSection
+              data={data.schoolService}
+              onChange={onChangeSchoolService}
+              errors={errors}
+            />
+          )}
+
+          {showSeminar && (
+            <SeminarApplicationForm
+              data={data.seminar}
+              onChange={onChangeSeminar}
+              errors={errors}
+            />
+          )}
+
+          <SubmitBar
+            invalid={!validation.ok}
+            saving={saving}
+            submitting={submitting}
+            onSaveDraft={handleSaveDraft}
+            onSubmit={handleSubmit}
+          />
+        </div>
+
+        <SummarySidebar
+          data={data}
+          firstHop={firstHop}
+          path={fullApprovalPath({
+            requesterRole: data.requesterRole,
+            vehicleMode: data.vehicleMode,
+          })}
+        />
+      </div>
+
+      {confirmUI}
+    </>
+  );
+}
+
+
+===== dev\QuickFillButton.ui.tsx =====
+// src/components/user/request/dev/QuickFillButton.ui.tsx
+"use client";
+
+import * as React from "react";
+import { useRequestStore } from "@/store/user/requestStore";
+import type {
+  RequestFormData,
+  Reason,
+  VehicleMode,
+  RequesterRole,
+} from "@/lib/user/request/types";
+import { lockVehicle } from "@/lib/user/request/routing";
+import { useToast } from "@/components/common/ui/ToastProvider.ui";
+import { getDepartmentHead } from "@/lib/org/departments";
+
+/** -----------------------------------------------------------
+ * Small helpers
+ * --------------------------------------------------------- */
+const todayISO = () => new Date().toISOString().slice(0, 10);
+const plusDaysISO = (n: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+/** Build a valid, typed form payload given (role, reason, vehicle). */
+function buildFilledData({
+  requesterRole,
+  reason,
+  vehicleMode,
+}: {
+  requesterRole: RequesterRole;
+  reason: Reason;
+  vehicleMode: VehicleMode;
+}): RequestFormData {
+  // Respect vehicle lock (e.g., educational/competition ⇒ institutional)
+  const locked = lockVehicle(reason);
+  const v: VehicleMode = (locked ?? vehicleMode) as VehicleMode;
+
+  // Choose a dept + auto head for nicer demo values
+  const dept = requesterRole === "head" ? "Admin" : "CCMS";
+  const head = requesterRole === "head" ? "" : getDepartmentHead(dept) || "Department Head";
+
+  // Destination / purpose by reason
+  const destination =
+    reason === "seminar"
+      ? "Quezon City"
+      : reason === "educational"
+      ? "Science City of Muñoz"
+      : reason === "competition"
+      ? "Makati City"
+      : reason === "visit"
+      ? "Bulacan"
+      : reason === "official"
+      ? "City of San Fernando, Pampanga"
+      : reason === "ces"
+      ? "Clark Freeport"
+      : "Bulacan";
+
+  const purposeOfTravel =
+    reason === "seminar"
+      ? "Attend the National Research Conference and coordination meeting."
+      : reason === "educational"
+      ? "Educational exposure trip to partner institution and museum."
+      : reason === "competition"
+      ? "Coach and support students in inter-school competition."
+      : reason === "official"
+      ? "Official business with LGU and partner institutions."
+      : reason === "ces"
+      ? "Community extension service activity and coordination."
+      : "Campus visit and coordination with partner school.";
+
+  const travelOrder: RequestFormData["travelOrder"] = {
+    date: todayISO(),
+    requestingPerson: requesterRole === "head" ? "Dr. Jane Head" : "Prof. Juan Dela Cruz",
+    department: dept,
+    destination,
+    departureDate: plusDaysISO(7),
+    returnDate: plusDaysISO(9),
+    purposeOfTravel,
+    costs: {
+      food: 1500,
+      driversAllowance: v === "institutional" ? 1000 : 0,
+      rentVehicles: v === "rent" ? 5000 : 0,
+      hiredDrivers: v === "rent" ? 1500 : 0,
+      accommodation: 3200,
+      otherLabel: "Printing",
+      otherAmount: 400,
+      justification:
+        v === "rent" ? "No institutional vehicle available on requested dates." : undefined,
+    },
+    endorsedByHeadName: head,
+    endorsedByHeadDate: head ? plusDaysISO(1) : "",
+    endorsedByHeadSignature: "", // user will sign in the UI
+  };
+
+  const schoolService: RequestFormData["schoolService"] =
+    v === "institutional"
+      ? {
+          driver: "R. Santos",
+          vehicle: "L300 Van • ABC-1234",
+          vehicleDispatcherSigned: true,
+          vehicleDispatcherDate: plusDaysISO(2),
+        }
+      : undefined;
+
+  const seminar: RequestFormData["seminar"] =
+    reason === "seminar"
+      ? {
+          applicationDate: todayISO(),
+          title: "National Research Conference 2025",
+          dateFrom: plusDaysISO(14),
+          dateTo: plusDaysISO(16),
+          typeOfTraining: ["Workshop", "Paper Presentation"],
+          trainingCategory: "national",
+          sponsor: "CHED",
+          venue: "UP Diliman",
+          venueGeo: null,
+          modality: "Onsite",
+          fees: { registrationFee: 2500, totalAmount: 7200 },
+          breakdown: {
+            registration: 2500,
+            accommodation: 3200,
+            perDiemMealsDriversAllowance: 800,
+            transportFareGasParkingToll: 600,
+            otherLabel: "Materials",
+            otherAmount: 100,
+          },
+          makeUpClassSchedule: "Make-up classes next week, Wed/Thu 3–5 PM.",
+          applicantUndertaking: true,
+          fundReleaseLine: 7200,
+        }
+      : undefined;
+
+  return {
+    requesterRole,
+    reason,
+    vehicleMode: v,
+    travelOrder,
+    schoolService,
+    seminar,
+  };
+}
+
+/** -----------------------------------------------------------
+ * Public exports (buttons)
+ * --------------------------------------------------------- */
+
+/** One-click: fill based on current (reason/vehicle/requester) selections */
+export function QuickFillCurrentButton() {
+  const { data, hardSet, clearIds } = useRequestStore();
+  const toast = useToast();
+
+  function handleClick() {
+    const filled = buildFilledData({
+      requesterRole: data.requesterRole,
+      reason: data.reason,
+      vehicleMode: data.vehicleMode,
+    });
+    // Detach from any draft/submission IDs so the fill doesn't collide with them
+    clearIds?.();
+    hardSet(filled);
+    toast({
+      kind: "success",
+      title: "Form populated",
+      message: "Sample values were added based on your current choices.",
+    });
+  }
+
+  return (
+    <button
+      onClick={handleClick}
+      className="rounded-md border px-3 py-1.5 text-sm hover:bg-neutral-50"
+      title="Dev: auto-fill with sample data"
+      type="button"
+    >
+      ⚡ Fill current
+    </button>
+  );
+}
+
+/** A tiny preset menu with a few handy scenarios */
+export function QuickFillMenu() {
+  const { hardSet, clearIds } = useRequestStore();
+  const toast = useToast();
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (!ref.current) return;
+      if (!ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+
+  function pick(p: PresetKey) {
+    const { requesterRole, reason, vehicleMode } = PRESETS[p];
+    const payload = buildFilledData({ requesterRole, reason, vehicleMode });
+    clearIds?.();
+    hardSet(payload);
+    setOpen(false);
+    toast({
+      kind: "success",
+      title: "Form populated",
+      message: `Preset “${PRESETS[p].label}” loaded.`,
+    });
+  }
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="rounded-md border px-3 py-1.5 text-sm hover:bg-neutral-50"
+        title="Dev: choose a preset and auto-fill"
+        type="button"
+      >
+        ⚡ Fill presets
+      </button>
+
+      {open && (
+        <div className="absolute right-0 z-50 mt-2 w-64 overflow-hidden rounded-xl border bg-white shadow-xl">
+          <ul className="divide-y text-sm">
+            {Object.entries(PRESETS).map(([k, p]) => (
+              <li key={k}>
+                <button
+                  className="block w-full px-3 py-2 text-left hover:bg-neutral-50"
+                  onClick={() => pick(k as PresetKey)}
+                  type="button"
+                >
+                  <div className="font-medium">{p.label}</div>
+                  <div className="text-xs text-neutral-500">{p.desc}</div>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** -----------------------------------------------------------
+ * Presets
+ * --------------------------------------------------------- */
+
+type PresetKey =
+  | "visitOwnedFaculty"
+  | "seminarInstitutionalFaculty"
+  | "headOwnedMeeting"
+  | "educationalTripFaculty"
+  | "officialBusinessOwnedFaculty"
+  | "cesInstitutionalFaculty";
+
+const PRESETS: Record<
+  PresetKey,
+  {
+    label: string;
+    desc: string;
+    requesterRole: RequesterRole;
+    reason: Reason;
+    vehicleMode: VehicleMode;
+  }
+> = {
+  visitOwnedFaculty: {
+    label: "Visit • Owned • Faculty",
+    desc: "No School Service; Dept Head → Comptroller",
+    requesterRole: "faculty",
+    reason: "visit",
+    vehicleMode: "owned",
+  },
+  seminarInstitutionalFaculty: {
+    label: "Seminar • Institutional • Faculty",
+    desc: "Seminar application + School Service; Dept Head → TM",
+    requesterRole: "faculty",
+    reason: "seminar",
+    vehicleMode: "institutional",
+  },
+  headOwnedMeeting: {
+    label: "Head • Meeting • Owned",
+    desc: "Head requester; goes to Comptroller first",
+    requesterRole: "head",
+    reason: "seminar",
+    vehicleMode: "owned",
+  },
+  educationalTripFaculty: {
+    label: "Educational Trip • Institutional",
+    desc: "Vehicle locked to institutional; School Service required",
+    requesterRole: "faculty",
+    reason: "educational",
+    vehicleMode: "institutional",
+  },
+  officialBusinessOwnedFaculty: {
+    label: "Official business • Owned • Faculty",
+    desc: "Simple official business travel",
+    requesterRole: "faculty",
+    reason: "official",
+    vehicleMode: "owned",
+  },
+  cesInstitutionalFaculty: {
+    label: "CES • Institutional • Faculty",
+    desc: "Community extension; School Service required",
+    requesterRole: "faculty",
+    reason: "ces",
+    vehicleMode: "institutional",
+  },
+};
+
+
+===== ui\ChoicesBar.ui.tsx =====
+// components/user/request/ui/ChoicesBar.ui.tsx
+"use client";
+
+import * as React from "react";
+import {
+  type Reason,
+  type VehicleMode,
+  type RequesterRole,
+  REASON_OPTIONS, // unified source of truth (includes Official business & CES)
+} from "@/lib/user/request/types";
+
+const VEHICLES: { label: string; value: VehicleMode }[] = [
+  { label: "Institutional vehicle", value: "institutional" },
+  { label: "Owned vehicle", value: "owned" },
+  { label: "Rent (external)", value: "rent" },
+];
+
+const ROLES: { label: string; value: RequesterRole }[] = [
+  { label: "Faculty", value: "faculty" },
+  { label: "Head", value: "head" },
+  { label: "Org", value: "org" },
+];
+
+type Props = {
+  value: { reason: Reason; vehicleMode: VehicleMode; requesterRole: RequesterRole };
+  lockedVehicle: VehicleMode | null;
+  onReason: (r: Reason) => void;
+  onVehicle: (v: VehicleMode) => void;
+  onRequester: (r: RequesterRole) => void;
+};
+
+export default function ChoicesBar({
+  value,
+  lockedVehicle,
+  onReason,
+  onVehicle,
+  onRequester,
+}: Props) {
+  return (
+    <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+      <div className="grid gap-6 md:grid-cols-3">
+        <ChoiceGroup<Reason>
+          label="Reason of trip"
+          value={value.reason}
+          // REASON_OPTIONS is readonly — ChoiceGroup accepts ReadonlyArray
+          options={REASON_OPTIONS}
+          columns={1}
+          onChange={onReason}
+        />
+
+        <ChoiceGroup<VehicleMode>
+          label="Vehicle"
+          value={value.vehicleMode}
+          options={VEHICLES.map((o) => ({
+            ...o,
+            disabled: lockedVehicle ? o.value !== lockedVehicle : false,
+            title: lockedVehicle && o.value !== lockedVehicle ? "Locked by reason of trip" : "",
+          }))}
+          columns={1}
+          onChange={onVehicle}
+        />
+
+        <ChoiceGroup<RequesterRole>
+          label="Requester"
+          value={value.requesterRole}
+          options={ROLES}
+          columns={1}
+          onChange={onRequester}
+        />
+      </div>
+
+      {lockedVehicle && (
+        <p className="mt-2 text-xs text-neutral-500">
+          Vehicle locked to <b className="text-[#7A0010]">{lockedVehicle}</b> based on reason.
+        </p>
+      )}
+    </section>
+  );
+}
+
+/* ---------- Generic segmented radio group ---------- */
+
+function ChoiceGroup<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+  columns = 1,
+}: {
+  label: string;
+  value: T;
+  // ✅ accept readonly arrays so Object.freeze()d option lists work
+  options: ReadonlyArray<{ label: string; value: T; disabled?: boolean; title?: string }>;
+  onChange: (v: T) => void;
+  columns?: 1 | 2 | 3;
+}) {
+  const groupName = React.useId();
+
+  return (
+    <fieldset className="min-w-0">
+      <legend className="mb-2 text-sm font-medium text-neutral-700">{label}</legend>
+
+      <div
+        className={[
+          "grid gap-2",
+          columns === 1 ? "grid-cols-1" : "",
+          columns === 2 ? "grid-cols-2" : "",
+          columns === 3 ? "grid-cols-3" : "",
+        ].join(" ")}
+        role="radiogroup"
+        aria-label={label}
+      >
+        {options.map((opt) => {
+          const selected = value === opt.value;
+          const base =
+            "inline-flex items-center justify-start gap-2 rounded-xl border px-3 py-2 text-sm transition";
+          const state = selected
+            ? "border-[#7A0010] bg-[#7A0010]/5 text-[#7A0010] ring-1 ring-[#7A0010]/20"
+            : "border-neutral-300 hover:bg-neutral-50";
+          const disabledCls = opt.disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer";
+
+          return (
+            <label key={String(opt.value)} className={`${base} ${state} ${disabledCls}`} title={opt.title}>
+              <input
+                type="radio"
+                className="sr-only"
+                name={groupName}
+                checked={selected}
+                disabled={opt.disabled}
+                onChange={() => onChange(opt.value)}
+                aria-checked={selected}
+              />
+              <span
+                aria-hidden
+                className={[
+                  "grid h-4 w-4 place-items-center rounded-full border",
+                  selected ? "border-[#7A0010]" : "border-neutral-400",
+                ].join(" ")}
+              >
+                <span className={["h-2.5 w-2.5 rounded-full", selected ? "bg-[#7A0010]" : "bg-transparent"].join(" ")} />
+              </span>
+              <span className="truncate">{opt.label}</span>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
+
+
+===== ui\LocationField.ui.tsx =====
+// components/user/request/ui/LocationField.ui.tsx
+"use client";
+
+import * as React from "react";
+import dynamic from "next/dynamic";
+import Modal from "@/components/common/modal/Modal";
+
+// Leaflet picker (client-only)
+const CommonMapPicker = dynamic(
+  () => import("@/components/common/map/MapPicker.ui"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="grid h-full w-full place-items-center text-sm text-neutral-500">
+        Loading map…
+      </div>
+    ),
+  }
+);
+
+type Geo = { lat: number; lng: number; address?: string };
+
+export default function LocationField({
+  label,
+  value,
+  geo,
+  onChange,
+  inputId,
+  placeholder = "Type address or pick on map…",
+}: {
+  label: string;
+  value: string;
+  geo?: Geo | null;
+  onChange: (next: { address: string; geo?: Geo | null }) => void;
+  inputId?: string;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = React.useState(false);
+
+  function handlePicked(p: { address: string; lat: number; lng: number }) {
+    onChange({
+      address: p.address,
+      geo: { lat: p.lat, lng: p.lng, address: p.address },
+    });
+    setOpen(false);
+  }
+
+  return (
+    <label className="grid w-full gap-1">
+      <span className="text-[13px] font-medium text-neutral-700">{label}</span>
+
+      {/* Use explicit tailwind styles so we always get a visible border */}
+      <div className="relative">
+        <input
+          id={inputId}
+          value={value}
+          onChange={(e) => onChange({ address: e.target.value, geo })}
+          placeholder={placeholder}
+          className="
+            h-10 w-full rounded-xl
+            border border-neutral-300 bg-white
+            px-3 pr-12 text-sm
+            outline-none transition
+            focus:border-neutral-400 focus:ring-2 focus:ring-neutral-200
+          "
+        />
+        {/* icon button INSIDE the input; maroon color */}
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-label="Pick on map"
+          className="
+            absolute inset-y-0 right-0 px-2
+            rounded-r-xl
+            text-[#7A0010]
+            hover:bg-neutral-50/70
+            focus:outline-none focus:ring-2 focus:ring-[#7A0010]/30
+          "
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            width="18"
+            height="18"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.75"
+            className="mx-1"
+          >
+            <path d="M12 22s7-5.33 7-12A7 7 0 0 0 5 10c0 6.67 7 12 7 12Z" />
+            <circle cx="12" cy="10" r="2.75" />
+          </svg>
+        </button>
+      </div>
+
+      {geo?.lat != null && geo?.lng != null && (
+        <span className="text-xs text-neutral-500">
+          Selected: {geo.lat.toFixed(5)}, {geo.lng.toFixed(5)}
+        </span>
+      )}
+
+      {/* Use your Modal implementation (no title prop) */}
+      {typeof Modal === "function" ? (
+        <Modal open={open} onClose={() => setOpen(false)}>
+          <div className="h-[65vh] w-full">
+            <CommonMapPicker
+              open
+              onClose={() => setOpen(false)}
+              onPick={handlePicked}
+              initial={
+                geo?.lat != null && geo?.lng != null
+                  ? { lat: geo.lat, lng: geo.lng, address: geo.address ?? value }
+                  : null
+              }
+            />
+          </div>
+        </Modal>
+      ) : null}
+    </label>
+  );
+}
+
+
+===== ui\SchoolServiceSection.ui.tsx =====
+// src/components/user/request/ui/SchoolServiceSection.ui.tsx
+"use client";
+
+import * as React from "react";
+import { TextInput, DateInput } from "@/components/user/request/ui/controls";
+
+export default function SchoolServiceSection({
+  data,
+  onChange,
+  errors,
+}: {
+  data: any;
+  onChange: (patch: any) => void;
+  errors: Record<string, string>;
+}) {
+  return (
+    <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-lg font-semibold">School Service Request</h3>
+        <span className="text-xs text-neutral-500">Required fields marked with *</span>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <TextInput
+          id="ss-driver"
+          label="Driver"
+          required
+          placeholder="Assigned driver’s full name"
+          value={data?.driver ?? ""}
+          onChange={(e) => onChange({ driver: e.target.value })}
+          error={errors["schoolService.driver"]}
+        />
+
+        <TextInput
+          id="ss-vehicle"
+          label="Vehicle"
+          required
+          placeholder="e.g., L300 Van • ABC-1234"
+          value={data?.vehicle ?? ""}
+          onChange={(e) => onChange({ vehicle: e.target.value })}
+          error={errors["schoolService.vehicle"]}
+        />
+
+        {/* Dispatcher sign-off */}
+        <label className="col-span-full flex items-start gap-3 rounded-xl border border-neutral-200 p-3">
+          <input
+            type="checkbox"
+            className="mt-1 h-4 w-4"
+            checked={!!data?.vehicleDispatcherSigned}
+            onChange={(e) => onChange({ vehicleDispatcherSigned: e.target.checked })}
+          />
+          <div className="grid">
+            <span className="text-sm font-medium text-neutral-800">
+              Vehicle Dispatcher signature (Trizzia Maree Z. Casino)
+            </span>
+            <span className="text-xs text-neutral-500">
+              Check this once the dispatcher has reviewed and signed.
+            </span>
+          </div>
+        </label>
+
+        <DateInput
+          id="ss-dispatcher-date"
+          label="Dispatcher date"
+          required
+          value={data?.vehicleDispatcherDate ?? ""}
+          onChange={(e) => onChange({ vehicleDispatcherDate: e.target.value })}
+          error={errors["schoolService.vehicleDispatcherDate"]}
+          helper="Date when the dispatcher signed."
+        />
+      </div>
+    </section>
+  );
+}
+
+
+===== ui\SeminarApplicationForm.ui.tsx =====
+// src/components/user/request/ui/SeminarApplicationForm.ui.tsx
+"use client";
+
+import * as React from "react";
+import {
+  TextInput,
+  DateInput,
+  TextArea,
+  CurrencyInput,
+} from "@/components/user/request/ui/controls";
+import LocationField from "@/components/user/request/ui/LocationField.ui";
+import DepartmentSelect from "@/components/common/inputs/DepartmentSelect.ui";
+import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
+
+const MODALITY_OPTIONS = ["Onsite", "Online", "Hybrid"] as const;
+const TRAINING_TYPES = ["Compliance", "Professional Development"] as const;
+
+type Errors = Record<string, string>;
+
+function asNum(v: string): number | null {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function computeDays(from?: string, to?: string): number | null {
+  if (!from || !to) return null;
+  const a = new Date(from);
+  const b = new Date(to);
+  if (Number.isNaN(a.valueOf()) || Number.isNaN(b.valueOf())) return null;
+  // inclusive day count (ignores time components)
+  const ms =
+    Date.UTC(b.getFullYear(), b.getMonth(), b.getDate()) -
+    Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());
+  const diff = Math.floor(ms / 86400000) + 1;
+  return diff >= 1 ? diff : null;
+}
+
+export default function SeminarApplicationForm({
+  data,
+  onChange,
+  errors,
+}: {
+  data: any;
+  onChange: (patch: any) => void;
+  errors: Errors;
+}) {
+  const selectedType =
+    (data?.typeOfTraining?.[0] as (typeof TRAINING_TYPES)[number]) ?? "";
+
+  return (
+    <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-lg font-semibold">Seminar Application</h3>
+        <span className="text-xs text-neutral-500">Required fields marked with *</span>
+      </div>
+
+      {/* Basics */}
+      <div className="grid gap-4 md:grid-cols-2">
+        <DateInput
+          id="sem-applicationDate"
+          label="Application date"
+          required
+          value={data?.applicationDate || ""}
+          onChange={(e) =>
+            onChange({ applicationDate: (e.target as HTMLInputElement).value })
+          }
+          error={errors["seminar.applicationDate"]}
+        />
+
+        <TextInput
+          id="sem-title"
+          label="Seminar / Training / Workshop / Conference (full title)"
+          required
+          placeholder="e.g., National Research Conference 2025"
+          value={data?.title || ""}
+          onChange={(e) => onChange({ title: e.target.value })}
+          error={errors["seminar.title"]}
+        />
+
+        <DateInput
+          id="sem-dateFrom"
+          label="Date from"
+          required
+          value={data?.dateFrom || ""}
+          onChange={(e) => {
+            const dateFrom = (e.target as HTMLInputElement).value;
+            onChange({ dateFrom, days: computeDays(dateFrom, data?.dateTo ?? "") });
+          }}
+          error={errors["seminar.dateFrom"]}
+        />
+
+        <div className="grid gap-2 md:grid-cols-[1fr_140px]">
+          <DateInput
+            id="sem-dateTo"
+            label="Date to"
+            required
+            value={data?.dateTo || ""}
+            onChange={(e) => {
+              const dateTo = (e.target as HTMLInputElement).value;
+              onChange({ dateTo, days: computeDays(data?.dateFrom ?? "", dateTo) });
+            }}
+            error={errors["seminar.dateTo"]}
+          />
+          {/* read-only days */}
+          <div className="grid gap-1">
+            <span className="text-[13px] font-medium text-neutral-700">No. of Day/s</span>
+            <input
+              id="sem-days"
+              value={data?.days ?? ""}
+              readOnly
+              className="h-10 w-full rounded-xl border border-neutral-300 bg-neutral-50 px-3 text-sm text-neutral-700"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Type + category */}
+      <div className="mt-3 grid gap-4 md:grid-cols-2">
+        {/* Type of Training */}
+        <fieldset className="rounded-xl border border-neutral-200 p-3">
+          <legend className="px-1 text-[13px] font-medium text-neutral-700">
+            Type of Training
+          </legend>
+          <div className="mt-1 grid gap-2 sm:grid-cols-2">
+            {TRAINING_TYPES.map((t) => (
+              <label key={t} className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="trainingType"
+                  value={t}
+                  checked={selectedType === t}
+                  onChange={() => onChange({ typeOfTraining: [t] })}
+                />
+                <span className="text-sm">{t}</span>
+              </label>
+            ))}
+          </div>
+          {errors["seminar.typeOfTraining"] && (
+            <div className="mt-1 text-xs text-red-600">
+              {errors["seminar.typeOfTraining"]}
+            </div>
+          )}
+        </fieldset>
+
+        {/* Training category */}
+        <label className="grid w-full gap-1">
+          <span className="text-[13px] font-medium text-neutral-700">Training category</span>
+          <select
+            className="h-10 w-full rounded-xl border border-neutral-300 bg-white px-3 text-sm outline-none focus:border-neutral-400 focus:ring-2 focus:ring-neutral-200"
+            value={data?.trainingCategory || ""}
+            onChange={(e) => onChange({ trainingCategory: e.target.value })}
+          >
+            <option value="">Select…</option>
+            <option value="local">Local</option>
+            <option value="regional">Regional</option>
+            <option value="national">National</option>
+            <option value="international">International</option>
+          </select>
+        </label>
+      </div>
+
+      {/* Provider / Venue / Modality */}
+      <div className="mt-3 grid gap-4 md:grid-cols-3">
+        <TextInput
+          label="Sponsor / Provider"
+          placeholder="Organization / Agency"
+          value={data?.sponsor || ""}
+          onChange={(e) => onChange({ sponsor: e.target.value })}
+        />
+
+        <LocationField
+          label="Venue"
+          value={data?.venue || ""}
+          geo={data?.venueGeo || null}
+          onChange={({ address, geo }) =>
+            onChange({ venue: address, venueGeo: geo ?? null })
+          }
+          inputId="sem-venue"
+          placeholder="Type address or pick on map"
+        />
+
+        <label className="grid gap-1">
+          <span className="text-[13px] font-medium text-neutral-700">Modality</span>
+          <select
+            className="h-10 w-full rounded-xl border border-neutral-300 bg-white px-3 text-sm outline-none focus:border-neutral-400 focus:ring-2 focus:ring-neutral-200"
+            value={data?.modality || ""}
+            onChange={(e) => onChange({ modality: e.target.value })}
+          >
+            <option value="">Select…</option>
+            {MODALITY_OPTIONS.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+          {errors["seminar.modality"] && (
+            <span className="text-xs text-red-600">{errors["seminar.modality"]}</span>
+          )}
+        </label>
+      </div>
+
+      {/* Fees summary */}
+      <div className="mt-4 grid gap-4 md:grid-cols-2">
+        <CurrencyInput
+          label="Registration cost"
+          placeholder="0.00"
+          value={data?.registrationCost ?? ""}
+          onChange={(e) =>
+            onChange({
+              registrationCost: asNum(e.target.value),
+            })
+          }
+        />
+        <CurrencyInput
+          label="Total amount of expenses"
+          placeholder="0.00"
+          value={data?.totalAmount ?? ""}
+          onChange={(e) => onChange({ totalAmount: asNum(e.target.value) })}
+        />
+      </div>
+
+      {/* Breakdown list */}
+      <BreakdownEditor
+        items={Array.isArray(data?.breakdown) ? data.breakdown : []}
+        onChange={(items) => onChange({ breakdown: items })}
+      />
+
+      {/* Applicants (multi) */}
+      <ApplicantsEditor
+        list={Array.isArray(data?.applicants) ? data.applicants : []}
+        onChange={(list) => onChange({ applicants: list })}
+      />
+
+      {/* Others */}
+      <div className="mt-4 grid gap-4 md:grid-cols-2">
+        <TextArea
+          label="Make-up Class Schedule (for faculty)"
+          placeholder="If faculty, indicate proposed make-up classes"
+          value={data?.makeUpClassSchedule || ""}
+          onChange={(e) => onChange({ makeUpClassSchedule: e.target.value })}
+        />
+
+        <label className="grid gap-1">
+          <span className="text-[13px] font-medium text-neutral-700">
+            Applicant’s Undertaking
+          </span>
+          <label className="flex items-center gap-2 rounded-xl border border-neutral-200 p-3">
+            <input
+              type="checkbox"
+              className="h-4 w-4"
+              checked={!!data?.applicantUndertaking}
+              onChange={(e) => onChange({ applicantUndertaking: e.target.checked })}
+            />
+            <span className="text-sm text-neutral-700">I agree to the undertaking terms.</span>
+          </label>
+        </label>
+      </div>
+
+      <div className="mt-4">
+        <CurrencyInput
+          label="Fund release line"
+          placeholder="0.00"
+          value={data?.fundReleaseLine ?? ""}
+          onChange={(e) => onChange({ fundReleaseLine: asNum(e.target.value) })}
+        />
+      </div>
+    </section>
+  );
+}
+
+function BreakdownEditor({
+  items,
+  onChange,
+}: {
+  items: { label: string; amount: number | null }[];
+  onChange: (items: { label: string; amount: number | null }[]) => void;
+}) {
+  function setItem(i: number, patch: Partial<{ label: string; amount: number | null }>) {
+    const next = [...items];
+    next[i] = { ...next[i], ...patch };
+    onChange(next);
+  }
+  function add() {
+    onChange([...(items || []), { label: "", amount: null }]);
+  }
+  function remove(i: number) {
+    const next = [...items];
+    next.splice(i, 1);
+    onChange(next);
+  }
+  return (
+    <div className="mt-4 rounded-xl border border-neutral-200 p-3">
+      <div className="mb-2 text-sm font-semibold">Breakdown of Expenses</div>
+      <div className="grid gap-3">
+        {items?.length ? null : <div className="text-xs text-neutral-500">No items yet.</div>}
+
+        {items?.map((it, i) => (
+          <div key={i} className="grid grid-cols-[1fr_160px_32px] items-end gap-2">
+            <TextInput
+              label={i === 0 ? "Label" : ""}
+              placeholder="e.g., Accommodation / Transport / Materials"
+              value={it.label}
+              onChange={(e) => setItem(i, { label: e.target.value })}
+            />
+            <CurrencyInput
+              label={i === 0 ? "Amount" : ""}
+              placeholder="0.00"
+              value={it.amount ?? ""}
+              onChange={(e) => setItem(i, { amount: asNum(e.target.value) })}
+            />
+            <button
+              type="button"
+              onClick={() => remove(i)}
+              className="mb-2 h-10 rounded-lg border border-neutral-300 text-sm"
+              aria-label="Remove row"
+              title="Remove"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+
+        <div>
+          <button type="button" onClick={add} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm">
+            + Add item
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ApplicantsEditor({
+  list,
+  onChange,
+}: {
+  list: Array<{ name: string; department: string; availableFdp?: number | null; signature?: string | null }>;
+  onChange: (list: Array<{ name: string; department: string; availableFdp?: number | null; signature?: string | null }>) => void;
+}) {
+  function setRow(i: number, patch: Partial<{ name: string; department: string; availableFdp?: number | null; signature?: string | null }>) {
+    const next = [...list];
+    next[i] = { ...next[i], ...patch };
+    onChange(next);
+  }
+  function add() {
+    onChange([...(list || []), { name: "", department: "", availableFdp: null, signature: null }]);
+  }
+  function remove(i: number) {
+    const next = [...list];
+    next.splice(i, 1);
+    onChange(next);
+  }
+
+  return (
+    <div className="mt-6 rounded-xl border border-neutral-200 p-3">
+      <div className="mb-2 text-sm font-semibold">Applicants</div>
+      <div className="grid gap-3">
+        {list?.length ? null : <div className="text-xs text-neutral-500">No applicants yet.</div>}
+        {list?.map((row, i) => (
+          <div key={i} className="grid gap-2 md:grid-cols-[1.1fr_1fr_160px]">
+            <TextInput
+              label={i === 0 ? "Name" : ""}
+              placeholder="Full name"
+              value={row.name}
+              onChange={(e) => setRow(i, { name: e.target.value })}
+            />
+            {/* Department with searchable select */}
+            <div className="grid gap-1">
+              <DepartmentSelect
+                id={`app-dept-${i}`}
+                label={i === 0 ? "Department / Office" : ""}
+                value={row.department}
+                placeholder="e.g., CCMS"
+                onChange={(dept) => setRow(i, { department: dept })}
+              />
+            </div>
+            <TextInput
+              label={i === 0 ? "Available FDP" : ""}
+              placeholder="e.g., 12"
+              value={row.availableFdp ?? ""}
+              onChange={(e) => setRow(i, { availableFdp: asNum(e.target.value) })}
+            />
+
+            <div className="md:col-span-3 flex items-center gap-2">
+              <SignatureInline
+                value={row.signature || null}
+                onChange={(sig) => setRow(i, { signature: sig })}
+              />
+              <button
+                type="button"
+                className="rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+                onClick={() => remove(i)}
+                title="Remove applicant"
+              >
+                Remove
+              </button>
+            </div>
+
+            <hr className="md:col-span-3 mt-1 border-neutral-200" />
+          </div>
+        ))}
+        <div>
+          <button
+            type="button"
+            onClick={add}
+            className="rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+          >
+            + Add applicant
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SignatureInline({
+  value,
+  onChange,
+}: {
+  value: string | null;
+  onChange: (dataUrl: string | null) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [dirty, setDirty] = React.useState(false);
+
+  return (
+    <div className="flex items-center gap-3">
+      <div className="text-sm font-medium">Signature:</div>
+      {value ? (
+        <img
+          src={value}
+          alt="Signature"
+          className="h-10 rounded border border-neutral-300 bg-white"
+        />
+      ) : (
+        <span className="text-xs text-neutral-500">None</span>
+      )}
+      <button
+        type="button"
+        className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm"
+        onClick={() => setOpen(true)}
+      >
+        Capture
+      </button>
+      {value && (
+        <button
+          type="button"
+          className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm"
+          onClick={() => onChange(null)}
+        >
+          Clear
+        </button>
+      )}
+
+      {open && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
+          <div className="w-full max-w-2xl rounded-2xl bg-white p-4 shadow-xl">
+            <div className="mb-2 text-sm font-semibold">Sign here</div>
+            <SignaturePad
+              height={220}
+              value={value}
+              onDraw={() => setDirty(true)}
+              onSave={(dataUrl) => {
+                onChange(dataUrl);
+                setDirty(false);
+                setOpen(false);
+              }}
+              onClear={() => {
+                onChange(null);
+                setDirty(false);
+              }}
+              onUpload={async (file) => {
+                const buf = await file.arrayBuffer();
+                const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+                onChange(`data:${file.type};base64,${b64}`);
+                setDirty(false);
+                setOpen(false);
+              }}
+              saveDisabled={!dirty}
+            />
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                className="rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+                onClick={() => setOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+===== ui\SubmitBar.ui.tsx =====
+"use client";
+
+export default function SubmitBar({
+  invalid,
+  saving,
+  submitting,
+  onSaveDraft,
+  onSubmit,
+}: {
+  invalid: boolean;
+  saving: boolean;
+  submitting: boolean;
+  onSaveDraft: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <div className="sticky bottom-3 z-30 mt-2 flex items-center gap-2">
+      <button
+        onClick={onSaveDraft}
+        disabled={saving}
+        className="rounded-xl border border-neutral-300 bg-white px-4 py-2 text-sm shadow-sm hover:bg-neutral-50 disabled:opacity-50"
+      >
+        {saving ? "Saving…" : "Save draft"}
+      </button>
+
+      <button
+        onClick={onSubmit}
+        disabled={submitting}
+        className="rounded-xl bg-[#7A0010] px-4 py-2 text-sm text-white shadow-sm hover:opacity-95 disabled:opacity-50"
+      >
+        {submitting ? "Submitting…" : "Submit"}
+      </button>
+
+      {invalid && (
+        <span className="text-xs text-neutral-500">Review the highlighted fields.</span>
+      )}
+
+      
+    </div>
+  );
+}
+
+
+===== ui\SummarySidebar.ui.tsx =====
+// components/user/request/ui/SummarySidebar.ui.tsx
+"use client";
+
+import * as React from "react";
+import type { RequestFormData } from "@/lib/user/request/types";
+
+export default function SummarySidebar({
+  data,
+  firstHop,
+  path,
+}: {
+  data: RequestFormData;
+  firstHop: string;
+  path: string[];
+}) {
+  const usedInstitutional = data.vehicleMode === "institutional";
+
+  return (
+    <aside className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+      {/* Routing */}
+      <section>
+        <div className="mb-2 flex items-center justify-between">
+          <h4 className="text-sm font-semibold">Routing Preview</h4>
+          <Badge tone="info">{usedInstitutional ? "With TM" : "Budget first"}</Badge>
+        </div>
+
+        <div className="text-xs text-neutral-600">First receiver</div>
+        <div className="mt-0.5 text-sm font-medium">{pretty(firstHop)}</div>
+
+        <div className="mt-2 text-xs text-neutral-600">Full path</div>
+        <Stepper steps={path} />
+      </section>
+
+      {/* Selections */}
+      <section className="mt-6">
+        <h4 className="text-sm font-semibold">Current Choices</h4>
+        <dl className="mt-2 space-y-1 text-sm">
+          <Row name="Requester" value={titleCase(data.requesterRole)} />
+          <Row name="Reason" value={reasonLabel(data.reason)} />
+          <Row name="Vehicle" value={vehicleLabel(data.vehicleMode)} />
+        </dl>
+        {data.reason === "seminar" && (
+          <div className="mt-2">
+            <Badge tone="neutral" className="mr-2">Seminar application required</Badge>
+          </div>
+        )}
+      </section>
+
+      {/* Travel snapshot */}
+      <section className="mt-6">
+        <h4 className="text-sm font-semibold">Travel Snapshot</h4>
+        <dl className="mt-2 space-y-1 text-sm">
+          <Row name="Destination" value={data.travelOrder?.destination || "—"} />
+          <Row name="Dates" value={dateRange(data.travelOrder?.departureDate, data.travelOrder?.returnDate)} />
+          <Row name="Requester" value={data.travelOrder?.requestingPerson || "—"} />
+          <Row name="Department" value={data.travelOrder?.department || "—"} />
+        </dl>
+      </section>
+
+      {/* Fixed approvers */}
+      <section className="mt-6">
+        <div className="mb-1 text-xs text-neutral-600">Approvers (fixed)</div>
+        <ul className="list-inside list-disc text-sm text-neutral-800">
+          <li>Comptroller</li>
+          <li>HRD</li>
+          <li>VP/COO</li>
+          <li className={usedInstitutional ? "opacity-100" : "opacity-60"}>
+            TM close-out <span className="text-xs text-neutral-500">(if institutional)</span>
+          </li>
+        </ul>
+      </section>
+    </aside>
+  );
+}
+
+/* ---------- UI bits ---------- */
+
+function Row({ name, value }: { name: string; value: React.ReactNode }) {
+  return (
+    <div className="grid grid-cols-[110px_1fr] items-start gap-2">
+      <div className="text-[11px] uppercase tracking-wide text-neutral-500">{name}</div>
+      <div className="text-sm text-neutral-900">{value}</div>
+    </div>
+  );
+}
+
+function Stepper({ steps }: { steps: string[] }) {
+  return (
+    <ol className="mt-1 space-y-1">
+      {steps.map((s, i) => (
+        <li key={`${s}-${i}`} className="flex items-start gap-2">
+          <span
+            className={[
+              "mt-[2px] inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px]",
+              i === 0
+                ? "bg-[#7A0010] text-white"
+                : "bg-neutral-200 text-neutral-700",
+            ].join(" ")}
+            aria-hidden
+          >
+            {i + 1}
+          </span>
+          <span className="text-sm">{pretty(s)}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function Badge({
+  children,
+  tone = "neutral",
+  className = "",
+}: React.PropsWithChildren<{ tone?: "neutral" | "info" | "success" | "warn" | "danger"; className?: string }>) {
+  const tones: Record<string, string> = {
+    neutral: "bg-neutral-100 text-neutral-800",
+    info: "bg-blue-100 text-blue-800",
+    success: "bg-emerald-100 text-emerald-800",
+    warn: "bg-amber-100 text-amber-900",
+    danger: "bg-rose-100 text-rose-800",
+  };
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-xs ${tones[tone]} ${className}`}>
+      {children}
+    </span>
+  );
+}
+
+/* ---------- helpers ---------- */
+
+function pretty(s: string) {
+  // small prettifier for enum-ish codes like "OSAS_ADMIN" → "OSAS Admin"
+  return s
+    .replace(/_/g, " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function titleCase(s: string) {
+  return s.replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function reasonLabel(r: RequestFormData["reason"]) {
+  switch (r) {
+    case "seminar":
+      return "Seminar / Meeting";
+    case "educational":
+      return "Educational Trip";
+    case "competition":
+      return "Competition";
+    case "visit":
+    default:
+      return "Visit";
+  }
+}
+
+function vehicleLabel(v: RequestFormData["vehicleMode"]) {
+  switch (v) {
+    case "institutional":
+      return "Institutional vehicle";
+    case "owned":
+      return "Owned vehicle";
+    case "rent":
+      return "Rent (external)";
+    default:
+      return titleCase(v as string);
+  }
+}
+
+function dateRange(from?: string, to?: string) {
+  if (!from && !to) return "—";
+  if (from && !to) return new Date(from).toLocaleDateString();
+  if (!from && to) return new Date(to).toLocaleDateString();
+  try {
+    const a = new Date(from as string).toLocaleDateString();
+    const b = new Date(to as string).toLocaleDateString();
+    return `${a} → ${b}`;
+  } catch {
+    return `${from || "—"} → ${to || "—"}`;
+  }
+}
+
+
+===== ui\TravelOrderForm.ui.tsx =====
+// src/components/user/request/ui/TravelOrderForm.ui.tsx
+"use client";
+
+import * as React from "react";
+import type { VehicleMode } from "@/lib/user/request/types";
+import {
+  TextInput,
+  DateInput,
+  TextArea,
+  CurrencyInput,
+} from "@/components/user/request/ui/controls";
+import LocationField from "@/components/user/request/ui/LocationField.ui";
+
+// Department input & helpers
+import DepartmentSelect from "@/components/common/inputs/DepartmentSelect.ui";
+import { getDepartmentHead } from "@/lib/org/departments";
+
+// Signature pad
+import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
+
+function asNum(v: string): number | null {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+type Props = {
+  data: any;
+  onChange: (patch: any) => void;
+  onChangeCosts: (patch: any) => void;
+  errors: Record<string, string>;
+  vehicleMode: VehicleMode;
+};
+
+export default function TravelOrderForm({
+  data,
+  onChange,
+  onChangeCosts,
+  errors,
+  vehicleMode,
+}: Props) {
+  const c = data?.costs || {};
+  const needsJustif =
+    vehicleMode === "rent" ||
+    Number(c.rentVehicles || 0) > 0 ||
+    Number(c.hiredDrivers || 0) > 0;
+
+  // If user types a head name manually, don’t auto-overwrite next time
+  const headEditedRef = React.useRef(false);
+
+  // Signature UI state
+  const [sigDirty, setSigDirty] = React.useState(false);
+  const [sigSaved, setSigSaved] = React.useState<boolean>(
+    !!data?.endorsedByHeadSignature
+  );
+  const [sigSavedAt, setSigSavedAt] = React.useState<string | null>(
+    data?.endorsedByHeadSignature ? new Date().toLocaleString() : null
+  );
+
+  // ✅ Keep badge in sync with store updates (autosave, fill current, load draft, etc.)
+  React.useEffect(() => {
+    const has = !!data?.endorsedByHeadSignature;
+    setSigSaved(has);
+    if (has) setSigSavedAt(new Date().toLocaleString());
+  }, [data?.endorsedByHeadSignature]);
+
+  return (
+    <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-lg font-semibold">Travel Order</h3>
+        <span className="text-xs text-neutral-500">
+          Required fields marked with *
+        </span>
+      </div>
+
+      {/* Top grid */}
+      <div className="grid gap-4 md:grid-cols-2">
+        <DateInput
+          id="to-date"
+          label="Date"
+          required
+          value={data.date}
+          onChange={(e) => onChange({ date: e.target.value })}
+          error={errors["travelOrder.date"]}
+          helper="Select the date this request is created."
+        />
+
+        <TextInput
+          id="to-requester"
+          label="Requesting person"
+          required
+          placeholder="Juan Dela Cruz"
+          value={data.requestingPerson}
+          onChange={(e) => onChange({ requestingPerson: e.target.value })}
+          error={errors["travelOrder.requestingPerson"]}
+        />
+
+        {/* Department / Office (searchable) */}
+        <div className="grid gap-1">
+          <DepartmentSelect
+            id="to-department"
+            label="Department *"
+            value={data.department || ""}
+            required
+            placeholder="e.g., CBA, CCMS, ICT Department"
+            onChange={(nextDept) => {
+              const patch: any = { department: nextDept };
+
+              // Auto-fill head if not manually edited yet or empty
+              const currentHead = data?.endorsedByHeadName ?? "";
+              if (!headEditedRef.current || !currentHead) {
+                patch.endorsedByHeadName = getDepartmentHead(nextDept);
+              }
+
+              onChange(patch);
+            }}
+          />
+          {errors["travelOrder.department"] && (
+            <span className="text-xs text-red-600">
+              {errors["travelOrder.department"]}
+            </span>
+          )}
+        </div>
+
+        {/* Destination with map picker */}
+        <div className="grid gap-1">
+          <LocationField
+            label="Destination"
+            inputId="to-destination"
+            value={data?.destination || ""}
+            geo={data?.destinationGeo || null}
+            onChange={({ address, geo }) =>
+              onChange({ destination: address, destinationGeo: geo ?? undefined })
+            }
+            placeholder="City / Venue / School / Company"
+          />
+          {errors["travelOrder.destination"] && (
+            <span className="text-xs text-red-600">
+              {errors["travelOrder.destination"]}
+            </span>
+          )}
+        </div>
+
+        <DateInput
+          id="to-departure"
+          label="Departure date"
+          required
+          value={data.departureDate}
+          onChange={(e) => onChange({ departureDate: e.target.value })}
+          error={errors["travelOrder.departureDate"]}
+        />
+        <DateInput
+          id="to-return"
+          label="Return date"
+          required
+          value={data.returnDate}
+          onChange={(e) => onChange({ returnDate: e.target.value })}
+          error={errors["travelOrder.returnDate"]}
+        />
+      </div>
+
+      <div className="mt-4">
+        <TextArea
+          id="to-purpose"
+          label="Purpose of travel"
+          required
+          placeholder="Briefly explain what the trip is for"
+          value={data.purposeOfTravel}
+          onChange={(e) => onChange({ purposeOfTravel: e.target.value })}
+          error={errors["travelOrder.purposeOfTravel"]}
+        />
+      </div>
+
+      {/* Costs */}
+      <div className="mt-6 rounded-xl border border-neutral-200 p-4">
+        <div className="mb-3 text-sm font-semibold">Travel Cost (estimate)</div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <CurrencyInput
+            label="Food"
+            placeholder="0.00"
+            value={c.food ?? ""}
+            onChange={(e) => onChangeCosts({ food: asNum(e.target.value) })}
+          />
+          <CurrencyInput
+            label="Driver’s allowance"
+            placeholder="0.00"
+            value={c.driversAllowance ?? ""}
+            onChange={(e) =>
+              onChangeCosts({ driversAllowance: asNum(e.target.value) })
+            }
+          />
+          <CurrencyInput
+            label="Rent vehicles"
+            placeholder="0.00"
+            value={c.rentVehicles ?? ""}
+            onChange={(e) =>
+              onChangeCosts({ rentVehicles: asNum(e.target.value) })
+            }
+          />
+          <CurrencyInput
+            label="Hired drivers"
+            placeholder="0.00"
+            value={c.hiredDrivers ?? ""}
+            onChange={(e) =>
+              onChangeCosts({ hiredDrivers: asNum(e.target.value) })
+            }
+          />
+          <CurrencyInput
+            label="Accommodation"
+            placeholder="0.00"
+            value={c.accommodation ?? ""}
+            onChange={(e) =>
+              onChangeCosts({ accommodation: asNum(e.target.value) })
+            }
+          />
+
+          <div className="grid grid-cols-3 gap-3 md:col-span-2">
+            <TextInput
+              label="Other (label)"
+              placeholder="e.g., Materials, Printing"
+              value={c.otherLabel ?? ""}
+              onChange={(e) => onChangeCosts({ otherLabel: e.target.value })}
+            />
+            <CurrencyInput
+              label="Amount"
+              placeholder="0.00"
+              value={c.otherAmount ?? ""}
+              onChange={(e) =>
+                onChangeCosts({ otherAmount: asNum(e.target.value) })
+              }
+              className="col-span-2 sm:col-span-1"
+            />
+          </div>
+        </div>
+
+        {needsJustif && (
+          <div className="mt-4">
+            <TextArea
+              id="to-justification"
+              label="Justification"
+              required
+              placeholder="State reasons for renting or hiring a driver"
+              value={c.justification ?? ""}
+              onChange={(e) =>
+                onChangeCosts({ justification: e.target.value })
+              }
+              error={errors["travelOrder.costs.justification"]}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Endorsement */}
+      <div className="mt-6 grid gap-4 md:grid-cols-2">
+        <TextInput
+          label="Endorsed by (Dept Head)"
+          placeholder="Name of Department Head"
+          value={data.endorsedByHeadName ?? ""}
+          onChange={(e) => {
+            headEditedRef.current = true;
+            onChange({ endorsedByHeadName: e.target.value });
+          }}
+        />
+        <DateInput
+          label="Endorsement date"
+          value={data.endorsedByHeadDate ?? ""}
+          onChange={(e) => onChange({ endorsedByHeadDate: e.target.value })}
+        />
+      </div>
+
+      {/* Signature block */}
+      <div className="mt-6 rounded-xl border border-neutral-200 bg-neutral-50/60 p-4">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-sm font-medium text-neutral-700">
+            Endorser signature
+          </span>
+
+          {sigSaved ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+              ✓ Saved
+              {sigSavedAt ? (
+                <span className="text-green-700/80"> · {sigSavedAt}</span>
+              ) : null}
+            </span>
+          ) : (
+            <span className="text-xs text-neutral-500">Not saved</span>
+          )}
+        </div>
+
+        <SignaturePad
+          height={200}
+          value={data?.endorsedByHeadSignature || null}
+          onDraw={() => setSigDirty(true)}
+          onSave={(dataUrl) => {
+            onChange({ endorsedByHeadSignature: dataUrl });
+            setSigSaved(true);
+            setSigDirty(false);
+            setSigSavedAt(new Date().toLocaleString());
+          }}
+          onClear={() => {
+            onChange({ endorsedByHeadSignature: "" });
+            setSigDirty(false);
+            setSigSaved(false);
+            setSigSavedAt(null);
+          }}
+          onUpload={async (file) => {
+            const buf = await file.arrayBuffer();
+            const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+            const dataUrl = `data:${file.type};base64,${b64}`;
+            onChange({ endorsedByHeadSignature: dataUrl });
+            setSigSaved(true);
+            setSigDirty(false);
+            setSigSavedAt(new Date().toLocaleString());
+          }}
+          saveDisabled={!sigDirty}
+        />
+      </div>
+    </section>
+  );
+}
+
+
+===== ui\controls.tsx =====
+// src/components/user/request/ui/controls.tsx
+"use client";
+
+import * as React from "react";
+import clsx from "clsx";
+
+type BaseProps = {
+  id?: string;
+  label: string;
+  placeholder?: string;
+  value?: string | number | null;
+  onChange?: (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => void;
+  error?: string;
+  required?: boolean;
+  helper?: string;
+  className?: string;
+  disabled?: boolean;
+};
+
+function FieldWrap({
+  label,
+  error,
+  helper,
+  required,
+  children,
+}: React.PropsWithChildren<{
+  label: string;
+  error?: string;
+  helper?: string;
+  required?: boolean;
+}>) {
+  return (
+    <label className="grid gap-1">
+      <span className="text-[13px] font-medium text-neutral-700">
+        {label} {required && <span className="text-rose-600">*</span>}
+      </span>
+      {children}
+      {error ? (
+        <span className="text-xs text-rose-600">{error}</span>
+      ) : helper ? (
+        <span className="text-xs text-neutral-500">{helper}</span>
+      ) : null}
+    </label>
+  );
+}
+
+export function TextInput({
+  id,
+  label,
+  placeholder,
+  value,
+  onChange,
+  error,
+  required,
+  helper,
+  className,
+  disabled,
+}: BaseProps) {
+  return (
+    <FieldWrap label={label} error={error} helper={helper} required={required}>
+      <input
+        id={id}
+        className={clsx(
+          "h-10 w-full rounded-xl border bg-white px-3 text-sm outline-none",
+          "placeholder:text-neutral-400",
+          error
+            ? "border-rose-500 ring-2 ring-rose-100"
+            : "border-neutral-300 focus:border-neutral-400 focus:ring-2 focus:ring-neutral-200",
+          disabled && "bg-neutral-100 text-neutral-500",
+          className
+        )}
+        placeholder={placeholder}
+        value={value ?? ""}
+        onChange={onChange as any}
+        disabled={disabled}
+      />
+    </FieldWrap>
+  );
+}
+
+/**
+ * DateInput
+ * Makes the date "placeholder" text opaque across Chrome/Edge/Safari using
+ * WebKit pseudo-elements. Firefox gets a fallback by tinting the text when
+ * the input is empty.
+ */
+export function DateInput({
+  id,
+  label,
+  placeholder = "mm/dd/yyyy",
+  value,
+  onChange,
+  error,
+  required,
+  helper,
+  className,
+  disabled,
+}: BaseProps) {
+  const isEmpty = !value;
+
+  return (
+    <FieldWrap label={label} error={error} helper={helper} required={required}>
+      <style jsx global>{`
+        /* Chrome / Edge / Safari (WebKit/Blink) */
+        input[type='date'][data-empty='true']::-webkit-datetime-edit,
+        input[type='date'][data-empty='true']::-webkit-datetime-edit-text,
+        input[type='date'][data-empty='true']::-webkit-datetime-edit-month-field,
+        input[type='date'][data-empty='true']::-webkit-datetime-edit-day-field,
+        input[type='date'][data-empty='true']::-webkit-datetime-edit-year-field {
+          color: #111827; /* neutral-900 */
+          opacity: 1 !important;
+        }
+        input[type='date']::-webkit-calendar-picker-indicator {
+          opacity: 0.9;
+        }
+
+        /* Firefox fallback */
+        input[type='date'][data-empty='true'] {
+          color: #111827;
+        }
+      `}</style>
+
+      <input
+        id={id}
+        type="date"
+        data-empty={isEmpty ? "true" : "false"}
+        className={clsx(
+          "h-10 w-full rounded-xl border bg-white px-3 text-sm outline-none",
+          // (Note: placeholder utility doesn't affect type=date; see global CSS above)
+          error
+            ? "border-rose-500 ring-2 ring-rose-100"
+            : "border-neutral-300 focus:border-neutral-400 focus:ring-2 focus:ring-neutral-200",
+          disabled && "bg-neutral-100 text-neutral-500",
+          className
+        )}
+        placeholder={placeholder}
+        value={(value as string) ?? ""}
+        onChange={onChange as any}
+        disabled={disabled}
+      />
+    </FieldWrap>
+  );
+}
+
+export function TextArea({
+  id,
+  label,
+  placeholder,
+  value,
+  onChange,
+  error,
+  required,
+  helper,
+  className,
+  disabled,
+}: BaseProps) {
+  return (
+    <FieldWrap label={label} error={error} helper={helper} required={required}>
+      <textarea
+        id={id}
+        className={clsx(
+          "min-h-[96px] w-full resize-y rounded-xl border bg-white px-3 py-2 text-sm outline-none",
+          "placeholder:text-neutral-400",
+          error
+            ? "border-rose-500 ring-2 ring-rose-100"
+            : "border-neutral-300 focus:border-neutral-400 focus:ring-2 focus:ring-neutral-200",
+          disabled && "bg-neutral-100 text-neutral-500",
+          className
+        )}
+        placeholder={placeholder}
+        value={value ?? ""}
+        onChange={onChange as any}
+        disabled={disabled}
+      />
+    </FieldWrap>
+  );
+}
+
+export function CurrencyInput({
+  id,
+  label,
+  placeholder = "0.00",
+  value,
+  onChange,
+  error,
+  required,
+  helper,
+  className,
+  disabled,
+}: BaseProps) {
+  return (
+    <FieldWrap label={label} error={error} helper={helper} required={required}>
+      <div
+        className={clsx(
+          "flex h-10 items-center rounded-xl border bg-white text-sm",
+          error
+            ? "border-rose-500 ring-2 ring-rose-100"
+            : "border-neutral-300 focus-within:border-neutral-400 focus-within:ring-2 focus-within:ring-neutral-200",
+          disabled && "bg-neutral-100 text-neutral-500",
+          className
+        )}
+      >
+        <span className="px-3 text-neutral-500">₱</span>
+        <input
+          id={id}
+          inputMode="decimal"
+          className="h-full w-full bg-transparent pr-3 outline-none placeholder:text-neutral-400"
+          placeholder={placeholder}
+          value={value ?? ""}
+          onChange={onChange as any}
+          disabled={disabled}
+        />
+      </div>
+    </FieldWrap>
+  );
+}
+
+

@@ -1,0 +1,458 @@
+===== mockApi.ts =====
+import type { RequestFormData } from "@/lib/user/request/types";
+import { reasonLabel } from "@/lib/user/request/types";
+import { firstReceiver, fullApprovalPath } from "@/lib/user/request/routing";
+
+const DRAFTS_KEY = "travilink_user_request_drafts";
+const SUBMITS_KEY = "travilink_user_request_submissions";
+
+export type Draft = {
+  id: string;
+  title: string;
+  data: RequestFormData;
+  createdAt: string; // ISO
+  updatedAt: string; // ISO
+};
+
+export type Submission = {
+  id: string;
+  title: string;
+  data: RequestFormData;
+  status: "pending" | "approved" | "cancelled";
+  firstReceiver: string;
+  approvalPath: string[];
+  createdAt: string; // ISO
+  updatedAt: string; // ISO
+};
+
+function safeRead<T>(key: string): T[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+function safeWrite<T>(key: string, list: T[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(key, JSON.stringify(list));
+}
+
+function buildTitle(data: RequestFormData) {
+  const reason = reasonLabel(data.reason);
+  const dest = data.travelOrder?.destination || "No destination";
+  const dt = data.travelOrder?.date || "no date";
+  return `${data.requesterRole.toUpperCase()} • ${reason} • ${dest} (${dt})`;
+}
+
+/* Drafts */
+export async function listDrafts(): Promise<Draft[]> {
+  return safeRead<Draft>(DRAFTS_KEY).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+export async function getDraft(id: string): Promise<Draft | undefined> {
+  return safeRead<Draft>(DRAFTS_KEY).find((d) => d.id === id);
+}
+export async function deleteDraft(id: string): Promise<void> {
+  safeWrite<Draft>(DRAFTS_KEY, safeRead<Draft>(DRAFTS_KEY).filter((d) => d.id !== id));
+}
+export async function saveDraft(data: RequestFormData, draftId?: string) {
+  const now = new Date().toISOString();
+  const title = buildTitle(data);
+  const list = safeRead<Draft>(DRAFTS_KEY);
+
+  if (draftId) {
+    const i = list.findIndex((d) => d.id === draftId);
+    if (i >= 0) {
+      list[i] = { ...list[i], title, data, updatedAt: now };
+      safeWrite<Draft>(DRAFTS_KEY, list);
+      return { id: draftId, savedAt: now };
+    }
+  }
+
+  const id = crypto.randomUUID();
+  list.unshift({ id, title, data, createdAt: now, updatedAt: now });
+  safeWrite<Draft>(DRAFTS_KEY, list);
+  return { id, savedAt: now };
+}
+
+/* Submissions */
+export async function listSubmissions(): Promise<Submission[]> {
+  return safeRead<Submission>(SUBMITS_KEY).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+export async function getSubmission(id: string): Promise<Submission | undefined> {
+  return safeRead<Submission>(SUBMITS_KEY).find((s) => s.id === id);
+}
+export async function cancelSubmission(id: string) {
+  const list = safeRead<Submission>(SUBMITS_KEY);
+  const i = list.findIndex((s) => s.id === id);
+  if (i >= 0) {
+    list[i] = { ...list[i], status: "cancelled", updatedAt: new Date().toISOString() };
+    safeWrite<Submission>(SUBMITS_KEY, list);
+  }
+}
+export async function submitRequest(data: RequestFormData) {
+  const now = new Date().toISOString();
+  const title = buildTitle(data);
+
+  const first = firstReceiver({
+    requesterRole: data.requesterRole,
+    vehicleMode: data.vehicleMode,
+    reason: data.reason,
+  });
+  const path = fullApprovalPath({
+    requesterRole: data.requesterRole,
+    vehicleMode: data.vehicleMode,
+  });
+
+  const list = safeRead<Submission>(SUBMITS_KEY);
+  const id = crypto.randomUUID();
+  list.unshift({
+    id,
+    title,
+    data,
+    status: "pending",
+    firstReceiver: first,
+    approvalPath: path,
+    createdAt: now,
+    updatedAt: now,
+  });
+  safeWrite<Submission>(SUBMITS_KEY, list);
+  return { id, firstReceiver: first, approvalPath: path, submittedAt: now };
+}
+export async function updateSubmission(id: string, data: RequestFormData) {
+  const list = safeRead<Submission>(SUBMITS_KEY);
+  const i = list.findIndex((s) => s.id === id);
+  if (i < 0) throw new Error("Submission not found");
+  if (list[i].status !== "pending") throw new Error("Only pending submissions can be edited");
+
+  const now = new Date().toISOString();
+  const title = buildTitle(data);
+  const first = firstReceiver({
+    requesterRole: data.requesterRole,
+    vehicleMode: data.vehicleMode,
+    reason: data.reason,
+  });
+  const path = fullApprovalPath({
+    requesterRole: data.requesterRole,
+    vehicleMode: data.vehicleMode,
+  });
+
+  list[i] = { ...list[i], title, data, firstReceiver: first, approvalPath: path, updatedAt: now };
+  safeWrite<Submission>(SUBMITS_KEY, list);
+  return { id, updatedAt: now };
+}
+
+
+===== persist.ts =====
+// src/lib/user/request/persist.ts
+"use client";
+
+import type { RequestFormData } from "@/lib/user/request/types";
+
+const HANDOFF_KEY = "request-handoff";
+const AUTOSAVE_KEY = "request-autosave-v1";
+
+export type HandoffPayload = {
+  data: RequestFormData;
+  from: "draft" | "submission";
+  id: string;
+};
+
+export function saveHandoff(p: HandoffPayload) {
+  if (typeof window === "undefined") return;
+  sessionStorage.setItem(HANDOFF_KEY, JSON.stringify(p));
+}
+
+export function consumeHandoff(): HandoffPayload | null {
+  if (typeof window === "undefined") return null;
+  const raw = sessionStorage.getItem(HANDOFF_KEY);
+  if (!raw) return null;
+  sessionStorage.removeItem(HANDOFF_KEY);
+  try {
+    return JSON.parse(raw) as HandoffPayload;
+  } catch {
+    return null;
+  }
+}
+
+export function saveAutosave(data: RequestFormData) {
+  if (typeof window === "undefined") return;
+  sessionStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ data, ts: Date.now() }));
+}
+
+export function loadAutosave(): RequestFormData | null {
+  if (typeof window === "undefined") return null;
+  const raw = sessionStorage.getItem(AUTOSAVE_KEY);
+  if (!raw) return null;
+  try {
+    const { data } = JSON.parse(raw);
+    return data as RequestFormData;
+  } catch {
+    return null;
+  }
+}
+
+export function clearAutosave() {
+  if (typeof window === "undefined") return;
+  sessionStorage.removeItem(AUTOSAVE_KEY);
+}
+
+
+===== repo.ts =====
+
+
+===== routing.ts =====
+// src/lib/user/request/routing.ts
+import type { RequesterRole, VehicleMode, Reason } from "./types";
+
+export type FirstReceiver = "OSAS_ADMIN" | "DEPT_HEAD" | "TM" | "COMPTROLLER";
+
+/** Force vehicle mode for specific reasons (policy). */
+export function lockVehicle(reason: Reason): VehicleMode | null {
+  return reason === "educational" || reason === "competition" ? "institutional" : null;
+}
+
+export function firstReceiver({
+  requesterRole,
+  vehicleMode,
+}: {
+  requesterRole: RequesterRole;
+  vehicleMode: VehicleMode;
+  reason: Reason;
+}): FirstReceiver {
+  if (requesterRole === "org") return "OSAS_ADMIN";
+  if (vehicleMode === "institutional") return requesterRole === "faculty" ? "DEPT_HEAD" : "TM";
+  return requesterRole === "faculty" ? "DEPT_HEAD" : "COMPTROLLER";
+}
+
+export function fullApprovalPath({
+  requesterRole,
+  vehicleMode,
+}: {
+  requesterRole: RequesterRole;
+  vehicleMode: VehicleMode;
+}): string[] {
+  if (requesterRole === "org") return ["OSAS_ADMIN", "TM", "COMPTROLLER", "HRD", "VP/COO", "TM(close-out)"];
+  if (requesterRole === "head" && vehicleMode !== "institutional") return ["COMPTROLLER", "HRD", "VP/COO"];
+  if (requesterRole === "head" && vehicleMode === "institutional")
+    return ["TM", "COMPTROLLER", "HRD", "VP/COO", "TM(close-out)"];
+  if (requesterRole === "faculty" && vehicleMode !== "institutional")
+    return ["DEPT_HEAD", "COMPTROLLER", "HRD", "VP/COO"];
+  return ["DEPT_HEAD", "TM", "COMPTROLLER", "HRD", "VP/COO", "TM(close-out)"];
+}
+
+
+===== types.ts =====
+// Unified types + shared constants used by Request Wizard, forms, and quick-fill
+
+/* ---------- basic enums ---------- */
+export type Reason =
+  | "official"          // Official business
+  | "ces"               // Community Extension Service
+  | "seminar"           // Seminar / Training / Meeting
+  | "educational"       // Educational Trip
+  | "competition"       // Competition
+  | "visit";            // Visit / Coordination
+
+export type VehicleMode = "institutional" | "owned" | "rent";
+export type RequesterRole = "faculty" | "head" | "org";
+
+/* ---------- shared small types ---------- */
+export type GeoPoint = { lat: number; lng: number };
+
+/* ---------- Travel Order ---------- */
+export interface TravelOrderCosts {
+  food?: number | null;
+  driversAllowance?: number | null;
+  rentVehicles?: number | null;
+  hiredDrivers?: number | null;
+  accommodation?: number | null;
+  otherLabel?: string;
+  otherAmount?: number | null;
+  /** Required when renting/hiring (shown only when needed) */
+  justification?: string;
+}
+
+export interface TravelOrder {
+  /** yyyy-mm-dd */
+  date: string;
+  requestingPerson: string;
+
+  /** Department/Office text (e.g., CCMS, CBA) */
+  department: string;
+
+  /** Free-form destination text */
+  destination: string;
+  /** Optional map point */
+  destinationGeo?: GeoPoint | null;
+
+  /** yyyy-mm-dd */
+  departureDate: string;
+  /** yyyy-mm-dd */
+  returnDate: string;
+
+  purposeOfTravel: string;
+
+  /** Estimated costs */
+  costs: TravelOrderCosts;
+
+  /** Dept head endorsement */
+  endorsedByHeadName?: string;
+  /** yyyy-mm-dd */
+  endorsedByHeadDate?: string;
+  /** data URL of signature image */
+  endorsedByHeadSignature?: string;
+}
+
+/* ---------- School Service (institutional vehicle) ---------- */
+export interface SchoolService {
+  driver: string;
+  vehicle: string;
+  /** Dispatcher sign-off */
+  vehicleDispatcherSigned?: boolean;
+  /** yyyy-mm-dd */
+  vehicleDispatcherDate?: string;
+}
+
+/* ---------- Seminar / Training Application ---------- */
+export type TrainingCategory = "local" | "regional" | "national" | "international";
+export type Modality = "Onsite" | "Online" | "Hybrid";
+
+/** Fees summary for top-level totals */
+export interface SeminarFees {
+  registrationFee?: number | null;
+  totalAmount?: number | null;
+}
+
+/** Detailed line-items */
+export interface SeminarBreakdown {
+  registration?: number | null;
+  accommodation?: number | null;
+  perDiemMealsDriversAllowance?: number | null;
+  transportFareGasParkingToll?: number | null;
+  otherLabel?: string;
+  otherAmount?: number | null;
+}
+
+export interface SeminarApplication {
+  /** yyyy-mm-dd */
+  applicationDate: string;
+  title: string;
+
+  /** yyyy-mm-dd */
+  dateFrom: string;
+  /** yyyy-mm-dd */
+  dateTo: string;
+
+  /** free-form tags like ["Workshop","Webinar"] */
+  typeOfTraining?: string[];
+
+  trainingCategory?: TrainingCategory;
+
+  sponsor?: string;
+
+  /** venue text */
+  venue?: string;
+  venueGeo?: GeoPoint | null;
+
+  modality?: Modality;
+
+  /** top-level fee summary (used by UI) */
+  fees?: SeminarFees;
+
+  /** detailed breakdown (used by UI) */
+  breakdown?: SeminarBreakdown;
+
+  makeUpClassSchedule?: string;
+  applicantUndertaking?: boolean;
+
+  /** total for funding line */
+  fundReleaseLine?: number | null;
+}
+
+/* ---------- Whole request payload ---------- */
+export interface RequestFormData {
+  requesterRole: RequesterRole;
+  reason: Reason;
+  vehicleMode: VehicleMode;
+
+  travelOrder: TravelOrder;
+
+  /** present when vehicleMode === "institutional" */
+  schoolService?: SchoolService;
+
+  /** present when reason === "seminar" */
+  seminar?: SeminarApplication;
+}
+
+/* ---------- Shared options & helpers (for labels) ---------- */
+export const REASON_OPTIONS = Object.freeze([
+  { label: "Official business", value: "official" as const },
+  { label: "CES", value: "ces" as const },
+  { label: "Seminar / Training", value: "seminar" as const },
+  { label: "Educational Trip", value: "educational" as const },
+  { label: "Competition", value: "competition" as const },
+  { label: "Visit", value: "visit" as const },
+]);
+
+export const REASON_LABEL: Record<Reason, string> = Object.freeze(
+  REASON_OPTIONS.reduce((acc, o) => {
+    acc[o.value] = o.label;
+    return acc;
+  }, {} as Record<Reason, string>)
+);
+
+/** Helper: get human label from reason value */
+export function reasonLabel(v: Reason): string {
+  return REASON_LABEL[v] ?? v;
+}
+
+
+===== validation.ts =====
+import type { RequestFormData } from "./types";
+
+
+export function canSubmit(d: RequestFormData): { ok: boolean; errors: Record<string,string> } {
+const e: Record<string,string> = {};
+if (!d.reason) e["reason"] = "Required";
+if (!d.vehicleMode) e["vehicleMode"] = "Required";
+
+
+const t = d.travelOrder || ({} as any);
+if (!t.date) e["travelOrder.date"] = "Required";
+if (!t.requestingPerson) e["travelOrder.requestingPerson"] = "Required";
+if (!t.department) e["travelOrder.department"] = "Required";
+if (!t.destination) e["travelOrder.destination"] = "Required";
+if (!t.departureDate) e["travelOrder.departureDate"] = "Required";
+if (!t.returnDate) e["travelOrder.returnDate"] = "Required";
+if (!t.purposeOfTravel) e["travelOrder.purposeOfTravel"] = "Required";
+
+
+if (d.vehicleMode === "institutional") {
+const s = d.schoolService || ({} as any);
+if (!s.driver) e["schoolService.driver"] = "Required";
+if (!s.vehicle) e["schoolService.vehicle"] = "Required";
+if (!s.vehicleDispatcherDate) e["schoolService.vehicleDispatcherDate"] = "Required";
+}
+
+
+const c = t.costs || {};
+const rentOrHired = (Number(c.rentVehicles||0) > 0) || (Number(c.hiredDrivers||0) > 0);
+if (d.vehicleMode === "rent" || rentOrHired) {
+if (!c.justification || !c.justification.trim()) e["travelOrder.costs.justification"] = "Required for rent / hired";
+}
+
+
+if (d.reason === "seminar") {
+const s = d.seminar || ({} as any);
+if (!s.applicationDate) e["seminar.applicationDate"] = "Required";
+if (!s.title) e["seminar.title"] = "Required";
+if (!s.dateFrom) e["seminar.dateFrom"] = "Required";
+if (!s.dateTo) e["seminar.dateTo"] = "Required";
+}
+
+
+return { ok: Object.keys(e).length === 0, errors: e };
+}
+

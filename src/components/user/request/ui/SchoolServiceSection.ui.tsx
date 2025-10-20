@@ -1,4 +1,4 @@
-// components/user/request/ui/SchoolServiceSection.ui.tsx
+// src/components/user/request/ui/SchoolServiceSection.ui.tsx
 "use client";
 
 import * as React from "react";

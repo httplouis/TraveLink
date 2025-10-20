@@ -1,7 +1,13 @@
+"use client";
+
 import { RequestsSummary } from "@/lib/admin/types";
 import { Clock, CheckCircle2, Flag, XCircle } from "lucide-react";
 
-export default function RequestsSummaryUI({ summary }: { summary: RequestsSummary }) {
+type Props = {
+  summary: RequestsSummary;
+};
+
+export default function RequestsSummaryUI({ summary }: Props) {
   return (
     <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
       <Card
@@ -63,7 +69,7 @@ function Card({
       <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-neutral-100">
         <div
           className={`h-full ${barColor}`}
-          style={{ width: `${Math.min(100, value * 20)}%` }} // mock width (adjust as needed)
+          style={{ width: `${Math.min(100, value * 20)}%` }} // mock width
         />
       </div>
     </div>

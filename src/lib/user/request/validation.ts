@@ -1,45 +1,57 @@
-import type { RequestFormData } from "./types";
+import type { RequestFormData } from "@/lib/user/request/types";
 
+type Errors = Record<string, string>;
 
-export function canSubmit(d: RequestFormData): { ok: boolean; errors: Record<string,string> } {
-const e: Record<string,string> = {};
-if (!d.reason) e["reason"] = "Required";
-if (!d.vehicleMode) e["vehicleMode"] = "Required";
-
-
-const t = d.travelOrder || ({} as any);
-if (!t.date) e["travelOrder.date"] = "Required";
-if (!t.requestingPerson) e["travelOrder.requestingPerson"] = "Required";
-if (!t.department) e["travelOrder.department"] = "Required";
-if (!t.destination) e["travelOrder.destination"] = "Required";
-if (!t.departureDate) e["travelOrder.departureDate"] = "Required";
-if (!t.returnDate) e["travelOrder.returnDate"] = "Required";
-if (!t.purposeOfTravel) e["travelOrder.purposeOfTravel"] = "Required";
-
-
-if (d.vehicleMode === "institutional") {
-const s = d.schoolService || ({} as any);
-if (!s.driver) e["schoolService.driver"] = "Required";
-if (!s.vehicle) e["schoolService.vehicle"] = "Required";
-if (!s.vehicleDispatcherDate) e["schoolService.vehicleDispatcherDate"] = "Required";
+function req(v: unknown) {
+  if (v == null) return false;
+  if (typeof v === "string") return v.trim().length > 0;
+  return Boolean(v);
 }
 
-
-const c = t.costs || {};
-const rentOrHired = (Number(c.rentVehicles||0) > 0) || (Number(c.hiredDrivers||0) > 0);
-if (d.vehicleMode === "rent" || rentOrHired) {
-if (!c.justification || !c.justification.trim()) e["travelOrder.costs.justification"] = "Required for rent / hired";
+// ✅ consider an actually saved signature (not blank 1x1, etc.)
+function hasSignature(sig?: string | null): boolean {
+  if (!sig) return false;
+  const s = String(sig).trim();
+  if (!s.startsWith("data:image")) return false;
+  // very tiny base64 images are usually “blank” pads — guard it
+  return s.length > 3000;
 }
 
+export function canSubmit(data: RequestFormData) {
+  const errors: Errors = {};
+  const to = (data.travelOrder ?? {}) as NonNullable<RequestFormData["travelOrder"]>;
+  const c = (to.costs ?? {}) as NonNullable<typeof to["costs"]>;
 
-if (d.reason === "seminar") {
-const s = d.seminar || ({} as any);
-if (!s.applicationDate) e["seminar.applicationDate"] = "Required";
-if (!s.title) e["seminar.title"] = "Required";
-if (!s.dateFrom) e["seminar.dateFrom"] = "Required";
-if (!s.dateTo) e["seminar.dateTo"] = "Required";
-}
+  if (!req(to.date)) errors["travelOrder.date"] = "Required";
+  if (!req(to.requestingPerson)) errors["travelOrder.requestingPerson"] = "Required";
+  if (!req(to.department)) errors["travelOrder.department"] = "Required";
+  if (!req(to.destination)) errors["travelOrder.destination"] = "Required";
+  if (!req(to.departureDate)) errors["travelOrder.departureDate"] = "Required";
+  if (!req(to.returnDate)) errors["travelOrder.returnDate"] = "Required";
+  if (!req(to.purposeOfTravel)) errors["travelOrder.purposeOfTravel"] = "Required";
 
+  // ✅ REQUIRED: signature must be saved (and not blank)
+  if (!hasSignature(to.endorsedByHeadSignature)) {
+    errors["travelOrder.endorsedByHeadSignature"] = "Endorser signature is required.";
+  }
 
-return { ok: Object.keys(e).length === 0, errors: e };
+  const needsJustif =
+    data.vehicleMode === "rent" ||
+    Number(c.rentVehicles || 0) > 0 ||
+    Number(c.hiredDrivers || 0) > 0;
+
+  if (needsJustif && !req((c as any).justification)) {
+    errors["travelOrder.costs.justification"] =
+      "Please provide a justification for renting / hiring.";
+  }
+
+  if (data.reason === "seminar" && data.seminar) {
+    const s = data.seminar!;
+    if (!req(s.applicationDate)) errors["seminar.applicationDate"] = "Required";
+    if (!req(s.title)) errors["seminar.title"] = "Required";
+    if (!req(s.dateFrom)) errors["seminar.dateFrom"] = "Required";
+    if (!req(s.dateTo)) errors["seminar.dateTo"] = "Required";
+  }
+
+  return { ok: Object.keys(errors).length === 0, errors };
 }

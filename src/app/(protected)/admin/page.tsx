@@ -19,6 +19,9 @@ export default async function AdminDashboardPage() {
 
   return (
     <section className="space-y-6">
+      {/* PAGE TITLE (Option A) */}
+      <h1 className="text-xl font-semibold mb-2">Dashboard</h1>
+
       {/* KPI summary */}
       <KpiRow items={kpis.map(kpi => ({ ...kpi, value: String(kpi.value) }))} />
 
@@ -40,7 +43,7 @@ export default async function AdminDashboardPage() {
         <RequestsTable rows={recentRequests} />
       </div>
 
-      {/* Recent Trips (3 rows only) */}
+      {/* Recent Trips */}
       <div className="space-y-3">
         <div className="text-sm font-medium">Recent Trip Logs</div>
         <TripLogsTable rows={recentTrips.slice(0, 3)} />

@@ -1,18 +1,18 @@
-// store/user/requestStore.tsx
-// COMPLETE FILE — adds currentDraftId/currentSubmissionId helpers
-
+// src/store/user/requestStore.ts
 "use client";
-import * as React from "react";
-import { createContext, useContext, useMemo, useState } from "react";
+
+import { create } from "zustand";
+import { lockVehicle } from "@/lib/user/request/routing";
 import type {
   RequestFormData,
   Reason,
   VehicleMode,
   RequesterRole,
 } from "@/lib/user/request/types";
-import { lockVehicle } from "@/lib/user/request/routing";
 
-const initial: RequestFormData = {
+/* ---------- initial shape ---------- */
+
+const initialData: RequestFormData = {
   requesterRole: "faculty",
   reason: "visit",
   vehicleMode: "owned",
@@ -25,104 +25,145 @@ const initial: RequestFormData = {
     returnDate: "",
     purposeOfTravel: "",
     costs: {},
+    endorsedByHeadName: "",
+    endorsedByHeadDate: "",
+    endorsedByHeadSignature: "",
   },
   schoolService: undefined,
   seminar: undefined,
 };
 
-type Ctx = {
+/* ---------- tiny deep merge just for our shape ---------- */
+
+function mergeData(base: RequestFormData, patch: Partial<RequestFormData>): RequestFormData {
+  const next: RequestFormData = { ...base, ...patch };
+
+  // travelOrder (deep)
+  if (patch.travelOrder) {
+    next.travelOrder = {
+      ...(base.travelOrder || {}),
+      ...(patch.travelOrder || {}),
+    } as RequestFormData["travelOrder"];
+
+    // costs (deeper)
+    if (patch.travelOrder.costs) {
+      next.travelOrder!.costs = {
+        ...(base.travelOrder?.costs || {}),
+        ...(patch.travelOrder.costs || {}),
+      } as NonNullable<RequestFormData["travelOrder"]>["costs"];
+    }
+  }
+
+  // schoolService (deep)
+  if (patch.schoolService) {
+    next.schoolService = {
+      ...(base.schoolService || {}),
+      ...(patch.schoolService || {}),
+    } as NonNullable<RequestFormData["schoolService"]>;
+  }
+
+  // seminar (deep)
+  if (patch.seminar) {
+    next.seminar = {
+      ...(base.seminar || {}),
+      ...(patch.seminar || {}),
+    } as NonNullable<RequestFormData["seminar"]>;
+  }
+
+  return next;
+}
+
+/* ---------- store ---------- */
+
+type Store = {
   data: RequestFormData;
   lockedVehicle: VehicleMode | null;
+
   currentDraftId: string | null;
   currentSubmissionId: string | null;
+
+  // top-level setters
   setReason: (r: Reason) => void;
   setVehicleMode: (v: VehicleMode) => void;
+  setRequesterRole: (r: RequesterRole) => void;
+
+  // nested safe patchers (always deep-merge)
+  patchTravelOrder: (p: Partial<RequestFormData["travelOrder"]>) => void;
+  patchCosts: (p: Partial<NonNullable<RequestFormData["travelOrder"]["costs"]>>) => void;
+  patchSchoolService: (p: Partial<NonNullable<RequestFormData["schoolService"]>>) => void;
+  patchSeminar: (p: Partial<NonNullable<RequestFormData["seminar"]>>) => void;
+
+  // generic deep-merge (safe kahit mali ang tumawag)
   patch: (p: Partial<RequestFormData>) => void;
-  hardSet: (n: RequestFormData) => void;
+
+  hardSet: (d: RequestFormData) => void;
+
   setCurrentDraftId: (id: string | null) => void;
   setCurrentSubmissionId: (id: string | null) => void;
   clearIds: () => void;
 };
 
-const RequestCtx = createContext<Ctx | null>(null);
+export const useRequestStore = create<Store>((set, get) => ({
+  data: initialData,
+  lockedVehicle: lockVehicle(initialData.reason) ?? null,
 
-export function RequestProvider({ children }: { children: React.ReactNode }) {
-  const [data, setData] = useState<RequestFormData>(initial);
-  const [lockedVehicle, setLocked] = useState<VehicleMode | null>(null);
-  const [currentDraftId, setDraftId] = useState<string | null>(null);
-  const [currentSubmissionId, setSubmissionId] = useState<string | null>(null);
+  currentDraftId: null,
+  currentSubmissionId: null,
 
-  const api = useMemo<Ctx>(
-    () => ({
-      data,
-      lockedVehicle,
-      currentDraftId,
-      currentSubmissionId,
-
-      setReason: (r) => {
-        const locked = lockVehicle(r);
-        const vehicleMode = locked ?? data.vehicleMode;
-        setLocked(locked);
-        setData({
-          ...data,
-          reason: r,
-          vehicleMode,
-          schoolService:
-            vehicleMode === "institutional"
-              ? data.schoolService ?? {
-                  driver: "",
-                  vehicle: "",
-                  vehicleDispatcherSigned: false,
-                  vehicleDispatcherDate: "",
-                }
-              : undefined,
-          seminar:
-            r === "seminar"
-              ? data.seminar ?? {
-                  applicationDate: "",
-                  title: "",
-                  dateFrom: "",
-                  dateTo: "",
-                }
-              : undefined,
-        });
-      },
-
-      setVehicleMode: (v) => {
-        const nextV = lockedVehicle ?? v;
-        setData({
-          ...data,
-          vehicleMode: nextV,
-          schoolService:
-            nextV === "institutional"
-              ? data.schoolService ?? {
-                  driver: "",
-                  vehicle: "",
-                  vehicleDispatcherSigned: false,
-                  vehicleDispatcherDate: "",
-                }
-              : undefined,
-        });
-      },
-
-      patch: (p) => setData({ ...data, ...p }),
-      hardSet: (n) => setData(n),
-
-      setCurrentDraftId: (id) => setDraftId(id),
-      setCurrentSubmissionId: (id) => setSubmissionId(id),
-      clearIds: () => {
-        setDraftId(null);
-        setSubmissionId(null);
-      },
+  setReason: (r) =>
+    set((s) => {
+      const locked = lockVehicle(r);
+      const nextVehicle = locked ?? s.data.vehicleMode;
+      return {
+        data: { ...s.data, reason: r, vehicleMode: nextVehicle },
+        lockedVehicle: locked ?? null,
+      };
     }),
-    [data, lockedVehicle, currentDraftId, currentSubmissionId]
-  );
 
-  return React.createElement(RequestCtx.Provider, { value: api }, children);
-}
+  setVehicleMode: (v) =>
+    set((s) => {
+      const next = s.lockedVehicle ? s.lockedVehicle : v;
+      return { data: { ...s.data, vehicleMode: next } };
+    }),
 
-export function useRequestStore() {
-  const ctx = useContext(RequestCtx);
-  if (!ctx) throw new Error("useRequestStore must be used within <RequestProvider>");
-  return ctx;
-}
+  setRequesterRole: (r) => set((s) => ({ data: { ...s.data, requesterRole: r } })),
+
+  /* nested patchers */
+
+  patchTravelOrder: (p) =>
+    set((s) => ({
+      data: mergeData(s.data, { travelOrder: p } as Partial<RequestFormData>),
+    })),
+
+  patchCosts: (p) =>
+    set((s) => ({
+      data: mergeData(s.data, { travelOrder: { costs: p } } as Partial<RequestFormData>),
+    })),
+
+  patchSchoolService: (p) =>
+    set((s) => ({
+      data: mergeData(s.data, { schoolService: p } as Partial<RequestFormData>),
+    })),
+
+  patchSeminar: (p) =>
+    set((s) => ({
+      data: mergeData(s.data, { seminar: p } as Partial<RequestFormData>),
+    })),
+
+  /* generic deep-merge — para kahit may lumang component na tumatawag ng patch({ travelOrder: { date: ... } })
+     hindi niya nare-reset ang ibang fields */
+  patch: (p) =>
+    set((s) => ({
+      data: mergeData(s.data, p),
+    })),
+
+  hardSet: (d) =>
+    set(() => ({
+      data: d,
+      lockedVehicle: lockVehicle(d.reason) ?? null,
+    })),
+
+  setCurrentDraftId: (id) => set(() => ({ currentDraftId: id })),
+  setCurrentSubmissionId: (id) => set(() => ({ currentSubmissionId: id })),
+  clearIds: () => set(() => ({ currentDraftId: null, currentSubmissionId: null })),
+}));

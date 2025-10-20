@@ -13,31 +13,30 @@ type Props = {
 
   /** Existing signature (data URL) to preload onto the canvas */
   value?: string | null;
-  /** @deprecated Use `value` instead. Still supported to avoid breaking callers. */
+  /** @deprecated Use `value` instead. Kept for compatibility. */
   initialImage?: string | null;
 
-  /** Fired the first time the user starts drawing (mouse/touch down) */
+  /** Fired the first time the user starts drawing */
   onDraw?: () => void;
-  /** Called when user clicks “Save signature”; gives you PNG data URL */
+  /** Called when a save is requested (button or auto-save on pointerup) */
   onSave?: (dataUrl: string) => void;
   /** Called when user clicks “Clear” */
   onClear?: () => void;
-  /** Optional: if you want to handle file upload yourself */
+  /** Optional: handle file upload yourself */
   onUpload?: (file: File) => void;
 
-  /** Disable the Save button (e.g. until something was drawn) */
+  /** Disable the Save button (manual save) */
   saveDisabled?: boolean;
 
-  /** className for outer wrapper */
   className?: string;
 };
 
 export default function SignaturePad({
   height = 160,
   lineWidth = 3,
-  color = "#1f2937", // neutral-800
+  color = "#1f2937",
   value = null,
-  initialImage = null, // kept for compatibility
+  initialImage = null,
   onDraw,
   onSave,
   onClear,
@@ -54,20 +53,19 @@ export default function SignaturePad({
   const lastXRef = React.useRef(0);
   const lastYRef = React.useRef(0);
 
-  // Fit the canvas to the wrapper (retina aware)
+  // Size canvas to wrapper; keep resolution crisp on HiDPI
   const resizeCanvas = React.useCallback(() => {
     const wrapper = wrapperRef.current;
     const canvas = canvasRef.current;
     if (!wrapper || !canvas) return;
 
     const dpr = window.devicePixelRatio || 1;
-    const cssW = wrapper.clientWidth;
-    const cssH = height;
+    const rect = wrapper.getBoundingClientRect();
 
-    canvas.width = Math.max(1, Math.floor(cssW * dpr));
-    canvas.height = Math.max(1, Math.floor(cssH * dpr));
-    canvas.style.width = `${cssW}px`;
-    canvas.style.height = `${cssH}px`;
+    canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+    canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+    canvas.style.width = `${rect.width}px`;
+    canvas.style.height = `${rect.height}px`;
 
     const ctx = canvas.getContext("2d");
     if (!ctx) {
@@ -75,11 +73,10 @@ export default function SignaturePad({
       return;
     }
     ctxRef.current = ctx;
-    ctx.setTransform(1, 0, 0, 1, 0, 0); // reset
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.scale(dpr, dpr);
-  }, [height]);
+  }, []);
 
-  // Init / resize
   React.useEffect(() => {
     resizeCanvas();
     const onResize = () => resizeCanvas();
@@ -87,52 +84,51 @@ export default function SignaturePad({
     return () => window.removeEventListener("resize", onResize);
   }, [resizeCanvas]);
 
-  // Draw a provided image (data URL) to the canvas
-  const drawImageToCanvas = React.useCallback(
-    (dataUrl: string) => {
-      const canvas = canvasRef.current;
-      const ctx = ctxRef.current;
-      if (!canvas || !ctx) return;
-      const img = new Image();
-      img.onload = () => {
-        const w = canvas.clientWidth;
-        const h = height;
-        ctx.clearRect(0, 0, w, h);
-        const scale = Math.min(w / img.width, h / img.height);
-        const dw = img.width * scale;
-        const dh = img.height * scale;
-        const dx = (w - dw) / 2;
-        const dy = (h - dh) / 2;
-        ctx.drawImage(img, dx, dy, dw, dh);
-      };
-      img.src = dataUrl;
-    },
-    [height]
-  );
+  // Draw a dataURL image to canvas (for preload & uploads)
+  const drawImageToCanvas = React.useCallback((dataUrl: string) => {
+    const wrapper = wrapperRef.current;
+    const canvas = canvasRef.current;
+    const ctx = ctxRef.current;
+    if (!wrapper || !canvas || !ctx) return;
 
-  // Load initial value / legacy initialImage
+    const img = new Image();
+    img.onload = () => {
+      const rect = wrapper.getBoundingClientRect();
+      const w = rect.width;
+      const h = rect.height;
+      ctx.clearRect(0, 0, w, h);
+      const scale = Math.min(w / img.width, h / img.height);
+      const dw = img.width * scale;
+      const dh = img.height * scale;
+      const dx = (w - dw) / 2;
+      const dy = (h - dh) / 2;
+      ctx.drawImage(img, dx, dy, dw, dh);
+    };
+    img.src = dataUrl;
+  }, []);
+
+  // Preload existing signature if any
   React.useEffect(() => {
     if (value) drawImageToCanvas(value);
     else if (initialImage) drawImageToCanvas(initialImage);
   }, [value, initialImage, drawImageToCanvas]);
 
-  // Helpers
-  function getPos(e: MouseEvent | TouchEvent) {
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
-    const rect = canvas.getBoundingClientRect();
-    const touch = (e as TouchEvent).touches?.[0];
-    const clientX = touch?.clientX ?? (e as MouseEvent).clientX;
-    const clientY = touch?.clientY ?? (e as MouseEvent).clientY;
-    // Clamp to edges so drawing can continue when the pointer re-enters
-    const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
-    const y = Math.max(0, Math.min(clientY - rect.top, rect.height));
+  // Pointer utilities
+  function getPos(e: PointerEvent) {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return { x: 0, y: 0 };
+    const rect = wrapper.getBoundingClientRect();
+    const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+    const y = Math.max(0, Math.min(e.clientY - rect.top, rect.height));
     return { x, y };
   }
 
-  function begin(e: MouseEvent | TouchEvent) {
+  function begin(e: PointerEvent) {
     const ctx = ctxRef.current;
     if (!ctx) return;
+
+    e.preventDefault();
+    (e.target as Element).setPointerCapture?.(e.pointerId);
 
     drawingRef.current = true;
     const p = getPos(e);
@@ -145,10 +141,11 @@ export default function SignaturePad({
     }
   }
 
-  function move(e: MouseEvent | TouchEvent) {
+  function move(e: PointerEvent) {
     const ctx = ctxRef.current;
     if (!ctx || !drawingRef.current) return;
 
+    e.preventDefault();
     const p = getPos(e);
 
     ctx.lineCap = "round";
@@ -165,66 +162,54 @@ export default function SignaturePad({
     lastYRef.current = p.y;
   }
 
+  function saveNow() {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dataUrl = canvas.toDataURL("image/png");
+    onSave?.(dataUrl);
+  }
+
   function end() {
     drawingRef.current = false;
+    // Auto-save on pen/mouse up
+    if (drewOnceRef.current) saveNow();
   }
 
   // Pointer wiring
   React.useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    const el = wrapperRef.current;
+    if (!el) return;
 
-    const opts = { passive: false } as AddEventListenerOptions;
+    const down = (e: PointerEvent) => begin(e);
+    const moveL = (e: PointerEvent) => move(e);
+    const up = () => end();
+    const leave = () => end();
+    const cancel = () => end();
 
-    const mdown = (e: MouseEvent) => begin(e);
-    const mmove = (e: MouseEvent) => move(e);
-    const mup = () => end();
-
-    const tstart = (e: TouchEvent) => {
-      e.preventDefault();
-      begin(e);
-    };
-    const tmove = (e: TouchEvent) => {
-      e.preventDefault();
-      move(e);
-    };
-    const tend = () => end();
-
-    canvas.addEventListener("mousedown", mdown);
-    canvas.addEventListener("mousemove", mmove);
-    window.addEventListener("mouseup", mup);
-
-    canvas.addEventListener("touchstart", tstart, opts);
-    canvas.addEventListener("touchmove", tmove, opts);
-    window.addEventListener("touchend", tend);
+    el.addEventListener("pointerdown", down, { passive: false });
+    window.addEventListener("pointermove", moveL, { passive: false });
+    window.addEventListener("pointerup", up, { passive: false });
+    window.addEventListener("pointerleave", leave, { passive: false });
+    window.addEventListener("pointercancel", cancel, { passive: false });
 
     return () => {
-      canvas.removeEventListener("mousedown", mdown);
-      canvas.removeEventListener("mousemove", mmove);
-      window.removeEventListener("mouseup", mup);
-
-      canvas.removeEventListener("touchstart", tstart);
-      canvas.removeEventListener("touchmove", tmove);
-      window.removeEventListener("touchend", tend);
+      el.removeEventListener("pointerdown", down);
+      window.removeEventListener("pointermove", moveL);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointerleave", leave);
+      window.removeEventListener("pointercancel", cancel);
     };
   }, [color, lineWidth]);
 
   // Public actions
   function clear() {
     const ctx = ctxRef.current;
-    const canvas = canvasRef.current;
-    if (!ctx || !canvas) return;
-    ctx.clearRect(0, 0, canvas.clientWidth, height);
+    const wrapper = wrapperRef.current;
+    if (!ctx || !wrapper) return;
+    const rect = wrapper.getBoundingClientRect();
+    ctx.clearRect(0, 0, rect.width, rect.height);
     onClear?.();
-    // allow onDraw to fire again after clearing
     drewOnceRef.current = false;
-  }
-
-  function save() {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const dataUrl = canvas.toDataURL("image/png");
-    onSave?.(dataUrl);
   }
 
   function onFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
@@ -237,24 +222,28 @@ export default function SignaturePad({
       return;
     }
 
-    // default behavior: preview it on canvas
     const reader = new FileReader();
     reader.onload = () => {
       const url = String(reader.result || "");
       drawImageToCanvas(url);
+      onSave?.(url); // persist uploaded image
+      drewOnceRef.current = true;
     };
     reader.readAsDataURL(file);
     e.currentTarget.value = "";
   }
 
   return (
-    <div className={`grid gap-2 ${className}`} ref={wrapperRef}>
+    <div className={`grid gap-2 ${className}`}>
       <div className="rounded-lg border border-neutral-300 bg-white p-2">
-        <canvas
-          ref={canvasRef}
-          className="block w-full"
-          style={{ height, touchAction: "none", cursor: "crosshair" }}
-        />
+        {/* Fixed-height container to prevent any layout shift while drawing */}
+        <div ref={wrapperRef} className="relative w-full" style={{ height }}>
+          <canvas
+            ref={canvasRef}
+            className="absolute inset-0 block h-full w-full"
+            style={{ touchAction: "none", cursor: "crosshair" }}
+          />
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -268,7 +257,7 @@ export default function SignaturePad({
 
         <button
           type="button"
-          onClick={save}
+          onClick={saveNow}
           disabled={saveDisabled}
           className={`h-9 rounded-md px-4 text-sm font-medium text-white ${
             saveDisabled ? "bg-neutral-400" : "bg-[#7A0010] hover:opacity-95"
@@ -279,19 +268,13 @@ export default function SignaturePad({
 
         <label className="ml-auto inline-flex h-9 cursor-pointer items-center justify-center rounded-md border border-neutral-300 bg-white px-3 text-sm hover:bg-neutral-50">
           Upload e-sign
-          <input
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={onFilePicked}
-          />
+          <input type="file" accept="image/*" className="hidden" onChange={onFilePicked} />
         </label>
       </div>
 
       <p className="text-[11px] text-neutral-500">
-        Sign with mouse / touch, then click{" "}
-        <span className="font-medium">Save signature</span> — or upload an image
-        file of your e-signature.
+        Sign with mouse / touch — it auto-saves when you lift your pen. You can
+        also click <span className="font-medium">Save signature</span> or upload an image file.
       </p>
     </div>
   );

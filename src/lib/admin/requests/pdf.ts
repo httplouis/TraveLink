@@ -1,209 +1,278 @@
 // src/lib/admin/requests/pdf.ts
-"use client";
-
-// Client-side PDF generator using jsPDF + autoTable
-// Make sure these are installed:
-//   pnpm add jspdf jspdf-autotable
 import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
-
 import type { AdminRequest } from "@/lib/admin/requests/store";
-import type { RequestFormData, OtherCostItem } from "@/lib/user/request/types";
 
-type Input = AdminRequest | RequestFormData;
+// ==== helpers =============================================================
 
-function isAdminRequest(x: Input): x is AdminRequest {
-  return typeof (x as any)?.id === "string" && "status" in (x as any);
+const MM = {
+  PAGE_W: 210,
+  PAGE_H: 297,
+  MARGIN: 12,
+};
+const FONT = { base: "helvetica" as const };
+
+function peso(n?: number | null) {
+  const v = typeof n === "number" ? n : 0;
+  return `₱${v.toLocaleString("en-PH", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
-function n(v: unknown): string {
-  // normalize numbers/strings/null/undefined for display
-  if (v === null || v === undefined || v === "") return "—";
-  if (typeof v === "number") return `₱${v}`;
-  return String(v);
+function text(doc: jsPDF, s: string, x: number, y: number, opt?: jsPDF.TextOptionsLight) {
+  doc.text(s, x, y, opt);
 }
 
-function costsToRows(costs: any): Array<[string, string]> {
-  if (!costs) return [];
-  const rows: Array<[string, string]> = [];
+function labelValueRow(
+  doc: jsPDF,
+  x: number,
+  y: number,
+  wLabel: number,
+  wValue: number,
+  label: string,
+  value: string,
+  rowMinH = 8,
+  padX = 2.5,
+  padY = 2.8,
+  boldLabel = true
+) {
+  // wrap value to fit in its box
+  const avail = wValue - padX * 2;
+  const lines = doc.splitTextToSize(value || "", avail);
+  const h = Math.max(rowMinH, padY * 2 + lines.length * 4.2);
 
-  Object.entries(costs).forEach(([key, value]) => {
-    if (value === null || value === undefined || value === "" ) return;
+  // frame
+  doc.rect(x, y, wLabel, h);
+  doc.rect(x + wLabel, y, wValue, h);
 
-    if (Array.isArray(value)) {
-      // OtherCostItem[]
-      (value as OtherCostItem[]).forEach((item) => {
-        if (!item) return;
-        rows.push([item.label ?? "Other", n(item.amount)]);
-      });
-    } else {
-      rows.push([key, n(value)]);
-    }
-  });
+  // label
+  doc.setFont(FONT.base, boldLabel ? "bold" : "normal");
+  doc.setFontSize(9);
+  text(doc, label, x + padX, y + 4.8);
 
-  return rows;
+  // value
+  doc.setFont(FONT.base, "normal");
+  doc.setFontSize(9);
+  doc.text(lines as string[], x + wLabel + padX, y + 4.8);
+  return h;
 }
 
-export function buildRequestPDF(input: Input) {
-  const doc = new jsPDF();
+function simpleRow(
+  doc: jsPDF,
+  x: number,
+  y: number,
+  wLeft: number,
+  wRight: number,
+  left: string,
+  right: string,
+  rowH = 8,
+  padX = 2.5
+) {
+  doc.rect(x, y, wLeft, rowH);
+  doc.rect(x + wLeft, y, wRight, rowH);
 
-  const travel = (input as any).travelOrder as RequestFormData["travelOrder"] | undefined;
-  const school = (input as any).schoolService as RequestFormData["schoolService"] | undefined;
-  const seminar = (input as any).seminar as RequestFormData["seminar"] | undefined;
+  doc.setFont(FONT.base, "normal");
+  doc.setFontSize(9);
+  text(doc, left, x + padX, y + 5);
+  text(doc, right, x + wLeft + padX, y + 5);
+}
 
-  const fileId = isAdminRequest(input) ? input.id : "REQUEST";
-  const createdAt = isAdminRequest(input) ? input.createdAt : undefined;
-  const status = isAdminRequest(input) ? input.status : undefined;
-
-  // Title
-  doc.setFontSize(16);
-  doc.text("TraviLink — Request Details", 14, 18);
-
-  // Meta
+function drawSectionTitle(doc: jsPDF, title: string, x: number, y: number) {
+  doc.setFont(FONT.base, "bold");
   doc.setFontSize(10);
-  const meta: string[] = [];
-  if (isAdminRequest(input)) {
-    meta.push(`ID: ${fileId}`);
-    meta.push(`Status: ${status}`);
-    if (createdAt) meta.push(`Created: ${new Date(createdAt).toLocaleString()}`);
+  text(doc, title, x, y);
+  return y + 2.5;
+}
+
+/** Compute total of TravelCosts (handles otherItems + legacy single pair) */
+function computeTravelTotal(req: AdminRequest) {
+  const c = req.travelOrder?.costs || {};
+  let total = 0;
+  const add = (v?: number | null) => (typeof v === "number" ? (total += v) : total);
+  add(c.food);
+  add(c.driversAllowance);
+  add(c.rentVehicles);
+  add(c.hiredDrivers);
+  add(c.accommodation);
+  if (Array.isArray(c.otherItems)) c.otherItems.forEach((it) => add(it?.amount ?? 0));
+  if (c.otherLabel && c.otherAmount) add(c.otherAmount);
+  return total;
+}
+
+// ==== MAIN ================================================================
+
+export function generateRequestPDF(req: AdminRequest) {
+  const doc = new jsPDF("p", "mm", "a4");
+  doc.setFont(FONT.base, "normal");
+
+  const X = MM.MARGIN;
+  const W = MM.PAGE_W - MM.MARGIN * 2;
+
+  // ========== Header (Logo + School name + Title) ==========
+  // Logo (optional; safe kung wala)
+  try {
+    // NOTE: image must exist at /public/eulogo.png
+    doc.addImage("/eulogo.png", "PNG", X, 10, 22, 22);
+  } catch {
+    // ignore if not found
   }
-  if (meta.length) doc.text(meta.join("   •   "), 14, 24);
 
-  let y = 30;
+  doc.setFont(FONT.base, "bold");
+  doc.setFontSize(12);
+  text(doc, "ENVERGA UNIVERSITY FOUNDATION", X + W / 2, 14, { align: "center" });
 
-  // Travel Order
-  if (travel) {
-    autoTable(doc, {
-      startY: y,
-      head: [["Travel Order", ""]],
-      body: [
-        ["Date", n(travel.date)],
-        ["Requesting Person", n(travel.requestingPerson)],
-        ["Department", n(travel.department)],
-        ["Destination", n(travel.destination)],
-        ["Departure Date", n(travel.departureDate)],
-        ["Return Date", n(travel.returnDate)],
-        ["Purpose of Travel", n(travel.purposeOfTravel)],
-      ],
-      theme: "grid",
-      styles: { fontSize: 10 },
-      headStyles: { fillColor: [122, 0, 16] }, // maroon
-    });
-    y = (doc as any).lastAutoTable.finalY + 6;
+  doc.setFontSize(10);
+  doc.setFont(FONT.base, "normal");
+  text(doc, "Lucena City", X + W / 2, 19, { align: "center" });
 
-    if (travel.costs) {
-      autoTable(doc, {
-        startY: y,
-        head: [["Estimated Costs", "Amount"]],
-        body: costsToRows(travel.costs),
-        theme: "grid",
-        styles: { fontSize: 10 },
-      });
-      y = (doc as any).lastAutoTable.finalY + 6;
+  doc.setFont(FONT.base, "bold");
+  doc.setFontSize(13);
+  text(doc, "TRAVEL ORDER", X + W / 2, 27, { align: "center" });
 
-      if ((travel.costs as any)?.justification) {
-        autoTable(doc, {
-          startY: y,
-          head: [["Justification"]],
-          body: [[String((travel.costs as any).justification)]],
-          theme: "grid",
-          styles: { fontSize: 10 },
-        });
-        y = (doc as any).lastAutoTable.finalY + 6;
-      }
+  // Left meta block (“QUALITY FORMS”)
+  doc.setFont(FONT.base, "bold");
+  doc.setFontSize(9);
+  text(doc, "QUALITY FORMS", X, 10);
+  doc.setFont(FONT.base, "normal");
+  doc.setFontSize(8);
+  text(doc, "Document Code: HRD-F-TO", X, 15);
+  text(doc, "Revision No.: 12", X, 19);
+  text(doc, "Department: HRD", X, 23);
+  text(doc, "Effectivity Date: Jan 2024", X, 27);
+
+  // thin line separator
+  doc.setDrawColor(180);
+  doc.line(X, 33, X + W, 33);
+  doc.setDrawColor(0);
+
+  let y = 40;
+
+  // ========== TRAVEL REQUEST INFORMATION ==========
+  y = drawSectionTitle(doc, "Travel Request Information", X, y);
+  y += 4;
+
+  const L = 48; // label col width
+  const V = W - L; // value col width
+
+  y += labelValueRow(doc, X, y, L, V, "Requesting Person", req.travelOrder?.requestingPerson || "________________");
+  y += labelValueRow(doc, X, y, L, V, "Department", req.travelOrder?.department || "________________");
+  y += labelValueRow(doc, X, y, L, V, "Destination", req.travelOrder?.destination || "________________");
+
+  // dates: two rows to match template look
+  const rowH = 8;
+  doc.rect(X, y, L, rowH);
+  doc.rect(X + L, y, V / 2, rowH);
+  doc.rect(X + L + V / 2, y, V / 2, rowH);
+  doc.setFont(FONT.base, "bold");
+  doc.setFontSize(9);
+  text(doc, "Departure Date", X + 2.5, y + 5);
+  doc.setFont(FONT.base, "normal");
+  text(doc, req.travelOrder?.departureDate || "__________", X + L + 2.5, y + 5);
+  doc.setFont(FONT.base, "bold");
+  text(doc, "Return Date", X + L + V / 2 + 2.5, y + 5);
+  doc.setFont(FONT.base, "normal");
+  text(doc, req.travelOrder?.returnDate || "__________", X + L + V / 2 + 25, y + 5);
+  y += rowH;
+
+  // purpose (taller cell)
+  y += labelValueRow(
+    doc,
+    X,
+    y,
+    L,
+    V,
+    "Purpose of Travel",
+    req.travelOrder?.purposeOfTravel || "__________________________________________________________________________________",
+    14
+  );
+  y += 4;
+
+  // ========== ESTIMATED TRAVEL COST ==========
+  y = drawSectionTitle(doc, "Estimated Travel Cost", X, y);
+  y += 4;
+
+  const costRow = (label: string, value?: number | null) => {
+    doc.rect(X, y, L, 8);
+    doc.rect(X + L, y, V, 8);
+    doc.setFont(FONT.base, "normal");
+    doc.setFontSize(9);
+    text(doc, label, X + 2.5, y + 5);
+    text(doc, peso(value ?? 0), X + L + 2.5, y + 5);
+    y += 8;
+  };
+
+  const c = req.travelOrder?.costs || {};
+  costRow("Food", c.food);
+  costRow("Driver's Allowance", c.driversAllowance);
+  costRow("Rent Vehicles", c.rentVehicles);
+  costRow("Hired Drivers", c.hiredDrivers);
+  costRow("Accommodation", c.accommodation);
+
+  // Legacy single-pair
+  if (c.otherLabel && c.otherAmount) costRow(c.otherLabel, c.otherAmount);
+
+  // Repeatable otherItems
+  if (Array.isArray(c.otherItems)) {
+    c.otherItems.forEach((it) => costRow(it?.label || "Other", it?.amount ?? 0));
+  }
+
+  // total row (bold)
+  const total = computeTravelTotal(req);
+  doc.setFont(FONT.base, "bold");
+  doc.rect(X, y, L, 8);
+  doc.rect(X + L, y, V, 8);
+  text(doc, "Total", X + 2.5, y + 5);
+  text(doc, peso(total), X + L + 2.5, y + 5);
+  y += 12;
+
+  // ========== ENDORSEMENTS / APPROVALS ==========
+  y = drawSectionTitle(doc, "Endorsements / Approvals", X, y);
+  y += 3;
+
+  // 5 lines, with optional signature box at the right for Dept. Head
+  const LINE_W = W;
+  const sigBoxW = 40;
+  const sigBoxH = 18;
+
+  // Dept Head (with signature box at right)
+  simpleRow(doc, X, y, L, LINE_W - L, "Endorsed By (Dept. Head):", req.travelOrder?.endorsedByHeadName || "________________");
+  // Signature box right side
+  doc.rect(X + W - sigBoxW, y + 2, sigBoxW - 2, sigBoxH);
+  doc.setFont(FONT.base, "normal");
+  doc.setFontSize(7);
+  text(doc, "Signature", X + W - sigBoxW + (sigBoxW - 2) / 2, y + sigBoxH + 4, { align: "center" });
+
+  // signature image if provided
+  const sig = req.travelOrder?.endorsedByHeadSignature;
+  if (sig) {
+    try {
+      doc.addImage(sig, "PNG", X + W - sigBoxW + 2, y + 3, sigBoxW - 6, sigBoxH - 3, undefined, "FAST");
+    } catch {
+      // ignore image load issues
     }
   }
 
-  // School Service
-  if (school) {
-    autoTable(doc, {
-      startY: y,
-      head: [["School Service", ""]],
-      body: [
-        ["Driver", n(school.driver)],
-        ["Vehicle", n(school.vehicle)],
-        ["Dispatcher Signed", school.vehicleDispatcherSigned ? "Yes" : "No"],
-        ["Dispatcher Date", n(school.vehicleDispatcherDate)],
-      ],
-      theme: "grid",
-      styles: { fontSize: 10 },
-      headStyles: { fillColor: [122, 0, 16] },
-    });
-    y = (doc as any).lastAutoTable.finalY + 6;
-  }
+  y += 8;
+  simpleRow(doc, X, y, L, LINE_W - L, "Comptroller:", "Carlos Jayron A. Remiendo"); y += 8;
+  simpleRow(doc, X, y, L, LINE_W - L, "HR Director:", "Dr. Maria Sylvia S. Avila");  y += 8;
+  simpleRow(doc, X, y, L, LINE_W - L, "VP/COO:", "________________");                 y += 8;
+  simpleRow(doc, X, y, L, LINE_W - L, "President:", "Naila E. Leveriza");             y += 14;
 
-  // Seminar
-  if (seminar) {
-    autoTable(doc, {
-      startY: y,
-      head: [["Seminar Application", ""]],
-      body: [
-        ["Application Date", n(seminar.applicationDate)],
-        ["Title", n(seminar.title)],
-        ["Category", n(seminar.trainingCategory)],
-        ["Date From", n(seminar.dateFrom)],
-        ["Date To", n(seminar.dateTo)],
-        ["Venue", n(seminar.venue)],
-        ["Modality", n(seminar.modality)],
-        ["Sponsor", n(seminar.sponsor)],
-      ],
-      theme: "grid",
-      styles: { fontSize: 10 },
-      headStyles: { fillColor: [122, 0, 16] },
-    });
-    y = (doc as any).lastAutoTable.finalY + 6;
+  // ========== SCHOOL SERVICE ASSIGNMENT ==========
+  y = drawSectionTitle(doc, "School Service Assignment", X, y);
+  y += 4;
 
-    if (seminar.fees || seminar.breakdown) {
-      const feeRows: Array<[string, string]> = [];
-      if (seminar.fees?.registrationFee != null)
-        feeRows.push(["Registration Fee", n(seminar.fees.registrationFee)]);
-      if (seminar.fees?.totalAmount != null)
-        feeRows.push(["Total Amount", n(seminar.fees.totalAmount)]);
+  simpleRow(doc, X, y, L, W - L, "Driver", req.driver || "—");                       y += 8;
+  simpleRow(doc, X, y, L, W - L, "Vehicle", req.vehicle || "—");                     y += 8;
+  simpleRow(doc, X, y, L, W - L, "Transportation Coordinator", "Trizzia Maree Z. Casiño");
+  y += 12;
 
-      const br = seminar.breakdown;
-      if (br) {
-        if (br.registration != null) feeRows.push(["Registration", n(br.registration)]);
-        if (br.accommodation != null) feeRows.push(["Accommodation", n(br.accommodation)]);
-        if (br.perDiemMealsDriversAllowance != null)
-          feeRows.push(["Per diem / Meals / Drivers allowance", n(br.perDiemMealsDriversAllowance)]);
-        if (br.transportFareGasParkingToll != null)
-          feeRows.push(["Transport / Gas / Parking / Toll", n(br.transportFareGasParkingToll)]);
-        if (Array.isArray(br.otherItems)) {
-          br.otherItems.forEach((it) => feeRows.push([it.label ?? "Other", n(it.amount)]));
-        }
-        if (br.otherLabel || br.otherAmount != null) {
-          feeRows.push([br.otherLabel ?? "Other", n(br.otherAmount)]);
-        }
-      }
+  // ========== FOOTER NOTE ==========
+  doc.setFont(FONT.base, "normal");
+  doc.setFontSize(7);
+  text(
+    doc,
+    "Note: Submit complete report within 5 days after travel. Copies distributed to HRD, Comptroller, Dept., and Transport Coordinator.",
+    X,
+    MM.PAGE_H - 12
+  );
 
-      if (feeRows.length) {
-        autoTable(doc, {
-          startY: y,
-          head: [["Fees & Breakdown", "Amount"]],
-          body: feeRows,
-          theme: "grid",
-          styles: { fontSize: 10 },
-        });
-        y = (doc as any).lastAutoTable.finalY + 6;
-      }
-    }
-
-    if (Array.isArray(seminar.applicants) && seminar.applicants.length) {
-      autoTable(doc, {
-        startY: y,
-        head: [["Applicants", "Department/Office", "Available FDP", "Signed?"]],
-        body: seminar.applicants.map((a) => [
-          n(a.name),
-          n(a.departmentOffice),
-          n(a.availableFDP),
-          a.signature ? "Yes" : "No",
-        ]),
-        theme: "grid",
-        styles: { fontSize: 10 },
-      });
-      y = (doc as any).lastAutoTable.finalY + 6;
-    }
-  }
-
-  doc.save(`${fileId}.pdf`);
+  doc.save(`${req.id}_TravelOrder.pdf`);
 }

@@ -13,25 +13,17 @@ export const metadata: Metadata = {
     ],
     apple: [{ url: "/apple-touch-icon.png" }],
   },
-  // If /public/site.webmanifest doesn't exist yet, comment this out to avoid 404 spam.
   manifest: "/site.webmanifest",
 };
 
-// themeColor must live in `viewport` (not `metadata`)
-export const viewport: Viewport = {
-  themeColor: "#7f1d1d",
-};
+export const viewport: Viewport = { themeColor: "#7f1d1d" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
-        {/* Valid place for preconnect. Safe if env is empty. */}
-        {supabaseUrl && <link rel="preconnect" href={supabaseUrl} crossOrigin="" />}
-      </head>
-      <body className="min-h-dvh antialiased" suppressHydrationWarning>
+      <head>{supabaseUrl && <link rel="preconnect" href={supabaseUrl} crossOrigin="" />}</head>
+      <body className="min-h-dvh antialiased bg-white text-neutral-900" suppressHydrationWarning>
         {children}
       </body>
     </html>
