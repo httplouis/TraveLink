@@ -4505,7 +4505,8 @@ export default function RegisterView(props: Props) {
       <div className="relative z-10 mx-auto flex h-svh w-full max-w-3xl flex-col justify-center px-4 sm:px-6 lg:px-8">
         <div className="w-full">
           <div className="rounded-2xl bg-gradient-to-br from-white/60 via-white/20 to-transparent p-[1.5px] shadow-2xl">
-            <div className="rounded-2xl bg-white/85 backdrop-blur-xl ring-1 ring-black/10">
+            {/* SOLID WHITE CARD (changed from bg-white/85) */}
+            <div className="rounded-2xl bg-white backdrop-blur-xl ring-1 ring-black/10">
               <div className="px-6 py-6 lg:px-8">
                 {/* Header */}
                 <div className="flex items-center gap-3">
@@ -10987,8 +10988,8 @@ const VEHICLES = ["Van 01", "Bus 02", "SUV 03"];
 
 /** Peso formatter */
 function peso(n: number | null | undefined) {
-  if (typeof n !== "number" || !isFinite(n)) return "₱0.00";
-  return `₱${n.toLocaleString("en-PH", { maximumFractionDigits: 2 })}`;
+  const num = typeof n === "number" && isFinite(n) ? n : 0;
+  return `₱${num.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 type Props = {
@@ -11009,42 +11010,84 @@ export default function RequestDetailsModalUI({
   const [driver, setDriver] = React.useState("");
   const [vehicle, setVehicle] = React.useState("");
 
-  // hydrate local assignment state from selected row
+  // Hydrate local assignment state from the selected row (robust over many shapes)
   React.useEffect(() => {
-    setDriver(row?.driver || "");
-    setVehicle(row?.vehicle || "");
+    if (!row) {
+      setDriver("");
+      setVehicle("");
+      return;
+    }
+    const t: any = row.travelOrder ?? {};
+    const drv =
+      row.driver ||
+      t.driver ||
+      t.schoolService?.driverName ||
+      t.schoolService?.driver ||
+      t.selectedDriverName ||
+      t.selectedDriver ||
+      t.assignedDriverName ||
+      t.assignedDriver ||
+      "";
+    const veh =
+      row.vehicle ||
+      t.vehicle ||
+      t.schoolService?.vehicleName ||
+      t.schoolService?.vehicle ||
+      t.selectedVehicleName ||
+      t.selectedVehicle ||
+      t.assignedVehicleName ||
+      t.assignedVehicle ||
+      "";
+    setDriver(drv);
+    setVehicle(veh);
   }, [row]);
 
-  // persist driver/vehicle assignments back to repo
+  // Persist driver/vehicle assignments back to repo when changed
   React.useEffect(() => {
-    if (row?.id && driver !== undefined) {
-      AdminRequestsRepo.setDriver(row.id, driver);
-    }
+    if (row?.id) AdminRequestsRepo.setDriver(row.id, driver);
   }, [driver, row?.id]);
 
   React.useEffect(() => {
-    if (row?.id && vehicle !== undefined) {
-      AdminRequestsRepo.setVehicle(row.id, vehicle);
-    }
+    if (row?.id) AdminRequestsRepo.setVehicle(row.id, vehicle);
   }, [vehicle, row?.id]);
 
-  // compute total cost (supports both number fields and optional array items)
+  // Compute total cost — explicitly sum base categories + otherItems + single "other"
   const totalCost = React.useMemo(() => {
-    const c = row?.travelOrder?.costs;
-    if (!c) return 0;
-    let sum = 0;
-    Object.values(c).forEach((v) => {
-      if (typeof v === "number") sum += v;
-      if (Array.isArray(v)) {
-        v.forEach((item) => {
-          if (item && typeof item.amount === "number") sum += item.amount;
-        });
-      }
-    });
-    return sum;
+    const c: any = row?.travelOrder?.costs || {};
+    const baseKeys = ["food", "driversAllowance", "rentVehicles", "hiredDrivers", "accommodation"] as const;
+
+    const base = baseKeys.reduce((sum, k) => {
+      const v = c[k];
+      return sum + (typeof v === "number" && isFinite(v) ? v : 0);
+    }, 0);
+
+    const othersArray = Array.isArray(c.otherItems)
+      ? c.otherItems.reduce(
+          (s: number, it: any) => s + (it && typeof it.amount === "number" && isFinite(it.amount) ? it.amount : 0),
+          0
+        )
+      : 0;
+
+    const singleOther =
+      c.otherLabel && typeof c.otherAmount === "number" && isFinite(c.otherAmount) ? c.otherAmount : 0;
+
+    return base + othersArray + singleOther;
   }, [row?.travelOrder?.costs]);
 
   const deptName = row?.travelOrder?.department || "";
+
+  // Build a payload for PDF that always includes current dropdown selections (top-level only)
+  const handlePrintTravelPDF = React.useCallback(() => {
+    if (!row) return;
+    const printable: AdminRequest = {
+      ...row,
+      driver,
+      vehicle,
+      // (No schoolService mirror needed; PDF resolver reads top-level first.)
+    } as AdminRequest;
+
+    generateRequestPDF(printable);
+  }, [row, driver, vehicle]);
 
   return (
     <Dialog open={open} onClose={onClose} className="fixed inset-0 z-50 flex items-center justify-center">
@@ -11101,58 +11144,60 @@ export default function RequestDetailsModalUI({
                     <h4 className="mb-2 text-sm font-semibold text-neutral-700">Estimated Costs</h4>
                     <table className="w-full text-sm border border-neutral-200 rounded">
                       <tbody>
-                        {"food" in row.travelOrder.costs && (
+                        {"food" in row.travelOrder.costs && (row.travelOrder.costs as any).food > 0 && (
                           <tr>
                             <td className="px-2 py-1">Food</td>
-                            <td className="px-2 py-1 text-right">{peso(row.travelOrder.costs.food as any)}</td>
+                            <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).food)}</td>
                           </tr>
                         )}
-                        {"driversAllowance" in row.travelOrder.costs && (
-                          <tr>
-                            <td className="px-2 py-1">Driver’s allowance</td>
-                            <td className="px-2 py-1 text-right">
-                              {peso(row.travelOrder.costs.driversAllowance as any)}
-                            </td>
-                          </tr>
-                        )}
-                        {"rentVehicles" in row.travelOrder.costs && (
-                          <tr>
-                            <td className="px-2 py-1">Rent vehicles</td>
-                            <td className="px-2 py-1 text-right">{peso(row.travelOrder.costs.rentVehicles as any)}</td>
-                          </tr>
-                        )}
-                        {"hiredDrivers" in row.travelOrder.costs && (
-                          <tr>
-                            <td className="px-2 py-1">Hired drivers</td>
-                            <td className="px-2 py-1 text-right">{peso(row.travelOrder.costs.hiredDrivers as any)}</td>
-                          </tr>
-                        )}
-                        {"accommodation" in row.travelOrder.costs && (
-                          <tr>
-                            <td className="px-2 py-1">Accommodation</td>
-                            <td className="px-2 py-1 text-right">{peso(row.travelOrder.costs.accommodation as any)}</td>
-                          </tr>
-                        )}
+                        {"driversAllowance" in row.travelOrder.costs &&
+                          (row.travelOrder.costs as any).driversAllowance > 0 && (
+                            <tr>
+                              <td className="px-2 py-1">Driver’s allowance</td>
+                              <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).driversAllowance)}</td>
+                            </tr>
+                          )}
+                        {"rentVehicles" in row.travelOrder.costs &&
+                          (row.travelOrder.costs as any).rentVehicles > 0 && (
+                            <tr>
+                              <td className="px-2 py-1">Rent vehicles</td>
+                              <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).rentVehicles)}</td>
+                            </tr>
+                          )}
+                        {"hiredDrivers" in row.travelOrder.costs &&
+                          (row.travelOrder.costs as any).hiredDrivers > 0 && (
+                            <tr>
+                              <td className="px-2 py-1">Hired drivers</td>
+                              <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).hiredDrivers)}</td>
+                            </tr>
+                          )}
+                        {"accommodation" in row.travelOrder.costs &&
+                          (row.travelOrder.costs as any).accommodation > 0 && (
+                            <tr>
+                              <td className="px-2 py-1">Accommodation</td>
+                              <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).accommodation)}</td>
+                            </tr>
+                          )}
 
                         {"otherLabel" in row.travelOrder.costs &&
                           "otherAmount" in row.travelOrder.costs &&
-                          (row.travelOrder.costs as any).otherLabel && (
+                          (row.travelOrder.costs as any).otherLabel &&
+                          (row.travelOrder.costs as any).otherAmount > 0 && (
                             <tr>
                               <td className="px-2 py-1">{(row.travelOrder.costs as any).otherLabel}</td>
-                              <td className="px-2 py-1 text-right">
-                                {peso((row.travelOrder.costs as any).otherAmount)}
-                              </td>
+                              <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).otherAmount)}</td>
                             </tr>
                           )}
 
                         {Array.isArray((row.travelOrder.costs as any).otherItems) &&
                           (row.travelOrder.costs as any).otherItems.map(
-                            (item: { label: string; amount: number }, i: number) => (
-                              <tr key={i}>
-                                <td className="px-2 py-1">{item.label}</td>
-                                <td className="px-2 py-1 text-right">{peso(item.amount)}</td>
-                              </tr>
-                            )
+                            (item: { label: string; amount: number }, i: number) =>
+                              item?.amount > 0 && (
+                                <tr key={i}>
+                                  <td className="px-2 py-1">{item.label}</td>
+                                  <td className="px-2 py-1 text-right">{peso(item.amount)}</td>
+                                </tr>
+                              )
                           )}
 
                         <tr className="border-t font-semibold">
@@ -11174,7 +11219,7 @@ export default function RequestDetailsModalUI({
                       <img
                         src={row.travelOrder.endorsedByHeadSignature}
                         alt="Signature"
-                        className="h-16 object-contain -mb-3"  /* pull signature closer to the line (overlap a bit) */
+                        className="h-16 object-contain -mb-3"
                       />
                     ) : (
                       <div className="h-16" />
@@ -11188,7 +11233,7 @@ export default function RequestDetailsModalUI({
                       {row.travelOrder?.endorsedByHeadName || "—"}
                     </p>
 
-                    {/* role + department (so “Dept. Head, CITE” for example) */}
+                    {/* role + department */}
                     <p className="text-xs text-neutral-500 text-center">
                       Dept. Head{deptName ? `, ${deptName}` : ""}
                     </p>
@@ -11248,7 +11293,7 @@ export default function RequestDetailsModalUI({
             <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
               <div className="flex gap-2">
                 <button
-                  onClick={() => row && generateRequestPDF(row)}
+                  onClick={handlePrintTravelPDF}
                   className="flex items-center gap-2 rounded-md bg-[#7A0010] hover:bg-[#5c000c] px-4 py-2 text-sm text-white transition"
                 >
                   <FileDown className="h-4 w-4" />
@@ -11256,7 +11301,7 @@ export default function RequestDetailsModalUI({
                 </button>
                 {row.seminar && (
                   <button
-                    onClick={() => row && generateSeminarPDF(row)}
+                    onClick={() => generateSeminarPDF(row)}
                     className="flex items-center gap-2 rounded-md bg-blue-600 hover:bg-blue-700 px-4 py-2 text-sm text-white transition"
                   >
                     <FileDown className="h-4 w-4" />
@@ -23656,36 +23701,24 @@ export default function TravelOrderForm({
 
 
 ===== components\user\request\ui\TravelOrderForm.view.tsx =====
-// src/components/user/request/ui/TravelOrderForm.view.tsx
 "use client";
 
 import * as React from "react";
-import {
-  TextInput,
-  DateInput,
-  TextArea,
-  CurrencyInput,
-} from "@/components/user/request/ui/controls";
-import LocationField from "@/components/user/request/ui/LocationField.ui";
-import DepartmentSelect from "@/components/common/inputs/DepartmentSelect.ui";
-import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
+import TopGridFields from "./parts/TopGridFields.view";
+import PurposeField from "./parts/PurposeField.view";
+import CostsSection from "./parts/CostsSection.view";
+import EndorsementSection from "./parts/EndorsementSection.view";
+import SignatureSection from "./parts/SignatureSection.view";
+import { UI_TEXT } from "@/lib/user/request/uiText";
 
-function asNum(v: string): number | null {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
 
 type ViewProps = {
   data: any;
   errors: Record<string, string>;
-
   needsJustif: boolean;
-
   onChange: (patch: any) => void;
   onChangeCosts: (patch: any) => void;
   onDepartmentChange: (dept: string) => void;
-
-  // signature
   signature: string | null;
   sigDirty: boolean;
   sigSaved: boolean;
@@ -23715,214 +23748,54 @@ export default function TravelOrderFormView({
   setHeadEdited,
 }: ViewProps) {
   const c = data?.costs || {};
-
   return (
     <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Travel Order</h3>
-        <span className="text-xs text-neutral-500">Required fields marked with *</span>
+        <h3 className="text-lg font-semibold">{UI_TEXT.title}</h3>
+        <span className="text-xs text-neutral-500">{UI_TEXT.requiredHint}</span>
       </div>
 
-      {/* Top grid */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <DateInput
-          id="to-date"
-          label="Date"
-          required
-          value={data?.date || ""}
-          onChange={(e) => onChange({ date: e.target.value })}
-          error={errors["travelOrder.date"]}
-          helper="Select the date this request is created."
-        />
+      <TopGridFields
+        data={data}
+        errors={errors}
+        onChange={onChange}
+        onDepartmentChange={onDepartmentChange}
+      />
 
-        <TextInput
-          id="to-requester"
-          label="Requesting person"
-          required
-          placeholder="Juan Dela Cruz"
-          value={data?.requestingPerson || ""}
-          onChange={(e) => onChange({ requestingPerson: e.target.value })}
-          error={errors["travelOrder.requestingPerson"]}
-        />
+      <PurposeField
+        value={data?.purposeOfTravel || ""}
+        error={errors["travelOrder.purposeOfTravel"]}
+        onChange={(v) => onChange({ purposeOfTravel: v })}
+      />
 
-        {/* Department / Office (searchable) */}
-        <div className="grid gap-1">
-          <DepartmentSelect
-            id="to-department"
-            label="Department *"
-            value={data?.department || ""}
-            required
-            placeholder="e.g., CBA, CCMS, ICT Department"
-            onChange={onDepartmentChange}
-          />
-          {errors["travelOrder.department"] && (
-            <span className="text-xs text-red-600">{errors["travelOrder.department"]}</span>
-          )}
-        </div>
+      <CostsSection
+        costs={c}
+        needsJustif={needsJustif}
+        errors={errors}
+        onChangeCosts={onChangeCosts}
+      />
 
-        {/* Destination with map picker */}
-        <div className="grid gap-1">
-          <LocationField
-            label="Destination"
-            inputId="to-destination"
-            value={data?.destination || ""}
-            geo={data?.destinationGeo || null}
-            onChange={({ address, geo }) =>
-              onChange({ destination: address, destinationGeo: geo ?? undefined })
-            }
-            placeholder="City / Venue / School / Company"
-          />
-          {errors["travelOrder.destination"] && (
-            <span className="text-xs text-red-600">{errors["travelOrder.destination"]}</span>
-          )}
-        </div>
+      <EndorsementSection
+        nameValue={data?.endorsedByHeadName ?? ""}
+        dateValue={data?.endorsedByHeadDate ?? ""}
+        onNameChange={(v) => {
+          setHeadEdited();
+          onChange({ endorsedByHeadName: v });
+        }}
+        onDateChange={(v) => onChange({ endorsedByHeadDate: v })}
+      />
 
-        <DateInput
-          id="to-departure"
-          label="Departure date"
-          required
-          value={data?.departureDate || ""}
-          onChange={(e) => onChange({ departureDate: e.target.value })}
-          error={errors["travelOrder.departureDate"]}
-        />
-        <DateInput
-          id="to-return"
-          label="Return date"
-          required
-          value={data?.returnDate || ""}
-          onChange={(e) => onChange({ returnDate: e.target.value })}
-          error={errors["travelOrder.returnDate"]}
-        />
-      </div>
-
-      <div className="mt-4">
-        <TextArea
-          id="to-purpose"
-          label="Purpose of travel"
-          required
-          placeholder="Briefly explain what the trip is for"
-          value={data?.purposeOfTravel || ""}
-          onChange={(e) => onChange({ purposeOfTravel: e.target.value })}
-          error={errors["travelOrder.purposeOfTravel"]}
-        />
-      </div>
-
-      {/* Costs */}
-      <div className="mt-6 rounded-xl border border-neutral-200 p-4">
-        <div className="mb-3 text-sm font-semibold">Travel Cost (estimate)</div>
-
-        <div className="grid gap-4 md:grid-cols-2">
-          <CurrencyInput
-            label="Food"
-            placeholder="0.00"
-            value={c.food ?? ""}
-            onChange={(e) => onChangeCosts({ food: asNum(e.target.value) })}
-          />
-          <CurrencyInput
-            label="Driver’s allowance"
-            placeholder="0.00"
-            value={c.driversAllowance ?? ""}
-            onChange={(e) => onChangeCosts({ driversAllowance: asNum(e.target.value) })}
-          />
-          <CurrencyInput
-            label="Rent vehicles"
-            placeholder="0.00"
-            value={c.rentVehicles ?? ""}
-            onChange={(e) => onChangeCosts({ rentVehicles: asNum(e.target.value) })}
-          />
-          <CurrencyInput
-            label="Hired drivers"
-            placeholder="0.00"
-            value={c.hiredDrivers ?? ""}
-            onChange={(e) => onChangeCosts({ hiredDrivers: asNum(e.target.value) })}
-          />
-          <CurrencyInput
-            label="Accommodation"
-            placeholder="0.00"
-            value={c.accommodation ?? ""}
-            onChange={(e) => onChangeCosts({ accommodation: asNum(e.target.value) })}
-          />
-
-          <div className="grid grid-cols-3 gap-3 md:col-span-2">
-            <TextInput
-              label="Other (label)"
-              placeholder="e.g., Materials, Printing"
-              value={c.otherLabel ?? ""}
-              onChange={(e) => onChangeCosts({ otherLabel: e.target.value })}
-            />
-            <CurrencyInput
-              label="Amount"
-              placeholder="0.00"
-              value={c.otherAmount ?? ""}
-              onChange={(e) => onChangeCosts({ otherAmount: asNum(e.target.value) })}
-              className="col-span-2 sm:col-span-1"
-            />
-          </div>
-        </div>
-
-        {needsJustif && (
-          <div className="mt-4">
-            <TextArea
-              id="to-justification"
-              label="Justification"
-              required
-              placeholder="State reasons for renting or hiring a driver"
-              value={c.justification ?? ""}
-              onChange={(e) => onChangeCosts({ justification: e.target.value })}
-              error={errors["travelOrder.costs.justification"]}
-            />
-          </div>
-        )}
-      </div>
-
-      {/* Endorsement */}
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
-        <TextInput
-          label="Endorsed by (Dept Head)"
-          placeholder="Name of Department Head"
-          value={data?.endorsedByHeadName ?? ""}
-          onChange={(e) => {
-            setHeadEdited();
-            onChange({ endorsedByHeadName: e.target.value });
-          }}
-        />
-        <DateInput
-          label="Endorsement date"
-          value={data?.endorsedByHeadDate ?? ""}
-          onChange={(e) => onChange({ endorsedByHeadDate: e.target.value })}
-        />
-      </div>
-
-      {/* Signature block */}
-      <div className="mt-6 rounded-xl border border-neutral-200 bg-neutral-50/60 p-4">
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <span className="text-sm font-medium text-neutral-700">Endorser signature</span>
-
-          {errors["travelOrder.endorsedByHeadSignature"] && !signature ? (
-            <span className="text-xs font-semibold text-red-600">
-              {errors["travelOrder.endorsedByHeadSignature"]}
-            </span>
-          ) : sigSaved ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
-              ✓ Saved{sigSavedAt ? <span className="text-green-700/80"> · {sigSavedAt}</span> : null}
-            </span>
-          ) : (
-            <span className="text-xs text-neutral-500">Not saved</span>
-          )}
-        </div>
-
-        <SignaturePad
-          height={200}
-          value={signature}
-          onDraw={onSigDraw}
-          onSave={onSigSave}
-          onClear={onSigClear}
-          onUpload={onSigUpload}
-          saveDisabled={!sigDirty}
-        />
-
-        
-      </div>
+      <SignatureSection
+        signature={signature}
+        sigDirty={sigDirty}
+        sigSaved={sigSaved}
+        sigSavedAt={sigSavedAt}
+        errors={errors}
+        onSigDraw={onSigDraw}
+        onSigSave={onSigSave}
+        onSigClear={onSigClear}
+        onSigUpload={onSigUpload}
+      />
     </section>
   );
 }
@@ -24145,6 +24018,428 @@ export function CurrencyInput({
         />
       </div>
     </FieldWrap>
+  );
+}
+
+
+===== components\user\request\ui\parts\CostsSection.view.tsx =====
+"use client";
+
+import * as React from "react";
+import { TextInput, CurrencyInput, TextArea } from "@/components/user/request/ui/controls";
+import { UI_TEXT } from "@/lib/user/request/uiText";
+import { toNumOrNull } from "@/lib/common/number";
+
+type OtherItem = { label: string; amount: number | null };
+
+type Props = {
+  costs: any;
+  needsJustif: boolean;
+  errors: Record<string, string>;
+  onChangeCosts: (patch: any) => void;
+};
+
+export default function CostsSection({
+  costs,
+  needsJustif,
+  errors,
+  onChangeCosts,
+}: Props) {
+  // ----- Safe text fallbacks so we never pass `undefined` into string props
+  const TXT = {
+    title: UI_TEXT?.costs?.title ?? "Travel Cost (estimate)",
+    food: UI_TEXT?.costs?.food ?? "Food",
+    driversAllowance: UI_TEXT?.costs?.driversAllowance ?? "Driver’s allowance",
+    rentVehicles: UI_TEXT?.costs?.rentVehicles ?? "Rent vehicles",
+    hiredDrivers: UI_TEXT?.costs?.hiredDrivers ?? "Hired drivers",
+    accommodation: UI_TEXT?.costs?.accommodation ?? "Accommodation",
+    amountPh: UI_TEXT?.costs?.amountPh ?? "₱ 0.00",
+    // new keys (local fallbacks only)
+    otherGroup: "Other expenses",
+    otherLabel: "Other (label)",
+    otherLabelPh: "e.g., Materials, Printing",
+    otherAmount: "Amount",
+    justificationLabel: UI_TEXT?.justification?.label ?? "Justification",
+    justificationPh: UI_TEXT?.justification?.placeholder ?? "Explain why these costs are needed…",
+  };
+
+  // Build working list from costs.otherItems or legacy pair
+  const otherItems: OtherItem[] = React.useMemo(() => {
+    if (Array.isArray(costs?.otherItems)) return costs.otherItems;
+    const hasLegacy =
+      (costs?.otherLabel && String(costs.otherLabel).trim().length > 0) ||
+      (typeof costs?.otherAmount === "number" && !!costs.otherAmount);
+    return hasLegacy
+      ? [{ label: costs.otherLabel ?? "", amount: costs.otherAmount ?? null }]
+      : [];
+  }, [costs?.otherItems, costs?.otherLabel, costs?.otherAmount]);
+
+  const setOtherItems = (next: OtherItem[]) => {
+    onChangeCosts({
+      otherItems: next,
+      // clear legacy fields to avoid double counting anywhere else
+      otherLabel: "",
+      otherAmount: null,
+    });
+  };
+  const addOther = () => setOtherItems([...otherItems, { label: "", amount: null }]);
+  const updateOther = (i: number, patch: Partial<OtherItem>) =>
+    setOtherItems(otherItems.map((row, idx) => (idx === i ? { ...row, ...patch } : row)));
+  const removeOther = (i: number) => setOtherItems(otherItems.filter((_, idx) => idx !== i));
+
+  return (
+    <div className="mt-6 rounded-xl border border-neutral-200 p-4">
+      <div className="mb-3 text-sm font-semibold">{TXT.title}</div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <CurrencyInput
+          label={TXT.food}
+          placeholder={TXT.amountPh}
+          value={costs?.food ?? ""}
+          onChange={(e) => onChangeCosts({ food: toNumOrNull(e.target.value) })}
+        />
+        <CurrencyInput
+          label={TXT.driversAllowance}
+          placeholder={TXT.amountPh}
+          value={costs?.driversAllowance ?? ""}
+          onChange={(e) => onChangeCosts({ driversAllowance: toNumOrNull(e.target.value) })}
+        />
+        <CurrencyInput
+          label={TXT.rentVehicles}
+          placeholder={TXT.amountPh}
+          value={costs?.rentVehicles ?? ""}
+          onChange={(e) => onChangeCosts({ rentVehicles: toNumOrNull(e.target.value) })}
+        />
+        <CurrencyInput
+          label={TXT.hiredDrivers}
+          placeholder={TXT.amountPh}
+          value={costs?.hiredDrivers ?? ""}
+          onChange={(e) => onChangeCosts({ hiredDrivers: toNumOrNull(e.target.value) })}
+        />
+        <CurrencyInput
+          label={TXT.accommodation}
+          placeholder={TXT.amountPh}
+          value={costs?.accommodation ?? ""}
+          onChange={(e) => onChangeCosts({ accommodation: toNumOrNull(e.target.value) })}
+        />
+
+        {/* Dynamic Other expenses */}
+        <div className="md:col-span-2">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="text-sm font-medium">{TXT.otherGroup}</div>
+            <button
+              type="button"
+              onClick={addOther}
+              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
+            >
+              + Add
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            {otherItems.length === 0 && (
+              <div className="text-xs text-neutral-500">No other expenses. Click “Add” to insert one.</div>
+            )}
+
+            {otherItems.map((row, idx) => (
+              <div key={idx} className="grid grid-cols-3 gap-3">
+                <TextInput
+                  label={idx === 0 ? TXT.otherLabel : ""}         
+                  placeholder={TXT.otherLabelPh}
+                  value={row.label}
+                  onChange={(e) => updateOther(idx, { label: e.target.value })}
+                  className="col-span-2"
+                />
+                <div className="flex items-end gap-2">
+                  <CurrencyInput
+                    label={idx === 0 ? TXT.otherAmount : ""}       
+                    placeholder={TXT.amountPh}
+                    value={row.amount ?? ""}
+                    onChange={(e) => updateOther(idx, { amount: toNumOrNull(e.target.value) })}
+                    className="flex-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeOther(idx)}
+                    className="h-[38px] rounded-md border border-neutral-300 px-3 text-sm hover:bg-neutral-100"
+                    aria-label="Remove"
+                    title="Remove"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {needsJustif && (
+        <div className="mt-4">
+          <TextArea
+            id="to-justification"
+            label={TXT.justificationLabel}
+            required
+            placeholder={TXT.justificationPh}
+            value={costs?.justification ?? ""}
+            onChange={(e) => onChangeCosts({ justification: e.target.value })}
+            error={errors["travelOrder.costs.justification"]}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+===== components\user\request\ui\parts\EndorsementSection.view.tsx =====
+"use client";
+
+import * as React from "react";
+import { TextInput, DateInput } from "@/components/user/request/ui/controls";
+// replace: import { UI_TEXT } from "./uiText";
+import { UI_TEXT } from "@/lib/user/request/uiText";
+
+
+type Props = {
+  nameValue: string;
+  dateValue: string;
+  onNameChange: (v: string) => void;
+  onDateChange: (v: string) => void;
+};
+
+export default function EndorsementSection({
+  nameValue,
+  dateValue,
+  onNameChange,
+  onDateChange,
+}: Props) {
+  return (
+    <div className="mt-6 grid gap-4 md:grid-cols-2">
+      <TextInput
+        label={UI_TEXT.endorsedBy.name}
+        placeholder={UI_TEXT.endorsedBy.namePh}
+        value={nameValue}
+        onChange={(e) => onNameChange(e.target.value)}
+      />
+      <DateInput
+        label={UI_TEXT.endorsedBy.date}
+        value={dateValue}
+        onChange={(e) => onDateChange(e.target.value)}
+      />
+    </div>
+  );
+}
+
+
+===== components\user\request\ui\parts\PurposeField.view.tsx =====
+"use client";
+
+import * as React from "react";
+import { TextArea } from "@/components/user/request/ui/controls";
+// replace: import { UI_TEXT } from "./uiText";
+import { UI_TEXT } from "@/lib/user/request/uiText";
+
+
+type Props = {
+  value: string;
+  error?: string;
+  onChange: (v: string) => void;
+};
+
+export default function PurposeField({ value, error, onChange }: Props) {
+  return (
+    <div className="mt-4">
+      <TextArea
+        id="to-purpose"
+        label={UI_TEXT.purpose.label}
+        required
+        placeholder={UI_TEXT.purpose.placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        error={error}
+      />
+    </div>
+  );
+}
+
+
+===== components\user\request\ui\parts\SignatureSection.view.tsx =====
+"use client";
+
+import * as React from "react";
+import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
+import { UI_TEXT } from "@/lib/user/request/uiText";
+
+
+type Props = {
+  signature: string | null;
+  sigDirty: boolean;
+  sigSaved: boolean;
+  sigSavedAt: string | null;
+  errors: Record<string, string>;
+  onSigDraw: () => void;
+  onSigSave: (dataUrl: string) => void;
+  onSigClear: () => void;
+  onSigUpload: (file: File) => void | Promise<void>;
+};
+
+export default function SignatureSection({
+  signature,
+  sigDirty,
+  sigSaved,
+  sigSavedAt,
+  errors,
+  onSigDraw,
+  onSigSave,
+  onSigClear,
+  onSigUpload,
+}: Props) {
+  return (
+    <div className="mt-6 rounded-xl border border-neutral-200 bg-neutral-50/60 p-4">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <span className="text-sm font-medium text-neutral-700">
+          {UI_TEXT.signature.title}
+        </span>
+
+        {errors["travelOrder.endorsedByHeadSignature"] && !signature ? (
+          <span className="text-xs font-semibold text-red-600">
+            {errors["travelOrder.endorsedByHeadSignature"]}
+          </span>
+        ) : sigSaved ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+            ✓ Saved
+            {sigSavedAt ? (
+              <span className="text-green-700/80"> · {sigSavedAt}</span>
+            ) : null}
+          </span>
+        ) : (
+          <span className="text-xs text-neutral-500">
+            {UI_TEXT.signature.notSaved}
+          </span>
+        )}
+      </div>
+
+      <SignaturePad
+        height={200}
+        value={signature}
+        onDraw={onSigDraw}
+        onSave={onSigSave}
+        onClear={onSigClear}
+        onUpload={onSigUpload}
+        saveDisabled={!sigDirty}
+      />
+    </div>
+  );
+}
+
+
+===== components\user\request\ui\parts\TopGridFields.view.tsx =====
+"use client";
+
+import * as React from "react";
+import {
+  TextInput,
+  DateInput,
+} from "@/components/user/request/ui/controls";
+import LocationField from "@/components/user/request/ui/LocationField.ui";
+import DepartmentSelect from "@/components/common/inputs/DepartmentSelect.ui";
+import { UI_TEXT } from "@/lib/user/request/uiText";
+
+
+type Props = {
+  data: any;
+  errors: Record<string, string>;
+  onChange: (patch: any) => void;
+  onDepartmentChange: (dept: string) => void;
+};
+
+export default function TopGridFields({
+  data,
+  errors,
+  onChange,
+  onDepartmentChange,
+}: Props) {
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <DateInput
+        id="to-date"
+        label={UI_TEXT.date.label}
+        required
+        value={data?.date || ""}
+        onChange={(e) => onChange({ date: e.target.value })}
+        error={errors["travelOrder.date"]}
+        helper={UI_TEXT.date.helper}
+      />
+
+      <div className="flex flex-col">
+        <TextInput
+          id="to-requester"
+          label={UI_TEXT.requester.label}
+          required
+          placeholder={UI_TEXT.requester.placeholder}
+          value={data?.requestingPerson || ""}
+          onChange={(e) => onChange({ requestingPerson: e.target.value })}
+          error={errors["travelOrder.requestingPerson"]}
+          helper=""
+        />
+        <div className="text-xs text-neutral-500 min-h-[1.25rem] leading-5 invisible">
+          placeholder
+        </div>
+      </div>
+
+      <div className="grid gap-1">
+        <DepartmentSelect
+          id="to-department"
+          label={UI_TEXT.dept.label}
+          value={data?.department || ""}
+          required
+          placeholder={UI_TEXT.dept.placeholder}
+          onChange={onDepartmentChange}
+        />
+        {errors["travelOrder.department"] && (
+          <span className="text-xs text-red-600">
+            {errors["travelOrder.department"]}
+          </span>
+        )}
+      </div>
+
+      <div className="grid gap-1">
+        <LocationField
+          label={UI_TEXT.destination.label}
+          inputId="to-destination"
+          value={data?.destination || ""}
+          geo={data?.destinationGeo || null}
+          onChange={({ address, geo }) =>
+            onChange({ destination: address, destinationGeo: geo ?? undefined })
+          }
+          placeholder={UI_TEXT.destination.placeholder}
+        />
+        {errors["travelOrder.destination"] && (
+          <span className="text-xs text-red-600">
+            {errors["travelOrder.destination"]}
+          </span>
+        )}
+      </div>
+
+      <DateInput
+        id="to-departure"
+        label={UI_TEXT.departure.label}
+        required
+        value={data?.departureDate || ""}
+        onChange={(e) => onChange({ departureDate: e.target.value })}
+        error={errors["travelOrder.departureDate"]}
+      />
+
+      <DateInput
+        id="to-return"
+        label={UI_TEXT.return.label}
+        required
+        value={data?.returnDate || ""}
+        onChange={(e) => onChange({ returnDate: e.target.value })}
+        error={errors["travelOrder.returnDate"]}
+      />
+    </div>
   );
 }
 
@@ -28056,24 +28351,25 @@ export function generateSeminarPDF(req: AdminRequest) {
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import type { AdminRequest } from "@/lib/admin/requests/store";
 
-/**
- * Travel Order (Rev.12 • Jan 2024) overlay for your edited template.
- * Coordinates tuned to your latest PDF.
- */
+/** Layout enum */
+enum CostMode { Column = "column", Row = "row", Grid3 = "grid3" }
+
 export async function generateRequestPDF(req: AdminRequest) {
-  // Visual helper (draws faint red boxes over target rects on the SAME page)
-  const SHOW_BOXES = false;
+  /* ===== DEV VISUALS ===== */
+  const SHOW_BOXES = false; // field guides
+  const SHOW_GRID  = false; // page rulers (50pt)
 
-  // If your viewer/printer shifts a tiny bit, nudge these by ±1–3 points
-  const OFFSET_X = 0;   // +right / -left
-  const OFFSET_TOP = 0; // +down  / -up
-
-  // A little inner padding so text won’t sit on borders
+  /* ===== GLOBAL OFFSETS ===== */
+  const OFFSET_X = 0;
+  const OFFSET_TOP = 0;
   const PAD_X = 2;
 
-  // ---- Format helpers -------------------------------------------------------
+  /* ===== FORMAT HELPERS ===== */
   const peso = (val?: number | null) =>
-    `PHP ${new Intl.NumberFormat("en-PH").format(val ?? 0)}`;
+    `PHP ${new Intl.NumberFormat("en-PH", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(Number(val ?? 0))}`;
 
   const fmtDate = (d?: string | number | Date | null) => {
     const dt = d ? new Date(d) : new Date();
@@ -28083,102 +28379,64 @@ export async function generateRequestPDF(req: AdminRequest) {
     return `${y}-${m}-${day}`;
   };
 
-  // Abbreviations for very long department names (extend as you like)
   const DEPT_WORD_ABBR: Record<string, string> = {
-    "College": "C.",
-    "of": "of",                // keep
-    "Business": "Bus.",
-    "Accountancy": "Accty.",
-    "Hospitality": "Hosp.",
-    "Tourism": "Tour.",
-    "Management": "Mgmt.",
+    College: "C.",
+    of: "of",
+    Business: "Bus.",
+    Accountancy: "Accty.",
+    Hospitality: "Hosp.",
+    Tourism: "Tour.",
+    Management: "Mgmt.",
     "Management/": "Mgmt/",
-    "Criminal": "Crim.",
-    "Justice": "Just.",
-    "Research": "Res.",
-    "Knowledge": "Knowl.",
-    "Institute": "Inst.",
-    "International": "Intl.",
-    "Human": "Hum.",
-    "Resource": "Res.",
-    "Information": "Info.",
-    "Science": "Sci.",
-    "Sciences": "Scis.",
+    Criminal: "Crim.",
+    Justice: "Just.",
+    Research: "Res.",
+    Knowledge: "Knowl.",
+    Institute: "Inst.",
+    International: "Intl.",
+    Human: "Hum.",
+    Resource: "Res.",
+    Information: "Info.",
+    Science: "Sci.",
+    Sciences: "Scis.",
   };
-
-  function abbreviateDepartment(raw: string) {
-    if (!raw) return "";
-    // Replace long common phrases first
-    let s = raw
+  const abbreviateDepartment = (raw: string) =>
+    (raw || "")
       .replace(/\bCollege of\b/gi, "C. of")
       .replace(/\b&\b/g, "&")
-      .replace(/\band\b/gi, "&");
-    // Word-level abbr
-    s = s
+      .replace(/\band\b/gi, "&")
       .split(/\s+/)
-      .map(w => {
-        const key = Object.keys(DEPT_WORD_ABBR).find(k => new RegExp(`^${k}$`, "i").test(w));
-        return key ? DEPT_WORD_ABBR[key] : w;
+      .map((w) => {
+        const k = Object.keys(DEPT_WORD_ABBR).find((kk) => new RegExp(`^${kk}$`, "i").test(w));
+        return k ? DEPT_WORD_ABBR[k] : w;
       })
-      .join(" ");
-    return s.replace(/\s{2,}/g, " ").trim();
-  }
+      .join(" ")
+      .replace(/\s{2,}/g, " ")
+      .trim();
 
-  // Mild address abbreviations for Destination/Address
-  function abbreviateAddress(s: string) {
-    return (s ?? "")
+  const abbreviateAddress = (s: string) =>
+    (s ?? "")
       .replace(/\bBarangay\b/gi, "Brgy.")
       .replace(/\bDistrict\b/gi, "Dist.")
       .replace(/\bAvenue\b/gi, "Ave.")
       .replace(/\bStreet\b/gi, "St.")
       .replace(/\bRoad\b/gi, "Rd.")
       .replace(/\bSubdivision\b/gi, "Subd.");
-  }
 
-  // ---- Rectangles (x from left, top from top; width/height in pt) ----------
-  // Costs column: single anchor + row step → easy to adjust as a group
-  const COST_TOP_START = 312; // adjust if needed after your edit
-  const COST_ROW_STEP  = 20;  // space between rows
-  const COST_X         = 532; // right column x
-  const COST_W         = 128; // wide enough for "PHP 5,100"
+  /* ===== TYPES ===== */
+  type Rect = { x: number; top: number; w: number; h: number; align?: "left" | "right" | "center" };
 
-  const CR = (i: number) =>
-    ({ x: COST_X, top: COST_TOP_START + i * COST_ROW_STEP, w: COST_W, h: 12, align: "right" as const });
+  /* ===== COST LABELS ===== */
+  const COST_LABELS: Record<string, string> = {
+    food: "Food",
+    driversAllowance: "Driver’s allowance",
+    rentVehicles: "Rent vehicles",
+    hiredDrivers: "Hired drivers",
+    accommodation: "Accommodation",
+    total: "Total",
+  };
 
-  const R = {
-    // Header date
-    createdDate:      { x: 105, top: 125, w: 150, h: 14 },
-
-    // TRAVEL REQUEST block
-    requestingPerson: { x: 150, top: 180, w: 210, h: 14 },
-
-    // Department: allow up to 3 lines, shrinks if needed
-    department:       { x: 450, top: 169, w: 146, h: 42 }, // <- 3 lines high (14 * 3)
-    destination:      { x: 150, top: 205, w: 446, h: 28 }, // 2 lines
-
-    departureDate:    { x: 150, top: 235, w: 210, h: 14 },
-    returnDate:       { x: 450, top: 235, w: 150, h: 14 },
-
-    // Purpose of Travel (~2 lines)
-    purposeOfTravel:  { x: 150, top: 260, w: 446, h: 26 },
-
-    // COSTS (5 rows)
-    costFood:           CR(0),
-    costDriversAllow:   CR(1),
-    costRentVehicles:   CR(2),
-    costHiredDrivers:   CR(3),
-    costAccommodation:  CR(4),
-
-    // Endorsements (keep your exact signature rect)
-    endorsedByName:     { x: 125, top: 400, w: 260, h: 14 },
-    endorsedSignature:  { x: 85,  top: 380, w: 180, h: 34 },
-
-    // School service
-    driver:             { x: 96,  top: 494, w: 210, h: 14 },
-    vehicle:            { x: 96,  top: 510, w: 210, h: 14 },
-  } as const;
-
-  // ---- Signature utilities --------------------------------------------------
+  /* ===== SIGNATURE & DATA HELPERS ===== */
   function dataUrlToBytes(dataUrl: string): Uint8Array {
     const base64 = dataUrl.split(",")[1] ?? "";
     const bin = atob(base64);
@@ -28228,7 +28486,6 @@ export async function generateRequestPDF(req: AdminRequest) {
       const u = await toDataUrlFromAny(c);
       if (u) return u;
     }
-    // DOM fallback (signature pad/image in your modal)
     if (typeof document !== "undefined") {
       const el = document.getElementById("endorse-signature");
       if (el instanceof HTMLCanvasElement || el instanceof HTMLImageElement) {
@@ -28238,87 +28495,124 @@ export async function generateRequestPDF(req: AdminRequest) {
     return null;
   }
 
-  // ---- Draw helpers ---------------------------------------------------------
-  const tx  = (x: number) => x + OFFSET_X;
+  const toNumber = (v: unknown) =>
+    typeof v === "number" ? v : typeof v === "string" ? Number(v) || 0 : 0;
+
+  function computeTravelTotalFromCosts(c: any): number {
+    const base =
+      toNumber(c.food) +
+      toNumber(c.driversAllowance) +
+      toNumber(c.rentVehicles) +
+      toNumber(c.hiredDrivers) +
+      toNumber(c.accommodation);
+    const otherItemsTotal = Array.isArray(c.otherItems)
+      ? c.otherItems.reduce((s: number, it: any) => s + toNumber(it?.amount), 0)
+      : 0;
+    const singleOther = c.otherLabel ? toNumber(c.otherAmount) : 0;
+    return base + otherItemsTotal + singleOther;
+  }
+
+  function getString(v: any): string {
+    if (!v) return "";
+    if (typeof v === "string") return v;
+    if (typeof v === "number") return String(v);
+    if (typeof v === "object") return v.name ?? v.label ?? v.title ?? v.plateNo ?? v.plate ?? v.value ?? "";
+    return "";
+  }
+  function resolveDriver(req: AdminRequest): string {
+    const t: any = (req as any)?.travelOrder ?? {};
+    return (
+      getString((req as any)?.driver) ||
+      getString(t.driver) ||
+      getString(t.schoolService?.driver) ||
+      getString(t.schoolService?.driverName) ||
+      getString(t.selectedDriver) ||
+      getString(t.selectedDriverName) ||
+      getString(t.assignedDriver) ||
+      getString(t.assignedDriverName) ||
+      ""
+    );
+  }
+  function resolveVehicle(req: AdminRequest): string {
+    const t: any = (req as any)?.travelOrder ?? {};
+    return (
+      getString((req as any)?.vehicle) ||
+      getString(t.vehicle) ||
+      getString(t.schoolService?.vehicle) ||
+      getString(t.schoolService?.vehicleName) ||
+      getString(t.selectedVehicle) ||
+      getString(t.selectedVehicleName) ||
+      getString(t.assignedVehicle) ||
+      getString(t.assignedVehicleName) ||
+      ""
+    );
+  }
+
+  /* ===== DRAW HELPERS ===== */
+  const tx = (x: number) => x + OFFSET_X;
   const tty = (t: number) => t + OFFSET_TOP;
 
-  try {
-    // 1) Load template (must be in /public)
-    const template = await fetch("/Travel-Order_Rev12_Jan2024.pdf").then(r => r.arrayBuffer());
+  /** Prevent Destination from bleeding into the right column */
+  const RIGHT_EDGE = 565;
+  const clampToRightEdge = (rect: Rect): Rect => ({ ...rect, w: Math.min(rect.w, Math.max(0, RIGHT_EDGE - rect.x)) });
 
-    // 2) Prepare PDF
+  try {
+    /* 1) Load template */
+    const template = await fetch("/Travel-Order_Rev12_Jan2024.pdf").then((r) => r.arrayBuffer());
+
+    /* 2) Prepare PDF */
     const pdfDoc = await PDFDocument.load(template);
-    const page   = pdfDoc.getPages()[0];
+    const page = pdfDoc.getPages()[0];
     const PAGE_W = page.getWidth();
     const PAGE_H = page.getHeight();
 
-    // Use Times (closest to Times New Roman in base-14)
     const font = await pdfDoc.embedFont(StandardFonts.TimesRoman);
     const bold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
 
-    // Wrap text inside rect; supports align and lineClamp
     function drawInRect(
       text: string,
-      rect: { x: number; top: number; w: number; h: number; align?: "left" | "right" | "center" },
-      opts: { size?: number; strong?: boolean; color?: [number, number, number]; lineClamp?: number } = {}
+      rect: Rect,
+      opts: { size?: number; strong?: boolean; color?: [number, number, number]; align?: Rect["align"] } = {}
     ) {
       const t = (text ?? "").toString();
       const size = opts.size ?? 10;
       const f = opts.strong ? bold : font;
       const color = opts.color ? rgb(...opts.color) : rgb(0, 0, 0);
 
-      const x = tx(rect.x) + PAD_X;
+      const xL = tx(rect.x) + PAD_X;
       const top = tty(rect.top);
-      const w = rect.w - PAD_X * 2;
-      const h = rect.h;
+      const innerW = rect.w - PAD_X * 2;
+      const align = opts.align ?? rect.align ?? "left";
 
-      // naive wrap
-      const words = t.split(/\s+/);
-      const lines: string[] = [];
-      let cur = "";
-      for (const word of words) {
-        const cand = cur ? `${cur} ${word}` : word;
-        if (f.widthOfTextAtSize(cand, size) <= w || cur === "") cur = cand;
-        else { lines.push(cur); cur = word; }
-      }
-      if (cur) lines.push(cur);
+      const tw = f.widthOfTextAtSize(t, size);
+      let drawX = xL;
+      if (align === "right")  drawX = xL + innerW - tw;
+      if (align === "center") drawX = xL + (innerW - tw) / 2;
 
-      const lineH = size + 2;
-      const maxLines = Math.max(1, Math.floor(h / lineH));
-      const keep = Math.min(lines.length, opts.lineClamp ?? maxLines);
-
-      for (let i = 0; i < keep; i++) {
-        const line = lines[i];
-        const tw = f.widthOfTextAtSize(line, size);
-        let drawX = x;
-        if (rect.align === "right") drawX = x + w - tw;
-        if (rect.align === "center") drawX = x + (w - tw) / 2;
-
-        const baselineY = PAGE_H - (top + size + i * lineH);
-        page.drawText(line, { x: drawX, y: baselineY, size, font: f, color });
-      }
+      const baselineY = PAGE_H - (top + (rect.h - size) / 2 + size);
+      page.drawText(t, { x: drawX, y: baselineY, size, font: f, color });
 
       if (SHOW_BOXES) {
-        const y = PAGE_H - (top + h);
+        const y = PAGE_H - (top + rect.h);
         page.drawRectangle({
-          x: x - PAD_X, y, width: w + PAD_X * 2, height: h,
-          borderColor: rgb(1, 0, 0), borderWidth: 0.7, color: rgb(1, 0, 0), opacity: 0.06
+          x: xL - PAD_X, y, width: rect.w, height: rect.h,
+          borderColor: rgb(0, 0.5, 1), borderWidth: 0.7, color: rgb(0, 0.5, 1), opacity: 0.05,
         });
       }
     }
 
-    // Auto-shrink to fit up to N lines
-    function drawAutoFit(
+    function drawAutoFitEllipsis(
       text: string,
-      rect: { x: number; top: number; w: number; h: number; align?: "left" | "right" | "center" },
-      opts: { baseSize?: number; minSize?: number; strong?: boolean; maxLines?: number } = {}
+      rect: Rect,
+      opts: { baseSize?: number; minSize?: number; strong?: boolean; maxLines?: number; align?: Rect["align"] } = {}
     ) {
       const base = opts.baseSize ?? 10;
       const min  = opts.minSize ?? 8;
       const maxL = Math.max(1, opts.maxLines ?? 2);
+      const align = opts.align ?? rect.align ?? "left";
+      const f = opts.strong ? bold : font;
 
       for (let size = base; size >= min; size -= 0.5) {
-        const f = opts.strong ? bold : font;
         const usableW = rect.w - PAD_X * 2;
         const words = (text ?? "").toString().split(/\s+/);
         const lines: string[] = [];
@@ -28329,15 +28623,43 @@ export async function generateRequestPDF(req: AdminRequest) {
           else { lines.push(cur); cur = w; }
         }
         if (cur) lines.push(cur);
-        if (lines.length <= maxL) {
-          drawInRect(text, rect, { size, strong: opts.strong, lineClamp: maxL });
+
+        let out = lines.slice(0, maxL);
+        if (lines.length > maxL) {
+          let last = out[out.length - 1];
+          while (f.widthOfTextAtSize(last + "…", size) > usableW && last.length > 0) last = last.slice(0, -1);
+          out[out.length - 1] = last + "…";
+        }
+
+        const lineH = size + 2;
+        const totalH = out.length * lineH;
+        if (totalH <= rect.h + 0.1) {
+          const xBase = tx(rect.x) + PAD_X;
+          const top   = tty(rect.top);
+          for (let i = 0; i < out.length; i++) {
+            const line = out[i];
+            const tw = f.widthOfTextAtSize(line, size);
+            const innerW = rect.w - PAD_X * 2;
+            let drawX = xBase;
+            if (align === "right")  drawX = xBase + innerW - tw;
+            if (align === "center") drawX = xBase + (innerW - tw) / 2;
+            const y = PAGE_H - (top + size + i * lineH);
+            page.drawText(line, { x: drawX, y, size, font: f, color: rgb(0,0,0) });
+          }
+          if (SHOW_BOXES) {
+            const y = PAGE_H - (top + rect.h);
+            page.drawRectangle({
+              x: xBase - PAD_X, y, width: rect.w, height: rect.h,
+              borderColor: rgb(1,0,0), borderWidth: 0.8, color: rgb(1,0,0), opacity: 0.06,
+            });
+          }
           return;
         }
       }
-      drawInRect(text, rect, { size: min, strong: opts.strong, lineClamp: maxL });
+      drawInRect(text, rect, { size: min, strong: opts.strong, align });
     }
 
-    async function drawSignature(rect: { x: number; top: number; w: number; h: number }) {
+    async function drawSignature(rect: Rect) {
       const dataUrl = await getSignatureDataUrl(req);
       if (!dataUrl) return;
       const bytes = dataUrlToBytes(dataUrl);
@@ -28348,63 +28670,153 @@ export async function generateRequestPDF(req: AdminRequest) {
       const top = tty(rect.top);
       const y = PAGE_H - (top + rect.h);
 
-      const iw = img.width;
-      const ih = img.height;
+      const iw = img.width, ih = img.height;
       const scale = Math.min(rect.w / iw, rect.h / ih);
-      const dw = iw * scale;
-      const dh = ih * scale;
+      const dw = iw * scale, dh = ih * scale;
       const dx = x + (rect.w - dw) / 2;
       const dy = y + (rect.h - dh) / 2;
 
       page.drawImage(img, { x: dx, y: dy, width: dw, height: dh, opacity: 0.95 });
 
       if (SHOW_BOXES) {
-        page.drawRectangle({
-          x, y, width: rect.w, height: rect.h,
-          borderColor: rgb(0, 0.5, 1), borderWidth: 0.7, color: rgb(0, 0.5, 1), opacity: 0.06
-        });
+        page.drawRectangle({ x, y, width: rect.w, height: rect.h,
+          borderColor: rgb(0,0.5,1), borderWidth: 0.7, color: rgb(0,0.5,1), opacity: 0.06 });
       }
     }
 
-    // ---- WRITE VALUES -------------------------------------------------------
+    /* 3) Optional grid rulers */
+    if (SHOW_GRID) {
+      const step = 50;
+      for (let t = 0; t <= Math.ceil(PAGE_H); t += step) {
+        const y = PAGE_H - t;
+        page.drawLine({ start: { x: 0, y }, end: { x: PAGE_W, y }, thickness: 0.2, color: rgb(0.7,0.7,0.7) });
+        page.drawText(`${t}`, { x: 2, y: y + 1, size: 6, font, color: rgb(0.4,0.4,0.4) });
+      }
+      for (let x = 0; x <= Math.ceil(PAGE_W); x += step) {
+        page.drawLine({ start: { x, y: 0 }, end: { x, y: PAGE_H }, thickness: 0.2, color: rgb(0.7,0.7,0.7) });
+        page.drawText(`${x}`, { x: x + 1, y: 2, size: 6, font, color: rgb(0.4,0.4,0.4) });
+      }
+    }
+
+    /* 4) Static rects */
+    const R: Record<string, Rect> = {
+      createdDate: { x: 105, top: 125, w: 150, h: 14 },
+
+      requestingPerson: { x: 150, top: 180, w: 210, h: 14 },
+
+      department:  { x: 450, top: 169, w: 146, h: 42 },
+      destination: { x: 150, top: 205, w: 446, h: 32 }, // clamped later
+
+      departureDate: { x: 150, top: 235, w: 210, h: 14 },
+      returnDate:    { x: 450, top: 235, w: 150, h: 14 },
+
+      purposeOfTravel: { x: 150, top: 260, w: 446, h: 26 },
+
+      endorsedByName:    { x: 125, top: 400, w: 260, h: 14 },
+      endorsedSignature: { x:  85, top: 380, w: 180, h: 34 },
+
+      driver:  { x: 110, top: 470, w: 210, h: 14 },
+      vehicle: { x: 110, top: 485, w: 210, h: 14 },
+    };
+
+    /* 5) Write values */
     const created = (req as any)?.createdAt ? fmtDate((req as any).createdAt) : fmtDate();
     drawInRect(created, R.createdDate);
 
     drawInRect(req.travelOrder?.requestingPerson ?? "", R.requestingPerson);
 
     const dept = abbreviateDepartment(req.travelOrder?.department ?? "");
-    drawAutoFit(dept, R.department, { baseSize: 10, minSize: 8, maxLines: 3 });
+    drawAutoFitEllipsis(dept, R.department, { baseSize: 10, minSize: 8, maxLines: 3 });
 
     const dest = abbreviateAddress(req.travelOrder?.destination ?? "");
-    drawAutoFit(dest, R.destination, { baseSize: 10, minSize: 8, maxLines: 2 });
+    drawAutoFitEllipsis(dest, clampToRightEdge(R.destination), { baseSize: 10, minSize: 8, maxLines: 2 });
 
     drawInRect(req.travelOrder?.departureDate ?? "", R.departureDate);
     drawInRect(req.travelOrder?.returnDate ?? "", R.returnDate);
+    drawAutoFitEllipsis(req.travelOrder?.purposeOfTravel ?? "", R.purposeOfTravel, {
+      baseSize: 10, minSize: 8, maxLines: 2,
+    });
 
-    drawInRect(req.travelOrder?.purposeOfTravel ?? "", R.purposeOfTravel, { lineClamp: 2 });
+    /* ===== COSTS (3-column, column-major grid) ===== */
 
-    // Costs (always print something; right-aligned)
-    const c = req.travelOrder?.costs || {};
-    drawInRect(peso(c.food),             R.costFood);
-    drawInRect(peso(c.driversAllowance), R.costDriversAllow);
-    drawInRect(peso(c.rentVehicles),     R.costRentVehicles);
-    drawInRect(peso(c.hiredDrivers),     R.costHiredDrivers);
-    drawInRect(peso(c.accommodation),    R.costAccommodation);
+    // Grid bounds (inside the Travel Cost cell)
+    const GRID = {
+      cols: 4,
+      maxRowsPerCol: 4,          // → 4/4/2 for 10 items
+      x: [150, 270, 365],        // left x for each column (tweak if needed)
+      topStart: 295,             // first row top (align to your box)
+      rowStep: 8,               // vertical spacing
+      colWidth: 145,             // width per column
+      lineHeight: 0,            // rect height
+      fontSize: 8,             // slightly smaller to fit
+    };
 
+    // collect visible base items
+    const c: any = req.travelOrder?.costs || {};
+    const baseItems: { label: string; value: number }[] = [
+      { label: COST_LABELS.food,             value: toNumber(c.food) },
+      { label: COST_LABELS.driversAllowance, value: toNumber(c.driversAllowance) },
+      { label: COST_LABELS.rentVehicles,     value: toNumber(c.rentVehicles) },
+      { label: COST_LABELS.hiredDrivers,     value: toNumber(c.hiredDrivers) },
+      { label: COST_LABELS.accommodation,    value: toNumber(c.accommodation) },
+    ].filter((it) => it.value > 0);
+
+    // add "other" single + array
+    const others: { label: string; value: number }[] = [];
+    if (c.otherLabel && toNumber(c.otherAmount) > 0) {
+      others.push({ label: String(c.otherLabel), value: toNumber(c.otherAmount) });
+    }
+    if (Array.isArray(c.otherItems)) {
+      for (const it of c.otherItems) {
+        const v = toNumber(it?.amount);
+        const lbl = (it?.label ?? "").toString();
+        if (lbl && v > 0) others.push({ label: lbl, value: v });
+      }
+    }
+
+    const items: { label: string; value: number }[] = [...baseItems, ...others];
+    const total = items.reduce((s, it) => s + it.value, 0);
+    if (items.length > 0) items.push({ label: COST_LABELS.total, value: total });
+
+    if (items.length > 0) {
+      // place column-major: idx -> col=floor(idx/maxRows), row=idx%maxRows
+      const maxRows = GRID.maxRowsPerCol;
+      const size = GRID.fontSize;
+
+      items.forEach((it, idx) => {
+        const col = Math.floor(idx / maxRows);
+        const row = idx % maxRows;
+        const colX = GRID.x[col] ?? GRID.x[GRID.x.length - 1]; // clamp column if overflow
+        const top  = GRID.topStart + row * GRID.rowStep;
+
+        const rect: Rect = {
+          x: colX,
+          top,
+          w: GRID.colWidth,
+          h: GRID.lineHeight,
+          align: "left",
+        };
+
+        const isTotal = it.label === COST_LABELS.total;
+        const text = isTotal ? `${it.label} – ${peso(it.value)}` : `${it.label} – ${peso(it.value)}`;
+        drawInRect(text, rect, { size, strong: isTotal });
+      });
+    }
+
+    /* Endorsement & school service */
     drawInRect(req.travelOrder?.endorsedByHeadName ?? "", R.endorsedByName);
     await drawSignature(R.endorsedSignature);
+    drawInRect(resolveDriver(req),  R.driver);
+    drawInRect(resolveVehicle(req), R.vehicle);
 
-    drawInRect(req.driver ?? "",  R.driver);
-    drawInRect(req.vehicle ?? "", R.vehicle);
-
-    // 3) Save
+    /* 6) Save */
     const bytes = await pdfDoc.save();
     const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
     const blob = new Blob([ab], { type: "application/pdf" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${req.id}_TravelOrder.pdf`;
+    a.download = `${(req as any)?.id ?? "TravelOrder"}_TravelOrder.pdf`;
     a.click();
     URL.revokeObjectURL(url);
   } catch (err) {
@@ -29647,6 +30059,14 @@ export function markRead(ids: string[]) {
 
 export function clearInbox() {
   write([]);
+}
+
+
+===== lib\common\number.ts =====
+// src/lib/common/number.ts
+export function toNumOrNull(v: string): number | null {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
 }
 
 
@@ -30973,6 +31393,54 @@ export interface RequestFormData {
   schoolService?: SchoolService;
   seminar?: SeminarApplication;
 }
+
+
+===== lib\user\request\uiText.ts =====
+export const UI_TEXT = {
+  title: "Travel Order",
+  requiredHint: "Required fields marked with *",
+  date: { label: "Date", helper: "Select the date this request is created." },
+  requester: { label: "Requesting person", placeholder: "Juan Dela Cruz" },
+  dept: {
+    label: "Department *",
+    placeholder: "e.g., CBA, CCMS, ICT Department",
+  },
+  destination: {
+    label: "Destination",
+    placeholder: "City / Venue / School / Company",
+  },
+  departure: { label: "Departure date" },
+  return: { label: "Return date" },
+  purpose: {
+    label: "Purpose of travel",
+    placeholder: "Briefly explain what the trip is for",
+  },
+  costs: {
+    title: "Travel Cost (estimate)",
+    food: "Food",
+    driversAllowance: "Driver’s allowance",
+    rentVehicles: "Rent vehicles",
+    hiredDrivers: "Hired drivers",
+    accommodation: "Accommodation",
+    otherLabel: "Other (label)",
+    otherLabelPh: "e.g., Materials, Printing",
+    otherAmount: "Amount",
+    amountPh: "0.00",
+  },
+  justification: {
+    label: "Justification",
+    placeholder: "State reasons for renting or hiring a driver",
+  },
+  endorsedBy: {
+    name: "Endorsed by (Dept Head)",
+    namePh: "Name of Department Head",
+    date: "Endorsement date",
+  },
+  signature: {
+    title: "Endorser signature",
+    notSaved: "Not saved",
+  },
+};
 
 
 ===== lib\user\request\validation.ts =====

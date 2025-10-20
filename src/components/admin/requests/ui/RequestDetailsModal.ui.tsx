@@ -22,6 +22,16 @@ function peso(n: number | null | undefined) {
   return `₱${num.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+/** Read requester signature regardless of the saved key */
+function getRequesterSig(to?: any): string | null {
+  return (
+    to?.requesterSignature ||
+    to?.requestingPersonSignature || // legacy/alternate
+    to?.requesterSig ||
+    null
+  );
+}
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -40,7 +50,7 @@ export default function RequestDetailsModalUI({
   const [driver, setDriver] = React.useState("");
   const [vehicle, setVehicle] = React.useState("");
 
-  // -------- Hydrate local assignment state from the selected row (robust over many shapes)
+  // Hydrate local assignment state from the selected row (robust over many shapes)
   React.useEffect(() => {
     if (!row) {
       setDriver("");
@@ -72,7 +82,7 @@ export default function RequestDetailsModalUI({
     setVehicle(veh);
   }, [row]);
 
-  // -------- Persist driver/vehicle assignments back to repo when changed
+  // Persist driver/vehicle assignments back to repo when changed
   React.useEffect(() => {
     if (row?.id) AdminRequestsRepo.setDriver(row.id, driver);
   }, [driver, row?.id]);
@@ -81,51 +91,38 @@ export default function RequestDetailsModalUI({
     if (row?.id) AdminRequestsRepo.setVehicle(row.id, vehicle);
   }, [vehicle, row?.id]);
 
-  // -------- Compute total cost (numbers + optional arrays)
+  // Compute total cost — explicitly sum base categories + otherItems + single "other"
   const totalCost = React.useMemo(() => {
-    const c: any = row?.travelOrder?.costs;
-    if (!c) return 0;
+    const c: any = row?.travelOrder?.costs || {};
+    const baseKeys = ["food", "driversAllowance", "rentVehicles", "hiredDrivers", "accommodation"] as const;
 
-    let sum = 0;
-    // add number-like leaf values
-    Object.keys(c).forEach((k) => {
+    const base = baseKeys.reduce((sum, k) => {
       const v = c[k];
-      if (typeof v === "number" && isFinite(v)) sum += v;
-    });
-    // add otherItems[]
-    if (Array.isArray(c.otherItems)) {
-      c.otherItems.forEach((it: any) => {
-        if (it && typeof it.amount === "number" && isFinite(it.amount)) sum += it.amount;
-      });
-    }
-    // add single otherAmount if present
-    if (c.otherLabel && typeof c.otherAmount === "number" && isFinite(c.otherAmount)) {
-      sum += c.otherAmount;
-    }
-    return sum;
+      return sum + (typeof v === "number" && isFinite(v) ? v : 0);
+    }, 0);
+
+    const othersArray = Array.isArray(c.otherItems)
+      ? c.otherItems.reduce(
+          (s: number, it: any) => s + (it && typeof it.amount === "number" && isFinite(it.amount) ? it.amount : 0),
+          0
+        )
+      : 0;
+
+    const singleOther =
+      c.otherLabel && typeof c.otherAmount === "number" && isFinite(c.otherAmount) ? c.otherAmount : 0;
+
+    return base + othersArray + singleOther;
   }, [row?.travelOrder?.costs]);
 
   const deptName = row?.travelOrder?.department || "";
 
-  // -------- Build a merged payload for PDF so it always includes current dropdown selections
+  // Build a payload for PDF that always includes current dropdown selections (top-level only)
   const handlePrintTravelPDF = React.useCallback(() => {
     if (!row) return;
     const printable: AdminRequest = {
       ...row,
-      // put chosen values at top-level
       driver,
       vehicle,
-      // and mirror into nested shapes so the PDF resolver will definitely find them
-      travelOrder: {
-        ...row.travelOrder,
-        schoolService: {
-          ...row.travelOrder?.schoolService,
-          driver: driver || row.travelOrder?.schoolService?.driver,
-          driverName: driver || row.travelOrder?.schoolService?.driverName,
-          vehicle: vehicle || row.travelOrder?.schoolService?.vehicle,
-          vehicleName: vehicle || row.travelOrder?.schoolService?.vehicleName,
-        },
-      },
     } as AdminRequest;
 
     generateRequestPDF(printable);
@@ -162,7 +159,18 @@ export default function RequestDetailsModalUI({
                   <dd>{row.travelOrder?.date || "—"}</dd>
 
                   <dt className="font-semibold">Requesting Person</dt>
-                  <dd>{row.travelOrder?.requestingPerson || "—"}</dd>
+                  <dd className="flex items-center gap-3">
+                    <span className="truncate">{row.travelOrder?.requestingPerson || "—"}</span>
+                    {getRequesterSig(row.travelOrder) ? (
+                      <img
+                        src={getRequesterSig(row.travelOrder)!}
+                        alt="Requester signature"
+                        /* ⬇️ larger, no border */
+                        className="h-8 w-auto max-w-[160px] object-contain"
+                        title="Requester e-signature"
+                      />
+                    ) : null}
+                  </dd>
 
                   <dt className="font-semibold">Department</dt>
                   <dd>{deptName || "—"}</dd>
@@ -189,45 +197,35 @@ export default function RequestDetailsModalUI({
                         {"food" in row.travelOrder.costs && (row.travelOrder.costs as any).food > 0 && (
                           <tr>
                             <td className="px-2 py-1">Food</td>
-                            <td className="px-2 py-1 text-right">
-                              {peso((row.travelOrder.costs as any).food)}
-                            </td>
+                            <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).food)}</td>
                           </tr>
                         )}
                         {"driversAllowance" in row.travelOrder.costs &&
                           (row.travelOrder.costs as any).driversAllowance > 0 && (
                             <tr>
                               <td className="px-2 py-1">Driver’s allowance</td>
-                              <td className="px-2 py-1 text-right">
-                                {peso((row.travelOrder.costs as any).driversAllowance)}
-                              </td>
+                              <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).driversAllowance)}</td>
                             </tr>
                           )}
                         {"rentVehicles" in row.travelOrder.costs &&
                           (row.travelOrder.costs as any).rentVehicles > 0 && (
                             <tr>
                               <td className="px-2 py-1">Rent vehicles</td>
-                              <td className="px-2 py-1 text-right">
-                                {peso((row.travelOrder.costs as any).rentVehicles)}
-                              </td>
+                              <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).rentVehicles)}</td>
                             </tr>
                           )}
                         {"hiredDrivers" in row.travelOrder.costs &&
                           (row.travelOrder.costs as any).hiredDrivers > 0 && (
                             <tr>
                               <td className="px-2 py-1">Hired drivers</td>
-                              <td className="px-2 py-1 text-right">
-                                {peso((row.travelOrder.costs as any).hiredDrivers)}
-                              </td>
+                              <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).hiredDrivers)}</td>
                             </tr>
                           )}
                         {"accommodation" in row.travelOrder.costs &&
                           (row.travelOrder.costs as any).accommodation > 0 && (
                             <tr>
                               <td className="px-2 py-1">Accommodation</td>
-                              <td className="px-2 py-1 text-right">
-                                {peso((row.travelOrder.costs as any).accommodation)}
-                              </td>
+                              <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).accommodation)}</td>
                             </tr>
                           )}
 
@@ -237,9 +235,7 @@ export default function RequestDetailsModalUI({
                           (row.travelOrder.costs as any).otherAmount > 0 && (
                             <tr>
                               <td className="px-2 py-1">{(row.travelOrder.costs as any).otherLabel}</td>
-                              <td className="px-2 py-1 text-right">
-                                {peso((row.travelOrder.costs as any).otherAmount)}
-                              </td>
+                              <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).otherAmount)}</td>
                             </tr>
                           )}
 
@@ -294,9 +290,7 @@ export default function RequestDetailsModalUI({
 
                     {/* optional date */}
                     {row.travelOrder?.endorsedByHeadDate && (
-                      <p className="text-xs text-neutral-500">
-                        {row.travelOrder.endorsedByHeadDate}
-                      </p>
+                      <p className="text-xs text-neutral-500">{row.travelOrder.endorsedByHeadDate}</p>
                     )}
                   </div>
                 </div>

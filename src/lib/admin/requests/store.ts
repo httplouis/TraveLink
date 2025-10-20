@@ -4,20 +4,31 @@ import type { RequestFormData } from "@/lib/user/request/types";
 
 /* ---------- Types ---------- */
 
-export type AdminRequestStatus = "pending" | "approved" | "rejected" | "completed" | "cancelled";
+export type AdminRequestStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "completed"
+  | "cancelled";
 
 export type AdminRequest = {
   id: string;
   createdAt: string;  // ISO
   updatedAt: string;  // ISO
   status: AdminRequestStatus;
+
   driver?: string;
   vehicle?: string;
-  // flattened fields for convenience (copied from user data at submit time)
+
+  /**
+   * Flattened copies taken at submit time (for quick reads in Admin UI).
+   * NOTE: travelOrder already includes requesterSignature (see types file).
+   */
   travelOrder?: RequestFormData["travelOrder"];
   seminar?: RequestFormData["seminar"];
   schoolService?: RequestFormData["schoolService"];
-  // keep whole payload for future editing
+
+  /** Keep the whole user payload for future editing/auditing */
   payload: RequestFormData;
 };
 
@@ -53,7 +64,9 @@ const listeners = new Set<() => void>();
 
 function notify() {
   listeners.forEach((cb) => {
-    try { cb(); } catch {}
+    try {
+      cb();
+    } catch {}
   });
 }
 
@@ -85,7 +98,8 @@ export const AdminRequestsRepo = {
   upsert(req: AdminRequest) {
     const list = readAll();
     const i = list.findIndex((x) => x.id === req.id);
-    if (i >= 0) list[i] = req; else list.unshift(req);
+    if (i >= 0) list[i] = req;
+    else list.unshift(req);
     writeAll(list);
     notify();
   },
@@ -134,18 +148,23 @@ export const AdminRequestsRepo = {
 
   /** Called by user form on submit */
   acceptFromUser(data: RequestFormData): string {
-    const id = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+    const id =
+      crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
     const now = new Date().toISOString();
+
     const rec: AdminRequest = {
       id,
       createdAt: now,
       updatedAt: now,
       status: "pending",
+
+      // keep originals for admin views
       payload: data,
-      travelOrder: data.travelOrder,
+      travelOrder: data.travelOrder,       // includes requesterSignature
       seminar: data.seminar,
       schoolService: data.schoolService,
     };
+
     this.upsert(rec);
     return id;
   },
