@@ -8,15 +8,20 @@ import Breadcrumbs from "@/components/admin/nav/Breadcrumbs";
 import ProfileMenu from "@/components/admin/nav/ProfileMenu";
 import NotificationBell from "@/components/admin/nav/NotificationBell";
 import { Search } from "lucide-react";
+import ProfileContainer from "@/components/admin/profile/containers/ProfileContainer";
 
 export const metadata: Metadata = { title: "TraviLink · Admin" };
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="relative min-h-dvh w-full bg-[#F7F7F8] text-neutral-900">
-      {/* Floating / fixed sidebar — width & colors come from CSS vars set in AdminLeftNav */}
+      {/* ===== Floating Sidebar (follows CSS vars set by AdminLeftNav) ===== */}
       <aside
-        className="fixed left-4 top-4 bottom-4 z-40 overflow-hidden rounded-2xl border shadow-[0_12px_40px_rgba(17,24,39,.08)]"
+        className="
+          fixed left-4 top-4 bottom-4 z-40 overflow-hidden rounded-2xl border
+          shadow-[0_12px_40px_rgba(17,24,39,.08)]
+          transition-[width] duration-300
+        "
         style={{
           width: "var(--tl-nav-w, 280px)",
           background: "var(--tl-nav-bg, #ffffff)",
@@ -28,8 +33,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <AdminLeftNav />
       </aside>
 
-      {/* Content column with gap that follows the sidebar width */}
-      <div className="pt-4 pr-4 pb-6" style={{ paddingLeft: "calc(var(--tl-nav-w, 280px) + 28px)" }}>
+      {/* ===== Content Column (padding animates with sidebar) ===== */}
+      <div
+        className="pt-4 pr-4 pb-6"
+        style={{
+          paddingLeft: "calc(var(--tl-nav-w, 280px) + 28px)",
+          transition: "padding 280ms cubic-bezier(.22,.61,.36,1)",
+          willChange: "padding",
+        }}
+      >
         {/* ===== Top bar (maroon) ===== */}
         <div
           className="
@@ -45,14 +57,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <span className="text-sm font-semibold tracking-wide">TraviLink</span>
           </div>
 
-          {/* Centered search (shorter) */}
+          {/* Centered search */}
           <div className="mx-auto w-full max-w-[720px]">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 opacity-85" />
               <input
                 placeholder="Search schedules, vehicles, drivers…  (Ctrl/⌘+K)"
                 className="
-                  h-11 w-full rounded-lg border border-white/20 bg-white/95 pl-10
+                  h-11 w-full rounded-lg border border-white/20 bg-white/95 pl-10 pr-3
                   text-neutral-900 placeholder-neutral-500 outline-none
                   focus:border-white focus:ring-2 focus:ring-white/35
                 "
@@ -62,14 +74,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </div>
           </div>
 
-          {/* Right actions pinned */}
+          {/* Right actions */}
           <div className="absolute right-4 flex items-center gap-2 sm:right-6" suppressHydrationWarning>
             <NotificationBell variant="onMaroon" />
             <ProfileMenu variant="onMaroon" />
           </div>
         </div>
 
-        {/* Main content frame */}
+        {/* ===== Main content frame ===== */}
         <main className="mt-4">
           <div className="rounded-2xl border border-neutral-200 bg-white shadow-[0_12px_40px_rgba(17,24,39,.06)]">
             <div className="border-b border-neutral-200 px-5 py-4">
@@ -79,6 +91,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
         </main>
       </div>
+
+      {/* Mount the profile slide-over once at the root */}
+      <ProfileContainer />
     </div>
   );
 }

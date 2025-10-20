@@ -1,35 +1,25 @@
-// src/components/admin/nav/ProfileMenu.tsx
 "use client";
 
 import * as React from "react";
-import { ChevronDown, User } from "lucide-react";
+import { User } from "lucide-react";
+import ProfileSheet from "@/components/admin/profile/ProfileSheet.ui";
 
-type Props = {
-  name?: string;
-  variant?: "light" | "onMaroon";
-  className?: string;
-};
+export default function ProfileMenu() {
+  const [openSheet, setOpenSheet] = React.useState(false);
 
-export default function ProfileMenu({ name = "Admin", variant = "light", className = "" }: Props) {
-  const isMaroon = variant === "onMaroon";
   return (
-    <div className={`relative ${className}`}>
+    <>
+      {/* Trigger (replace with your existing avatar button if you have one) */}
       <button
-        type="button"
-        aria-haspopup="menu"
-        className={[
-          "inline-flex h-10 items-center gap-2 rounded-lg px-2.5 text-sm font-medium transition-colors",
-          isMaroon
-            ? "border border-white/20 bg-white/10 text-white hover:bg-white/15"
-            : "border border-neutral-200 bg-white text-neutral-800 hover:bg-neutral-50",
-        ].join(" ")}
+        onClick={() => setOpenSheet(true)}
+        className="inline-flex h-9 items-center gap-2 rounded-full border border-neutral-300 bg-white px-3 text-sm hover:bg-neutral-50"
+        aria-label="Open profile"
       >
-        <span className={["inline-flex h-6 w-6 items-center justify-center rounded-full", isMaroon ? "bg-white/15 text-white" : "bg-neutral-200 text-neutral-700"].join(" ")}>
-          <User className="h-4 w-4" />
-        </span>
-        <span className={isMaroon ? "text-white" : "text-neutral-800"}>{name}</span>
-        <ChevronDown className={isMaroon ? "h-4 w-4 text-white/90" : "h-4 w-4 text-neutral-500"} />
+        <User className="h-4 w-4" />
+        <span className="hidden sm:inline">Profile</span>
       </button>
-    </div>
+
+      <ProfileSheet open={openSheet} onClose={() => setOpenSheet(false)} />
+    </>
   );
 }
