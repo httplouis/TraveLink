@@ -82,7 +82,8 @@ export default function RegisterView(props: Props) {
       <div className="relative z-10 mx-auto flex h-svh w-full max-w-3xl flex-col justify-center px-4 sm:px-6 lg:px-8">
         <div className="w-full">
           <div className="rounded-2xl bg-gradient-to-br from-white/60 via-white/20 to-transparent p-[1.5px] shadow-2xl">
-            <div className="rounded-2xl bg-white/85 backdrop-blur-xl ring-1 ring-black/10">
+            {/* SOLID WHITE CARD (changed from bg-white/85) */}
+            <div className="rounded-2xl bg-white backdrop-blur-xl ring-1 ring-black/10">
               <div className="px-6 py-6 lg:px-8">
                 {/* Header */}
                 <div className="flex items-center gap-3">
