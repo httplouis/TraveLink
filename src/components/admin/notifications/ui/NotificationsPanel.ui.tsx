@@ -1,55 +1,37 @@
-// src/components/admin/nav/NotificationBell.tsx
+// src/components/admin/notifications/ui/NotificationsPanel.ui.tsx
 "use client";
 
 import * as React from "react";
 import { Popover } from "@headlessui/react";
-import { Bell } from "lucide-react";
-import { useNotifications } from "@/components/admin/notifications/hooks/useNotifications";
-import NotificationItem from "@/components/admin/notifications/ui/NotificationItem.ui";
+import NotificationItem from "./NotificationItem.ui";
+import { useNotifications } from "../hooks/useNotifications";
 
-type Props = {
-  /** Optional manual badge override. If omitted, we use unreadCount from the hook. */
-  count?: number;
-  /** Button styling preset */
-  variant?: "light" | "onMaroon";
-  className?: string;
-};
-
-const BRAND = "#7A0010";
-
-export default function NotificationBell({
-  count,
-  variant = "light",
-  className = "",
-}: Props) {
+export default function NotificationsPanel() {
   const { tab, setTab, items, unreadCount, markAll, markOne, pushDemo } =
     useNotifications();
 
-  // prefer hook count; fall back to prop if provided
-  const badge = typeof count === "number" ? count : unreadCount;
-  const isMaroon = variant === "onMaroon";
-
-  const btnBase =
-    "relative inline-flex h-10 items-center justify-center rounded-xl px-3 transition focus:outline-none focus:ring-2";
-  const btnTheme = isMaroon
-    ? "border border-white/20 bg-white/10 text-white hover:bg-white/15 focus:ring-white/40"
-    : "border border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50 focus:ring-neutral-300";
-
   return (
-    <Popover className={`relative ${className}`}>
-      <Popover.Button aria-label="Open notifications" className={`${btnBase} ${btnTheme}`}>
-        <Bell className="h-5 w-5" />
-        {badge > 0 && (
-          <span
-            className="absolute -right-1 -top-1 flex h-5 min-w-[18px] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold leading-none text-white"
-            style={{ background: BRAND }}
-          >
-            {badge > 99 ? "99+" : badge}
+    <Popover className="relative">
+      <Popover.Button
+        aria-label="Open notifications"
+        className="relative inline-flex h-9 items-center justify-center rounded-xl border border-white/20 bg-white/15 px-3 text-white/90 backdrop-blur transition hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-white/50"
+      >
+        {/* Bell glyph (SVG inline to avoid external import churn) */}
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <path
+            d="M14 20a2 2 0 1 1-4 0m9-2H5a2 2 0 0 0 2-2v-4a5 5 0 1 1 10 0v4a2 2 0 0 0 2 2Z"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+          />
+        </svg>
+        {unreadCount > 0 && (
+          <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-white px-1 text-xs font-semibold text-[#7a0019]">
+            {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         )}
       </Popover.Button>
 
-      {/* Dropdown panel */}
       <Popover.Panel className="absolute right-0 z-50 mt-2 w-[380px] overflow-hidden rounded-2xl border bg-white text-neutral-900 shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b px-3 py-2">
@@ -82,7 +64,7 @@ export default function NotificationBell({
             >
               Mark all read
             </button>
-            {/* demo seed — pwede mong tanggalin sa prod */}
+            {/* demo inject button (remove in prod) */}
             <button
               onClick={pushDemo}
               className="rounded-md px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-100"
@@ -114,8 +96,7 @@ export default function NotificationBell({
         <div className="border-t px-3 py-2 text-center text-sm">
           <a
             href="/admin/notifications"
-            className="rounded-lg px-3 py-1.5 text-[color:var(--brand,#7A0010)] hover:bg-neutral-50"
-            style={{ ["--brand" as any]: BRAND }}
+            className="rounded-lg px-3 py-1.5 text-[#7a0019] hover:bg-neutral-50"
           >
             See all notifications
           </a>

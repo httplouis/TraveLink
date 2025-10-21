@@ -55,13 +55,8 @@ function CollapseToggle({ collapsed, onClick }: { collapsed: boolean; onClick: (
       type="button"
       aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
       title={collapsed ? "Expand (Ctrl+B)" : "Collapse (Ctrl+B)"}
-      className="
-        inline-flex h-10 w-10 items-center justify-center
-        rounded-xl bg-white/15 text-white ring-1 ring-white/15
-        hover:bg-white/20 hover:ring-white/25
-      "
+      className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white/15 text-white ring-1 ring-white/15 hover:bg-white/20 hover:ring-white/25"
     >
-      {/* instant rotate, no transition */}
       <ChevronLeft className={["h-5 w-5", collapsed ? "rotate-180" : ""].join(" ")} />
     </button>
   );
@@ -103,7 +98,7 @@ export default function AdminLeftNav() {
     document.documentElement.style.setProperty("--tl-nav-w", `${px}px`);
   }
 
-  // Hotkeys (no animation effects involved)
+  // Hotkeys
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
@@ -160,28 +155,40 @@ export default function AdminLeftNav() {
           <div className="flex items-center gap-2">
             {!collapsed && (
               <div className="flex-1">
+                {/* ===== Sidebar Search (smooth + crisp) ===== */}
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/75" />
+                  {/* icon ABOVE the input so backdrop-blur won't affect it */}
+                  <div className="pointer-events-none absolute inset-y-0 left-2 z-10 flex items-center">
+                    <Search
+                      aria-hidden
+                      className="h-5 w-5 text-white"     // even 20×20
+                      strokeWidth={2}                      // default lucide stroke
+                      shapeRendering="geometricPrecision"  // smoother curves
+                    />
+                  </div>
+
                   <input
                     ref={searchInputRef}
                     placeholder="Search… (⌘K)"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="
+                      relative z-0
                       h-10 w-full rounded-xl border border-white/20 bg-white/10
-                      pl-9 pr-9 text-sm text-white placeholder-white/70
+                      pl-10 pr-9 text-sm text-white placeholder-white/70
                       outline-none backdrop-blur-[2px]
                       hover:bg-white/12 focus:bg-white/14 focus:ring-1 focus:ring-white/30
                     "
                     autoComplete="off"
                   />
+
                   {searchQuery && (
                     <button
                       onClick={() => {
                         setSearchQuery("");
                         searchInputRef.current?.focus();
                       }}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-white/80 hover:text-white"
+                      className="absolute inset-y-0 right-2 my-auto inline-flex h-6 w-6 items-center justify-center rounded-lg text-white/85 hover:bg-white/10"
                       aria-label="Clear search"
                       type="button"
                     >
