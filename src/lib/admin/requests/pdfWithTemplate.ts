@@ -2,7 +2,7 @@
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import type { AdminRequest } from "@/lib/admin/requests/store";
 
-/** Layout enum */
+/** Layout enum (kept for future) */
 enum CostMode { Column = "column", Row = "row", Grid3 = "grid3" }
 
 export async function generateRequestPDF(req: AdminRequest) {
@@ -139,7 +139,7 @@ export async function generateRequestPDF(req: AdminRequest) {
     return null;
   }
 
-  // Endorser (department head) signature
+  // Endorser (department head) signature (LEFT)
   async function getEndorserSignatureDataUrl(data: AdminRequest): Promise<string | null> {
     const t = (data as any)?.travelOrder ?? {};
     const candidates = [
@@ -159,14 +159,14 @@ export async function generateRequestPDF(req: AdminRequest) {
     return null;
   }
 
-  // Requesting person signature (new)
-  async function getRequesterSignatureDataUrl(data: AdminRequest): Promise<string | null> {
-    const t = (data as any)?.travelOrder ?? {};
+  // School Transportation Coordinator / Approver signature (RIGHT)
+  async function getCoordinatorSignatureDataUrl(data: AdminRequest): Promise<string | null> {
     const candidates = [
-      t.requesterSignature,
-      t.requestingPersonSignature,
-      t.requesterSig,
-      (data as any)?.requesterSignature,
+      (data as any)?.signature,           // saved by approve flow
+      (data as any)?.approverSignature,
+      (data as any)?.approvedSignature,
+      (data as any)?.approved?.signature,
+      (data as any)?.approvalSignature,
     ];
     for (const c of candidates) {
       const u = await toDataUrlFromAny(c);
@@ -339,7 +339,7 @@ export async function generateRequestPDF(req: AdminRequest) {
       drawInRect(text, rect, { size: min, strong: opts.strong, align });
     }
 
-    // Generic image drawer (used for both signatures)
+    // Generic image drawer
     async function drawImageInRect(dataUrl: string | null, rect: Rect, opacity = 0.95) {
       if (!dataUrl) return;
       const bytes = dataUrlToBytes(dataUrl);
@@ -378,23 +378,28 @@ export async function generateRequestPDF(req: AdminRequest) {
       }
     }
 
-    /* 4) Static rects */
+    /* 4) Static rects (tuned for your Rev12 template) */
     const R: Record<string, Rect> = {
       createdDate: { x: 100, top: 123, w: 150, h: 14 },
 
       requestingPerson:   { x: 150, top: 180, w: 210, h: 14 },
-      requesterSignature: { x: 200, top: 170, w: 120, h: 26 }, // signature beside name
+      requesterSignature: { x: 200, top: 170, w: 120, h: 26 },
 
       department:  { x: 450, top: 169, w: 146, h: 42 },
-      destination: { x: 150, top: 205, w: 446, h: 32 }, // clamped later
+      destination: { x: 150, top: 205, w: 446, h: 32 },
 
       departureDate: { x: 150, top: 235, w: 210, h: 14 },
       returnDate:    { x: 450, top: 235, w: 150, h: 14 },
 
       purposeOfTravel: { x: 150, top: 260, w: 446, h: 26 },
 
+      // LEFT (Dept Head)
       endorsedByName:    { x: 125, top: 400, w: 260, h: 14 },
       endorsedSignature: { x:  85, top: 380, w: 180, h: 34 },
+
+      // RIGHT (School Transportation Coordinator — where you want the admin/approval signature)
+      stcSignature: { x: 340, top: 455, w: 200, h: 34 },  // signature over the right line
+      stcName:      { x: 430, top: 515, w: 260, h: 14 },  // printed name below the line
 
       driver:  { x: 110, top: 470, w: 210, h: 14 },
       vehicle: { x: 110, top: 485, w: 210, h: 14 },
@@ -405,8 +410,7 @@ export async function generateRequestPDF(req: AdminRequest) {
     drawInRect(created, R.createdDate);
 
     drawInRect(req.travelOrder?.requestingPerson ?? "", R.requestingPerson);
-    // requester signature beside the name
-    await drawImageInRect(await getRequesterSignatureDataUrl(req), R.requesterSignature, 0.95);
+    await drawImageInRect(await getEndorserSignatureDataUrl(req), R.requesterSignature, 0.95);
 
     const dept = abbreviateDepartment(req.travelOrder?.department ?? "");
     drawAutoFitEllipsis(dept, R.department, { baseSize: 10, minSize: 8, maxLines: 3 });
@@ -423,16 +427,15 @@ export async function generateRequestPDF(req: AdminRequest) {
     /* ===== COSTS (3-column, column-major grid) ===== */
     const GRID = {
       cols: 4,
-      maxRowsPerCol: 4,          // → 4/4/2 for 10 items
-      x: [150, 270, 365],        // left x for each column
-      topStart: 295,             // first row top
-      rowStep: 8,                // vertical spacing
-      colWidth: 145,             // width per column
-      lineHeight: 0,             // rect height (single-line)
-      fontSize: 8,               // tighter to fit
+      maxRowsPerCol: 4,
+      x: [150, 270, 365],
+      topStart: 295,
+      rowStep: 8,
+      colWidth: 145,
+      lineHeight: 0,
+      fontSize: 8,
     };
 
-    // collect visible base items
     const c: any = req.travelOrder?.costs || {};
     const baseItems: { label: string; value: number }[] = [
       { label: COST_LABELS.food,             value: toNumber(c.food) },
@@ -442,7 +445,6 @@ export async function generateRequestPDF(req: AdminRequest) {
       { label: COST_LABELS.accommodation,    value: toNumber(c.accommodation) },
     ].filter((it) => it.value > 0);
 
-    // add "other" single + array
     const others: { label: string; value: number }[] = [];
     if (c.otherLabel && toNumber(c.otherAmount) > 0) {
       others.push({ label: String(c.otherLabel), value: toNumber(c.otherAmount) });
@@ -460,34 +462,30 @@ export async function generateRequestPDF(req: AdminRequest) {
     if (items.length > 0) items.push({ label: COST_LABELS.total, value: total });
 
     if (items.length > 0) {
-      // column-major placement: idx -> col=floor(idx/maxRows), row=idx%maxRows
       const maxRows = GRID.maxRowsPerCol;
       const size = GRID.fontSize;
 
       items.forEach((it, idx) => {
         const col = Math.floor(idx / maxRows);
         const row = idx % maxRows;
-        const colX = GRID.x[col] ?? GRID.x[GRID.x.length - 1]; // clamp column if overflow
+        const colX = GRID.x[col] ?? GRID.x[GRID.x.length - 1];
         const top  = GRID.topStart + row * GRID.rowStep;
 
-        const rect: Rect = {
-          x: colX,
-          top,
-          w: GRID.colWidth,
-          h: GRID.lineHeight,
-          align: "left",
-        };
-
+        const rect: Rect = { x: colX, top, w: GRID.colWidth, h: GRID.lineHeight, align: "left" };
         const isTotal = it.label === COST_LABELS.total;
         const text = `${it.label} – ${peso(it.value)}`;
         drawInRect(text, rect, { size, strong: isTotal });
       });
     }
 
-    /* Endorsement & school service */
+    /* Endorsement (left) & School Service (right) */
     drawInRect(req.travelOrder?.endorsedByHeadName ?? "", R.endorsedByName);
     await drawImageInRect(await getEndorserSignatureDataUrl(req), R.endorsedSignature, 0.95);
 
+    // RIGHT SIDE — School Transportation Coordinator (fixed name on your template)
+    await drawImageInRect(await getCoordinatorSignatureDataUrl(req), R.stcSignature, 0.95);
+
+    // Driver / Vehicle text (left under ‘School Service Request’)
     drawInRect(resolveDriver(req),  R.driver);
     drawInRect(resolveVehicle(req), R.vehicle);
 

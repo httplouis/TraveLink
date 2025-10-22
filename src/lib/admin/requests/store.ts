@@ -30,6 +30,11 @@ export type AdminRequest = {
 
   /** Keep the whole user payload for future editing/auditing */
   payload: RequestFormData;
+
+  /** ✅ Approval fields (captured in admin modal) */
+  approverSignature?: string | null;
+  approvedAt?: string | null;
+  approvedBy?: string | null;
 };
 
 const STORAGE_KEY = "admin.requests.v1";
@@ -163,9 +168,48 @@ export const AdminRequestsRepo = {
       travelOrder: data.travelOrder,       // includes requesterSignature
       seminar: data.seminar,
       schoolService: data.schoolService,
+
+      // approval defaults
+      approverSignature: null,
+      approvedAt: null,
+      approvedBy: null,
     };
 
     this.upsert(rec);
     return id;
+  },
+
+  /** ✅ Approve a request with signature (persist in localStorage). */
+  approve(id: string, opts: { signature: string; approvedBy?: string | null }) {
+    const it = this.get(id);
+    if (!it) return;
+    it.status = "approved";
+    it.approverSignature = opts.signature;
+    it.approvedAt = new Date().toISOString();
+    it.approvedBy = opts.approvedBy ?? null;
+    it.updatedAt = new Date().toISOString();
+    this.upsert(it);
+  },
+
+  /** ✅ Reject a request */
+  reject(id: string) {
+    const it = this.get(id);
+    if (!it) return;
+    it.status = "rejected";
+    it.updatedAt = new Date().toISOString();
+    this.upsert(it);
+  },
+
+  /** ✅ Handy counts for KPI cards */
+  counts() {
+    const list = readAll();
+    return {
+      pending:  list.filter(i => i.status === "pending").length,
+      approved: list.filter(i => i.status === "approved").length,
+      completed:list.filter(i => i.status === "completed").length,
+      rejected: list.filter(i => i.status === "rejected").length,
+      cancelled:list.filter(i => i.status === "cancelled").length,
+      all: list.length,
+    };
   },
 };

@@ -1,4 +1,3 @@
-// src/components/user/request/ui/controls.tsx
 "use client";
 
 import * as React from "react";
@@ -80,12 +79,7 @@ export function TextInput({
   );
 }
 
-/**
- * DateInput
- * Makes the date "placeholder" text opaque across Chrome/Edge/Safari using
- * WebKit pseudo-elements. Firefox gets a fallback by tinting the text when
- * the input is empty.
- */
+/** Date input with opaque placeholder styling */
 export function DateInput({
   id,
   label,
@@ -103,20 +97,17 @@ export function DateInput({
   return (
     <FieldWrap label={label} error={error} helper={helper} required={required}>
       <style jsx global>{`
-        /* Chrome / Edge / Safari (WebKit/Blink) */
         input[type='date'][data-empty='true']::-webkit-datetime-edit,
         input[type='date'][data-empty='true']::-webkit-datetime-edit-text,
         input[type='date'][data-empty='true']::-webkit-datetime-edit-month-field,
         input[type='date'][data-empty='true']::-webkit-datetime-edit-day-field,
         input[type='date'][data-empty='true']::-webkit-datetime-edit-year-field {
-          color: #111827; /* neutral-900 */
+          color: #111827;
           opacity: 1 !important;
         }
         input[type='date']::-webkit-calendar-picker-indicator {
           opacity: 0.9;
         }
-
-        /* Firefox fallback */
         input[type='date'][data-empty='true'] {
           color: #111827;
         }
@@ -128,7 +119,6 @@ export function DateInput({
         data-empty={isEmpty ? "true" : "false"}
         className={clsx(
           "h-10 w-full rounded-xl border bg-white px-3 text-sm outline-none",
-          // (Note: placeholder utility doesn't affect type=date; see global CSS above)
           error
             ? "border-rose-500 ring-2 ring-rose-100"
             : "border-neutral-300 focus:border-neutral-400 focus:ring-2 focus:ring-neutral-200",
@@ -144,6 +134,8 @@ export function DateInput({
   );
 }
 
+type TextAreaProps = BaseProps & { rows?: number };
+
 export function TextArea({
   id,
   label,
@@ -155,13 +147,15 @@ export function TextArea({
   helper,
   className,
   disabled,
-}: BaseProps) {
+  rows = 6,
+}: TextAreaProps) {
   return (
     <FieldWrap label={label} error={error} helper={helper} required={required}>
       <textarea
         id={id}
+        rows={rows}
         className={clsx(
-          "min-h-[96px] w-full resize-y rounded-xl border bg-white px-3 py-2 text-sm outline-none",
+          "w-full resize-y rounded-xl border bg-white px-3 py-2 text-sm outline-none",
           "placeholder:text-neutral-400",
           error
             ? "border-rose-500 ring-2 ring-rose-100"

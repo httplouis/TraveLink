@@ -2,12 +2,12 @@
 
 import * as React from "react";
 import TopGridFields from "./parts/TopGridFields.view";
-import PurposeField from "./parts/PurposeField.view";
+// ⛔️ Removed the old PurposeField import to avoid duplicate purpose UI
+// import PurposeField from "./parts/PurposeField.view";
 import CostsSection from "./parts/CostsSection.view";
 import EndorsementSection from "./parts/EndorsementSection.view";
 import SignatureSection from "./parts/SignatureSection.view";
 import { UI_TEXT } from "@/lib/user/request/uiText";
-
 
 type ViewProps = {
   data: any;
@@ -16,6 +16,8 @@ type ViewProps = {
   onChange: (patch: any) => void;
   onChangeCosts: (patch: any) => void;
   onDepartmentChange: (dept: string) => void;
+
+  // Endorser signature (department head)
   signature: string | null;
   sigDirty: boolean;
   sigSaved: boolean;
@@ -52,6 +54,7 @@ export default function TravelOrderFormView({
         <span className="text-xs text-neutral-500">{UI_TEXT.requiredHint}</span>
       </div>
 
+      {/* Top half of the form: date, requester, dept, destination, purpose moved here, requester signature */}
       <TopGridFields
         data={data}
         errors={errors}
@@ -59,11 +62,7 @@ export default function TravelOrderFormView({
         onDepartmentChange={onDepartmentChange}
       />
 
-      <PurposeField
-        value={data?.purposeOfTravel || ""}
-        error={errors["travelOrder.purposeOfTravel"]}
-        onChange={(v) => onChange({ purposeOfTravel: v })}
-      />
+      {/* PurposeField was removed; purpose is now inside TopGridFields only */}
 
       <CostsSection
         costs={c}
@@ -82,6 +81,7 @@ export default function TravelOrderFormView({
         onDateChange={(v) => onChange({ endorsedByHeadDate: v })}
       />
 
+      {/* Endorser (department head) signature block */}
       <SignatureSection
         signature={signature}
         sigDirty={sigDirty}
