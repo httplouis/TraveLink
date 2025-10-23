@@ -26,7 +26,11 @@ function normalizePhone(p: string) {
 export default function RegisterPage() {
   const [role, setRole] = useState<RolePick>("faculty");
 
+<<<<<<< HEAD
   // Faculty
+=======
+  // Faculty state
+>>>>>>> 8dd1516 (Working Registration (Minor tweaks needed))
   const [fFirst, setFFirst] = useState("");
   const [fMiddle, setFMiddle] = useState("");
   const [fLast, setFLast] = useState("");
@@ -38,7 +42,11 @@ export default function RegisterPage() {
   const [fPw, setFPw] = useState("");
   const [fPwConfirm, setFPwConfirm] = useState("");
 
+<<<<<<< HEAD
   // Driver
+=======
+  // Driver state (dev OTP flow)
+>>>>>>> 8dd1516 (Working Registration (Minor tweaks needed))
   const [dStep, setDStep] = useState<DriverStep>("phone");
   const [dPhone, setDPhone] = useState("");
   const [verifiedPhone, setVerifiedPhone] = useState<string | null>(null);
@@ -65,7 +73,8 @@ export default function RegisterPage() {
     setErr(null);
     setMsg(null);
 
-    const nameFull = [fFirst, fMiddle, fLast, fSuffix].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+    const nameFull = [fFirst, fMiddle, fLast, fSuffix]
+      .filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
 
     if (fFirst.trim().length < 1 || fLast.trim().length < 1) return setErr("Please enter your first and last name.");
     if (!emailRegex.test(fEmail)) return setErr("Please enter a valid email address.");
@@ -78,6 +87,7 @@ export default function RegisterPage() {
     try {
       setLoading(true);
 
+<<<<<<< HEAD
       // quick duplicate check
       const dupRes = await supabase.auth.signInWithPassword({ email: fEmail, password: "__dummy__" });
       if (!dupRes.error) {
@@ -85,6 +95,9 @@ export default function RegisterPage() {
         return;
       }
 
+=======
+      // sign up (no dummy precheck)
+>>>>>>> 8dd1516 (Working Registration (Minor tweaks needed))
       const { error } = await supabase.auth.signUp({
         email: fEmail,
         password: fPw,
@@ -95,7 +108,7 @@ export default function RegisterPage() {
             middle_name: fMiddle || null,
             last_name: fLast,
             suffix: fSuffix || null,
-            name_full: nameFull,
+            name_full: nameFull,         // goes to user_metadata (OK)
             department: fDept || null,
             birthdate: fBirthdate,
             address: fAddress,
@@ -104,16 +117,17 @@ export default function RegisterPage() {
       });
 
       if (error) {
-        const m = error.message.toLowerCase();
-        if (m.includes("already registered")) {
-          setErr("This email is already registered. Please log in or reset your password.");
+        const m = (error.message || "").toLowerCase();
+        if (m.includes("already")) {
+          setErr("This email is already registered. Try logging in or resetting your password.");
           return;
         }
-        if (m.includes("rate limit")) {
-          setErr("Too many attempts. Please wait and try again.");
+        if (m.includes("rate")) {
+          setErr("Too many attempts. Please wait a few minutes and try again.");
           return;
         }
-        throw error;
+        setErr(error.message || "Sign up failed.");
+        return;
       }
 
       setJustSignedUpEmail(fEmail);
@@ -121,6 +135,7 @@ export default function RegisterPage() {
         "If this email is new, we sent a confirmation link. If it’s already registered, please check your inbox (and spam) or try logging in / resetting your password."
       );
     } catch (e: any) {
+<<<<<<< HEAD
       setErr(e.message ?? "Registration failed.");
     } finally {
       setLoading(false);
@@ -145,6 +160,9 @@ export default function RegisterPage() {
       setMsg("Confirmation email sent. Please check your inbox (and spam).");
     } catch (e: any) {
       setErr(e.message ?? "Could not resend confirmation.");
+=======
+      setErr(e?.message ?? "Registration failed.");
+>>>>>>> 8dd1516 (Working Registration (Minor tweaks needed))
     } finally {
       setLoading(false);
     }
@@ -152,8 +170,12 @@ export default function RegisterPage() {
 
   function driverSendOtp(e: React.FormEvent) {
     e.preventDefault();
+<<<<<<< HEAD
     setErr(null);
     setMsg(null);
+=======
+    setErr(null); setMsg(null);
+>>>>>>> 8dd1516 (Working Registration (Minor tweaks needed))
     const normalized = normalizePhone(dPhone);
     if (!/^\+63\d{10}$/.test(normalized)) {
       setErr("Please enter a valid PH mobile (e.g., 09XXXXXXXXX).");
@@ -165,8 +187,12 @@ export default function RegisterPage() {
 
   function driverVerifyOtp(e: React.FormEvent) {
     e.preventDefault();
+<<<<<<< HEAD
     setErr(null);
     setMsg(null);
+=======
+    setErr(null); setMsg(null);
+>>>>>>> 8dd1516 (Working Registration (Minor tweaks needed))
     if (dOtp.trim() !== "1234") {
       setErr("Invalid code. (Dev mode: the code is 1234)");
       return;
@@ -186,12 +212,13 @@ export default function RegisterPage() {
 
     try {
       setLoading(true);
+
+      // NOTICE: we are NOT sending name_full or name_last_first here
       const res = await fetch("/api/dev/driver/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           phone: verifiedPhone,
-          name: [dFirst, dMiddle, dLast, dSuffix].filter(Boolean).join(" ").replace(/\s+/g, " ").trim(),
           first_name: dFirst,
           middle_name: dMiddle || null,
           last_name: dLast,
@@ -216,6 +243,7 @@ export default function RegisterPage() {
       loading={loading}
       err={err}
       msg={msg}
+<<<<<<< HEAD
       onResend={justSignedUpEmail ? resendConfirmation : undefined}
       fFirst={fFirst}
       setFFirst={setFFirst}
@@ -237,6 +265,40 @@ export default function RegisterPage() {
       setFPw={setFPw}
       fPwConfirm={fPwConfirm}
       setFPwConfirm={setFPwConfirm}
+=======
+      onResend={justSignedUpEmail ? async () => {
+        setErr(null); setMsg(null);
+        try {
+          setLoading(true);
+          const { error } = await supabase.auth.resend({ type: "signup", email: justSignedUpEmail! });
+          if (error) {
+            const m = (error.message || "").toLowerCase();
+            if (m.includes("already confirmed")) {
+              setErr("This email is already confirmed. You can log in now.");
+              return;
+            }
+            throw error;
+          }
+          setMsg("Confirmation email sent. Please check your inbox (and spam).");
+        } catch (e: any) {
+          setErr(e.message ?? "Could not resend confirmation.");
+        } finally {
+          setLoading(false);
+        }
+      } : undefined}
+
+      /* faculty */
+      fFirst={fFirst} setFFirst={setFFirst}
+      fMiddle={fMiddle} setFMiddle={setFMiddle}
+      fLast={fLast} setFLast={setFLast}
+      fSuffix={fSuffix} setFSuffix={setFSuffix}
+      fDept={fDept} setFDept={setFDept}
+      fBirthdate={fBirthdate} setFBirthdate={setFBirthdate}
+      fAddress={fAddress} setFAddress={setFAddress}
+      fEmail={fEmail} setFEmail={setFEmail}
+      fPw={fPw} setFPw={setFPw}
+      fPwConfirm={fPwConfirm} setFPwConfirm={setFPwConfirm}
+>>>>>>> 8dd1516 (Working Registration (Minor tweaks needed))
       onFacultySubmit={registerFaculty}
       dStep={dStep}
       dPhone={dPhone}
