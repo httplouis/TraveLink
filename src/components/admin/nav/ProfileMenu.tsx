@@ -2,34 +2,39 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, User } from "lucide-react";
+import { User } from "lucide-react";
+import ProfileSheet from "@/components/admin/profile/ProfileSheet.ui";
 
 type Props = {
   name?: string;
-  variant?: "light" | "onMaroon";
-  className?: string;
+  avatarUrl?: string | null;
 };
 
-export default function ProfileMenu({ name = "Admin", variant = "light", className = "" }: Props) {
-  const isMaroon = variant === "onMaroon";
+export default function ProfileMenu({ name = "Profile", avatarUrl }: Props) {
+  const [openSheet, setOpenSheet] = React.useState(false);
+
   return (
-    <div className={`relative ${className}`}>
+    <>
+      {/* Trigger (unchanged behavior, now with icon/avatar) */}
       <button
-        type="button"
-        aria-haspopup="menu"
-        className={[
-          "inline-flex h-10 items-center gap-2 rounded-lg px-2.5 text-sm font-medium transition-colors",
-          isMaroon
-            ? "border border-white/20 bg-white/10 text-white hover:bg-white/15"
-            : "border border-neutral-200 bg-white text-neutral-800 hover:bg-neutral-50",
-        ].join(" ")}
+        onClick={() => setOpenSheet(true)}
+        className="inline-flex h-9 items-center gap-2 rounded-full border border-white/60 bg-white/90 px-3 text-sm text-neutral-900 shadow-inner transition hover:bg-white focus:outline-none focus:ring-2 focus:ring-white/70"
+        aria-label="Open profile"
       >
-        <span className={["inline-flex h-6 w-6 items-center justify-center rounded-full", isMaroon ? "bg-white/15 text-white" : "bg-neutral-200 text-neutral-700"].join(" ")}>
-          <User className="h-4 w-4" />
-        </span>
-        <span className={isMaroon ? "text-white" : "text-neutral-800"}>{name}</span>
-        <ChevronDown className={isMaroon ? "h-4 w-4 text-white/90" : "h-4 w-4 text-neutral-500"} />
+        {avatarUrl ? (
+          <img
+            src={avatarUrl}
+            alt={name}
+            className="h-5 w-5 rounded-full object-cover"
+          />
+        ) : (
+          <User className="h-4 w-4" aria-hidden />
+        )}
+        <span className="hidden sm:inline">{name}</span>
       </button>
-    </div>
+
+      {/* Keep the same sheet + contents */}
+      <ProfileSheet open={openSheet} onClose={() => setOpenSheet(false)} />
+    </>
   );
 }

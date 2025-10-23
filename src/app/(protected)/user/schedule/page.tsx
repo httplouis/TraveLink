@@ -1,8 +1,8 @@
-import ScheduleView from "@/features/user/schedule/ScheduleView";
-import { MOCK_TRIPS } from "@/lib/user/schedule/mock"; // dev only
+// src/app/(protected)/user/schedule/page.tsx
+"use client";
 
-export default async function UserSchedulePage() {
-  // For now dev mock; later:
-  // const trips = await fetchTrips();
-  return <ScheduleView trips={MOCK_TRIPS} />;
+import UserSchedulePage from "@/components/user/schedule/UserSchedulePage.client";
+
+export default function Page() {
+  return <UserSchedulePage />;
 }

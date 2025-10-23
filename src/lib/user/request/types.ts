@@ -1,5 +1,3 @@
-// src/lib/user/request/types.ts
-
 export type Reason =
   | "official"        // Official business
   | "ces"             // CES
@@ -21,7 +19,7 @@ export const REASON_OPTIONS = [
   { label: "Visit", value: "visit" },
 ] as const satisfies ReadonlyArray<{ label: string; value: Reason }>;
 
-/** 
+/**
  * Map of reason → label for convenient imports.
  * Example: reasonLabel["seminar"] === "Seminar / Training"
  */
@@ -47,6 +45,7 @@ export type TravelCosts = {
 export interface TravelOrder {
   date: string;
   requestingPerson: string;
+  /** Base department text (no auto-abbrev stored here) */
   department: string;
   destination: string;
   destinationGeo?: { lat: number; lng: number } | null;
@@ -54,6 +53,11 @@ export interface TravelOrder {
   returnDate: string;
   purposeOfTravel: string;
   costs: TravelCosts;
+
+  /** NEW: Requesting person e-signature (data URL) */
+  requesterSignature?: string;
+
+  /** Endorser (department head) signature area */
   endorsedByHeadName?: string;
   endorsedByHeadDate?: string;
   endorsedByHeadSignature?: string; // data URL

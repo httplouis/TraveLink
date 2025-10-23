@@ -4,21 +4,37 @@ import type { RequestFormData } from "@/lib/user/request/types";
 
 /* ---------- Types ---------- */
 
-export type AdminRequestStatus = "pending" | "approved" | "rejected" | "completed" | "cancelled";
+export type AdminRequestStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "completed"
+  | "cancelled";
 
 export type AdminRequest = {
   id: string;
   createdAt: string;  // ISO
   updatedAt: string;  // ISO
   status: AdminRequestStatus;
+
   driver?: string;
   vehicle?: string;
-  // flattened fields for convenience (copied from user data at submit time)
+
+  /**
+   * Flattened copies taken at submit time (for quick reads in Admin UI).
+   * NOTE: travelOrder already includes requesterSignature (see types file).
+   */
   travelOrder?: RequestFormData["travelOrder"];
   seminar?: RequestFormData["seminar"];
   schoolService?: RequestFormData["schoolService"];
-  // keep whole payload for future editing
+
+  /** Keep the whole user payload for future editing/auditing */
   payload: RequestFormData;
+
+  /** ✅ Approval fields (captured in admin modal) */
+  approverSignature?: string | null;
+  approvedAt?: string | null;
+  approvedBy?: string | null;
 };
 
 const STORAGE_KEY = "admin.requests.v1";
@@ -53,7 +69,9 @@ const listeners = new Set<() => void>();
 
 function notify() {
   listeners.forEach((cb) => {
-    try { cb(); } catch {}
+    try {
+      cb();
+    } catch {}
   });
 }
 
@@ -85,7 +103,8 @@ export const AdminRequestsRepo = {
   upsert(req: AdminRequest) {
     const list = readAll();
     const i = list.findIndex((x) => x.id === req.id);
-    if (i >= 0) list[i] = req; else list.unshift(req);
+    if (i >= 0) list[i] = req;
+    else list.unshift(req);
     writeAll(list);
     notify();
   },
@@ -134,19 +153,63 @@ export const AdminRequestsRepo = {
 
   /** Called by user form on submit */
   acceptFromUser(data: RequestFormData): string {
-    const id = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+    const id =
+      crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
     const now = new Date().toISOString();
+
     const rec: AdminRequest = {
       id,
       createdAt: now,
       updatedAt: now,
       status: "pending",
+
+      // keep originals for admin views
       payload: data,
-      travelOrder: data.travelOrder,
+      travelOrder: data.travelOrder,       // includes requesterSignature
       seminar: data.seminar,
       schoolService: data.schoolService,
+
+      // approval defaults
+      approverSignature: null,
+      approvedAt: null,
+      approvedBy: null,
     };
+
     this.upsert(rec);
     return id;
+  },
+
+  /** ✅ Approve a request with signature (persist in localStorage). */
+  approve(id: string, opts: { signature: string; approvedBy?: string | null }) {
+    const it = this.get(id);
+    if (!it) return;
+    it.status = "approved";
+    it.approverSignature = opts.signature;
+    it.approvedAt = new Date().toISOString();
+    it.approvedBy = opts.approvedBy ?? null;
+    it.updatedAt = new Date().toISOString();
+    this.upsert(it);
+  },
+
+  /** ✅ Reject a request */
+  reject(id: string) {
+    const it = this.get(id);
+    if (!it) return;
+    it.status = "rejected";
+    it.updatedAt = new Date().toISOString();
+    this.upsert(it);
+  },
+
+  /** ✅ Handy counts for KPI cards */
+  counts() {
+    const list = readAll();
+    return {
+      pending:  list.filter(i => i.status === "pending").length,
+      approved: list.filter(i => i.status === "approved").length,
+      completed:list.filter(i => i.status === "completed").length,
+      rejected: list.filter(i => i.status === "rejected").length,
+      cancelled:list.filter(i => i.status === "cancelled").length,
+      all: list.length,
+    };
   },
 };

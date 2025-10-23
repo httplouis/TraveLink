@@ -1,37 +1,62 @@
-import type { Maintenance, MaintFilters } from "./types";
-import { MaintRepo } from "./repo";
-import { applyFilters, validate } from "./service";
-import { toCSV } from "./csv";
+import { MaintRepo } from "./maintenance.repo";
+import type {
+  MaintFilters,
+  MaintRecord,
+  MaintStatus,
+} from "./maintenance.types";
 
-export function loadMaintenance(filters?: MaintFilters): Maintenance[] {
-  return applyFilters(MaintRepo.all(), filters);
+export function canTransition(from: MaintStatus, to: MaintStatus) {
+  const map: Record<MaintStatus, MaintStatus[]> = {
+    Submitted: ["Acknowledged", "Rejected"],
+    Acknowledged: ["In-Progress", "Rejected"],
+    "In-Progress": ["Completed", "Rejected"],
+    Completed: [],
+    Rejected: [],
+  };
+  return map[from].includes(to);
 }
 
-export function getMaintenance(id: string): Maintenance | null {
-  return MaintRepo.byId(id);
+export function pushStatus(id: string, next: MaintStatus, note?: string) {
+  const all = MaintRepo.list();
+  const i = all.findIndex((x) => x.id === id);
+  if (i < 0) throw "Record not found";
+
+  const rec = { ...all[i] };
+  if (!canTransition(rec.status, next)) {
+    throw `Cannot transition from ${rec.status} to ${next}`;
+  }
+
+  const from = rec.status;
+  rec.status = next;
+  rec.history = rec.history || [];
+  rec.history.push({
+    at: new Date().toISOString(),
+    by: "admin",
+    from,
+    to: next,
+    note,
+  });
+
+  all[i] = rec;
+  MaintRepo.save(all);
 }
 
-export function createMaintenance(data: Omit<Maintenance,"id"|"createdAt"|"updatedAt">): Maintenance {
-  const err = validate(data as any);
-  if (err) throw new Error(err);
-  return MaintRepo.insert(data);
-}
+export function loadMaintenance(f: MaintFilters): MaintRecord[] {
+  const all = MaintRepo.list();
+  const q = (f.q || "").toLowerCase().trim();
 
-export function updateMaintenance(id: string, data: Omit<Maintenance,"id"|"createdAt"|"updatedAt">): Maintenance | null {
-  const err = validate(data as any);
-  if (err) throw new Error(err);
-  return MaintRepo.patch(id, data);
-}
+  return all.filter((r) => {
+    const matchQ =
+      !q ||
+      [r.description, r.vendor, r.vehicleId, r.assignedDriverId]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(q));
 
-export function deleteMaintenance(id: string) {
-  MaintRepo.remove(id);
-}
+    const matchType = f.types?.length ? f.types.includes(r.type) : true;
+    const matchStatus = f.statuses?.length ? f.statuses.includes(r.status) : true;
+    const matchFrom = f.from ? r.createdAt >= f.from : true;
+    const matchTo = f.to ? r.createdAt <= f.to : true;
 
-export function deleteManyMaintenance(ids: string[]) {
-  MaintRepo.bulkRemove(ids);
-}
-
-export function exportMaintenanceCSV(rows: Maintenance[]): Blob {
-  const csv = toCSV(rows);
-  return new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    return matchQ && matchType && matchStatus && matchFrom && matchTo;
+  });
 }

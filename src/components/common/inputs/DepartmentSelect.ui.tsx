@@ -27,9 +27,7 @@ export default function DepartmentSelect({
   const [q, setQ] = React.useState(value || "");
   const [active, setActive] = React.useState(0);
   const inputRef = React.useRef<HTMLInputElement | null>(null);
-  const listRef = React.useRef<HTMLDivElement | null>(null);
 
-  // Keep local query synced when parent value changes externally
   React.useEffect(() => {
     setQ(value || "");
   }, [value]);
@@ -46,11 +44,9 @@ export default function DepartmentSelect({
     onChange(choice);
     setQ(choice);
     setOpen(false);
-    // keep focus on the input so user can continue tabbing
     inputRef.current?.focus();
   }
 
-  // Delay closing slightly on blur so clicks on dropdown still register
   function closeSoon() {
     setTimeout(() => setOpen(false), 120);
   }
@@ -61,7 +57,6 @@ export default function DepartmentSelect({
       return;
     }
     if (!items.length) return;
-
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setActive((i) => Math.min(i + 1, items.length - 1));
@@ -99,10 +94,10 @@ export default function DepartmentSelect({
           onFocus={() => setOpen(true)}
           onBlur={closeSoon}
           onKeyDown={onKeyDown}
-          className="h-10 w-full rounded-md border border-neutral-300 bg-white px-3 pr-9 text-sm outline-none focus:ring-2 focus:ring-neutral-200"
+          className="h-10 w-full rounded-md border border-neutral-300 bg-white px-3 pr-10 text-sm outline-none focus:ring-2 focus:ring-neutral-200"
         />
 
-        {/* Clear (X) */}
+        {/* Clear (×) — borderless, centered, clear hover affordance */}
         {showClear && (
           <button
             type="button"
@@ -115,23 +110,31 @@ export default function DepartmentSelect({
               setActive(0);
               inputRef.current?.focus();
             }}
-            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-neutral-500 hover:bg-neutral-100"
+            className="
+              absolute right-2 inset-y-0 my-auto
+              flex h-7 w-7 items-center justify-center
+              rounded-full
+              text-neutral-400
+              hover:bg-neutral-100 hover:text-red-600
+              active:bg-neutral-200
+              transition
+              translate-y-[0.5px]
+            "
           >
-            ×
+            <svg viewBox="0 0 20 20" width="12" height="12" aria-hidden="true">
+              <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
           </button>
         )}
 
         {/* Dropdown */}
         {open && (
           <div
-            ref={listRef}
             className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-md border border-neutral-200 bg-white shadow-lg"
             onMouseDown={(e) => e.preventDefault()} // keep focus on input
           >
             {items.length === 0 ? (
-              <div className="px-3 py-2 text-sm text-neutral-500">
-                No matches
-              </div>
+              <div className="px-3 py-2 text-sm text-neutral-500">No matches</div>
             ) : (
               items.map((item, idx) => (
                 <button

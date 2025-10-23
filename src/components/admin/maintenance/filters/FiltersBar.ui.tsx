@@ -1,64 +1,166 @@
-// src/components/admin/maintenance/filters/FiltersBar.ui.tsx
 "use client";
 import * as React from "react";
-import { Search } from "lucide-react";
-import type { MaintFilters } from "@/lib/admin/maintenance/types";
-import { MaintConstants } from "@/lib/admin/maintenance/service";
-import { Select } from "@/components/common/inputs/Select.ui"; // string[] options
+import type { MaintFilters, MaintStatus, MaintType } from "@/lib/admin/maintenance";
 
-const TYPE_OPTIONS = ["All Types", ...MaintConstants.types] as const;
-const STATUS_OPTIONS = ["All Status", ...MaintConstants.statuses] as const;
+const TYPES: MaintType[] = [
+  "Preventive (PMS)",
+  "Repair",
+  "LTO Renewal",
+  "Insurance Renewal",
+  "Vulcanize/Tire",
+  "Other",
+];
 
-export function MaintFiltersBar({
-  value, onChange, onClear
-}: {
+const STATUSES: MaintStatus[] = [
+  "Submitted",
+  "Acknowledged",
+  "In-Progress",
+  "Completed",
+  "Rejected",
+];
+
+type Props = {
   value: MaintFilters;
-  onChange: (v: MaintFilters) => void;
+  onChange: (v: MaintFilters) => void; // called on Apply and for density immediate change
   onClear: () => void;
-}) {
-  const typeDisplay = value.type ?? "All Types";
-  const statusDisplay = value.status ?? "All Status";
+  onApply: () => void;                 // parent can re-run loadMaintenance
+  onFillMock?: () => void;             // dev-only seeding
+};
+
+export default function FiltersBar({
+  value,
+  onChange,
+  onClear,
+  onApply,
+  onFillMock,
+}: Props) {
+  const [draft, setDraft] = React.useState<MaintFilters>(value);
+  React.useEffect(() => setDraft(value), [value]);
+
+  const toggle = <T extends string>(arr: T[], v: T) =>
+    arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
+
+  // Density applies immediately so the table row padding updates right away.
+  function setDensityImmediate(density: MaintFilters["density"]) {
+    const next = { ...draft, density };
+    setDraft(next);
+    onChange(next);
+  }
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-white p-2">
-      <div className="flex items-center gap-2 px-2 py-1.5 rounded-md border">
-        <Search size={16} className="opacity-60" />
-        <input
-          value={value.search ?? ""}
-          onChange={(e) => onChange({ ...value, search: e.currentTarget.value })}
-          placeholder="Search vehicle, plate, description…"
-          autoComplete="off"
-          className="outline-none text-sm"
-          suppressHydrationWarning
-          aria-label="Search maintenance"
-        />
+    <div className="rounded-xl bg-white/80 backdrop-blur-sm ring-1 ring-black/5 shadow-sm p-3 md:p-4 space-y-3">
+      {/* Search */}
+      <input
+        placeholder="Search vehicle, vendor, description…"
+        value={draft.q}
+        onChange={(e) => setDraft({ ...draft, q: e.target.value })}
+        className="w-full px-3 py-2 rounded-lg ring-1 ring-black/10 focus:ring-2 focus:ring-[#7a1f2a]/30 outline-none bg-white/70"
+      />
+
+      {/* Type chips */}
+      <div className="flex flex-wrap gap-2">
+        {TYPES.map((t) => {
+          const active = draft.types.includes(t);
+          return (
+            <button
+              key={t}
+              onClick={() => setDraft({ ...draft, types: toggle(draft.types, t) })}
+              className={`text-xs px-2.5 py-1 rounded-full ring-1 transition ${
+                active
+                  ? "bg-[#7a1f2a]/10 ring-[#7a1f2a]/30 text-[#7a1f2a]"
+                  : "ring-black/10 text-neutral-700 hover:bg-neutral-50"
+              }`}
+            >
+              {t}
+            </button>
+          );
+        })}
       </div>
 
-      <Select
-        label="Type"
-        value={typeDisplay}
-        options={TYPE_OPTIONS}
-        onChange={(next) =>
-          onChange({ ...value, type: next === "All Types" ? undefined : (next as any) })
-        }
-      />
+      {/* Status chips */}
+      <div className="flex flex-wrap gap-2">
+        {STATUSES.map((s) => {
+          const active = draft.statuses.includes(s);
+          return (
+            <button
+              key={s}
+              onClick={() => setDraft({ ...draft, statuses: toggle(draft.statuses, s) })}
+              className={`text-xs px-2.5 py-1 rounded-full ring-1 transition ${
+                active
+                  ? "bg-emerald-50 ring-emerald-200 text-emerald-700"
+                  : "ring-black/10 text-neutral-700 hover:bg-neutral-50"
+              }`}
+            >
+              {s}
+            </button>
+          );
+        })}
+      </div>
 
-      <Select
-        label="Status"
-        value={statusDisplay}
-        options={STATUS_OPTIONS}
-        onChange={(next) =>
-          onChange({ ...value, status: next === "All Status" ? undefined : (next as any) })
-        }
-      />
+      {/* Date + controls */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2 rounded-lg ring-1 ring-black/10 bg-white/70 px-2 py-1">
+          <span className="text-xs text-neutral-500">Date</span>
+          <input
+            type="date"
+            value={draft.from || ""}
+            onChange={(e) => setDraft({ ...draft, from: e.target.value || undefined })}
+            className="px-1 py-0.5 bg-transparent outline-none"
+          />
+          <span className="text-sm text-neutral-400">–</span>
+          <input
+            type="date"
+            value={draft.to || ""}
+            onChange={(e) => setDraft({ ...draft, to: e.target.value || undefined })}
+            className="px-1 py-0.5 bg-transparent outline-none"
+          />
+        </div>
 
-      <button
-        onClick={onClear}
-        className="ml-auto px-3 py-1.5 text-sm rounded-md border hover:bg-gray-50"
-        aria-label="Clear filters"
-      >
-        Clear
-      </button>
+        <div className="ml-auto flex items-center gap-2">
+          <select
+            value={draft.density}
+            onChange={(e) => setDensityImmediate(e.target.value as MaintFilters["density"])}
+            className="px-2 py-1 rounded-lg ring-1 ring-black/10 bg-white/70"
+            title="Row density"
+          >
+            <option value="comfortable">Comfortable</option>
+            <option value="compact">Compact</option>
+          </select>
+
+          <button
+            onClick={() => setDraft(value)}
+            className="px-3 py-1 rounded-lg ring-1 ring-black/10"
+          >
+            Reset
+          </button>
+
+          <button
+            onClick={() => {
+              onChange(draft);
+              onApply();
+            }}
+            className="px-3 py-1 rounded-lg bg-[#7a1f2a] text-white"
+          >
+            Apply
+          </button>
+
+          <button
+            onClick={onClear}
+            className="px-3 py-1 rounded-lg ring-1 ring-black/10"
+          >
+            Clear
+          </button>
+
+          {onFillMock && (
+            <button
+              onClick={onFillMock}
+              className="px-3 py-1 rounded-lg ring-1 ring-black/10"
+            >
+              Fill Mock Data
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

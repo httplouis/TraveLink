@@ -1,4 +1,3 @@
-// src/components/common/inputs/SignaturePad.ui.tsx
 "use client";
 
 import * as React from "react";
@@ -25,8 +24,11 @@ type Props = {
   /** Optional: handle file upload yourself */
   onUpload?: (file: File) => void;
 
-  /** Disable the Save button (manual save) */
+  /** Disable the Save button (when shown) */
   saveDisabled?: boolean;
+
+  /** Hide the manual “Save signature” button (autosave-only UX) */
+  hideSaveButton?: boolean;
 
   className?: string;
 };
@@ -42,6 +44,7 @@ export default function SignaturePad({
   onClear,
   onUpload,
   saveDisabled = false,
+  hideSaveButton = false,
   className = "",
 }: Props) {
   const wrapperRef = React.useRef<HTMLDivElement | null>(null);
@@ -233,10 +236,16 @@ export default function SignaturePad({
     e.currentTarget.value = "";
   }
 
+  const helperAutosave =
+    "Sign with mouse / touch — it auto-saves when you lift your pen.";
+  const helperExtra = hideSaveButton
+    ? " You can also upload an image file."
+    : " You can also click Save signature or upload an image file.";
+
   return (
     <div className={`grid gap-2 ${className}`}>
       <div className="rounded-lg border border-neutral-300 bg-white p-2">
-        {/* Fixed-height container to prevent any layout shift while drawing */}
+        {/* Fixed-height container to prevent layout shift while drawing */}
         <div ref={wrapperRef} className="relative w-full" style={{ height }}>
           <canvas
             ref={canvasRef}
@@ -255,16 +264,18 @@ export default function SignaturePad({
           Clear
         </button>
 
-        <button
-          type="button"
-          onClick={saveNow}
-          disabled={saveDisabled}
-          className={`h-9 rounded-md px-4 text-sm font-medium text-white ${
-            saveDisabled ? "bg-neutral-400" : "bg-[#7A0010] hover:opacity-95"
-          }`}
-        >
-          Save signature
-        </button>
+        {!hideSaveButton && (
+          <button
+            type="button"
+            onClick={saveNow}
+            disabled={saveDisabled}
+            className={`h-9 rounded-md px-4 text-sm font-medium text-white ${
+              saveDisabled ? "bg-neutral-400" : "bg-[#7A0010] hover:opacity-95"
+            }`}
+          >
+            Save signature
+          </button>
+        )}
 
         <label className="ml-auto inline-flex h-9 cursor-pointer items-center justify-center rounded-md border border-neutral-300 bg-white px-3 text-sm hover:bg-neutral-50">
           Upload e-sign
@@ -273,8 +284,8 @@ export default function SignaturePad({
       </div>
 
       <p className="text-[11px] text-neutral-500">
-        Sign with mouse / touch — it auto-saves when you lift your pen. You can
-        also click <span className="font-medium">Save signature</span> or upload an image file.
+        {helperAutosave}
+        {helperExtra}
       </p>
     </div>
   );

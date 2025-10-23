@@ -2,33 +2,44 @@
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import type { AdminRequest } from "@/lib/admin/requests/store";
 
-/** Layout enum to avoid TS2367 literal-compare warnings */
-enum CostMode { Column = "column", Row = "row" }
+/** Layout enum (kept for future) */
+enum CostMode { Column = "column", Row = "row", Grid3 = "grid3" }
 
 export async function generateRequestPDF(req: AdminRequest) {
   /* ===== DEV VISUALS ===== */
   const SHOW_BOXES = false; // field guides
-  const SHOW_GRID = false;  // 50pt grid rulers
+  const SHOW_GRID  = false; // page rulers (50pt)
 
   /* ===== GLOBAL OFFSETS ===== */
-  const OFFSET_X = 0;   // +right / -left
-  const OFFSET_TOP = 0; // +down  / -up
+  const OFFSET_X = 0;
+  const OFFSET_TOP = 0;
   const PAD_X = 2;
 
-  /* ===== HELPERS: format ===== */
+  /* ===== FORMAT HELPERS ===== */
   const peso = (val?: number | null) =>
     `PHP ${new Intl.NumberFormat("en-PH", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(Number(val ?? 0))}`;
 
-  const fmtDate = (d?: string | number | Date | null) => {
-    const dt = d ? new Date(d) : new Date();
-    const y = dt.getFullYear();
-    const m = String(dt.getMonth() + 1).padStart(2, "0");
-    const day = String(dt.getDate()).padStart(2, "0");
-    return `${y}-${m}-${day}`;
-  };
+  // Robust local date parsing/formatting (avoids TZ shifts for YYYY-MM-DD)
+  function toLocalDate(d?: string | number | Date | null): Date {
+    if (!d) return new Date();
+    if (d instanceof Date) return d;
+    if (typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d)) {
+      const [y, m, day] = d.split("-").map(Number);
+      return new Date(y, (m || 1) - 1, day || 1);
+    }
+    const t = new Date(d as any);
+    return isNaN(t.getTime()) ? new Date() : t;
+  }
+
+  const fmtLongDate = (d?: string | number | Date | null) =>
+    new Intl.DateTimeFormat("en-US", {
+      month: "long",
+      day: "2-digit",
+      year: "numeric",
+    }).format(toLocalDate(d));
 
   const DEPT_WORD_ABBR: Record<string, string> = {
     College: "C.",
@@ -51,68 +62,33 @@ export async function generateRequestPDF(req: AdminRequest) {
     Science: "Sci.",
     Sciences: "Scis.",
   };
-
-  function abbreviateDepartment(raw: string) {
-    if (!raw) return "";
-    let s = raw.replace(/\bCollege of\b/gi, "C. of").replace(/\b&\b/g, "&").replace(/\band\b/gi, "&");
-    s = s
+  const abbreviateDepartment = (raw: string) =>
+    (raw || "")
+      .replace(/\bCollege of\b/gi, "C. of")
+      .replace(/\b&\b/g, "&")
+      .replace(/\band\b/gi, "&")
       .split(/\s+/)
       .map((w) => {
-        const key = Object.keys(DEPT_WORD_ABBR).find((k) => new RegExp(`^${k}$`, "i").test(w));
-        return key ? DEPT_WORD_ABBR[key] : w;
+        const k = Object.keys(DEPT_WORD_ABBR).find((kk) => new RegExp(`^${kk}$`, "i").test(w));
+        return k ? DEPT_WORD_ABBR[k] : w;
       })
-      .join(" ");
-    return s.replace(/\s{2,}/g, " ").trim();
-  }
+      .join(" ")
+      .replace(/\s{2,}/g, " ")
+      .trim();
 
-  function abbreviateAddress(s: string) {
-    return (s ?? "")
+  const abbreviateAddress = (s: string) =>
+    (s ?? "")
       .replace(/\bBarangay\b/gi, "Brgy.")
       .replace(/\bDistrict\b/gi, "Dist.")
       .replace(/\bAvenue\b/gi, "Ave.")
       .replace(/\bStreet\b/gi, "St.")
       .replace(/\bRoad\b/gi, "Rd.")
       .replace(/\bSubdivision\b/gi, "Subd.");
-  }
 
   /* ===== TYPES ===== */
   type Rect = { x: number; top: number; w: number; h: number; align?: "left" | "right" | "center" };
 
-  /* ===== COST LAYOUT =====
-   * Items with 0 are filtered out before positioning.
-   * Micro-nudge per item via COST_TWEAKS (applied post-layout).
-   */
-  let COST_MODE: CostMode =
-    ((req as any)?.travelOrder?.costLayout === "column" ? CostMode.Column : CostMode.Row);
-
-  // Column baseline (stacked in Travel Cost table)
-  const COST_COL = {
-    x: 380,   // start more left to fit "Label – Amount"
-    top: 332,
-    rowStep: 22,
-    w: 280,
-    h: 12,
-  };
-
-  // Row baseline (one line inside the Travel Cost area)
-  const COST_ROW_BOUNDS = {
-    left: 140,   // entire band start x (not per-slot)
-    right: 550,  // entire band end x
-    top: 325,    // vertical anchor (center of band)
-    h: 12,
-    minGap: 12,  // minimum gap between items in row layout
-  };
-
-  // Per-item micro nudges (applied AFTER layout)
-  const COST_TWEAKS: Record<string, { dx: number; dtop: number; w: number; h: number }> = {
-    food:             { dx: 4, dtop: -33, w: 0, h: 0 },
-    driversAllowance: { dx: 0, dtop: 0, w: 0, h: 0 },
-    rentVehicles:     { dx: 0, dtop: 0, w: 0, h: 0 },
-    hiredDrivers:     { dx: 0, dtop: 0, w: 0, h: 0 },
-    accommodation:    { dx: 0, dtop: -33, w: 0, h: 0 },
-    total:            { dx: 0, dtop: -33, w: 0, h: 0 },
-  };
-
+  /* ===== COST LABELS ===== */
   const COST_LABELS: Record<string, string> = {
     food: "Food",
     driversAllowance: "Driver’s allowance",
@@ -163,14 +139,12 @@ export async function generateRequestPDF(req: AdminRequest) {
     return null;
   }
 
-  async function getSignatureDataUrl(data: AdminRequest): Promise<string | null> {
+  // Endorser (department head) signature (LEFT)
+  async function getEndorserSignatureDataUrl(data: AdminRequest): Promise<string | null> {
     const t = (data as any)?.travelOrder ?? {};
     const candidates = [
-      t.endorsedByHeadSignature,
-      t.endorsedSignature,
-      t.endorsedSignatureUrl,
-      t.signature,
-      (data as any)?.signature,
+      t.endorsedByHeadSignature, t.endorsedSignature, t.endorsedSignatureUrl,
+      t.signature, (data as any)?.signature,
     ];
     for (const c of candidates) {
       const u = await toDataUrlFromAny(c);
@@ -185,9 +159,24 @@ export async function generateRequestPDF(req: AdminRequest) {
     return null;
   }
 
-  function toNumber(v: unknown): number {
-    return typeof v === "number" ? v : typeof v === "string" ? Number(v) || 0 : 0;
+  // School Transportation Coordinator / Approver signature (RIGHT)
+  async function getCoordinatorSignatureDataUrl(data: AdminRequest): Promise<string | null> {
+    const candidates = [
+      (data as any)?.signature,           // saved by approve flow
+      (data as any)?.approverSignature,
+      (data as any)?.approvedSignature,
+      (data as any)?.approved?.signature,
+      (data as any)?.approvalSignature,
+    ];
+    for (const c of candidates) {
+      const u = await toDataUrlFromAny(c);
+      if (u) return u;
+    }
+    return null;
   }
+
+  const toNumber = (v: unknown) =>
+    typeof v === "number" ? v : typeof v === "string" ? Number(v) || 0 : 0;
 
   function computeTravelTotalFromCosts(c: any): number {
     const base =
@@ -203,19 +192,11 @@ export async function generateRequestPDF(req: AdminRequest) {
     return base + otherItemsTotal + singleOther;
   }
 
-  function computeTravelTotal(req: AdminRequest): number {
-    const c: any = req?.travelOrder?.costs || {};
-    return computeTravelTotalFromCosts(c);
-  }
-
-  // Try many shapes for driver/vehicle (dropdowns, objects, labels)
   function getString(v: any): string {
     if (!v) return "";
     if (typeof v === "string") return v;
     if (typeof v === "number") return String(v);
-    if (typeof v === "object") {
-      return v.name ?? v.label ?? v.title ?? v.plateNo ?? v.plate ?? v.value ?? "";
-    }
+    if (typeof v === "object") return v.name ?? v.label ?? v.title ?? v.plateNo ?? v.plate ?? v.value ?? "";
     return "";
   }
   function resolveDriver(req: AdminRequest): string {
@@ -251,12 +232,9 @@ export async function generateRequestPDF(req: AdminRequest) {
   const tx = (x: number) => x + OFFSET_X;
   const tty = (t: number) => t + OFFSET_TOP;
 
-  /** Right-edge clamp so fields can never spill into the right area */
-  const RIGHT_EDGE = 565; // tune once to match the vertical border of the Destination cell
-  function clampToRightEdge(rect: Rect): Rect {
-    const maxW = Math.max(0, RIGHT_EDGE - rect.x);
-    return { ...rect, w: Math.min(rect.w, maxW) };
-  }
+  /** Prevent Destination from bleeding into the right column */
+  const RIGHT_EDGE = 565;
+  const clampToRightEdge = (rect: Rect): Rect => ({ ...rect, w: Math.min(rect.w, Math.max(0, RIGHT_EDGE - rect.x)) });
 
   try {
     /* 1) Load template */
@@ -271,7 +249,6 @@ export async function generateRequestPDF(req: AdminRequest) {
     const font = await pdfDoc.embedFont(StandardFonts.TimesRoman);
     const bold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
 
-    // Draw single-line, vertically centered text
     function drawInRect(
       text: string,
       rect: Rect,
@@ -289,7 +266,7 @@ export async function generateRequestPDF(req: AdminRequest) {
 
       const tw = f.widthOfTextAtSize(t, size);
       let drawX = xL;
-      if (align === "right") drawX = xL + innerW - tw;
+      if (align === "right")  drawX = xL + innerW - tw;
       if (align === "center") drawX = xL + (innerW - tw) / 2;
 
       const baselineY = PAGE_H - (top + (rect.h - size) / 2 + size);
@@ -298,26 +275,19 @@ export async function generateRequestPDF(req: AdminRequest) {
       if (SHOW_BOXES) {
         const y = PAGE_H - (top + rect.h);
         page.drawRectangle({
-          x: xL - PAD_X,
-          y,
-          width: rect.w,
-          height: rect.h,
-          borderColor: rgb(0, 0.5, 1),
-          borderWidth: 0.7,
-          color: rgb(0, 0.5, 1),
-          opacity: 0.05,
+          x: xL - PAD_X, y, width: rect.w, height: rect.h,
+          borderColor: rgb(0, 0.5, 1), borderWidth: 0.7, color: rgb(0, 0.5, 1), opacity: 0.05,
         });
       }
     }
 
-    // Multi-line with clamp & ellipsis
     function drawAutoFitEllipsis(
       text: string,
       rect: Rect,
       opts: { baseSize?: number; minSize?: number; strong?: boolean; maxLines?: number; align?: Rect["align"] } = {}
     ) {
       const base = opts.baseSize ?? 10;
-      const min = opts.minSize ?? 8;
+      const min  = opts.minSize ?? 8;
       const maxL = Math.max(1, opts.maxLines ?? 2);
       const align = opts.align ?? rect.align ?? "left";
       const f = opts.strong ? bold : font;
@@ -330,10 +300,7 @@ export async function generateRequestPDF(req: AdminRequest) {
         for (const w of words) {
           const cand = cur ? `${cur} ${w}` : w;
           if (f.widthOfTextAtSize(cand, size) <= usableW || cur === "") cur = cand;
-          else {
-            lines.push(cur);
-            cur = w;
-          }
+          else { lines.push(cur); cur = w; }
         }
         if (cur) lines.push(cur);
 
@@ -348,28 +315,22 @@ export async function generateRequestPDF(req: AdminRequest) {
         const totalH = out.length * lineH;
         if (totalH <= rect.h + 0.1) {
           const xBase = tx(rect.x) + PAD_X;
-          const top = tty(rect.top);
+          const top   = tty(rect.top);
           for (let i = 0; i < out.length; i++) {
             const line = out[i];
             const tw = f.widthOfTextAtSize(line, size);
             const innerW = rect.w - PAD_X * 2;
             let drawX = xBase;
-            if (align === "right") drawX = xBase + innerW - tw;
+            if (align === "right")  drawX = xBase + innerW - tw;
             if (align === "center") drawX = xBase + (innerW - tw) / 2;
             const y = PAGE_H - (top + size + i * lineH);
-            page.drawText(line, { x: drawX, y, size, font: f, color: rgb(0, 0, 0) });
+            page.drawText(line, { x: drawX, y, size, font: f, color: rgb(0,0,0) });
           }
           if (SHOW_BOXES) {
             const y = PAGE_H - (top + rect.h);
             page.drawRectangle({
-              x: xBase - PAD_X,
-              y,
-              width: rect.w,
-              height: rect.h,
-              borderColor: rgb(1, 0, 0),
-              borderWidth: 0.8,
-              color: rgb(1, 0, 0),
-              opacity: 0.06,
+              x: xBase - PAD_X, y, width: rect.w, height: rect.h,
+              borderColor: rgb(1,0,0), borderWidth: 0.8, color: rgb(1,0,0), opacity: 0.06,
             });
           }
           return;
@@ -378,8 +339,8 @@ export async function generateRequestPDF(req: AdminRequest) {
       drawInRect(text, rect, { size: min, strong: opts.strong, align });
     }
 
-    async function drawSignature(rect: Rect) {
-      const dataUrl = await getSignatureDataUrl(req);
+    // Generic image drawer
+    async function drawImageInRect(dataUrl: string | null, rect: Rect, opacity = 0.95) {
       if (!dataUrl) return;
       const bytes = dataUrlToBytes(dataUrl);
       const isPng = dataUrl.startsWith("data:image/png");
@@ -395,7 +356,7 @@ export async function generateRequestPDF(req: AdminRequest) {
       const dx = x + (rect.w - dw) / 2;
       const dy = y + (rect.h - dh) / 2;
 
-      page.drawImage(img, { x: dx, y: dy, width: dw, height: dh, opacity: 0.95 });
+      page.drawImage(img, { x: dx, y: dy, width: dw, height: dh, opacity });
 
       if (SHOW_BOXES) {
         page.drawRectangle({ x, y, width: rect.w, height: rect.h,
@@ -403,141 +364,132 @@ export async function generateRequestPDF(req: AdminRequest) {
       }
     }
 
-    /* 3) GRID OVERLAY (optional) */
+    /* 3) Optional grid rulers */
     if (SHOW_GRID) {
       const step = 50;
       for (let t = 0; t <= Math.ceil(PAGE_H); t += step) {
         const y = PAGE_H - t;
-        page.drawLine({ start: { x: 0, y }, end: { x: PAGE_W, y }, thickness: 0.2, color: rgb(0.7, 0.7, 0.7) });
-        page.drawText(`${t}`, { x: 2, y: y + 1, size: 6, font, color: rgb(0.4, 0.4, 0.4) });
+        page.drawLine({ start: { x: 0, y }, end: { x: PAGE_W, y }, thickness: 0.2, color: rgb(0.7,0.7,0.7) });
+        page.drawText(`${t}`, { x: 2, y: y + 1, size: 6, font, color: rgb(0.4,0.4,0.4) });
       }
       for (let x = 0; x <= Math.ceil(PAGE_W); x += step) {
-        page.drawLine({ start: { x, y: 0 }, end: { x, y: PAGE_H }, thickness: 0.2, color: rgb(0.7, 0.7, 0.7) });
-        page.drawText(`${x}`, { x: x + 1, y: 2, size: 6, font, color: rgb(0.4, 0.4, 0.4) });
+        page.drawLine({ start: { x, y: 0 }, end: { x, y: PAGE_H }, thickness: 0.2, color: rgb(0.7,0.7,0.7) });
+        page.drawText(`${x}`, { x: x + 1, y: 2, size: 6, font, color: rgb(0.4,0.4,0.4) });
       }
     }
 
-    /* 4) RECT MAP */
+    /* 4) Static rects (tuned for your Rev12 template) */
     const R: Record<string, Rect> = {
-      createdDate: { x: 105, top: 125, w: 150, h: 14 },
+      createdDate: { x: 100, top: 123, w: 150, h: 14 },
 
-      requestingPerson: { x: 150, top: 180, w: 210, h: 14 },
+      requestingPerson:   { x: 150, top: 180, w: 210, h: 14 },
+      requesterSignature: { x: 200, top: 170, w: 120, h: 26 },
 
-      department: { x: 450, top: 169, w: 146, h: 42 },
-
-      // We'll clamp this one to RIGHT_EDGE at draw time
+      department:  { x: 450, top: 169, w: 146, h: 42 },
       destination: { x: 150, top: 205, w: 446, h: 32 },
 
       departureDate: { x: 150, top: 235, w: 210, h: 14 },
-      returnDate: { x: 450, top: 235, w: 150, h: 14 },
+      returnDate:    { x: 450, top: 235, w: 150, h: 14 },
 
       purposeOfTravel: { x: 150, top: 260, w: 446, h: 26 },
 
-      // costs drawn dynamically below
+      // LEFT (Dept Head)
+      endorsedByName:    { x: 125, top: 400, w: 260, h: 14 },
+      endorsedSignature: { x:  85, top: 380, w: 180, h: 34 },
 
-      endorsedByName: { x: 125, top: 400, w: 260, h: 14 },
-      endorsedSignature: { x: 85, top: 380, w: 180, h: 34 },
+      // RIGHT (School Transportation Coordinator — where you want the admin/approval signature)
+      stcSignature: { x: 340, top: 455, w: 200, h: 34 },  // signature over the right line
+      stcName:      { x: 430, top: 515, w: 260, h: 14 },  // printed name below the line
 
-      driver: { x: 110, top: 470, w: 210, h: 14 },
+      driver:  { x: 110, top: 470, w: 210, h: 14 },
       vehicle: { x: 110, top: 485, w: 210, h: 14 },
     };
 
-    /* 5) WRITE FIELDS */
-    const created = (req as any)?.createdAt ? fmtDate((req as any).createdAt) : fmtDate();
+    /* 5) Write values */
+    const created = (req as any)?.createdAt ? fmtLongDate((req as any).createdAt) : fmtLongDate();
     drawInRect(created, R.createdDate);
 
     drawInRect(req.travelOrder?.requestingPerson ?? "", R.requestingPerson);
+    await drawImageInRect(await getEndorserSignatureDataUrl(req), R.requesterSignature, 0.95);
 
     const dept = abbreviateDepartment(req.travelOrder?.department ?? "");
     drawAutoFitEllipsis(dept, R.department, { baseSize: 10, minSize: 8, maxLines: 3 });
 
     const dest = abbreviateAddress(req.travelOrder?.destination ?? "");
-    // ⬇️ Use the clamp so it never spills into the right-hand column
     drawAutoFitEllipsis(dest, clampToRightEdge(R.destination), { baseSize: 10, minSize: 8, maxLines: 2 });
 
-    drawInRect(req.travelOrder?.departureDate ?? "", R.departureDate);
-    drawInRect(req.travelOrder?.returnDate ?? "", R.returnDate);
+    drawInRect(req.travelOrder?.departureDate ? fmtLongDate(req.travelOrder?.departureDate) : "", R.departureDate);
+    drawInRect(req.travelOrder?.returnDate ? fmtLongDate(req.travelOrder?.returnDate) : "", R.returnDate);
     drawAutoFitEllipsis(req.travelOrder?.purposeOfTravel ?? "", R.purposeOfTravel, {
       baseSize: 10, minSize: 8, maxLines: 2,
     });
 
-    /* 5a) COSTS: filter zero, lay out, draw */
+    /* ===== COSTS (3-column, column-major grid) ===== */
+    const GRID = {
+      cols: 4,
+      maxRowsPerCol: 4,
+      x: [150, 270, 365],
+      topStart: 295,
+      rowStep: 8,
+      colWidth: 145,
+      lineHeight: 0,
+      fontSize: 8,
+    };
+
     const c: any = req.travelOrder?.costs || {};
-    const rawItems: { key: string; label: string; value: number }[] = [
-      { key: "food",             label: COST_LABELS.food,             value: toNumber(c.food) },
-      { key: "driversAllowance", label: COST_LABELS.driversAllowance, value: toNumber(c.driversAllowance) },
-      { key: "rentVehicles",     label: COST_LABELS.rentVehicles,     value: toNumber(c.rentVehicles) },
-      { key: "hiredDrivers",     label: COST_LABELS.hiredDrivers,     value: toNumber(c.hiredDrivers) },
-      { key: "accommodation",    label: COST_LABELS.accommodation,    value: toNumber(c.accommodation) },
-    ];
+    const baseItems: { label: string; value: number }[] = [
+      { label: COST_LABELS.food,             value: toNumber(c.food) },
+      { label: COST_LABELS.driversAllowance, value: toNumber(c.driversAllowance) },
+      { label: COST_LABELS.rentVehicles,     value: toNumber(c.rentVehicles) },
+      { label: COST_LABELS.hiredDrivers,     value: toNumber(c.hiredDrivers) },
+      { label: COST_LABELS.accommodation,    value: toNumber(c.accommodation) },
+    ].filter((it) => it.value > 0);
 
-    // keep only > 0
-    const visible = rawItems.filter((it) => it.value > 0);
-
-    // compute total only from visible categories + any "other" amounts
-    const baseSum = visible.reduce((s, it) => s + it.value, 0);
-    const others =
-      (Array.isArray(c.otherItems) ? c.otherItems.reduce((s: number, it: any) => s + toNumber(it?.amount), 0) : 0) +
-      (c.otherLabel ? toNumber(c.otherAmount) : 0);
-    const total = baseSum + others;
-
-    if (visible.length > 0 || others > 0) {
-      const itemsToDraw = [...visible, { key: "total", label: COST_LABELS.total, value: total }];
-
-      if (COST_MODE === CostMode.Column) {
-        // stacked
-        itemsToDraw.forEach((it, i) => {
-          const t = COST_TWEAKS[it.key] || { dx: 0, dtop: 0, w: 0, h: 0 };
-          const rect: Rect = {
-            x: COST_COL.x + t.dx,
-            top: COST_COL.top + i * COST_COL.rowStep + t.dtop,
-            w: COST_COL.w + t.w,
-            h: COST_COL.h + t.h,
-            align: "left",
-          };
-          drawInRect(`${it.label} – ${peso(it.value)}`, rect);
-        });
-      } else {
-        // row: compute dynamic widths & spacing so everything fits between left..right
-        const bandWidth = COST_ROW_BOUNDS.right - COST_ROW_BOUNDS.left;
-        const size = 10;
-        const slots = itemsToDraw.map((it) => {
-          const text = `${it.label} – ${peso(it.value)}`;
-          const tw = font.widthOfTextAtSize(text, size) + 12; // padding
-          return { key: it.key, text, width: tw };
-        });
-
-        const totalText = slots.reduce((s, a) => s + a.width, 0);
-        const gaps = Math.max(slots.length - 1, 0);
-        let gap = COST_ROW_BOUNDS.minGap;
-        if (totalText + gaps * gap > bandWidth && slots.length > 1) {
-          gap = Math.max(6, (bandWidth - totalText) / gaps);
-        }
-
-        let cursor = COST_ROW_BOUNDS.left;
-        slots.forEach((slot) => {
-          const t = COST_TWEAKS[slot.key] || { dx: 0, dtop: 0, w: 0, h: 0 };
-          const rect: Rect = {
-            x: cursor + t.dx,
-            top: COST_ROW_BOUNDS.top + t.dtop,
-            w: slot.width + t.w,
-            h: COST_ROW_BOUNDS.h + t.h,
-            align: "left",
-          };
-          drawInRect(slot.text, rect);
-          cursor += slot.width + gap;
-        });
+    const others: { label: string; value: number }[] = [];
+    if (c.otherLabel && toNumber(c.otherAmount) > 0) {
+      others.push({ label: String(c.otherLabel), value: toNumber(c.otherAmount) });
+    }
+    if (Array.isArray(c.otherItems)) {
+      for (const it of c.otherItems) {
+        const v = toNumber(it?.amount);
+        const lbl = (it?.label ?? "").toString();
+        if (lbl && v > 0) others.push({ label: lbl, value: v });
       }
     }
 
-    /* 5b) Endorsement & school service */
-    drawInRect(req.travelOrder?.endorsedByHeadName ?? "", R.endorsedByName);
-    await drawSignature(R.endorsedSignature);
+    const items: { label: string; value: number }[] = [...baseItems, ...others];
+    const total = items.reduce((s, it) => s + it.value, 0);
+    if (items.length > 0) items.push({ label: COST_LABELS.total, value: total });
 
-    drawInRect(resolveDriver(req), R.driver);
+    if (items.length > 0) {
+      const maxRows = GRID.maxRowsPerCol;
+      const size = GRID.fontSize;
+
+      items.forEach((it, idx) => {
+        const col = Math.floor(idx / maxRows);
+        const row = idx % maxRows;
+        const colX = GRID.x[col] ?? GRID.x[GRID.x.length - 1];
+        const top  = GRID.topStart + row * GRID.rowStep;
+
+        const rect: Rect = { x: colX, top, w: GRID.colWidth, h: GRID.lineHeight, align: "left" };
+        const isTotal = it.label === COST_LABELS.total;
+        const text = `${it.label} – ${peso(it.value)}`;
+        drawInRect(text, rect, { size, strong: isTotal });
+      });
+    }
+
+    /* Endorsement (left) & School Service (right) */
+    drawInRect(req.travelOrder?.endorsedByHeadName ?? "", R.endorsedByName);
+    await drawImageInRect(await getEndorserSignatureDataUrl(req), R.endorsedSignature, 0.95);
+
+    // RIGHT SIDE — School Transportation Coordinator (fixed name on your template)
+    await drawImageInRect(await getCoordinatorSignatureDataUrl(req), R.stcSignature, 0.95);
+
+    // Driver / Vehicle text (left under ‘School Service Request’)
+    drawInRect(resolveDriver(req),  R.driver);
     drawInRect(resolveVehicle(req), R.vehicle);
 
-    /* 6) SAVE */
+    /* 6) Save */
     const bytes = await pdfDoc.save();
     const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
     const blob = new Blob([ab], { type: "application/pdf" });

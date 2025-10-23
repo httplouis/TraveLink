@@ -1,10 +1,14 @@
+// src/lib/admin/types.ts
+
 // ---- Basic KPIs & chart points ----
 export type KPI = { label: string; value: number | string; caption?: string };
 
 export type TrendPoint = { date: string; count: number };
 
+export type RequestStatus = "Pending" | "Approved" | "Completed" | "Rejected";
+
 export type StatusPoint = {
-  status: "Pending" | "Approved" | "Completed" | "Rejected";
+  status: RequestStatus; // reuse the union so it never drifts
   count: number;
 };
 
@@ -21,11 +25,9 @@ export type TripLogRow = {
 };
 
 // ---- Requests ----
-export type RequestStatus = "Pending" | "Approved" | "Completed" | "Rejected";
-
 export type RequestRow = {
   id: string;
-  dept: string;                 // allow dynamic dept (ex: CITE, CBA, CCMS…)
+  dept: string;                 // dynamic dept (ex: CITE, CBA, CCMS…)
   purpose: string;
   date: string;                 // YYYY-MM-DD (scheduled date)
   status: RequestStatus;
@@ -52,7 +54,7 @@ export type RequestsSummary = {
 // ---- Filters / Paging ----
 export type FilterState = {
   status: "All" | RequestStatus;
-  dept: "All" | string;         // allow flexible dept filter
+  dept: "All" | string;         // flexible dept filter
   from?: string;
   to?: string;
   search: string;
@@ -76,5 +78,4 @@ export type DashboardData = {
   deptUsage: DeptUsage[];
   recentRequests: RequestRow[];
   recentTrips: TripLogRow[];
-  receivedAt?: string;
 };

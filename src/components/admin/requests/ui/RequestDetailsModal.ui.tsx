@@ -3,7 +3,7 @@
 
 import * as React from "react";
 import { Dialog } from "@headlessui/react";
-import { X, FileDown } from "lucide-react";
+import { X, FileDown, CheckCircle } from "lucide-react";
 
 import type { AdminRequest } from "@/lib/admin/requests/store";
 import { AdminRequestsRepo } from "@/lib/admin/requests/store";
@@ -13,6 +13,9 @@ import { generateSeminarPDF } from "@/lib/admin/requests/pdfSeminar";
 // 🔹 Detailed Seminar block (keeps this modal tidy)
 import SeminarDetails from "@/components/admin/requests/parts/SeminarDetails.ui";
 
+// 🔹 Your signature pad component
+import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
+
 const DRIVERS = ["Juan Dela Cruz", "Pedro Santos", "Maria Reyes"];
 const VEHICLES = ["Van 01", "Bus 02", "SUV 03"];
 
@@ -20,6 +23,16 @@ const VEHICLES = ["Van 01", "Bus 02", "SUV 03"];
 function peso(n: number | null | undefined) {
   const num = typeof n === "number" && isFinite(n) ? n : 0;
   return `₱${num.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/** Read requester signature regardless of the saved key */
+function getRequesterSig(to?: any): string | null {
+  return (
+    to?.requesterSignature ||
+    to?.requestingPersonSignature || // legacy/alternate
+    to?.requesterSig ||
+    null
+  );
 }
 
 type Props = {
@@ -40,7 +53,11 @@ export default function RequestDetailsModalUI({
   const [driver, setDriver] = React.useState("");
   const [vehicle, setVehicle] = React.useState("");
 
-  // -------- Hydrate local assignment state from the selected row (robust over many shapes)
+  // signature modal (for Approve)
+  const [signOpen, setSignOpen] = React.useState(false);
+  const [sigDataUrl, setSigDataUrl] = React.useState<string | null>(null);
+
+  // Hydrate local assignment state from the selected row (robust over many shapes)
   React.useEffect(() => {
     if (!row) {
       setDriver("");
@@ -72,64 +89,72 @@ export default function RequestDetailsModalUI({
     setVehicle(veh);
   }, [row]);
 
-  // -------- Persist driver/vehicle assignments back to repo when changed
+  // Persist driver/vehicle assignments back to repo when changed (only if not approved)
   React.useEffect(() => {
-    if (row?.id) AdminRequestsRepo.setDriver(row.id, driver);
-  }, [driver, row?.id]);
+    if (row?.id && row.status !== "approved") AdminRequestsRepo.setDriver(row.id, driver);
+  }, [driver, row?.id, row?.status]);
 
   React.useEffect(() => {
-    if (row?.id) AdminRequestsRepo.setVehicle(row.id, vehicle);
-  }, [vehicle, row?.id]);
+    if (row?.id && row.status !== "approved") AdminRequestsRepo.setVehicle(row.id, vehicle);
+  }, [vehicle, row?.id, row?.status]);
 
-  // -------- Compute total cost (numbers + optional arrays)
+  // Compute total cost — explicitly sum base categories + otherItems + single "other"
   const totalCost = React.useMemo(() => {
-    const c: any = row?.travelOrder?.costs;
-    if (!c) return 0;
+    const c: any = row?.travelOrder?.costs || {};
+    const baseKeys = ["food", "driversAllowance", "rentVehicles", "hiredDrivers", "accommodation"] as const;
 
-    let sum = 0;
-    // add number-like leaf values
-    Object.keys(c).forEach((k) => {
+    const base = baseKeys.reduce((sum, k) => {
       const v = c[k];
-      if (typeof v === "number" && isFinite(v)) sum += v;
-    });
-    // add otherItems[]
-    if (Array.isArray(c.otherItems)) {
-      c.otherItems.forEach((it: any) => {
-        if (it && typeof it.amount === "number" && isFinite(it.amount)) sum += it.amount;
-      });
-    }
-    // add single otherAmount if present
-    if (c.otherLabel && typeof c.otherAmount === "number" && isFinite(c.otherAmount)) {
-      sum += c.otherAmount;
-    }
-    return sum;
+      return sum + (typeof v === "number" && isFinite(v) ? v : 0);
+    }, 0);
+
+    const othersArray = Array.isArray(c.otherItems)
+      ? c.otherItems.reduce(
+          (s: number, it: any) => s + (it && typeof it.amount === "number" && isFinite(it.amount) ? it.amount : 0),
+          0
+        )
+      : 0;
+
+    const singleOther =
+      c.otherLabel && typeof c.otherAmount === "number" && isFinite(c.otherAmount) ? c.otherAmount : 0;
+
+    return base + othersArray + singleOther;
   }, [row?.travelOrder?.costs]);
 
   const deptName = row?.travelOrder?.department || "";
 
-  // -------- Build a merged payload for PDF so it always includes current dropdown selections
+  // Build a payload for PDF that always includes current dropdown selections (top-level only)
   const handlePrintTravelPDF = React.useCallback(() => {
     if (!row) return;
     const printable: AdminRequest = {
       ...row,
-      // put chosen values at top-level
       driver,
       vehicle,
-      // and mirror into nested shapes so the PDF resolver will definitely find them
-      travelOrder: {
-        ...row.travelOrder,
-        schoolService: {
-          ...row.travelOrder?.schoolService,
-          driver: driver || row.travelOrder?.schoolService?.driver,
-          driverName: driver || row.travelOrder?.schoolService?.driverName,
-          vehicle: vehicle || row.travelOrder?.schoolService?.vehicle,
-          vehicleName: vehicle || row.travelOrder?.schoolService?.vehicleName,
-        },
-      },
     } as AdminRequest;
 
     generateRequestPDF(printable);
   }, [row, driver, vehicle]);
+
+  const isApproved = row?.status === "approved";
+  const approvedWhen = row?.approvedAt
+    ? new Date(row.approvedAt).toLocaleString()
+    : null;
+
+  // open signature flow
+  function requestApproval() {
+    setSigDataUrl(null);
+    setSignOpen(true);
+  }
+
+  function confirmSignature() {
+    if (!row?.id || !sigDataUrl) return;
+    AdminRequestsRepo.approve(row.id, {
+      signature: sigDataUrl,
+      approvedBy: "Admin User", // TODO: inject current admin name
+    });
+    onApprove?.();
+    setSignOpen(false);
+  }
 
   return (
     <Dialog open={open} onClose={onClose} className="fixed inset-0 z-50 flex items-center justify-center">
@@ -143,9 +168,20 @@ export default function RequestDetailsModalUI({
             {/* Header */}
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold">Request Details</h2>
+
+              {/* Status pill (only shows when approved) */}
+              {isApproved && (
+                <div className="flex items-center gap-2 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-sm text-green-700">
+                  <CheckCircle className="h-4 w-4" />
+                  <span>
+                    Approved{row.approvedBy ? ` by ${row.approvedBy}` : ""}{approvedWhen ? ` • ${approvedWhen}` : ""}
+                  </span>
+                </div>
+              )}
+
               <button
                 onClick={onClose}
-                className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100"
+                className="ml-3 rounded-md p-2 text-neutral-500 hover:bg-neutral-100"
                 aria-label="Close"
               >
                 <X className="h-5 w-5" />
@@ -162,7 +198,17 @@ export default function RequestDetailsModalUI({
                   <dd>{row.travelOrder?.date || "—"}</dd>
 
                   <dt className="font-semibold">Requesting Person</dt>
-                  <dd>{row.travelOrder?.requestingPerson || "—"}</dd>
+                  <dd className="flex items-center gap-3">
+                    <span className="truncate">{row.travelOrder?.requestingPerson || "—"}</span>
+                    {getRequesterSig(row.travelOrder) ? (
+                      <img
+                        src={getRequesterSig(row.travelOrder)!}
+                        alt="Requester signature"
+                        className="h-8 w-auto max-w-[160px] object-contain"
+                        title="Requester e-signature"
+                      />
+                    ) : null}
+                  </dd>
 
                   <dt className="font-semibold">Department</dt>
                   <dd>{deptName || "—"}</dd>
@@ -189,45 +235,35 @@ export default function RequestDetailsModalUI({
                         {"food" in row.travelOrder.costs && (row.travelOrder.costs as any).food > 0 && (
                           <tr>
                             <td className="px-2 py-1">Food</td>
-                            <td className="px-2 py-1 text-right">
-                              {peso((row.travelOrder.costs as any).food)}
-                            </td>
+                            <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).food)}</td>
                           </tr>
                         )}
                         {"driversAllowance" in row.travelOrder.costs &&
                           (row.travelOrder.costs as any).driversAllowance > 0 && (
                             <tr>
                               <td className="px-2 py-1">Driver’s allowance</td>
-                              <td className="px-2 py-1 text-right">
-                                {peso((row.travelOrder.costs as any).driversAllowance)}
-                              </td>
+                              <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).driversAllowance)}</td>
                             </tr>
                           )}
                         {"rentVehicles" in row.travelOrder.costs &&
                           (row.travelOrder.costs as any).rentVehicles > 0 && (
                             <tr>
                               <td className="px-2 py-1">Rent vehicles</td>
-                              <td className="px-2 py-1 text-right">
-                                {peso((row.travelOrder.costs as any).rentVehicles)}
-                              </td>
+                              <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).rentVehicles)}</td>
                             </tr>
                           )}
                         {"hiredDrivers" in row.travelOrder.costs &&
                           (row.travelOrder.costs as any).hiredDrivers > 0 && (
                             <tr>
                               <td className="px-2 py-1">Hired drivers</td>
-                              <td className="px-2 py-1 text-right">
-                                {peso((row.travelOrder.costs as any).hiredDrivers)}
-                              </td>
+                              <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).hiredDrivers)}</td>
                             </tr>
                           )}
                         {"accommodation" in row.travelOrder.costs &&
                           (row.travelOrder.costs as any).accommodation > 0 && (
                             <tr>
                               <td className="px-2 py-1">Accommodation</td>
-                              <td className="px-2 py-1 text-right">
-                                {peso((row.travelOrder.costs as any).accommodation)}
-                              </td>
+                              <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).accommodation)}</td>
                             </tr>
                           )}
 
@@ -237,9 +273,7 @@ export default function RequestDetailsModalUI({
                           (row.travelOrder.costs as any).otherAmount > 0 && (
                             <tr>
                               <td className="px-2 py-1">{(row.travelOrder.costs as any).otherLabel}</td>
-                              <td className="px-2 py-1 text-right">
-                                {peso((row.travelOrder.costs as any).otherAmount)}
-                              </td>
+                              <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).otherAmount)}</td>
                             </tr>
                           )}
 
@@ -294,9 +328,7 @@ export default function RequestDetailsModalUI({
 
                     {/* optional date */}
                     {row.travelOrder?.endorsedByHeadDate && (
-                      <p className="text-xs text-neutral-500">
-                        {row.travelOrder.endorsedByHeadDate}
-                      </p>
+                      <p className="text-xs text-neutral-500">{row.travelOrder.endorsedByHeadDate}</p>
                     )}
                   </div>
                 </div>
@@ -311,7 +343,10 @@ export default function RequestDetailsModalUI({
                     <select
                       value={driver}
                       onChange={(e) => setDriver(e.target.value)}
-                      className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#7A0010]"
+                      disabled={isApproved}
+                      className={`w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#7A0010] ${
+                        isApproved ? "bg-neutral-100 text-neutral-500" : ""
+                      }`}
                     >
                       <option value="">— Select Driver —</option>
                       {DRIVERS.map((d) => (
@@ -326,7 +361,10 @@ export default function RequestDetailsModalUI({
                     <select
                       value={vehicle}
                       onChange={(e) => setVehicle(e.target.value)}
-                      className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#7A0010]"
+                      disabled={isApproved}
+                      className={`w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#7A0010] ${
+                        isApproved ? "bg-neutral-100 text-neutral-500" : ""
+                      }`}
                     >
                       <option value="">— Select Vehicle —</option>
                       {VEHICLES.map((v) => (
@@ -364,28 +402,75 @@ export default function RequestDetailsModalUI({
                 )}
               </div>
 
-              <div className="flex gap-2">
-                {onApprove && (
+              {/* Right side: actions or status */}
+              {!isApproved ? (
+                <div className="flex gap-2">
                   <button
-                    onClick={onApprove}
+                    onClick={requestApproval}
                     className="rounded-md bg-green-600 hover:bg-green-700 px-4 py-2 text-sm text-white transition"
                   >
                     Approve
                   </button>
-                )}
-                {onReject && (
-                  <button
-                    onClick={onReject}
-                    className="rounded-md bg-red-600 hover:bg-red-700 px-4 py-2 text-sm text-white transition"
-                  >
-                    Reject
-                  </button>
-                )}
-              </div>
+                  {onReject && (
+                    <button
+                      onClick={onReject}
+                      className="rounded-md bg-red-600 hover:bg-red-700 px-4 py-2 text-sm text-white transition"
+                    >
+                      Reject
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-sm text-green-700">
+                  <CheckCircle className="h-4 w-4" />
+                  <span>
+                    Approved{row.approvedBy ? ` by ${row.approvedBy}` : ""}{approvedWhen ? ` • ${approvedWhen}` : ""}
+                  </span>
+                </div>
+              )}
             </div>
           </>
         )}
       </div>
+
+      {/* Signature dialog (Approve flow) */}
+      <Dialog open={signOpen} onClose={() => setSignOpen(false)} className="fixed inset-0 z-[60] flex items-center justify-center">
+        <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
+        <div className="relative z-[61] w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-base font-semibold">Approve — Signature</h3>
+            <button onClick={() => setSignOpen(false)} className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          <SignaturePad
+            height={220}
+            value={null}
+            onSave={(dataUrl) => setSigDataUrl(dataUrl)}
+            onClear={() => setSigDataUrl(null)}
+            hideSaveButton
+          />
+
+          <div className="mt-4 flex justify-end gap-2">
+            <button
+              onClick={() => setSignOpen(false)}
+              className="rounded-md border border-neutral-300 bg-white px-4 py-2 text-sm hover:bg-neutral-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmSignature}
+              disabled={!sigDataUrl}
+              className={`rounded-md px-4 py-2 text-sm text-white transition ${
+                sigDataUrl ? "bg-green-600 hover:bg-green-700" : "bg-neutral-400 cursor-not-allowed"
+              }`}
+            >
+              Approve &amp; Sign
+            </button>
+          </div>
+        </div>
+      </Dialog>
     </Dialog>
   );
 }

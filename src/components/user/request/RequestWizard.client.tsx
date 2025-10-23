@@ -19,7 +19,12 @@ import { saveDraft, getDraft, getSubmission } from "@/lib/user/request/mockApi";
 import type { RequesterRole } from "@/lib/user/request/types";
 
 import { useToast } from "@/components/common/ui/ToastProvider.ui";
-import { consumeHandoff, loadAutosave, saveAutosave, clearAutosave } from "@/lib/user/request/persist";
+import {
+  consumeHandoff,
+  loadAutosave,
+  saveAutosave,
+  clearAutosave,
+} from "@/lib/user/request/persist";
 import { useConfirm } from "@/components/common/hooks/useConfirm";
 
 import {
@@ -63,7 +68,7 @@ export default function RequestWizard() {
   const showSeminar = data.reason === "seminar";
   const showSchoolService = data.vehicleMode === "institutional";
 
-  // -------- restore on first mount only (guard against StrictMode double run) --------
+  // -------- restore on first mount only --------
   const didHydrateRef = React.useRef(false);
 
   React.useEffect(() => {
@@ -79,7 +84,11 @@ export default function RequestWizard() {
       clearIds();
       if (h.from === "draft") setCurrentDraftId(h.id);
       if (h.from === "submission") setCurrentSubmissionId(h.id);
-      toast({ kind: "success", title: "Draft loaded", message: "Form populated from draft." });
+      toast({
+        kind: "success",
+        title: "Draft loaded",
+        message: "Form populated from draft.",
+      });
       did = true;
     }
 
@@ -96,7 +105,11 @@ export default function RequestWizard() {
           hardSet(d.data);
           clearIds();
           setCurrentDraftId(draftId);
-          toast({ kind: "success", title: "Draft loaded", message: "Form populated from draft." });
+          toast({
+            kind: "success",
+            title: "Draft loaded",
+            message: "Form populated from draft.",
+          });
           did = true;
         }
       } else if (subId) {
@@ -105,7 +118,11 @@ export default function RequestWizard() {
           hardSet(s.data);
           clearIds();
           setCurrentSubmissionId(subId);
-          toast({ kind: "info", title: "Editing submission", message: "Form populated from submission." });
+          toast({
+            kind: "info",
+            title: "Editing submission",
+            message: "Form populated from submission.",
+          });
           did = true;
         }
       }
@@ -115,14 +132,22 @@ export default function RequestWizard() {
         const autosaved = loadAutosave();
         if (autosaved) {
           hardSet(autosaved);
-          toast({ kind: "info", title: "Restored", message: "Unsaved form recovered." });
+          toast({
+            kind: "info",
+            title: "Restored",
+            message: "Unsaved form recovered.",
+          });
         }
       }
     })().catch(() => {
       const autosaved = loadAutosave();
       if (autosaved) {
         hardSet(autosaved);
-        toast({ kind: "info", title: "Restored", message: "Unsaved form recovered." });
+        toast({
+          kind: "info",
+          title: "Restored",
+          message: "Unsaved form recovered.",
+        });
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -149,6 +174,8 @@ export default function RequestWizard() {
         returnDate: "",
         purposeOfTravel: "",
         costs: {},
+        // keep both signatures in shape when resetting
+        requesterSignature: "",
         endorsedByHeadName: "",
         endorsedByHeadDate: "",
         endorsedByHeadSignature: "",
@@ -185,7 +212,11 @@ export default function RequestWizard() {
     try {
       const res = await saveDraft(data, currentDraftId || undefined);
       if (!currentDraftId) setCurrentDraftId(res.id);
-      toast({ kind: "success", title: "Draft saved", message: "Your draft has been saved." });
+      toast({
+        kind: "success",
+        title: "Draft saved",
+        message: "Your draft has been saved.",
+      });
     } catch {
       toast({ kind: "error", title: "Save failed", message: "Could not save draft." });
     } finally {
@@ -213,7 +244,10 @@ export default function RequestWizard() {
       "seminar.title": "sem-title",
       "seminar.dateFrom": "sem-dateFrom",
       "seminar.dateTo": "sem-dateTo",
-      "travelOrder.endorsedByHeadSignature": "", // no direct focus target; section is visible
+      // Optional: if you later require requester signature, this lets us scroll near the top grid
+      "travelOrder.requesterSignature": "to-requester",
+      // Endorser signature has no direct input ID; keep as-is
+      "travelOrder.endorsedByHeadSignature": "",
     };
 
     const el = document.getElementById(idMap[firstKey] || "");
@@ -227,11 +261,12 @@ export default function RequestWizard() {
     // library validation
     const v = canSubmit(data);
 
-    // local extra rule: signature required
+    // local extra rule: endorser signature required (requester signature is optional)
     const extra: Record<string, string> = {};
     const sig = data?.travelOrder?.endorsedByHeadSignature;
     if (!sig || typeof sig !== "string" || sig.trim().length < 20) {
-      extra["travelOrder.endorsedByHeadSignature"] = "Endorser signature is required.";
+      extra["travelOrder.endorsedByHeadSignature"] =
+        "Endorser signature is required.";
     }
 
     const mergedErrors = { ...v.errors, ...extra };
@@ -240,7 +275,11 @@ export default function RequestWizard() {
     const ok = v.ok && Object.keys(extra).length === 0;
     if (!ok) {
       scrollToFirstError(mergedErrors);
-      toast({ kind: "error", title: "Cannot submit", message: "Please complete required fields." });
+      toast({
+        kind: "error",
+        title: "Cannot submit",
+        message: "Please complete required fields.",
+      });
       return;
     }
 
@@ -248,10 +287,18 @@ export default function RequestWizard() {
     try {
       // push to admin inbox (mock sink)
       AdminRequestsRepo.acceptFromUser(data);
-      toast({ kind: "success", title: "Submitted", message: "Request has been submitted and sent to Admin." });
+      toast({
+        kind: "success",
+        title: "Submitted",
+        message: "Request has been submitted and sent to Admin.",
+      });
       afterSuccessfulSubmitReset();
     } catch {
-      toast({ kind: "error", title: "Submit failed", message: "Please try again." });
+      toast({
+        kind: "error",
+        title: "Submit failed",
+        message: "Please try again.",
+      });
     } finally {
       setSubmitting(false);
     }
