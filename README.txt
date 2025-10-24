@@ -41,12 +41,13 @@ git switch travilink-admin
 ===========================================================
 Run this to install **all required packages**:
 
+
 pnpm add next react react-dom typescript tailwindcss postcss autoprefixer \
-@supabase/supabase-js \
-react-leaflet leaflet \
-lucide-react \
-@headlessui/react \
-clsx
+pnpm add @supabase/supabase-js \
+pnpm add react-leaflet leaflet \
+pnpm add lucide-react \
+pnpm add @headlessui/react \
+pnpm add clsx
 pnpm add framer-motion
 pnpm add zustand
 pnpm add jspdf jspdf-autotable

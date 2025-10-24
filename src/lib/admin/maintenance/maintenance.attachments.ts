@@ -1,21 +1,19 @@
-import type { Attachment } from "./maintenance.types";
+"use client";
+import type { MaintAttachment } from "./maintenance.types";
+import { uid } from "./maintenance.repo";
 
-export function isImage(mime: string) {
-  return mime.startsWith("image/");
-}
-export function isPdf(mime: string) {
-  return mime === "application/pdf";
+export async function fileToAttachment(file: File): Promise<MaintAttachment> {
+  const name = file.name;
+  const kind = file.type.includes("pdf") ? "pdf" : "image";
+  const url = await readAsDataURL(file);
+  return { id: uid("att"), name, kind, url };
 }
 
-/** Convert <input type="file" multiple> → Attachment[] (object URLs; offline-friendly) */
-export async function filesToAttachments(list: FileList | File[]): Promise<Attachment[]> {
-  const files = Array.from(list || []);
-  const accepted = files.filter(f => isImage(f.type) || isPdf(f.type));
-  return accepted.map(f => ({
-    id: crypto.randomUUID(),
-    name: f.name,
-    url: URL.createObjectURL(f),
-    mime: f.type,
-    size: f.size,
-  }));
+function readAsDataURL(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onerror = () => reject(fr.error);
+    fr.onload = () => resolve(String(fr.result));
+    fr.readAsDataURL(file);
+  });
 }

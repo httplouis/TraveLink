@@ -1,67 +1,107 @@
+// Mock data helpers (NO auto-seed on import)
+import { createMaintenance } from "./handlers";
 import type {
-  Attachment, Driver, MaintRecord, MaintStatus, MaintType, Vehicle,
+  Maintenance,
+  MaintAttachment,
+  MaintStatus,
+  MaintType,
 } from "./maintenance.types";
+import { LS_KEY } from "./maintenance.repo";
 
+const VEHICLES = [
+  "PICKUP-07 • Ford Ranger (NEO-5555)",
+  "SEDAN-04 • Vios (KLM-2345)",
+  "VAN-12 • Hiace (ABC-0912)",
+  "SUV-01 • Fortuner (XYZ-7777)",
+];
+const VENDORS = [
+  "QuickFix Auto",
+  "Malayan Insurance",
+  "LTO",
+  "AutoCare Center",
+];
 const TYPES: MaintType[] = [
-  "Preventive (PMS)", "Repair", "LTO Renewal", "Insurance Renewal", "Vulcanize/Tire", "Other",
+  "PMS",
+  "Repair",
+  "LTORenewal",
+  "InsuranceRenewal",
+  "VulcanizeTire",
+  "Other",
 ];
 const STATUSES: MaintStatus[] = [
-  "Submitted", "Acknowledged", "In-Progress", "Completed", "Rejected",
+  "Submitted",
+  "Acknowledged",
+  "In-Progress",
+  "Completed",
+  "Rejected",
 ];
 
-const DOC_SVGS = [
-  "/maintenance/docs-images/lto-cr.svg",
-  "/maintenance/docs-images/lto-or.svg",
-  "/maintenance/docs-images/insurance-card.svg",
-];
+function rand<T>(arr: T[]) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+function randInt(min: number, max: number) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+function maybe<T>(v: T, p = 0.5): T | undefined {
+  return Math.random() < p ? v : undefined;
+}
 
-function r<T>(a: T[]) { return a[Math.floor(Math.random() * a.length)]; }
-function peso(n: number) { return Math.round(n * 100) / 100; }
+function randomAttachment(): MaintAttachment {
+  const isPdf = Math.random() < 0.4;
+  return {
+    id: crypto.randomUUID(),
+    name: isPdf ? "document.pdf" : "photo.jpg",
+    kind: isPdf ? "pdf" : "image",
+    url: "data:,", // stub
+  };
+}
 
-export function buildDemoRecords(vehicles: Vehicle[], drivers: Driver[]): MaintRecord[] {
-  const rows: MaintRecord[] = [];
-  for (let i = 0; i < 12; i++) {
-    const v = r(vehicles), d = r(drivers);
-    const type = r(TYPES), status = r(STATUSES);
+function randomRecord(): Omit<
+  Maintenance,
+  "id" | "createdAt" | "updatedAt" | "history"
+> {
+  const type = rand(TYPES);
+  const status = rand(STATUSES);
+  const date = new Date();
+  date.setDate(date.getDate() - randInt(0, 60));
+  const nextInDays = randInt(-5, 45);
+  const nextDate = new Date();
+  nextDate.setDate(nextDate.getDate() + nextInDays);
 
-    // 1–3 doc-like images to simulate paperwork
-    const attachments: Attachment[] = [];
-    const count = 1 + Math.floor(Math.random() * 3);
-    for (let k = 0; k < count; k++) {
-      const url = r(DOC_SVGS);
-      attachments.push({
-        id: crypto.randomUUID(),
-        name: url.split("/").pop() || `doc-${k + 1}.svg`,
-        mime: "image/svg+xml",
-        size: 2048,
-        url,
-      });
-    }
+  return {
+    vehicle: rand(VEHICLES),
+    type,
+    status,
+    date: date.toISOString().slice(0, 10),
+    vendor: rand(VENDORS),
+    costPhp: Math.random() < 0.4 ? randInt(0, 5000) : 0,
+    description: "Auto-generated sample record",
+    odometerAtService: maybe(randInt(10000, 180000)),
+    tireRotationApplied: Math.random() < 0.3,
+    attachments: Math.random() < 0.5 ? [randomAttachment()] : [],
+    nextDueDateISO: Math.random() < 0.8 ? nextDate.toISOString() : undefined,
+    nextDueOdometer:
+      Math.random() < 0.3 ? randInt(10000, 200000) : undefined,
+    nextDueTint:
+      nextInDays < 0 ? "overdue" : nextInDays < 14 ? "soon" : "ok",
+    createdBy: "Transport Office",
+    assignedDriverId: undefined,
+  };
+}
 
-    rows.push({
-      id: crypto.randomUUID(),
-      vehicleId: v.id,
-      type,
-      status,
-      createdAt: new Date(Date.now() - Math.floor(Math.random() * 20) * 864e5)
-        .toISOString().slice(0, 10),
-      createdBy: "admin",
-      description:
-        type === "LTO Renewal" ? "LTO renewal documents prepared" :
-        type === "Insurance Renewal" ? "CTPL policy renewal" :
-        type === "Repair" ? "Replace alternator assembly" :
-        type === "Preventive (PMS)" ? "Scheduled PMS (5k km)" :
-        "Routine admin document",
-      odometer: Math.floor(Math.random() * 60000),
-      cost: status === "Completed" ? peso(500 + Math.random() * 15000) : undefined,
-      vendor: r(["MSEUF Motorpool", "Isuzu Lucena", "3rd-Party Shop", ""]),
-      nextDueDate: type === "Preventive (PMS)"
-        ? new Date(Date.now() + 45 * 864e5).toISOString().slice(0, 10)
-        : undefined,
-      assignedDriverId: d.id,
-      attachments,
-      history: [{ at: new Date().toISOString(), by: "admin", from: "Submitted", to: status }] as any,
-    });
-  }
-  return rows.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+/** Seed N random maintenance records (does not clear existing) */
+export function seedMockMaintenance(n = 10) {
+  for (let i = 0; i < n; i++) createMaintenance(randomRecord());
+}
+
+/** Clear all maintenance records */
+export function clearAllMaintenance() {
+  try {
+    localStorage.removeItem(LS_KEY);
+  } catch {}
+}
+
+/** Back-compat alias (some older code imported this) */
+export function buildDemoMaintenance() {
+  return randomRecord();
 }

@@ -1,42 +1,17 @@
 "use client";
-import * as React from "react";
-
 export default function Pagination({
-  page, total, pageSize, onPrev, onNext
-}: {
-  page: number;
-  total: number;
-  pageSize: number;
-  onPrev: () => void;
-  onNext: () => void;
-}) {
-  const start = total ? (page - 1) * pageSize + 1 : 0;
-  const end = Math.min(total, page * pageSize);
+  page, pageSize, total, onPage,
+}: { page: number; pageSize: number; total: number; onPage: (n: number) => void }) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
-
   return (
-    <div className="flex items-center justify-between p-3">
-      <div className="text-xs text-gray-500">
-        Showing {start}-{end} of {total}
+    <div className="flex items-center justify-between px-2 py-2 text-sm">
+      <div className="opacity-70">
+        Showing {(total && (page - 1) * pageSize + 1) || 0}–{Math.min(page * pageSize, total)} of {total}
       </div>
       <div className="flex items-center gap-2">
-        <button
-          className="rounded-full border px-3 py-1.5 text-sm disabled:opacity-50"
-          onClick={onPrev}
-          disabled={page === 1}
-          title="Prev"
-        >
-          Prev
-        </button>
-        <span className="text-sm">Page {page} / {totalPages}</span>
-        <button
-          className="rounded-full border px-3 py-1.5 text-sm disabled:opacity-50"
-          onClick={onNext}
-          disabled={page >= totalPages}
-          title="Next"
-        >
-          Next
-        </button>
+        <button className="rounded border px-2 py-1 disabled:opacity-50" disabled={page <= 1} onClick={()=>onPage(page-1)}>Prev</button>
+        <span>Page {page} / {totalPages}</span>
+        <button className="rounded border px-2 py-1 disabled:opacity-50" disabled={page >= totalPages} onClick={()=>onPage(page+1)}>Next</button>
       </div>
     </div>
   );

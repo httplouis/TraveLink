@@ -1,17 +1,17 @@
 "use client";
-import type { MaintType } from "@/lib/admin/maintenance";
+import type { MaintType } from "@/lib/admin/maintenance/types";
 
-const COLORS: Record<MaintType, string> = {
-  "Preventive (PMS)": "bg-[#fef3f2] text-[#991b1b] ring-1 ring-[#fecaca]",
-  Repair: "bg-[#eef2ff] text-[#3730a3] ring-1 ring-[#c7d2fe]",
-  "LTO Renewal": "bg-[#ecfeff] text-[#155e75] ring-1 ring-[#a5f3fc]",
-  "Insurance Renewal": "bg-[#f0fdf4] text-[#166534] ring-1 ring-[#bbf7d0]",
-  "Vulcanize/Tire": "bg-[#fffbeb] text-[#92400e] ring-1 ring-[#fde68a]",
-  Other: "bg-[#f8fafc] text-[#334155] ring-1 ring-[#e2e8f0]",
+type Props = { value?: MaintType; type?: MaintType; className?: string };
+const MAP: Record<MaintType, { bg: string; text: string; ring: string }> = {
+  PMS:             { bg:"bg-teal-50",    text:"text-teal-800",    ring:"ring-teal-200" },
+  Repair:          { bg:"bg-orange-50",  text:"text-orange-800",  ring:"ring-orange-200" },
+  LTORenewal:      { bg:"bg-cyan-50",    text:"text-cyan-800",    ring:"ring-cyan-200" },
+  InsuranceRenewal:{ bg:"bg-sky-50",     text:"text-sky-800",     ring:"ring-sky-200" },
+  VulcanizeTire:   { bg:"bg-yellow-50",  text:"text-yellow-800",  ring:"ring-yellow-200" },
+  Other:           { bg:"bg-neutral-100",text:"text-neutral-800", ring:"ring-neutral-200" },
 };
-
-export default function TypeBadge({ type }: { type: MaintType }) {
-  return (
-    <span className={`px-2 py-0.5 text-xs rounded-full ${COLORS[type]}`}>{type}</span>
-  );
+export default function TypeBadge(props: Props) {
+  const val = (props.value ?? props.type)!;
+  const c = MAP[val];
+  return <span className={["inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ring-1 ring-inset", c.bg, c.text, c.ring, props.className || ""].join(" ")}>{val}</span>;
 }

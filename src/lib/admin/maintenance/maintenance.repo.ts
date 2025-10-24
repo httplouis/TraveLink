@@ -1,59 +1,122 @@
-import type { MaintFilters, MaintRecord } from "./maintenance.types";
+"use client";
 
-const KEY = "travilink_maintenance_records";
-const FKEY = "travilink_maintenance_filters";
+import type {
+  Maintenance,
+  MaintStatus,
+  MaintType,
+  NextDueTint,
+} from "./maintenance.types";
 
-let memory: MaintRecord[] = [];
-let memoryFilters: MaintFilters | null = null;
+export const LS_KEY = "travilink:admin:maintenance:v2";
 
-function canLS() {
-  return typeof window !== "undefined" && typeof localStorage !== "undefined";
+// -------- storage helpers --------
+function read(): Maintenance[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    return raw ? (JSON.parse(raw) as Maintenance[]) : [];
+  } catch {
+    return [];
+  }
 }
 
+function write(list: Maintenance[]) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(list));
+  } catch {}
+}
+
+// tiny uid helper used by attachments, etc.
+export function uid(prefix = "m"): string {
+  try {
+    return `${prefix}_${crypto.randomUUID()}`;
+  } catch {
+    return `${prefix}_${Math.random().toString(36).slice(2)}`;
+  }
+}
+
+// Public minimal repo API (kept for compatibility)
 export const MaintRepo = {
-  list(): MaintRecord[] {
-    if (canLS()) {
-      const raw = localStorage.getItem(KEY);
-      return raw ? (JSON.parse(raw) as MaintRecord[]) : [];
+  all(): Maintenance[] {
+    return read();
+  },
+  saveAll(list: Maintenance[]) {
+    write(list);
+  },
+  find(id: string): Maintenance | undefined {
+    return read().find((r) => r.id === id);
+  },
+  setStatus(id: string, status: MaintStatus) {
+    const list = read();
+    const i = list.findIndex((r) => r.id === id);
+    if (i >= 0) {
+      const now = new Date().toISOString();
+      list[i] = {
+        ...list[i],
+        status,
+        updatedAt: now,
+        history: [
+          ...(list[i].history || []),
+          { atISO: now, action: `Status changed to ${status}`, actor: "System" },
+        ],
+      };
+      write(list);
     }
-    return memory;
   },
-
-  save(items: MaintRecord[]) {
-    if (canLS()) localStorage.setItem(KEY, JSON.stringify(items));
-    else memory = items;
-  },
-
-  upsert(rec: MaintRecord) {
-    const all = this.list();
-    const i = all.findIndex((x) => x.id === rec.id);
-    if (i >= 0) all[i] = rec;
-    else all.unshift(rec);
-    this.save(all);
-  },
-
-  removeMany(ids: string[]) {
-    const all = this.list().filter((r) => !ids.includes(r.id));
-    this.save(all);
-  },
-
-  saveFilters(f: MaintFilters) {
-    if (canLS()) localStorage.setItem(FKEY, JSON.stringify(f));
-    else memoryFilters = f;
-  },
-
-  loadFilters(): MaintFilters {
-    if (canLS()) {
-      const raw = localStorage.getItem(FKEY);
-      if (raw) return JSON.parse(raw) as MaintFilters;
-    } else if (memoryFilters) {
-      return memoryFilters;
-    }
-    return {
-      q: "",
-      types: [],
-      statuses: [],
-      density: "comfortable",
-    };
+  clear() {
+    write([]);
   },
 };
+
+// -------- business logic: next due computation --------
+export function computeNextDue(src: {
+  type: MaintType;
+  date?: string;
+  odometerAtService?: number;
+}): Pick<Maintenance, "nextDueDateISO" | "nextDueOdometer" | "nextDueTint"> {
+  let nextDate: Date | undefined;
+  let nextOdo: number | undefined;
+
+  const startDate = src.date ? new Date(src.date) : undefined;
+
+  switch (src.type) {
+    case "PMS":
+      if (startDate) {
+        nextDate = new Date(startDate);
+        nextDate.setMonth(nextDate.getMonth() + 6); // 6 months
+      }
+      if (src.odometerAtService != null) nextOdo = src.odometerAtService + 10000; // +10k km
+      break;
+    case "LTORenewal":
+    case "InsuranceRenewal":
+      if (startDate) {
+        nextDate = new Date(startDate);
+        nextDate.setFullYear(nextDate.getFullYear() + 1); // yearly
+      }
+      break;
+    case "VulcanizeTire":
+    case "Repair":
+    case "Other":
+    default:
+      // no default schedule
+      break;
+  }
+
+  let tint: NextDueTint = "none";
+  const today = new Date();
+
+  if (nextDate) {
+    const days = Math.ceil((nextDate.getTime() - today.getTime()) / 86400000);
+    tint = days < 0 ? "overdue" : days <= 14 ? "soon" : "ok";
+  } else if (nextOdo != null) {
+    // If only odometer is present, keep it visible but neutral/ok
+    tint = "ok";
+  }
+
+  return {
+    nextDueDateISO: nextDate ? nextDate.toISOString() : undefined,
+    nextDueOdometer: nextOdo,
+    nextDueTint: tint,
+  };
+}

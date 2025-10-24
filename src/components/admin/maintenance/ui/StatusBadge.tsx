@@ -1,18 +1,20 @@
 "use client";
-import type { MaintStatus } from "@/lib/admin/maintenance";
+import type { MaintStatus } from "@/lib/admin/maintenance/types";
 
-const MAP: Record<MaintStatus, string> = {
-  Submitted: "bg-slate-100 text-slate-700 ring-1 ring-inset ring-slate-200",
-  Acknowledged: "bg-blue-100 text-blue-700 ring-1 ring-inset ring-blue-200",
-  "In-Progress": "bg-amber-100 text-amber-800 ring-1 ring-inset ring-amber-200",
-  Completed: "bg-emerald-100 text-emerald-800 ring-1 ring-inset ring-emerald-200",
-  Rejected: "bg-rose-100 text-rose-800 ring-1 ring-inset ring-rose-200",
+type Props = { value?: MaintStatus; s?: MaintStatus; className?: string };
+const MAP: Record<MaintStatus, { bg: string; text: string; ring: string; dot: string }> = {
+  Submitted:     { bg:"bg-indigo-50",  text:"text-indigo-700",  ring:"ring-indigo-200",  dot:"bg-indigo-500" },
+  Acknowledged:  { bg:"bg-blue-50",    text:"text-blue-700",    ring:"ring-blue-200",    dot:"bg-blue-500" },
+  "In-Progress": { bg:"bg-amber-50",   text:"text-amber-800",   ring:"ring-amber-200",   dot:"bg-amber-500" },
+  Completed:     { bg:"bg-emerald-50", text:"text-emerald-800", ring:"ring-emerald-200", dot:"bg-emerald-500" },
+  Rejected:      { bg:"bg-rose-50",    text:"text-rose-800",    ring:"ring-rose-200",    dot:"bg-rose-500" },
 };
-
-export default function StatusBadge({ status }: { status: MaintStatus }) {
+export default function StatusBadge({ value, s, className="" }: Props) {
+  const val = (value ?? s)!;
+  const c = MAP[val];
   return (
-    <span className={`px-2.5 py-0.5 text-xs rounded-full font-medium ${MAP[status]}`}>
-      {status.toLowerCase()}
+    <span className={["inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-medium ring-1 ring-inset", c.bg, c.text, c.ring, className].join(" ")}>
+      <span className={["h-1.5 w-1.5 rounded-full", c.dot].join(" ")} /> {val}
     </span>
   );
 }
