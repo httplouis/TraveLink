@@ -451,182 +451,13 @@ import Client from "./page.client";
 export default function Page(){ return <Client/>; }
 
 
-===== app\(protected)\admin\maintenance\page.client.tsx =====
-// src/app/(protected)/admin/maintenance/page.client.tsx
-"use client";
-import * as React from "react";
-import type { Maintenance, MaintFilters } from "@/lib/admin/maintenance/types";
-
-/* UI */
-import { MaintForm } from "@/components/admin/maintenance/forms/MaintForm.ui";
-import { MaintFiltersBar } from "@/components/admin/maintenance/filters/FiltersBar.ui";
-import Table, { MaintTableHandle } from "@/components/admin/maintenance/table";
-
-/* Logic/Handlers */
-import {
-  loadMaintenance,
-  getMaintenance,
-  createMaintenance,
-  updateMaintenance,
-  deleteMaintenance,
-  deleteManyMaintenance,
-  exportMaintenanceCSV,
-} from "@/lib/admin/maintenance/handlers";
-
-/* Common primitives */
-import Modal from "@/components/common/modal/Modal";
-import { useConfirm } from "@/components/common/hooks/useConfirm";
-import { useHotkeys } from "@/lib/common/useHotkeys";
-
-export default function MaintenancePageClient() {
-  // filters + data
-  const [filters, setFilters] = React.useState<MaintFilters>({});
-  const [rows, setRows] = React.useState<Maintenance[]>([]);
-  const [loading, setLoading] = React.useState<boolean>(true);
-
-  const refresh = React.useCallback(() => {
-    setLoading(true);
-    const data = loadMaintenance(filters);
-    setRows(data);
-    setLoading(false);
-  }, [filters]);
-
-  React.useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  // selection + modal
-  const [selection, setSelection] = React.useState<string[]>([]);
-  const [form, setForm] =
-    React.useState<null | { mode: "create" } | { mode: "edit"; id: string }>(null);
-
-  // table ref for page-visible IDs
-  const tableRef = React.useRef<MaintTableHandle>(null);
-
-  // confirm dialog (common)
-  const { ask, ui: confirmUI } = useConfirm();
-
-  // CRUD handlers
-  const onCreate = async (data: Omit<Maintenance, "id" | "createdAt" | "updatedAt">) => {
-    createMaintenance(data);
-    setForm(null);
-    refresh();
-  };
-
-  const onUpdate = async (
-    id: string,
-    data: Omit<Maintenance, "id" | "createdAt" | "updatedAt">
-  ) => {
-    updateMaintenance(id, data);
-    setForm(null);
-    refresh();
-  };
-
-  const onDelete = async (id: string) => {
-    if (await ask("Delete record", "Are you sure you want to delete this record?")) {
-      deleteMaintenance(id);
-      refresh();
-    }
-  };
-
-  const onDeleteSelected = async () => {
-    if (!selection.length) return;
-    if (await ask("Delete selected", `Delete ${selection.length} selected records?`)) {
-      deleteManyMaintenance(selection);
-      setSelection([]);
-      refresh();
-    }
-  };
-
-  const onExport = () => {
-    const blob = exportMaintenanceCSV(rows);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "maintenance.csv";
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const current =
-    form && form.mode === "edit" ? getMaintenance(form.id) ?? undefined : undefined;
-
-  /* Hotkeys */
-  useHotkeys(
-    [
-      { key: "n", alt: true, handler: () => setForm({ mode: "create" }) },
-      { key: "n", handler: () => setForm({ mode: "create" }) },
-      { key: "Enter", ctrl: true, handler: onExport },
-      { key: "Delete", handler: onDeleteSelected },
-      {
-        key: "a",
-        handler: () => {
-          const ids = tableRef.current?.getVisibleIds() ?? rows.map((r: any) => r.id);
-          setSelection(ids);
-        },
-      },
-      { key: "x", handler: () => setSelection([]) },
-    ],
-    { ignoreWhileTyping: true }
-  );
-
-  return (
-    <div className="p-4 space-y-4">
-      <MaintFiltersBar value={filters} onChange={setFilters} onClear={() => setFilters({})} />
-
-      <Table
-        ref={tableRef}
-        loading={loading}
-        rows={rows}
-        selection={selection}
-        setSelection={setSelection}
-        onEdit={(id) => setForm({ mode: "edit", id })}
-        onDelete={onDelete}
-        onExport={onExport}
-        onDeleteSelected={onDeleteSelected}
-        onAdd={() => setForm({ mode: "create" })}
-        pageSize={10}
-      />
-
-      <Modal
-        open={!!form}
-        onClose={() => setForm(null)}
-        ariaLabel="Maintenance Form"
-        maxWidth={760}
-      >
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-lg font-semibold">
-            {form?.mode === "create" ? "Add Maintenance" : `Edit ${current?.vehicleCode ?? ""}`}
-          </h2>
-          <button
-            onClick={() => setForm(null)}
-            className="border rounded-md px-2 py-1 bg-white"
-          >
-            Close
-          </button>
-        </div>
-        <MaintForm
-          initial={current}
-          onCancel={() => setForm(null)}
-          onSubmit={(data) =>
-            form?.mode === "create"
-              ? onCreate(data)
-              : onUpdate((form as any).id, data)
-          }
-        />
-      </Modal>
-
-      {/* Mount confirm dialog UI */}
-      {confirmUI}
-    </div>
-  );
-}
-
-
 ===== app\(protected)\admin\maintenance\page.tsx =====
-import Client from "./page.client";
-export default function Page() {
-  return <Client />;
+"use client";
+
+import MaintenancePage from "@/components/admin/maintenance/containers/MaintenancePage.container";
+
+export default function MaintenanceClientPage() {
+  return <MaintenancePage />;
 }
 
 
@@ -2042,6 +1873,51 @@ export default function DriverHistory() {
 }
 
 
+===== app\(protected)\driver\maintenance\new\page.tsx =====
+"use client";
+
+import { useMemo } from "react";
+import CreateMaintenanceReportUI from "@/components/driver/maintenance/forms/CreateMaintenanceReport.ui";
+import { VehiclesRepo } from "@/lib/driver/vehicles/repo";
+import { MaintenanceRepo } from "@/lib/driver/maintenance/repo";
+
+// mock current driver
+const DRIVER_ID = "driver-a";
+
+function useQuery() {
+  if (typeof window === "undefined") return new URLSearchParams();
+  return new URLSearchParams(window.location.search);
+}
+
+export default function NewMaintenancePage() {
+  const qs = useQuery();
+  const vehicleId = qs.get("vehicleId") || VehiclesRepo.list()[0]?.id || "veh-bus-12";
+  const vehicle = useMemo(() => VehiclesRepo.getById(vehicleId), [vehicleId]);
+
+  if (!vehicle) return <div className="p-6">Vehicle not found.</div>;
+
+  return (
+    <div className="px-4 py-6 sm:px-6 lg:px-8 space-y-5">
+      <CreateMaintenanceReportUI
+        vehicleName={vehicle.name}
+        plate={vehicle.plate}
+        onSubmit={(payload, kind) => {
+          const draft = MaintenanceRepo.newDraft(DRIVER_ID, { vehicleId, ...payload });
+          if (kind === "draft") {
+            MaintenanceRepo.saveDraft(DRIVER_ID, draft);
+            alert("Saved as draft.");
+          } else {
+            MaintenanceRepo.submit(DRIVER_ID, draft);
+            alert("Submitted to Admin.");
+          }
+          window.location.href = "/driver/vehicles";
+        }}
+      />
+    </div>
+  );
+}
+
+
 ===== app\(protected)\driver\notifications\page.tsx =====
 export default function Notifications() {
   const items = [
@@ -2401,6 +2277,79 @@ export default function SubmitMaintenance() {
         </form>
       </PageBody>
     </>
+  );
+}
+
+
+===== app\(protected)\driver\vehicles\page.tsx =====
+"use client";
+
+import { useMemo, useState } from "react";
+import VehiclesTable from "@/components/driver/vehicles/ui/VehiclesTable.ui";
+import VehicleDetailsDrawer from "@/components/driver/vehicles/ui/VehicleDetailsDrawer.ui";
+import { VehiclesRepo } from "@/lib/driver/vehicles/repo";
+import { MaintenanceRepo } from "@/lib/driver/maintenance/repo";
+import type { Vehicle } from "@/lib/driver/vehicles/types";
+import type { MaintenanceRecord } from "@/lib/driver/maintenance/types";
+
+// mock current user
+const DRIVER_ID = "driver-a";
+
+export default function DriverVehiclesPage() {
+  const vehicles = useMemo(() => VehiclesRepo.list(), []);
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState<Vehicle | null>(null);
+
+  function openDetails(v: Vehicle) { setActive(v); setOpen(true); }
+  function closeDetails() { setOpen(false); setActive(null); }
+
+  const logs: MaintenanceRecord[] = active ? MaintenanceRepo.listPublicForVehicle(active.id) : [];
+
+  return (
+    <div className="px-4 py-6 sm:px-6 lg:px-8 space-y-5">
+      <div>
+        <h1 className="text-2xl font-semibold">Vehicles</h1>
+        <p className="text-sm text-neutral-600">Browse vehicles and view maintenance history. Create a simple report if needed.</p>
+      </div>
+
+      <VehiclesTable rows={vehicles} onView={openDetails} />
+
+      <VehicleDetailsDrawer
+        open={open}
+        onClose={closeDetails}
+        vehicle={active}
+        logs={logs}
+        onNewReport={() => {
+          if (active) window.location.href = `/driver/maintenance/new?vehicleId=${active.id}`;
+        }}
+      />
+    </div>
+  );
+}
+    
+
+===== app\(protected)\driver\vehicles\[id]\page.tsx =====
+"use client";
+import { useMemo } from "react";
+import { VehiclesRepo } from "@/lib/driver/vehicles/repo";
+import { MaintenanceRepo } from "@/lib/driver/maintenance/repo";
+import MaintenanceTable from "@/components/driver/vehicles/ui/MaintenanceTable.ui";
+
+export default function VehicleByIdPage({ params }: { params: { id: string } }) {
+  const vehicle = useMemo(() => VehiclesRepo.getById(params.id), [params.id]);
+  const logs = useMemo(() => MaintenanceRepo.listPublicForVehicle(params.id), [params.id]);
+
+  if (!vehicle) return <div className="p-6">Vehicle not found.</div>;
+
+  return (
+    <div className="px-4 py-6 sm:px-6 lg:px-8 space-y-5">
+      <div>
+        <div className="text-xs text-neutral-500">{vehicle.type}</div>
+        <h1 className="text-2xl font-semibold">{vehicle.name} • <span className="font-mono">{vehicle.plate}</span></h1>
+        <p className="text-sm text-neutral-600">Detailed maintenance history.</p>
+      </div>
+      <MaintenanceTable rows={logs} />
+    </div>
   );
 }
 
@@ -3855,205 +3804,147 @@ export async function GET() {
 
 
 ===== app\api\dev\driver\register\route.ts =====
--- ===============================
--- Users: structured name fields
--- ===============================
+// src/app/api/dev/driver/register/route.ts
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY! // server-only key
+);
 
--- 1) Helper IMMUTABLE formatters (used by generated columns & triggers)
-CREATE OR REPLACE FUNCTION public._name_full(p_first text, p_middle text, p_last text, p_suffix text)
-RETURNS text
-LANGUAGE sql IMMUTABLE AS $$
-  SELECT btrim(concat_ws(' ',
-    NULLIF(p_first,''),
-    NULLIF(p_middle,''),
-    NULLIF(p_last,''),
-    NULLIF(p_suffix,'')
-  ))
-$$;
+// DEV helper: quick random password for admin-created users
+function randomPassword(len = 20) {
+  const chars =
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+  let out = "";
+  for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+}
 
-CREATE OR REPLACE FUNCTION public._name_last_first(p_first text, p_middle text, p_last text, p_suffix text)
-RETURNS text
-LANGUAGE sql IMMUTABLE AS $$
-  SELECT btrim(
-    concat_ws(', ',
-      NULLIF(p_last,''),
-      btrim(concat_ws(' ', NULLIF(p_first,''), NULLIF(p_middle,'')))
-    )
-    || CASE WHEN NULLIF(p_suffix,'') IS NOT NULL THEN ' '||p_suffix ELSE '' END
-  )
-$$;
+export async function POST(req: Request) {
+  try {
+    const body = await req.json();
 
--- 2) Columns
-ALTER TABLE public.users
-  ADD COLUMN IF NOT EXISTS first_name     text,
-  ADD COLUMN IF NOT EXISTS middle_name    text,
-  ADD COLUMN IF NOT EXISTS last_name      text,
-  ADD COLUMN IF NOT EXISTS suffix         text,
-  ADD COLUMN IF NOT EXISTS preferred_name text;
+    const {
+      phone,
+      first_name,
+      middle_name = null,
+      last_name,
+      suffix = null,
+      address,
+      email: providedEmail, // optional (you can omit from client)
+    } = body ?? {};
 
--- 3) Generated display columns
-ALTER TABLE public.users
-  ADD COLUMN IF NOT EXISTS name_full text
-    GENERATED ALWAYS AS (public._name_full(first_name, middle_name, last_name, suffix)) STORED;
+    // ---- validate input ----
+    if (!phone || !/^\+63\d{10}$/.test(String(phone))) {
+      return NextResponse.json(
+        { error: "Invalid or missing phone (+639XXXXXXXXX)." },
+        { status: 400 }
+      );
+    }
+    if (!first_name || !last_name) {
+      return NextResponse.json(
+        { error: "First and last name are required." },
+        { status: 400 }
+      );
+    }
+    if (!address) {
+      return NextResponse.json(
+        { error: "Address is required." },
+        { status: 400 }
+      );
+    }
 
-ALTER TABLE public.users
-  ADD COLUMN IF NOT EXISTS name_last_first text
-    GENERATED ALWAYS AS (public._name_last_first(first_name, middle_name, last_name, suffix)) STORED;
+    // Use a stable synthetic email from phone for DEV (or real email if provided)
+    const sanitized = String(phone).replace(/[^0-9]/g, "");
+    const email =
+      (providedEmail && String(providedEmail).trim()) ||
+      `driver+${sanitized}@local.travilink`;
 
--- 4) Best-effort parser for legacy full names
-CREATE OR REPLACE FUNCTION public.split_name(fullname text,
-  OUT first_name text, OUT middle_name text, OUT last_name text, OUT suffix text)
-LANGUAGE plpgsql IMMUTABLE AS $$
-DECLARE
-  s text := btrim(coalesce(fullname,''));
-  tokens text[];
-  n int;
-  rest text;
-  maybe_suffix text;
-BEGIN
-  IF s = '' THEN
-    first_name := NULL; middle_name := NULL; last_name := NULL; suffix := NULL;
-    RETURN;
-  END IF;
+    // ---- 1) Create Auth user if not already present ----
+    // Some supabase-js versions don't have getUserByEmail; we just try-create and
+    // tolerate 422 "User already registered".
+    let auth_user_id: string | null = null;
 
-  -- If it looks like "Last, First [Middle] [Suffix]"
-  IF position(',' IN s) > 0 THEN
-    last_name := btrim(split_part(s, ',', 1));
-    rest := btrim(split_part(s, ',', 2));
-    tokens := regexp_split_to_array(rest, '\s+');
-    n := array_length(tokens,1);
+    try {
+      const { data, error } = await supabaseAdmin.auth.admin.createUser({
+        email,
+        password: randomPassword(),
+        email_confirm: true, // mark confirmed for synthetic emails in dev
+        phone,
+        user_metadata: {
+          role: "driver",
+          first_name,
+          middle_name,
+          last_name,
+          suffix,
+          address,
+        },
+        app_metadata: { provider: "dev_admin_create" },
+      });
+      if (error) {
+        // If it's NOT a conflict, bubble it up
+        const msg = String(error.message || "").toLowerCase();
+        if (!msg.includes("already registered") && error.status !== 422) {
+          throw error;
+        }
+      } else {
+        auth_user_id = data.user.id;
+      }
+    } catch (authErr: any) {
+      const msg = String(authErr?.message || "");
+      // Any non-422 error should stop the flow
+      if (!/already registered/i.test(msg)) {
+        return NextResponse.json({ error: msg || "Auth error" }, { status: 400 });
+      }
+      // else continue without auth_user_id
+    }
 
-    IF n >= 1 THEN first_name := tokens[1]; END IF;
-    IF n >= 3 THEN
-      -- check last token for suffix
-      maybe_suffix := tokens[n];
-      IF lower(maybe_suffix) IN ('jr','sr','ii','iii','iv','v','phd','md') THEN
-        suffix := maybe_suffix;
-        last_name := coalesce(last_name, btrim(split_part(s, ',', 1)));
-        IF n >= 2 THEN middle_name := array_to_string(tokens[2:n-1],' '); END IF;
-      ELSE
-        middle_name := array_to_string(tokens[2:n],' ');
-      END IF;
-    ELSIF n = 2 THEN
-      middle_name := tokens[2];
-    END IF;
+    // ---- 2) Upsert into public.users on email (idempotent) ----
+    // IMPORTANT: Do NOT send GENERATED ALWAYS columns (name_full, name_last_first).
+    const { data: userRow, error: upsertErr } = await supabaseAdmin
+      .from("users")
+      .upsert(
+        [
+          {
+            role: "driver",
+            status: "pending", // or "active"
+            email, // UNIQUE key used for onConflict
+            phone,
+            address,
+            first_name,
+            middle_name,
+            last_name,
+            suffix,
+            auth_user_id, // may be null if user already existed and we didn't fetch UID
+          },
+        ],
+        { onConflict: "email" }
+      )
+      .select("id, email, auth_user_id")
+      .single();
 
-    RETURN;
-  END IF;
+    if (upsertErr) {
+      return NextResponse.json({ error: upsertErr.message }, { status: 400 });
+    }
 
-  -- Otherwise: "First [Middle ...] Last [Suffix?]"
-  tokens := regexp_split_to_array(s, '\s+');
-  n := array_length(tokens,1);
-
-  IF n = 1 THEN
-    first_name := tokens[1]; RETURN;
-  ELSIF n = 2 THEN
-    first_name := tokens[1]; last_name := tokens[2]; RETURN;
-  ELSE
-    -- Suffix check on last token
-    maybe_suffix := tokens[n];
-    IF lower(maybe_suffix) IN ('jr','sr','ii','iii','iv','v','phd','md') THEN
-      suffix := maybe_suffix;
-      last_name := tokens[n-1];
-      first_name := tokens[1];
-      IF n > 3 THEN middle_name := array_to_string(tokens[2:n-2],' '); END IF;
-    ELSE
-      suffix := NULL;
-      last_name := tokens[n];
-      first_name := tokens[1];
-      IF n > 2 THEN middle_name := array_to_string(tokens[2:n-1],' '); END IF;
-    END IF;
-    RETURN;
-  END IF;
-END $$;
-
--- 5) Trigger to keep 'name' (legacy) in sync with parts
-CREATE OR REPLACE FUNCTION public.users_names_sync()
-RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE
-  f text; m text; l text; sfx text;
-BEGIN
-  -- If 'name' was set/changed and parts are blank, parse into parts
-  IF TG_OP IN ('INSERT','UPDATE') AND (NEW.name IS NOT NULL) AND
-     (coalesce(NEW.first_name,'') = '' AND coalesce(NEW.last_name,'') = '') THEN
-    SELECT * INTO f,m,l,sfx FROM public.split_name(NEW.name);
-    NEW.first_name  := coalesce(NULLIF(NEW.first_name,''),  f);
-    NEW.middle_name := coalesce(NULLIF(NEW.middle_name,''), m);
-    NEW.last_name   := coalesce(NULLIF(NEW.last_name,''),   l);
-    NEW.suffix      := coalesce(NULLIF(NEW.suffix,''),      sfx);
-  END IF;
-
-  -- Always normalize legacy 'name' from parts
-  NEW.name := public._name_full(NEW.first_name, NEW.middle_name, NEW.last_name, NEW.suffix);
-
-  RETURN NEW;
-END $$;
-
-DROP TRIGGER IF EXISTS trg_users_names_sync ON public.users;
-CREATE TRIGGER trg_users_names_sync
-BEFORE INSERT OR UPDATE OF name, first_name, middle_name, last_name, suffix ON public.users
-FOR EACH ROW EXECUTE FUNCTION public.users_names_sync();
-
--- 6) Backfill from existing 'name' (only fills blanks)
-UPDATE public.users u
-SET first_name  = COALESCE(u.first_name,  (public.split_name(u.name)).first_name),
-    middle_name = COALESCE(u.middle_name, (public.split_name(u.name)).middle_name),
-    last_name   = COALESCE(u.last_name,   (public.split_name(u.name)).last_name),
-    suffix      = COALESCE(u.suffix,      (public.split_name(u.name)).suffix)
-WHERE u.name IS NOT NULL
-  AND (u.first_name IS NULL OR u.last_name IS NULL);
-
--- 7) Indexes for quick lookup (and fuzzy search if desired)
-CREATE INDEX IF NOT EXISTS users_last_first_idx
-  ON public.users (lower(last_name), lower(first_name));
-
-CREATE INDEX IF NOT EXISTS users_last_trgm_idx
-  ON public.users USING gin (last_name gin_trgm_ops);
-
-CREATE INDEX IF NOT EXISTS users_first_trgm_idx
-  ON public.users USING gin (first_name gin_trgm_ops);
-
--- 8) Helper: find by \"Last, First [Middle?]\" (case-insensitive; middle can be initial)
-CREATE OR REPLACE FUNCTION public.find_users_by_lfm(last_name text, first_name text, middle text DEFAULT NULL)
-RETURNS TABLE(id uuid, email text, name_last_first text, name_full text)
-LANGUAGE sql STABLE AS $$
-  SELECT u.id, u.email, u.name_last_first, u.name_full
-  FROM public.users u
-  WHERE lower(u.last_name)  = lower(coalesce(last_name,''))
-    AND lower(u.first_name) = lower(coalesce(first_name,''))
-    AND (
-      middle IS NULL
-      OR left(lower(coalesce(u.middle_name,'')), 1) = left(lower(middle), 1)
-    )
-  ORDER BY u.last_name, u.first_name, coalesce(u.middle_name,'')
-$$;
-
--- 9) Update me view to expose new fields
-CREATE OR REPLACE VIEW public.me AS
-SELECT
-  u.id,
-  u.name,              -- legacy full name (kept in sync)
-  u.name_full,
-  u.name_last_first,
-  u.first_name,
-  u.middle_name,
-  u.last_name,
-  u.suffix,
-  u.preferred_name,
-  u.email,
-  u.role::text AS role,
-  u.department,
-  u.department_id,
-  u.status,
-  u.created_at,
-  u.auth_user_id,
-  u.phone,
-  u.birthdate,
-  u.address
-FROM public.users u
-WHERE u.auth_user_id = auth.uid();
+    return NextResponse.json(
+      {
+        ok: true,
+        user_id: userRow.id,
+        email: userRow.email,
+        auth_user_id: userRow.auth_user_id,
+      },
+      { status: 200 }
+    );
+  } catch (e: any) {
+    return NextResponse.json(
+      { error: e?.message ?? "Unexpected error" },
+      { status: 500 }
+    );
+  }
+}
 
 
 ===== app\api\feedback\route.ts =====
@@ -4994,14 +4885,11 @@ export default function RegisterView(props: Props) {
   }, []);
 
   return (
-    // Exact viewport height + hide overflow
     <div
       className="relative h-svh overflow-hidden bg-cover bg-center"
       style={{ backgroundImage: "url('/pattern-light.jpg')" }}
     >
-      {/* Light overlay for readability */}
       <div className="absolute inset-0 bg-black/20" aria-hidden="true" />
-      {/* Optional brand spotlights */}
       <div
         className="pointer-events-none absolute -left-32 -top-24 h-[42rem] w-[42rem] rounded-full opacity-25 blur-3xl"
         style={{ background: "radial-gradient(closest-side, #7a1f2a, transparent)" }}
@@ -5013,14 +4901,11 @@ export default function RegisterView(props: Props) {
         aria-hidden="true"
       />
 
-      {/* Content: centers the card vertically, keeps within the viewport */}
       <div className="relative z-10 mx-auto flex h-svh w-full max-w-3xl flex-col justify-center px-4 sm:px-6 lg:px-8">
         <div className="w-full">
           <div className="rounded-2xl bg-gradient-to-br from-white/60 via-white/20 to-transparent p-[1.5px] shadow-2xl">
-            {/* SOLID WHITE CARD (changed from bg-white/85) */}
             <div className="rounded-2xl bg-white backdrop-blur-xl ring-1 ring-black/10">
               <div className="px-6 py-6 lg:px-8">
-                {/* Header */}
                 <div className="flex items-center gap-3">
                   <img src="/eulogo.png" alt="Enverga University Logo" className="h-10 w-10" />
                   <div>
@@ -5035,7 +4920,6 @@ export default function RegisterView(props: Props) {
 
                 <div className="my-4 h-[2px] w-full rounded bg-gradient-to-r from-red-900/70 via-red-900/30 to-transparent" />
 
-                {/* Tabs */}
                 <div className="mb-4 grid grid-cols-2 gap-2">
                   <button
                     type="button"
@@ -5061,7 +4945,6 @@ export default function RegisterView(props: Props) {
                   </button>
                 </div>
 
-                {/* FACULTY */}
                 {role === "faculty" && (
                   <FacultyForm
                     loading={props.loading}
@@ -5082,7 +4965,6 @@ export default function RegisterView(props: Props) {
                   />
                 )}
 
-                {/* DRIVER */}
                 {role === "driver" && (
                   <DriverFlow
                     loading={props.loading}
@@ -5103,7 +4985,6 @@ export default function RegisterView(props: Props) {
                   />
                 )}
 
-                {/* Login hint under the submit button */}
                 <div className="mt-4 text-center text-[13px] text-gray-600">
                   Already have an account?{" "}
                   <Link href="/login" className="font-semibold text-[#7a1f2a] hover:underline">
@@ -5114,7 +4995,6 @@ export default function RegisterView(props: Props) {
             </div>
           </div>
 
-          {/* Footer (still visible, but layout stays within viewport) */}
           <p className="mt-2 text-center text-[11px] text-white/85 drop-shadow">
             © {new Date().getFullYear()} TraviLink · Enverga University
           </p>
@@ -5249,7 +5129,7 @@ const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 function validatePassword(pw: string): string | null {
   if (pw.length < 8) return "Password must be at least 8 characters long.";
   if (!/[0-9]/.test(pw)) return "Password must contain at least one number.";
-  if (!/[!@#$%^&*(),.?\":{}|<>]/.test(pw)) return "Password must contain at least one special character.";
+  if (!/[!@#$%^&*(),.?":{}|<>]/.test(pw)) return "Password must contain at least one special character.";
   return null;
 }
 
@@ -5265,7 +5145,7 @@ function normalizePhone(p: string) {
 export default function RegisterPage() {
   const [role, setRole] = useState<RolePick>("faculty");
 
-  // Faculty
+  // Faculty state
   const [fFirst, setFFirst] = useState("");
   const [fMiddle, setFMiddle] = useState("");
   const [fLast, setFLast] = useState("");
@@ -5277,7 +5157,7 @@ export default function RegisterPage() {
   const [fPw, setFPw] = useState("");
   const [fPwConfirm, setFPwConfirm] = useState("");
 
-  // Driver
+  // Driver state (dev OTP flow)
   const [dStep, setDStep] = useState<DriverStep>("phone");
   const [dPhone, setDPhone] = useState("");
   const [verifiedPhone, setVerifiedPhone] = useState<string | null>(null);
@@ -5304,7 +5184,11 @@ export default function RegisterPage() {
     setErr(null);
     setMsg(null);
 
-    const nameFull = [fFirst, fMiddle, fLast, fSuffix].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+    const nameFull = [fFirst, fMiddle, fLast, fSuffix]
+      .filter(Boolean)
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
 
     if (fFirst.trim().length < 1 || fLast.trim().length < 1) return setErr("Please enter your first and last name.");
     if (!emailRegex.test(fEmail)) return setErr("Please enter a valid email address.");
@@ -5317,13 +5201,7 @@ export default function RegisterPage() {
     try {
       setLoading(true);
 
-      // quick duplicate check
-      const dupRes = await supabase.auth.signInWithPassword({ email: fEmail, password: "__dummy__" });
-      if (!dupRes.error) {
-        setErr("This email is already registered. Please log in.");
-        return;
-      }
-
+      // sign up (no dummy precheck)
       const { error } = await supabase.auth.signUp({
         email: fEmail,
         password: fPw,
@@ -5343,16 +5221,17 @@ export default function RegisterPage() {
       });
 
       if (error) {
-        const m = error.message.toLowerCase();
-        if (m.includes("already registered")) {
-          setErr("This email is already registered. Please log in or reset your password.");
+        const m = (error.message || "").toLowerCase();
+        if (m.includes("already")) {
+          setErr("This email is already registered. Try logging in or resetting your password.");
           return;
         }
-        if (m.includes("rate limit")) {
-          setErr("Too many attempts. Please wait and try again.");
+        if (m.includes("rate")) {
+          setErr("Too many attempts. Please wait a few minutes and try again.");
           return;
         }
-        throw error;
+        setErr(error.message || "Sign up failed.");
+        return;
       }
 
       setJustSignedUpEmail(fEmail);
@@ -5360,7 +5239,7 @@ export default function RegisterPage() {
         "If this email is new, we sent a confirmation link. If it’s already registered, please check your inbox (and spam) or try logging in / resetting your password."
       );
     } catch (e: any) {
-      setErr(e.message ?? "Registration failed.");
+      setErr(e?.message ?? "Registration failed.");
     } finally {
       setLoading(false);
     }
@@ -5425,12 +5304,12 @@ export default function RegisterPage() {
 
     try {
       setLoading(true);
+
       const res = await fetch("/api/dev/driver/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           phone: verifiedPhone,
-          name: [dFirst, dMiddle, dLast, dSuffix].filter(Boolean).join(" ").replace(/\s+/g, " ").trim(),
           first_name: dFirst,
           middle_name: dMiddle || null,
           last_name: dLast,
@@ -5456,6 +5335,7 @@ export default function RegisterPage() {
       err={err}
       msg={msg}
       onResend={justSignedUpEmail ? resendConfirmation : undefined}
+      /* faculty */
       fFirst={fFirst}
       setFFirst={setFFirst}
       fMiddle={fMiddle}
@@ -5477,6 +5357,7 @@ export default function RegisterPage() {
       fPwConfirm={fPwConfirm}
       setFPwConfirm={setFPwConfirm}
       onFacultySubmit={registerFaculty}
+      /* driver */
       dStep={dStep}
       dPhone={dPhone}
       setDPhone={setDPhone}
@@ -8505,127 +8386,555 @@ function MiniBar({ data }: { data: { day: string; count: number }[] }) {
 }
 
 
-===== components\admin\maintenance\filters\FiltersBar.ui.tsx =====
-// src/components/admin/maintenance/filters/FiltersBar.ui.tsx
+===== components\admin\maintenance\containers\MaintenancePage.container.tsx =====
 "use client";
 import * as React from "react";
-import { Search } from "lucide-react";
-import type { MaintFilters } from "@/lib/admin/maintenance/types";
-import { MaintConstants } from "@/lib/admin/maintenance/service";
-import { Select } from "@/components/common/inputs/Select.ui"; // string[] options
+import type { Maintenance, MaintFilters, MaintStatus } from "@/lib/admin/maintenance/types";
+import { loadMaintenance, createMaintenance, updateMaintenance, deleteMaintenance, deleteManyMaintenance, exportMaintenanceCSV } from "@/lib/admin/maintenance/handlers";
+import { seedMockMaintenance, clearAllMaintenance } from "@/lib/admin/maintenance/mocks";
 
-const TYPE_OPTIONS = ["All Types", ...MaintConstants.types] as const;
-const STATUS_OPTIONS = ["All Status", ...MaintConstants.statuses] as const;
+import MaintenanceKpiBar from "../kpi/MaintenanceKpiBar.ui";
+import MaintFiltersBar from "../filters/FiltersBar.ui";
+import Table, { type MaintTableHandle } from "../table";
+import MaintenanceDrawer from "../ui/MaintenanceDrawer.ui";
+import NewReportModal from "../forms/NewReportModal.ui";
 
-export function MaintFiltersBar({
-  value, onChange, onClear
-}: {
-  value: MaintFilters;
-  onChange: (v: MaintFilters) => void;
-  onClear: () => void;
-}) {
-  const typeDisplay = value.type ?? "All Types";
-  const statusDisplay = value.status ?? "All Status";
+const DEFAULT_FILTERS: MaintFilters = {
+  q: "",
+  category: "all",
+  status: "all",
+  due: "all",
+  density: "comfortable",
+};
+
+export default function MaintenancePageContainer() {
+  const [filters, setFilters] = React.useState<MaintFilters>(DEFAULT_FILTERS);
+  const [rows, setRows] = React.useState<Maintenance[]>([]);
+  const [loading, setLoading] = React.useState(true);
+
+  const refresh = React.useCallback(() => {
+    setLoading(true);
+    setRows(loadMaintenance(filters));
+    setLoading(false);
+  }, [filters]);
+
+  React.useEffect(() => { refresh(); }, [refresh]);
+
+  const [selection, setSelection] = React.useState<string[]>([]);
+  const [form, setForm] = React.useState<null | { mode:"create" } | { mode:"edit"; id:string }>(null);
+  const [view, setView] = React.useState<Maintenance | null>(null);
+  const tableRef = React.useRef<MaintTableHandle>(null);
+
+  // Status inline change
+  const onChangeStatus = (id: string, next: MaintStatus) => {
+    updateMaintenance(id, { status: next } as any);
+    refresh();
+  };
+
+  // CRUD
+  const onCreate = (data: Omit<Maintenance,"id"|"createdAt"|"updatedAt"|"history">) => { createMaintenance(data); setForm(null); refresh(); };
+  const onUpdate = (id: string, data: Omit<Maintenance,"id"|"createdAt"|"updatedAt"|"history">) => { updateMaintenance(id, data); setForm(null); refresh(); };
+  const onDelete = (id: string) => { if (confirm("Delete this record?")) { deleteMaintenance(id); refresh(); } };
+  const onDeleteSelected = () => {
+    if (!selection.length) return;
+    if (confirm(`Delete ${selection.length} selected record(s)?`)) {
+      deleteManyMaintenance(selection);
+      setSelection([]);
+      refresh();
+    }
+  };
+  const onExport = () => {
+    const blob = exportMaintenanceCSV(rows);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "maintenance.csv"; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const onView = (id: string) => setView(rows.find((r)=>r.id===id) || null);
+  const onEdit = (id: string) => setForm({ mode:"edit", id });
+
+  const current = form?.mode === "edit" ? rows.find((r)=>r.id === (form as any).id) : undefined;
+
+  // KPI
+  const kpi = React.useMemo(() => {
+    const s = (t: MaintStatus) => rows.filter(r=>r.status===t).length;
+    const d = (n: "ok"|"soon"|"overdue") => rows.filter(r=>r.nextDueTint===n).length;
+    return { all: rows.length, submitted: s("Submitted"), inProgress: s("In-Progress"), completed: s("Completed"), dueSoon: d("soon"), overdue: d("overdue") };
+  }, [rows]);
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-white p-2">
-      <div className="flex items-center gap-2 px-2 py-1.5 rounded-md border">
-        <Search size={16} className="opacity-60" />
-        <input
-          value={value.search ?? ""}
-          onChange={(e) => onChange({ ...value, search: e.currentTarget.value })}
-          placeholder="Search vehicle, plate, description…"
-          autoComplete="off"
-          className="outline-none text-sm"
-          suppressHydrationWarning
-          aria-label="Search maintenance"
-        />
-      </div>
+    <div className="p-4 space-y-4">
+      <MaintenanceKpiBar {...kpi} />
+      <MaintFiltersBar value={filters} onChange={setFilters} onClear={() => setFilters(DEFAULT_FILTERS)} />
 
-      <Select
-        label="Type"
-        value={typeDisplay}
-        options={TYPE_OPTIONS}
-        onChange={(next) =>
-          onChange({ ...value, type: next === "All Types" ? undefined : (next as any) })
-        }
+      <Table
+        ref={tableRef}
+        loading={loading}
+        rows={rows}
+        selection={selection}
+        setSelection={setSelection}
+        onView={onView}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        onExport={onExport}
+        onDeleteSelected={onDeleteSelected}
+        onAdd={() => setForm({ mode:"create" })}
+        pageSize={10}
+        onChangeStatus={onChangeStatus}
+        onSeedDemo={() => { seedMockMaintenance(12); refresh(); }}
+        onClearAll={() => { if (confirm("Clear all maintenance records?")) { clearAllMaintenance(); refresh(); } }}
       />
 
-      <Select
-        label="Status"
-        value={statusDisplay}
-        options={STATUS_OPTIONS}
-        onChange={(next) =>
-          onChange({ ...value, status: next === "All Status" ? undefined : (next as any) })
-        }
-      />
+      <MaintenanceDrawer open={!!view} row={view} onClose={() => setView(null)} />
 
-      <button
-        onClick={onClear}
-        className="ml-auto px-3 py-1.5 text-sm rounded-md border hover:bg-gray-50"
-        aria-label="Clear filters"
-      >
-        Clear
-      </button>
+      <NewReportModal
+        open={!!form}
+        initial={current}
+        onClose={() => setForm(null)}
+        onSubmit={(data) => form?.mode === "create" ? onCreate(data) : onUpdate((form as any).id, data)}
+      />
     </div>
   );
 }
 
 
+===== components\admin\maintenance\filters\FiltersBar.ui.tsx =====
+"use client";
+import * as React from "react";
+import type {
+  MaintFilters,
+  MaintStatus,
+  MaintType,
+  NextDueTint,
+} from "@/lib/admin/maintenance/types";
+import { Search, X, ChevronDown, Calendar, Filter } from "lucide-react";
+
+const TYPES: readonly (MaintType | "all")[] = [
+  "all",
+  "PMS",
+  "Repair",
+  "LTORenewal",
+  "InsuranceRenewal",
+  "Vulcanize",
+  "Other",
+] as const;
+
+const STATUSES: readonly (MaintStatus | "all")[] = [
+  "all",
+  "Submitted",
+  "Acknowledged",
+  "In-Progress",
+  "Completed",
+  "Rejected",
+] as const;
+
+const DUE: readonly (NextDueTint | "all" | "none")[] = ["all", "ok", "soon", "overdue", "none"] as const;
+
+export default function MaintFiltersBar({
+  value,
+  onChange,
+  onClear,
+}: {
+  value: MaintFilters;
+  onChange: (v: MaintFilters) => void;
+  onClear: () => void;
+}) {
+  const v = value;
+  const set = (patch: Partial<MaintFilters>) => onChange({ ...v, ...patch });
+
+  return (
+    <div className="rounded-2xl border border-neutral-200 shadow-sm bg-gradient-to-b from-white to-neutral-50/60 p-3">
+      {/* search */}
+      <div className="relative">
+        <input
+          value={v.q ?? ""}
+          onChange={(e) => set({ q: e.target.value })}
+          placeholder="Vehicle, vendor, description…"
+          className="w-full h-10 rounded-lg border border-neutral-300 pl-9 pr-3 outline-none focus:ring-2 focus:ring-[#7a1f2a]/30 focus:border-[#7a1f2a]"
+        />
+        <Search className="absolute left-2 top-2.5 h-5 w-5 text-neutral-400" />
+      </div>
+
+      {/* chips */}
+      <div className="flex flex-wrap items-center gap-2 mt-3">
+        <Chip active={v.type !== "all"} onClick={() => set({ type: "all" })}>
+          Type: {v.type ?? "all"}
+        </Chip>
+        <select
+          value={v.type ?? "all"}
+          onChange={(e) => set({ type: e.target.value as MaintType | "all" })}
+          className="h-9 rounded-lg border border-neutral-300 px-3"
+        >
+          {TYPES.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+
+        <Chip active={v.status !== "all"} onClick={() => set({ status: "all" })}>
+          Status: {v.status ?? "all"}
+        </Chip>
+        <select
+          value={v.status ?? "all"}
+          onChange={(e) => set({ status: e.target.value as MaintStatus | "all" })}
+          className="h-9 rounded-lg border border-neutral-300 px-3"
+        >
+          {STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+
+        <Chip active={v.due !== "all"} onClick={() => set({ due: "all" })}>
+          Due: {v.due ?? "all"}
+        </Chip>
+        <select
+          value={v.due ?? "all"}
+          onChange={(e) => set({ due: e.target.value as NextDueTint | "all" | "none" })}
+          className="h-9 rounded-lg border border-neutral-300 px-3"
+        >
+          {DUE.map((d) => (
+            <option key={d} value={d}>
+              {d}
+            </option>
+          ))}
+        </select>
+
+        <div className="flex items-center gap-2 ml-auto">
+          <Filter className="h-4 w-4 text-neutral-400" />
+          <span className="text-sm text-neutral-500">Density:&nbsp;</span>
+          <button
+            onClick={() => set({ density: "comfortable" })}
+            className={[
+              "px-2 py-1 rounded-md border text-sm",
+              v.density !== "compact" ? "bg-neutral-100 border-neutral-300" : "border-transparent",
+            ].join(" ")}
+          >
+            Comfortable
+          </button>
+          <button
+            onClick={() => set({ density: "compact" })}
+            className={[
+              "px-2 py-1 rounded-md border text-sm",
+              v.density === "compact" ? "bg-neutral-100 border-neutral-300" : "border-transparent",
+            ].join(" ")}
+          >
+            Compact
+          </button>
+          <button
+            onClick={onClear}
+            className="ml-2 px-3 h-9 rounded-md border hover:bg-neutral-50"
+            title="Clear all filters"
+          >
+            Clear
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Chip({
+  active,
+  onClick,
+  children,
+}: {
+  active?: boolean;
+  onClick?: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        "px-2 py-1 rounded-md text-xs border",
+        active ? "bg-neutral-100 border-neutral-300" : "border-transparent",
+      ].join(" ")}
+    >
+      {children}
+    </button>
+  );
+}
+
+
+===== components\admin\maintenance\filters\MaintenanceFilterBar.ui.tsx =====
+export { default as MaintFiltersBar } from "./FiltersBar.ui";
+
+
 ===== components\admin\maintenance\forms\MaintForm.ui.tsx =====
 "use client";
 import * as React from "react";
-import type { Maintenance } from "@/lib/admin/maintenance/types";
-import { TextInput, NumberInput, DateInput, SelectInput } from "@/components/common/forms/Inputs";
+import type {
+  Maintenance,
+  MaintStatus,
+  MaintType,
+  NextDueTint,
+} from "@/lib/admin/maintenance/types";
+import { fileToAttachment } from "@/lib/admin/maintenance/maintenance.attachments";
 
-const BRAND = "#7a0019";
+const TYPES: readonly MaintType[] = [
+  "PMS",
+  "Repair",
+  "LTORenewal",
+  "InsuranceRenewal",
+  "Vulcanize",
+  "Other",
+] as const;
 
-export function MaintForm({
-  initial, onCancel, onSubmit
+const STATUSES: readonly MaintStatus[] = [
+  "Submitted",
+  "Acknowledged",
+  "In-Progress",
+  "Completed",
+  "Rejected",
+] as const;
+
+function Input({
+  label,
+  ...rest
+}: React.InputHTMLAttributes<HTMLInputElement> & { label: string }) {
+  return (
+    <label className="block">
+      <div className="text-xs text-neutral-600 mb-1">{label}</div>
+      <input
+        {...rest}
+        className={[
+          "h-10 w-full rounded-lg border border-neutral-300 px-3 outline-none",
+          "focus:ring-2 focus:ring-[#7a1f2a]/30 focus:border-[#7a1f2a]",
+          rest.className ?? "",
+        ].join(" ")}
+      />
+    </label>
+  );
+}
+
+function Select<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
 }: {
-  initial?: Partial<Maintenance>;
-  onCancel: () => void;
-  onSubmit: (data: Omit<Maintenance,"id"|"createdAt"|"updatedAt">) => void;
+  label: string;
+  value: T;
+  options: readonly T[];
+  onChange: (v: T) => void;
 }) {
-  const [form, setForm] = React.useState<Omit<Maintenance,"id"|"createdAt"|"updatedAt">>(() => ({
-    vehicleId: initial?.vehicleId ?? "",
-    vehicleCode: initial?.vehicleCode ?? "",
-    plateNo: initial?.plateNo ?? "",
-    type: (initial?.type as any) ?? "Preventive",
+  return (
+    <label className="block">
+      <div className="text-xs text-neutral-600 mb-1">{label}</div>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value as T)}
+        className="h-10 w-full rounded-lg border border-neutral-300 px-3 outline-none focus:ring-2 focus:ring-[#7a1f2a]/30 focus:border-[#7a1f2a]"
+      >
+        {options.map((t) => (
+          <option key={t} value={t}>
+            {t}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+export default function MaintForm({
+  initial,
+  onSubmit,
+  onCancel,
+}: {
+  initial?: Maintenance;
+  onSubmit: (data: Omit<Maintenance, "id" | "createdAt" | "updatedAt" | "history">) => void;
+  onCancel: () => void;
+}) {
+  const [form, setForm] = React.useState<
+    Omit<Maintenance, "id" | "createdAt" | "updatedAt" | "history">
+  >({
+    vehicle: initial?.vehicle ?? "",
+    type: initial?.type ?? "PMS",
+    status: initial?.status ?? "Submitted",
+    vendor: initial?.vendor ?? "",
+    costPhp: initial?.costPhp ?? 0,
+    odometerAtService: initial?.odometerAtService ?? undefined,
+    date: initial?.date ?? new Date().toISOString(),
+    tireRotationApplied: initial?.tireRotationApplied ?? false,
     description: initial?.description ?? "",
-    odometerKm: initial?.odometerKm ?? 0,
-    requestDate: initial?.requestDate ?? new Date().toISOString().slice(0,10),
-    serviceDate: initial?.serviceDate ?? "",
-    status: (initial?.status as any) ?? "draft",
-    photoUrl: initial?.photoUrl ?? null,
-    remarks: initial?.remarks ?? "",
-  }));
+    attachments: initial?.attachments ?? [],
+    nextDueAuto: initial?.nextDueAuto ?? true,
+    nextDueDateISO: initial?.nextDueDateISO,
+    nextDueOdometer: initial?.nextDueOdometer,
+    nextDueTint: (initial?.nextDueTint as NextDueTint | undefined) ?? "ok",
+    createdBy: initial?.createdBy ?? "Transport Office",
+  });
+
+  function attach(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    Promise.all(files.map(fileToAttachment)).then((at) =>
+      setForm((f) => ({ ...f, attachments: [...(f.attachments ?? []), ...at] }))
+    );
+  }
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    onSubmit({ ...form });
+  }
+
+  const nextPreview = React.useMemo(() => {
+    const d = form.nextDueDateISO ? new Date(form.nextDueDateISO) : undefined;
+    const date = d ? d.toLocaleDateString() : "—";
+    const odo =
+      form.nextDueOdometer != null ? form.nextDueOdometer.toLocaleString() : "—";
+    const tint = form.nextDueTint ?? "ok";
+    return { date, odo, tint };
+  }, [form.nextDueDateISO, form.nextDueOdometer, form.nextDueTint]);
 
   return (
-    <form onSubmit={(e)=>{ e.preventDefault(); onSubmit(form); }} className="grid gap-3">
+    <form onSubmit={submit} className="space-y-4">
       <div className="grid sm:grid-cols-2 gap-3">
-        <TextInput label="Vehicle Code" value={form.vehicleCode} onChange={v=>setForm(f=>({...f, vehicleCode:v}))}/>
-        <TextInput label="Plate No." value={form.plateNo} onChange={v=>setForm(f=>({...f, plateNo:v}))}/>
+        <Input
+          label="Vehicle"
+          value={form.vehicle}
+          onChange={(e) => setForm({ ...form, vehicle: e.target.value })}
+          required
+        />
+        <Select
+          label="Type"
+          value={form.type}
+          onChange={(v) => setForm({ ...form, type: v })}
+          options={TYPES}
+        />
+        <Select
+          label="Status"
+          value={form.status}
+          onChange={(v) => setForm({ ...form, status: v })}
+          options={STATUSES}
+        />
+
+        <Input
+          label="Date"
+          type="date"
+          value={(form.date ?? "").slice(0, 10)}
+          onChange={(e) => setForm({ ...form, date: e.target.value })}
+          required
+        />
+
+        <Input
+          label="Vendor"
+          value={form.vendor}
+          onChange={(e) => setForm({ ...form, vendor: e.target.value })}
+        />
+        <Input
+          label="Cost (PHP)"
+          type="number"
+          value={String(form.costPhp ?? 0)}
+          onChange={(e) => setForm({ ...form, costPhp: Number(e.target.value) || 0 })}
+        />
+        <Input
+          label="Odometer @ Service (km)"
+          type="number"
+          value={form.odometerAtService != null ? String(form.odometerAtService) : ""}
+          onChange={(e) =>
+            setForm({
+              ...form,
+              odometerAtService:
+                e.target.value === "" ? undefined : Number(e.target.value),
+            })
+          }
+        />
+
+        <label className="flex items-center gap-2 text-sm mt-6">
+          <input
+            type="checkbox"
+            checked={!!form.tireRotationApplied}
+            onChange={(e) =>
+              setForm({ ...form, tireRotationApplied: e.target.checked })
+            }
+          />
+          <span>Tire rotation applied</span>
+        </label>
+      </div>
+
+      <label className="block">
+        <div className="text-xs text-neutral-600 mb-1">Description</div>
+        <textarea
+          value={form.description ?? ""}
+          onChange={(e) => setForm({ ...form, description: e.target.value })}
+          className="w-full min-h-[120px] rounded-lg border border-neutral-300 px-3 py-2 outline-none focus:ring-2 focus:ring-[#7a1f2a]/30 focus:border-[#7a1f2a]"
+        />
+      </label>
+
+      <div>
+        <div className="text-xs text-neutral-600 mb-1">Attachments</div>
+        <input type="file" multiple onChange={attach} />
+        <div className="text-xs text-neutral-400 mt-1">
+          JPG/PNG images or PDF files
+        </div>
       </div>
 
       <div className="grid sm:grid-cols-2 gap-3">
-        <SelectInput label="Type" value={form.type} options={["Preventive","Repair","Inspection"]} onChange={v=>setForm(f=>({...f, type:v as any}))}/>
-        <SelectInput label="Status" value={form.status} options={["draft","submitted","acknowledged","in-progress","completed","rejected"]} onChange={v=>setForm(f=>({...f, status:v as any}))}/>
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={form.nextDueAuto !== false}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                nextDueAuto: e.target.checked,
+              })
+            }
+          />
+          <span className="text-sm">Next due: Automatic</span>
+        </label>
+
+        <div className="rounded-lg bg-neutral-50 border border-neutral-200 p-3 text-sm">
+          <div className="font-medium mb-1">Next Due (preview)</div>
+          <div>Date: <strong>{nextPreview.date}</strong></div>
+          <div>Odo: <strong>{nextPreview.odo}</strong></div>
+          <div>Tint: <strong className="capitalize">{nextPreview.tint}</strong></div>
+        </div>
       </div>
 
-      <TextInput label="Description" value={form.description} onChange={v=>setForm(f=>({...f, description:v}))}/>
-      <NumberInput label="Odometer (km)" value={form.odometerKm} min={0} onChange={v=>setForm(f=>({...f, odometerKm:v}))}/>
+      {form.nextDueAuto === false && (
+        <div className="grid sm:grid-cols-2 gap-3">
+          <Input
+            label="Next Due Date (ISO)"
+            value={(form.nextDueDateISO ?? "").slice(0, 10)}
+            type="date"
+            onChange={(e) =>
+              setForm({ ...form, nextDueDateISO: e.target.value || undefined })
+            }
+          />
+          <Input
+            label="Next Due Odometer"
+            type="number"
+            value={form.nextDueOdometer != null ? String(form.nextDueOdometer) : ""}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                nextDueOdometer:
+                  e.target.value === "" ? undefined : Number(e.target.value),
+              })
+            }
+          />
+        </div>
+      )}
 
-      <div className="grid sm:grid-cols-2 gap-3">
-        <DateInput label="Request Date" value={form.requestDate} onChange={v=>setForm(f=>({...f, requestDate:v}))}/>
-        <DateInput label="Service Date" value={form.serviceDate ?? ""} onChange={v=>setForm(f=>({...f, serviceDate:v}))}/>
-      </div>
-
-      <TextInput label="Remarks" value={form.remarks ?? ""} onChange={v=>setForm(f=>({...f, remarks:v}))}/>
-
-      <div className="flex justify-end gap-2 pt-2">
-        <button type="button" onClick={onCancel} className="px-3 py-1.5 rounded-md border bg-white">Cancel</button>
-        <button type="submit" className="px-3 py-1.5 rounded-md text-white" style={{ background: BRAND }}>
+      <div className="flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="px-4 h-10 rounded-lg border hover:bg-neutral-50"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          className="px-4 h-10 rounded-lg bg-[#7a0019] text-white hover:bg-[#6b0016]"
+        >
           Save
         </button>
       </div>
@@ -8634,46 +8943,162 @@ export function MaintForm({
 }
 
 
-===== components\admin\maintenance\table\Pagination.tsx =====
+===== components\admin\maintenance\forms\NewReportModal.ui.tsx =====
+"use client";
+
+import * as React from "react";
+import type { Maintenance } from "@/lib/admin/maintenance/types";
+import MaintForm from "./MaintForm.ui";
+
+export default function NewReportModal({
+  open,
+  initial,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  initial?: Maintenance;
+  onClose: () => void;
+  onSubmit: (data: Omit<Maintenance, "id" | "createdAt" | "updatedAt" | "history">) => void;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-black/40" onClick={onClose}>
+      <div className="w-[min(760px,96vw)] rounded-2xl bg-white p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-lg font-semibold">{initial ? "Edit Maintenance" : "Add Maintenance"}</h2>
+          <button className="border rounded-md px-2 py-1" onClick={onClose}>
+            Close
+          </button>
+        </div>
+        <MaintForm initial={initial} onCancel={onClose} onSubmit={onSubmit} />
+      </div>
+    </div>
+  );
+}
+
+
+===== components\admin\maintenance\kpi\MaintenanceKpiBar.ui.tsx =====
 "use client";
 import * as React from "react";
+import type { Maintenance } from "@/lib/admin/maintenance/types";
+import { CheckCircle2, Clock3, AlertTriangle, ListChecks } from "lucide-react";
 
-export default function Pagination({
-  page, total, pageSize, onPrev, onNext
+type KPICounts = {
+  all: number;
+  submitted: number;
+  inProgress: number;
+  completed: number;
+  dueSoon: number;
+  overdue: number;
+};
+
+type Props = Partial<KPICounts> & { rows?: Maintenance[] };
+
+function computeFromRows(rows: Maintenance[]): KPICounts {
+  const s = (st: Maintenance["status"]) => rows.filter(r => r.status === st).length;
+  const d = (t: "ok" | "soon" | "overdue") => rows.filter(r => r.nextDueTint === t).length;
+  return {
+    all: rows.length,
+    submitted: s("Submitted"),
+    inProgress: s("In-Progress"),
+    completed: s("Completed"),
+    dueSoon: d("soon"),
+    overdue: d("overdue"),
+  };
+}
+
+function Card({
+  label,
+  value,
+  icon,
+  ring,
+  bg,
+  text,
 }: {
-  page: number;
-  total: number;
-  pageSize: number;
-  onPrev: () => void;
-  onNext: () => void;
+  label: string;
+  value: number;
+  icon: React.ReactNode;
+  ring: string;
+  bg: string;
+  text: string;
 }) {
-  const start = total ? (page - 1) * pageSize + 1 : 0;
-  const end = Math.min(total, page * pageSize);
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  return (
+    <div className={`rounded-2xl ring-1 ${ring} ${bg} ${text} p-4 md:p-5 shadow-sm`}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-3xl md:text-4xl font-semibold tabular-nums">{value}</div>
+        <div className="opacity-70">{icon}</div>
+      </div>
+      <div className="mt-1 text-xs opacity-70">{label}</div>
+    </div>
+  );
+}
+
+export default function MaintenanceKpiBar(props: Props) {
+  const data: KPICounts = props.rows
+    ? computeFromRows(props.rows)
+    : {
+        all: props.all ?? 0,
+        submitted: props.submitted ?? 0,
+        inProgress: props.inProgress ?? 0,
+        completed: props.completed ?? 0,
+        dueSoon: props.dueSoon ?? 0,
+        overdue: props.overdue ?? 0,
+      };
+
+  const [collapsed, setCollapsed] = React.useState(false);
 
   return (
-    <div className="flex items-center justify-between p-3">
-      <div className="text-xs text-gray-500">
-        Showing {start}-{end} of {total}
+    <div className="rounded-2xl border border-neutral-200 shadow-sm bg-white/70">
+      <div className="flex items-center justify-between px-4 md:px-5 py-3 border-b border-neutral-200">
+        <div className="text-sm font-medium text-neutral-700">Maintenance summary</div>
+        <button
+          onClick={() => setCollapsed((s) => !s)}
+          className="text-xs rounded-md border border-neutral-300 px-2 py-1 hover:bg-neutral-100"
+        >
+          {collapsed ? "Expand" : "Compact"}
+        </button>
+      </div>
+
+      {!collapsed ? (
+        <div className="p-4 md:p-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <Card label="All" value={data.all} icon={<ListChecks className="h-5 w-5" />} ring="ring-neutral-200" bg="bg-white" text="text-neutral-900" />
+          <Card label="Submitted" value={data.submitted} icon={<Clock3 className="h-5 w-5" />} ring="ring-sky-200" bg="bg-sky-50" text="text-sky-900" />
+          <Card label="In-Progress" value={data.inProgress} icon={<Clock3 className="h-5 w-5" />} ring="ring-violet-200" bg="bg-violet-50" text="text-violet-900" />
+          <Card label="Completed" value={data.completed} icon={<CheckCircle2 className="h-5 w-5" />} ring="ring-emerald-200" bg="bg-emerald-50" text="text-emerald-900" />
+          <Card label="Due Soon" value={data.dueSoon} icon={<AlertTriangle className="h-5 w-5" />} ring="ring-amber-200" bg="bg-amber-50" text="text-amber-900" />
+          <Card label="Overdue" value={data.overdue} icon={<AlertTriangle className="h-5 w-5" />} ring="ring-rose-200" bg="bg-rose-50" text="text-rose-900" />
+        </div>
+      ) : (
+        <div className="p-4 md:p-5 grid grid-cols-3 sm:grid-cols-6 gap-2 text-sm">
+          <div className="rounded-lg bg-neutral-50 border border-neutral-200 px-3 py-2">All: <strong className="tabular-nums">{data.all}</strong></div>
+          <div className="rounded-lg bg-neutral-50 border border-neutral-200 px-3 py-2">Submitted: <strong className="tabular-nums">{data.submitted}</strong></div>
+          <div className="rounded-lg bg-neutral-50 border border-neutral-200 px-3 py-2">In-Progress: <strong className="tabular-nums">{data.inProgress}</strong></div>
+          <div className="rounded-lg bg-neutral-50 border border-neutral-200 px-3 py-2">Completed: <strong className="tabular-nums">{data.completed}</strong></div>
+          <div className="rounded-lg bg-neutral-50 border border-neutral-200 px-3 py-2">Soon: <strong className="tabular-nums">{data.dueSoon}</strong></div>
+          <div className="rounded-lg bg-neutral-50 border border-neutral-200 px-3 py-2">Overdue: <strong className="tabular-nums">{data.overdue}</strong></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+===== components\admin\maintenance\table\Pagination.tsx =====
+"use client";
+export default function Pagination({
+  page, pageSize, total, onPage,
+}: { page: number; pageSize: number; total: number; onPage: (n: number) => void }) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  return (
+    <div className="flex items-center justify-between px-2 py-2 text-sm">
+      <div className="opacity-70">
+        Showing {(total && (page - 1) * pageSize + 1) || 0}–{Math.min(page * pageSize, total)} of {total}
       </div>
       <div className="flex items-center gap-2">
-        <button
-          className="rounded-full border px-3 py-1.5 text-sm disabled:opacity-50"
-          onClick={onPrev}
-          disabled={page === 1}
-          title="Prev"
-        >
-          Prev
-        </button>
-        <span className="text-sm">Page {page} / {totalPages}</span>
-        <button
-          className="rounded-full border px-3 py-1.5 text-sm disabled:opacity-50"
-          onClick={onNext}
-          disabled={page >= totalPages}
-          title="Next"
-        >
-          Next
-        </button>
+        <button className="rounded border px-2 py-1 disabled:opacity-50" disabled={page <= 1} onClick={()=>onPage(page-1)}>Prev</button>
+        <span>Page {page} / {totalPages}</span>
+        <button className="rounded border px-2 py-1 disabled:opacity-50" disabled={page >= totalPages} onClick={()=>onPage(page+1)}>Next</button>
       </div>
     </div>
   );
@@ -8684,31 +9109,19 @@ export default function Pagination({
 "use client";
 import * as React from "react";
 
-export default function TableHeader({
-  allOnPageSelected,
-  onToggleAll,
-}: {
-  allOnPageSelected: boolean;
-  onToggleAll: (checked: boolean) => void;
-}) {
+export default function TableHeader() {
   return (
-    <thead className="bg-gray-50 text-gray-600 sticky top-0 z-10">
+    <thead className="text-xs uppercase tracking-wide text-neutral-500">
       <tr>
-        <th className="w-10 p-2 text-left">
-          <input
-            type="checkbox"
-            checked={allOnPageSelected}
-            onChange={(e) => onToggleAll(e.currentTarget.checked)}
-            aria-label="Select all on page"
-          />
-        </th>
-        <th className="p-2 text-left">Vehicle</th>
-        <th className="p-2 text-left">Plate</th>
-        <th className="p-2 text-left">Type</th>
-        <th className="p-2 text-left">Status</th>
-        <th className="p-2 text-left">Cost</th>
-        <th className="p-2 text-left">Date</th>
-        <th className="p-2 text-right">Actions</th>
+        <th className="px-3 py-2 text-left w-8"></th>
+        <th className="px-3 py-2 text-left">Vehicle</th>
+        <th className="px-3 py-2 text-left">Type</th>
+        <th className="px-3 py-2 text-left">Status</th>
+        <th className="px-3 py-2 text-left">Attachments</th>
+        <th className="px-3 py-2 text-left">Cost</th>
+        <th className="px-3 py-2 text-left">Date</th>
+        <th className="px-3 py-2 text-left">Next Due</th>
+        <th className="px-3 py-2 text-left">Actions</th>
       </tr>
     </thead>
   );
@@ -8718,63 +9131,93 @@ export default function TableHeader({
 ===== components\admin\maintenance\table\TableRow.tsx =====
 "use client";
 import * as React from "react";
-import type { Maintenance } from "@/lib/admin/maintenance/types";
-import { Pencil, Trash2 } from "lucide-react";
-import StatusChip from "@/components/common/ui/StatusChip.ui";
+import type { Maintenance, MaintStatus } from "@/lib/admin/maintenance/types";
+import { updateMaintenance } from "@/lib/admin/maintenance/handlers";
+import StatusBadge from "../ui/StatusBadge";
+import AttachmentBadges from "../ui/AttachmentBadges.ui";
 
-const php = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 });
-
-function pick(r: Maintenance, ...keys: string[]) {
-  for (const k of keys) {
-    const v = (r as any)[k];
-    if (v !== undefined && v !== null && v !== "") return v;
-  }
-  return "";
-}
-const getCost = (r: Maintenance) => {
-  const v = pick(r, "cost", "amount", "totalCost", "price") as any;
-  const n = Number(v); return Number.isFinite(n) ? n : 0;
+type Props = {
+  r: Maintenance;
+  checked: boolean;
+  onCheck: (id: string) => void;
+  onChangeStatus: (id: string, next: MaintStatus) => void;
+  onView: (r: Maintenance) => void;
+  onEdit: (id: string) => void;
+  onDelete: (id: string) => void;
 };
 
 export default function TableRow({
-  row, checked, onToggle, onEdit, onDelete
-}: {
-  row: Maintenance;
-  checked: boolean;
-  onToggle: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  const status = String(pick(row, "status", "state") || "");
+  r, checked, onCheck, onChangeStatus, onView, onEdit, onDelete,
+}: Props) {
+  const [busy, setBusy] = React.useState(false);
+
+  async function changeStatus(next: MaintStatus) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const updated = await updateMaintenance(r.id, { status: next });
+      onChangeStatus(r.id, updated.status);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
-    <tr className="border-t even:bg-gray-50/40 hover:bg-gray-50 transition-colors">
-      <td className="p-2">
-        <input type="checkbox" checked={checked} onChange={onToggle} aria-label="Select row" />
+    <tr className="align-top">
+      {/* checkbox */}
+      <td className="pl-2 pr-3 pt-3">
+        <input type="checkbox" checked={checked} onChange={() => onCheck(r.id)} />
       </td>
-      <td className="p-2">{pick(row, "vehicleCode", "vehicle", "unit")}</td>
-      <td className="p-2">{pick(row, "plateNo", "plate", "plateNumber")}</td>
-      <td className="p-2">{pick(row, "type", "category", "kind")}</td>
-      <td className="p-2"><StatusChip status={status} /></td>
-      <td className="p-2">{php.format(getCost(row))}</td>
-      <td className="p-2">{pick(row, "date", "serviceDate", "performedAt", "updatedAt", "createdAt")}</td>
-      <td className="p-2 text-right">
-        <div className="inline-flex gap-1">
-          <button
-            onClick={onEdit}
-            className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 bg-white hover:bg-gray-50"
-            aria-label="Edit"
-          >
-            <Pencil size={14} /> Edit
-          </button>
-          <button
-            onClick={onDelete}
-            className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 bg-white text-rose-700 hover:bg-rose-50"
-            aria-label="Delete"
-          >
-            <Trash2 size={14} /> Delete
-          </button>
-        </div>
+
+      {/* vehicle */}
+      <td className="py-3">
+        <div className="font-medium">{r.vehicle}</div>
+        <div className="text-xs text-neutral-500">{r.vendor}</div>
+      </td>
+
+      {/* type */}
+      <td className="py-3">
+        <span className="inline-flex px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-700 text-xs ring-1 ring-neutral-200">
+          {r.type}
+        </span>
+      </td>
+
+      {/* status (colored pill is the control; right dropdown removed) */}
+      <td className="py-3">
+        <StatusBadge value={r.status} onChange={changeStatus} />
+      </td>
+
+      {/* attachments (IMG/PDF clickable) */}
+      <td className="py-3">
+        <AttachmentBadges items={r.attachments ?? []} />
+      </td>
+
+      {/* cost */}
+      <td className="py-3">PHP {Number(r.costPhp ?? 0).toLocaleString()}</td>
+
+      {/* date */}
+      <td className="py-3 whitespace-nowrap">
+        {r.date
+          ? new Date(r.date).toLocaleDateString(undefined, { month: "short", day: "2-digit", year: "numeric" })
+          : "—"}
+      </td>
+
+      {/* next due */}
+      <td className="py-3">
+        {r.nextDueDateISO ? (
+          <span className="inline-flex px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 text-xs">
+            {new Date(r.nextDueDateISO).toLocaleDateString(undefined, { month: "short", day: "2-digit", year: "numeric" })}
+          </span>
+        ) : (
+          "—"
+        )}
+      </td>
+
+      {/* actions */}
+      <td className="py-3 space-x-2">
+        <button className="px-2 py-1 rounded-md border text-xs" onClick={() => onView(r)}>View</button>
+        <button className="px-2 py-1 rounded-md border text-xs" onClick={() => onEdit(r.id)}>Edit</button>
+        <button className="px-2 py-1 rounded-md border text-xs text-rose-600" onClick={() => onDelete(r.id)}>Delete</button>
       </td>
     </tr>
   );
@@ -8782,331 +9225,592 @@ export default function TableRow({
 
 
 ===== components\admin\maintenance\table\index.tsx =====
-// src/components/admin/maintenance/table/index.tsx
-"use client";
-import * as React from "react";
-import type { Maintenance } from "@/lib/admin/maintenance/types";
-import TableHeader from "./TableHeader";
-import TableRow from "./TableRow";
-import Pagination from "./Pagination";
-import Toolbar from "@/components/admin/maintenance/toolbar/Toolbar";
-// ⬇ keep your common UI that actually matches your repo
-import EmptyState from "@/components/common/ui/EmptyState.ui";
-import SkeletonTable from "@/components/common/ui/SkeletonTable.ui";
+export { default as MaintTable } from "./table";
+export * from "./table";
 
-export type MaintTableHandle = { getVisibleIds: () => string[] };
+
+===== components\admin\maintenance\table\table.tsx =====
+"use client";
+
+import * as React from "react";
+import type { Maintenance, MaintStatus } from "@/lib/admin/maintenance/types";
+import { updateMaintenance, deleteMaintenance } from "@/lib/admin/maintenance/handlers";
+import StatusSwitch from "../ui/StatusSwitch";
+import AttachmentBadges from "../ui/AttachmentBadges.ui";
+import TypeBadge from "../ui/TypeBadge";
+
+export type MaintTableHandle = { focus?: () => void };
 
 type Props = {
-  loading?: boolean;
   rows: Maintenance[];
-  selection: string[];
-  setSelection: (ids: string[]) => void;
-  onEdit: (id: string) => void;
-  onDelete: (id: string) => void;
-  onExport: () => void;
-  onDeleteSelected: () => void;
-  onAdd: () => void;
-  pageSize?: number;
+  loading?: boolean;
+  onUpdated?: (row: Maintenance) => void;
+  onDeleted?: (id: string) => void;
 };
 
-function InnerTable(
-  {
-    loading = false,
-    rows,
-    selection,
-    setSelection,
-    onEdit,
-    onDelete,
-    onExport,
-    onDeleteSelected,
-    onAdd,
-    pageSize = 10,
-  }: Props,
-  ref: React.Ref<MaintTableHandle>
+const COLORS: Record<MaintStatus, string> = {
+  Submitted: "bg-indigo-50 text-indigo-700 ring-indigo-200",
+  Acknowledged: "bg-blue-50 text-blue-700 ring-blue-200",
+  "In-Progress": "bg-amber-50 text-amber-800 ring-amber-200",
+  Completed: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  Rejected: "bg-rose-50 text-rose-700 ring-rose-200",
+};
+
+const MaintTable = React.forwardRef<MaintTableHandle, Props>(function MaintTable(
+  { rows, loading, onUpdated, onDeleted },
+  _ref,
 ) {
-  const [page, setPage] = React.useState(1);
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
-  React.useEffect(() => { setPage((p) => Math.min(p, totalPages)); }, [rows.length, pageSize, totalPages]);
-
-  const start = (page - 1) * pageSize;
-  const visible = rows.slice(start, start + pageSize);
-
-  React.useImperativeHandle(ref, () => ({ getVisibleIds: () => visible.map((r: any) => r.id) }), [visible]);
-
-  const allOnPageSelected = visible.length > 0 && visible.every((r: any) => selection.includes(r.id));
-  const toggleSelectAllOnPage = (checked: boolean) => {
-    if (!visible.length) return;
-    if (checked) {
-      const merged = new Set([...selection, ...visible.map((r: any) => r.id)]);
-      setSelection(Array.from(merged));
-    } else {
-      const minus = new Set(selection);
-      visible.forEach((r: any) => minus.delete(r.id));
-      setSelection(Array.from(minus));
-    }
-  };
+  async function changeStatus(row: Maintenance, next: MaintStatus) {
+    const updated = await updateMaintenance(row.id, { status: next });
+    if (updated) onUpdated?.(updated);
+  }
 
   return (
-    <div className="rounded-2xl border bg-white shadow-sm">
-      <div className="flex items-center justify-between p-3">
-        <h2 className="text-base font-semibold">Maintenance Records</h2>
-        <Toolbar
-          selectionCount={selection.length}
-          onExport={onExport}
-          onDeleteSelected={onDeleteSelected}
-          onAdd={onAdd}
-        />
-      </div>
+    <table className="min-w-full text-sm text-neutral-800">
+      <thead>
+        <tr className="text-xs uppercase text-neutral-500">
+          <th className="py-2 text-left">Vehicle</th>
+          <th className="py-2 text-left">Type</th>
+          <th className="py-2 text-left">Status</th>
+          <th className="py-2 text-left">Attachments</th>
+          <th className="py-2 text-right">Cost</th>
+          <th className="py-2 text-left">Date</th>
+          <th className="py-2 text-left">Next Due</th>
+          <th className="py-2 text-right">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.id} className="border-t">
+            <td className="py-3">
+              <div className="font-medium">{r.vehicle}</div>
+              <div className="text-xs text-neutral-500">{r.vendor}</div>
+            </td>
 
-      {loading ? (
-        <div className="p-3">
-          <SkeletonTable rows={6} cols={8} />
-        </div>
-      ) : rows.length === 0 ? (
-        <EmptyState
-          title="No maintenance records"
-          description="Try adjusting your filters or add a new record."
-          action={
-            <button
-              onClick={onAdd}
-              className="rounded-xl px-4 py-2 bg-[#7a0019] text-white hover:brightness-110"
-            >
-              Add Maintenance
-            </button>
-          }
-        />
-      ) : (
-        <>
-          <div className="overflow-x-auto">
-            <table className="min-w-[840px] w-full text-sm">
-              <TableHeader allOnPageSelected={allOnPageSelected} onToggleAll={toggleSelectAllOnPage} />
-              <tbody>
-                {visible.map((r: any) => (
-                  <TableRow
-                    key={r.id}
-                    row={r}
-                    checked={selection.includes(r.id)}
-                    onToggle={() => {
-                      const s = new Set(selection);
-                      s.has(r.id) ? s.delete(r.id) : s.add(r.id);
-                      setSelection(Array.from(s));
-                    }}
-                    onEdit={() => onEdit(r.id)}
-                    onDelete={() => onDelete(r.id)}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
+            <td className="py-3"><TypeBadge value={r.type} /></td>
 
-          <Pagination
-            page={page}
-            total={rows.length}
-            pageSize={pageSize}
-            onPrev={() => setPage((p) => Math.max(1, p - 1))}
-            onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
-          />
-        </>
-      )}
-    </div>
+            <td className="py-3">
+              <StatusSwitch value={r.status} onChange={(s) => changeStatus(r, s)} />
+            </td>
+
+            <td className="py-3">
+              <AttachmentBadges items={r.attachments} />
+            </td>
+
+            <td className="py-3 text-right">{(r.costPhp ?? 0).toLocaleString("en-PH", { style: "currency", currency: "PHP" })}</td>
+
+            <td className="py-3">{new Date(r.date).toLocaleDateString()}</td>
+
+            <td className="py-3">
+              {r.nextDueDateISO ? new Date(r.nextDueDateISO).toLocaleDateString() : "—"}
+            </td>
+
+            <td className="py-3 text-right">
+              <button
+                className="px-2 py-1 text-xs rounded-md border mr-1"
+                onClick={() => onUpdated?.(r)}
+                title="View"
+              >
+                View
+              </button>
+              <button
+                className="px-2 py-1 text-xs rounded-md border"
+                onClick={() => {
+                  deleteMaintenance(r.id);
+                  onDeleted?.(r.id);
+                }}
+                title="Delete"
+              >
+                Delete
+              </button>
+            </td>
+          </tr>
+        ))}
+
+        {rows.length === 0 && !loading && (
+          <tr>
+            <td colSpan={8} className="py-14 text-center text-neutral-500">
+              No results. Adjust filters or add a record.
+            </td>
+          </tr>
+        )}
+        {loading && (
+          <tr>
+            <td colSpan={8} className="py-10 text-center text-neutral-500">
+              Loading…
+            </td>
+          </tr>
+        )}
+      </tbody>
+    </table>
   );
-}
+});
 
-const Table = React.forwardRef(InnerTable);
-export default Table;
+export default MaintTable;
 
 
 ===== components\admin\maintenance\toolbar\Toolbar.tsx =====
 "use client";
-import * as React from "react";
-import { Download, Trash2, Plus } from "lucide-react";
+import { Plus, Trash2, Download } from "lucide-react";
 
 export default function Toolbar({
-  selectionCount, onExport, onDeleteSelected, onAdd
+  selectedCount,
+  onAdd,
+  onExport,
+  onDeleteSelected,
 }: {
-  selectionCount: number;
+  selectedCount: number;
+  onAdd: () => void;
   onExport: () => void;
   onDeleteSelected: () => void;
-  onAdd: () => void;
 }) {
-  const Primary = "bg-[#7a0019] text-white hover:brightness-110";
-  const Ghost = "border bg-white hover:bg-gray-50";
+  return (
+    <div className="flex items-center justify-between">
+      <div className="text-sm font-medium">Maintenance</div>
+      <div className="flex items-center gap-2">
+        <button onClick={onExport} className="inline-flex items-center gap-2 rounded-md border bg-white px-3 py-1.5 text-sm">
+          <Download size={16}/> Export CSV
+        </button>
+        <button disabled={!selectedCount} onClick={onDeleteSelected} className="inline-flex items-center gap-2 rounded-md border bg-white px-3 py-1.5 text-sm disabled:opacity-50">
+          <Trash2 size={16}/> Delete Selected
+        </button>
+        <button onClick={onAdd} className="inline-flex items-center gap-2 rounded-md bg-[#7A0010] px-3 py-1.5 text-sm text-white">
+          <Plus size={16}/> Add
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
+===== components\admin\maintenance\ui\AttachmentBadges.ui.tsx =====
+"use client";
+import * as React from "react";
+import type { MaintAttachment } from "@/lib/admin/maintenance/types";
+import AttachmentLightbox from "./AttachmentLightbox.ui";
+
+type Props = { items: MaintAttachment[] };
+
+export default function AttachmentBadges({ items }: Props) {
+  const [open, setOpen] = React.useState(false);
+  const [current, setCurrent] = React.useState<MaintAttachment | null>(null);
+
+  if (!items || items.length === 0) {
+    return <span className="text-neutral-400 text-xs">0</span>;
+  }
+
+  const openItem = (att: MaintAttachment) => {
+    setCurrent(att);
+    setOpen(true);
+  };
 
   return (
-    <div className="flex items-center gap-2">
-      <button
-        onClick={onExport}
-        className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl ${Ghost}`}
-        title="Ctrl+Enter"
-        aria-label="Export CSV"
-      >
-        <Download size={16} /> Export
-      </button>
+    <>
+      <div className="flex flex-wrap items-center gap-2">
+        {items.map((att) =>
+          att.kind === "img" ? (
+            <button
+              key={att.id}
+              type="button"
+              title={att.name}
+              onClick={() => openItem(att)}
+              className="h-8 w-8 overflow-hidden rounded-md ring-1 ring-neutral-200 hover:ring-neutral-300"
+            >
+              <img src={att.url} alt={att.name} className="h-full w-full object-cover" />
+            </button>
+          ) : (
+            <a
+              key={att.id}
+              href={att.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-neutral-100 ring-1 ring-neutral-200 text-xs hover:bg-neutral-200"
+              title={att.name}
+            >
+              {/* icon class assumes lucide or similar is already loaded in your project */}
+              <span className="i-lucide-file-text h-3.5 w-3.5" aria-hidden />
+              <span>PDF</span>
+            </a>
+          )
+        )}
+        <span className="text-[10px] text-neutral-500 ml-1">{items.length}</span>
+      </div>
 
-      <button
-        disabled={!selectionCount}
-        onClick={onDeleteSelected}
-        className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl ${Ghost} disabled:opacity-50`}
-        title="Delete selected"
-        aria-label="Delete selected"
-      >
-        <Trash2 size={16} /> Delete ({selectionCount || 0})
-      </button>
+      <AttachmentLightbox open={open} item={current} onClose={() => setOpen(false)} />
+    </>
+  );
+}
 
-      <button
-        onClick={onAdd}
-        className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl ${Primary}`}
-        title="Alt+N"
-        aria-label="Add record"
+
+===== components\admin\maintenance\ui\AttachmentLightbox.ui.tsx =====
+"use client";
+import * as React from "react";
+import type { MaintAttachment } from "@/lib/admin/maintenance/types";
+
+export default function AttachmentLightbox({
+  open,
+  item,
+  onClose,
+}: {
+  open: boolean;
+  item: MaintAttachment | null;
+  onClose: () => void;
+}) {
+  if (!open || !item) return null;
+  const isImg = item.kind === "img";
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60" onClick={onClose}>
+      <div
+        className="max-w-[90vw] max-h-[85vh] bg-white rounded-xl shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
       >
-        <Plus size={16} /> Add
-      </button>
+        <div className="flex items-center justify-between px-4 py-2 border-b">
+          <div className="text-sm font-medium truncate">{item.name}</div>
+          <div className="flex items-center gap-2">
+            <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-xs underline">
+              Open
+            </a>
+            <button onClick={onClose} className="text-xs px-2 py-1 border rounded-md">
+              Close
+            </button>
+          </div>
+        </div>
+
+        <div className="p-3">
+          {isImg ? (
+            <img src={item.url} alt={item.name} className="max-h-[70vh] max-w-[86vw] object-contain" />
+          ) : (
+            <iframe src={item.url} title={item.name} className="h-[70vh] w-[86vw] border" />
+          )}
+        </div>
+      </div>
     </div>
+  );
+}
+
+
+===== components\admin\maintenance\ui\AttachmentsGrid.ui.tsx =====
+"use client";
+import { FileText, Image as ImgIcon, File } from "lucide-react";
+import type { MaintAttachment } from "@/lib/admin/maintenance/types";
+
+type Props = {
+  items?: MaintAttachment[];
+  onOpenLightbox?: (index: number) => void;
+};
+
+export default function AttachmentsGrid({ items = [], onOpenLightbox }: Props) {
+  if (!items.length) {
+    return (
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <DocTile label="No preview available" muted />
+      </div>
+    );
+  }
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      {items.map((a, i) => (
+        <DocTile
+          key={a.id}
+          label={a.name || (a.kind === "pdf" ? "PDF document" : "Image")}
+          kind={a.kind}
+          onClick={() => onOpenLightbox?.(i)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function DocTile({
+  label,
+  kind,
+  muted,
+  onClick,
+}: {
+  label: string;
+  kind?: "pdf" | "image";
+  muted?: boolean;
+  onClick?: () => void;
+}) {
+  const tone =
+    muted
+      ? "border-dashed border-neutral-300 bg-neutral-50 text-neutral-400"
+      : kind === "pdf"
+      ? "border-rose-200 bg-rose-50 text-rose-700"
+      : kind === "image"
+      ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+      : "border-neutral-200 bg-white text-neutral-700";
+
+  const Icon =
+    muted ? File : kind === "pdf" ? FileText : kind === "image" ? ImgIcon : File;
+
+  const badge =
+    kind === "pdf" ? "PDF" : kind === "image" ? "IMG" : undefined;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        "relative w-full aspect-[3/4] rounded-2xl border",
+        "flex items-center justify-center",
+        "shadow-sm hover:shadow-md transition",
+        tone,
+      ].join(" ")}
+    >
+      {/* document header */}
+      <div className="absolute top-0 left-0 right-0 h-8 rounded-t-2xl bg-white/60 border-b border-inherit" />
+      {/* badge */}
+      {badge && (
+        <div className="absolute top-2 left-2 text-[10px] px-2 py-0.5 rounded-full bg-white/80 border border-inherit">
+          {badge}
+        </div>
+      )}
+      <div className="flex flex-col items-center gap-2 px-3 text-xs">
+        <Icon className="h-6 w-6 opacity-80" />
+        <div className="line-clamp-2 text-center leading-tight">{label}</div>
+        {!muted && <div className="text-[10px] opacity-60">Tap to preview</div>}
+      </div>
+    </button>
+  );
+}
+
+
+===== components\admin\maintenance\ui\MaintenanceDrawer.ui.tsx =====
+"use client";
+import * as React from "react";
+import type { Maintenance } from "@/lib/admin/maintenance/types";
+import { X } from "lucide-react";
+import AttachmentsGrid from "./AttachmentsGrid.ui";
+
+function peso(v?: number | null){ if(v==null) return "—"; return `PHP ${new Intl.NumberFormat("en-PH",{minimumFractionDigits:2,maximumFractionDigits:2}).format(v)}`; }
+function fmt(iso?: string){ return iso ? new Date(iso).toLocaleDateString("en-PH",{year:"numeric",month:"short",day:"2-digit"}) : "—"; }
+
+export default function MaintenanceDrawer({ open, row, onClose }: { open: boolean; row: Maintenance | null; onClose: () => void }) {
+  if (!open || !row) return null;
+  return (
+    <div className="fixed inset-0 z-[70]">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <div className="absolute right-0 top-0 h-full w-full sm:w-[560px] bg-white shadow-2xl">
+        <header className="flex items-center justify-between h-14 border-b px-5">
+          <div className="font-semibold">Maintenance Record</div>
+          <button onClick={onClose} className="p-2 rounded hover:bg-neutral-100"><X size={18}/></button>
+        </header>
+
+        <div className="p-5 space-y-6 overflow-auto h-[calc(100%-56px)]">
+          <section className="grid grid-cols-2 gap-3">
+            <Field label="Vehicle" value={row.vehicle} />
+            <Field label="Type" value={row.type} />
+            <Field label="Status" value={row.status} />
+            <Field label="Date" value={fmt(row.date)} />
+            <Field label="Vendor" value={row.vendor || "—"} />
+            <Field label="Cost" value={peso(row.costPhp ?? undefined)} />
+            <Field label="Next Due" value={row.nextDueDateISO ? `${fmt(row.nextDueDateISO)}${row.nextDueOdometer ? ` • ${row.nextDueOdometer.toLocaleString()} km` : ""}` : "—"} />
+            <Field label="Odo @ Service" value={row.odometerAtService != null ? `${row.odometerAtService.toLocaleString()} km` : "—"} />
+          </section>
+
+          {row.description && (
+            <section>
+              <div className="text-xs text-neutral-500 mb-1">Description</div>
+              <div className="text-neutral-800">{row.description}</div>
+            </section>
+          )}
+
+          <section>
+            <div className="text-xs text-neutral-500 mb-2">Attachments</div>
+            <AttachmentsGrid items={row.attachments || []} />
+          </section>
+
+          <section>
+            <div className="text-xs text-neutral-500 mb-2">History</div>
+            <div className="space-y-2">
+              {(row.history || []).map((h, i) => (
+                <div key={i} className="flex items-start gap-3">
+                  <div className="w-1.5 h-1.5 mt-2 rounded-full bg-[#7a1f2a]" />
+                  <div>
+                    <div className="text-neutral-900">{h.action}</div>
+                    <div className="text-xs text-neutral-500">{new Date(h.atISO).toLocaleString()} • {h.actor}</div>
+                    {h.notes && <div className="text-xs text-neutral-700">{h.notes}</div>}
+                  </div>
+                </div>
+              ))}
+              {!row.history?.length && <div className="text-neutral-400 italic">No history</div>}
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-xs text-neutral-500">{label}</div>
+      <div className="text-neutral-900">{value}</div>
+    </div>
+  );
+}
+
+
+===== components\admin\maintenance\ui\MaintenanceTable.ui.tsx =====
+// Keep compatibility if something imports this path
+export { default } from "../table";
+
+
+===== components\admin\maintenance\ui\RecordDrawer.ui.tsx =====
+export { default } from "./MaintenanceDrawer.ui";
+
+
+===== components\admin\maintenance\ui\StatusBadge.tsx =====
+"use client";
+import * as React from "react";
+import type { MaintStatus } from "@/lib/admin/maintenance/types";
+
+type Props = {
+  value: MaintStatus;
+  onChange?: (next: MaintStatus) => void; // when provided, pill becomes clickable
+  className?: string;
+};
+
+const COLORS: Record<
+  MaintStatus,
+  { dot: string; bg: string; ring: string; text: string }
+> = {
+  Submitted:     { dot: "bg-indigo-500",  bg: "bg-indigo-50",  ring: "ring-indigo-200",  text: "text-indigo-700" },
+  Acknowledged:  { dot: "bg-sky-500",     bg: "bg-sky-50",     ring: "ring-sky-200",     text: "text-sky-700" },
+  "In-Progress": { dot: "bg-amber-500",   bg: "bg-amber-50",   ring: "ring-amber-200",   text: "text-amber-700" },
+  Completed:     { dot: "bg-emerald-500", bg: "bg-emerald-50", ring: "ring-emerald-200", text: "text-emerald-700" },
+  Rejected:      { dot: "bg-rose-500",    bg: "bg-rose-50",    ring: "ring-rose-200",    text: "text-rose-700" },
+};
+
+const ORDER: MaintStatus[] = [
+  "Submitted",
+  "Acknowledged",
+  "In-Progress",
+  "Completed",
+  "Rejected",
+];
+
+export default function StatusBadge({ value, onChange, className }: Props) {
+  const c = COLORS[value];
+  const interactive = !!onChange;
+
+  const click = () => {
+    if (!onChange) return;
+    const i = ORDER.indexOf(value);
+    const next = ORDER[(i + 1) % ORDER.length];
+    onChange(next);
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={click}
+      aria-label={interactive ? `Change status (current: ${value})` : value}
+      className={[
+        "inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-medium ring-1",
+        c.bg, c.ring, c.text,
+        interactive ? "hover:brightness-95 transition-colors" : "cursor-default",
+        className ?? "",
+      ].join(" ")}
+    >
+      <span className={["h-2 w-2 rounded-full", c.dot].join(" ")} />
+      <span>{value}</span>
+    </button>
+  );
+}
+
+
+===== components\admin\maintenance\ui\StatusSwitch.tsx =====
+"use client";
+
+import * as React from "react";
+import type { MaintStatus } from "@/lib/admin/maintenance/types";
+
+const ORDER: MaintStatus[] = ["Submitted", "Acknowledged", "In-Progress", "Completed", "Rejected"];
+
+const COLORS: Record<MaintStatus, string> = {
+  Submitted: "bg-indigo-50 text-indigo-700 ring-indigo-200",
+  Acknowledged: "bg-blue-50 text-blue-700 ring-blue-200",
+  "In-Progress": "bg-amber-50 text-amber-800 ring-amber-200",
+  Completed: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  Rejected: "bg-rose-50 text-rose-700 ring-rose-200",
+};
+
+type Props = {
+  value: MaintStatus;
+  onChange?: (status: MaintStatus) => void;
+  disabled?: boolean;
+};
+
+export default function StatusSwitch({ value, onChange, disabled }: Props) {
+  return (
+    <div className="flex gap-1">
+      {ORDER.map((s) => (
+        <button
+          type="button"
+          key={s}
+          disabled={disabled}
+          className={[
+            "px-2 py-1 rounded-full text-xs font-medium ring-1 transition",
+            value === s ? COLORS[s] : "bg-neutral-50 text-neutral-600 ring-neutral-200 hover:bg-neutral-100",
+          ].join(" ")}
+          onClick={() => onChange?.(s)}
+        >
+          {s}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+
+===== components\admin\maintenance\ui\TypeBadge.tsx =====
+"use client";
+
+import * as React from "react";
+import type { MaintType } from "@/lib/admin/maintenance/types";
+
+type Props = { value?: MaintType; className?: string; type?: MaintType };
+
+const MAP: Record<MaintType, { bg: string; text: string; ring: string }> = {
+  PMS: { bg: "bg-teal-50", text: "text-teal-700", ring: "ring-teal-200" },
+  Repair: { bg: "bg-orange-50", text: "text-orange-700", ring: "ring-orange-200" },
+  LTORenewal: { bg: "bg-cyan-50", text: "text-cyan-700", ring: "ring-cyan-200" },
+  InsuranceRenewal: { bg: "bg-sky-50", text: "text-sky-700", ring: "ring-sky-200" },
+  Vulcanize: { bg: "bg-yellow-50", text: "text-yellow-800", ring: "ring-yellow-200" },
+  Other: { bg: "bg-neutral-100", text: "text-neutral-800", ring: "ring-neutral-200" },
+};
+
+export default function TypeBadge(props: Props) {
+  const val = (props.value ?? props.type) || "Other";
+  const c = MAP[val];
+  return (
+    <span
+      className={[
+        "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ring-1 ring-inset",
+        c.bg,
+        c.text,
+        c.ring,
+        props.className || "",
+      ].join(" ")}
+    >
+      {val}
+    </span>
   );
 }
 
 
 ===== components\admin\modals\MaintenanceModal.tsx =====
-"use client";
-
-import { useEffect } from "react";
-
-export default function MaintenanceModal({
-  open,
-  onClose,
-}: {
-  open: boolean;
-  onClose: () => void;
-}) {
-  useEffect(() => {
-    const onEsc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onEsc);
-    return () => document.removeEventListener("keydown", onEsc);
-  }, [onClose]);
-
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative w-full max-w-xl rounded-xl bg-white p-4 shadow-2xl">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-base font-semibold">New Maintenance Log</h3>
-          <button onClick={onClose} className="rounded-md p-1 hover:bg-neutral-100">✕</button>
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-neutral-600">Vehicle</span>
-            <input className="rounded-md border px-2 py-1.5 text-sm" placeholder="e.g., VAN-12" />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-neutral-600">Type</span>
-            <select className="rounded-md border px-2 py-1.5 text-sm">
-              <option>Corrective</option>
-              <option>Preventive</option>
-            </select>
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-neutral-600">Odometer</span>
-            <input type="number" className="rounded-md border px-2 py-1.5 text-sm" placeholder="km" />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-neutral-600">Date</span>
-            <input type="date" className="rounded-md border px-2 py-1.5 text-sm" />
-          </label>
-          <label className="col-span-full flex flex-col gap-1">
-            <span className="text-xs text-neutral-600">Notes</span>
-            <textarea className="min-h-[80px] rounded-md border px-2 py-1.5 text-sm" placeholder="Work performed, parts used…" />
-          </label>
-        </div>
-
-        <div className="mt-4 flex items-center justify-end gap-2">
-          <button onClick={onClose} className="rounded-md border px-3 py-1.5 text-sm hover:bg-neutral-50">
-            Cancel
-          </button>
-          <button className="rounded-md bg-[#7A0010] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#60000C]">
-            Save
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+// Use alias para walang path weirdness
+export { default } from "@/components/admin/maintenance/forms/NewReportModal.ui";
 
 
 ===== components\admin\modals\ScheduleModal.tsx =====
-"use client";
-
-import { useEffect, useRef } from "react";
-
-export default function ScheduleModal({
-  open,
-  onClose,
-}: {
-  open: boolean;
-  onClose: () => void;
-}) {
-  const dialogRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const onEsc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onEsc);
-    return () => document.removeEventListener("keydown", onEsc);
-  }, [onClose]);
-
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        className="relative w-full max-w-xl rounded-xl bg-white p-4 shadow-2xl"
-      >
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-base font-semibold">Create Schedule</h3>
-          <button onClick={onClose} className="rounded-md p-1 hover:bg-neutral-100">
-            ✕
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-neutral-600">Vehicle</span>
-            <input className="rounded-md border px-2 py-1.5 text-sm" placeholder="e.g., VAN-12" />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-neutral-600">Driver</span>
-            <input className="rounded-md border px-2 py-1.5 text-sm" placeholder="Driver name" />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-neutral-600">Start date</span>
-            <input type="date" className="rounded-md border px-2 py-1.5 text-sm" />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-neutral-600">End date</span>
-            <input type="date" className="rounded-md border px-2 py-1.5 text-sm" />
-          </label>
-          <label className="col-span-full flex items-center gap-2">
-            <input type="checkbox" className="h-4 w-4" />
-            <span className="text-sm">Recurring (weekly)</span>
-          </label>
-        </div>
-
-        <div className="mt-4 flex items-center justify-end gap-2">
-          <button onClick={onClose} className="rounded-md border px-3 py-1.5 text-sm hover:bg-neutral-50">
-            Cancel
-          </button>
-          <button className="rounded-md bg-[#7A0010] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#60000C]">
-            Save
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+// placeholder to avoid import errors in older code paths
+export default function ScheduleModal(){ return null; }
 
 
 ===== components\admin\nav\ActionsGroup.tsx =====
@@ -11323,6 +12027,58 @@ export default function RequestDetails({ id }: { id: string }) {
 }
 
 
+===== components\admin\requests\containers\AdminRequestFormSheet.container.tsx =====
+"use client";
+
+import * as React from "react";
+import { Dialog, DialogPanel, Transition, TransitionChild } from "@headlessui/react";
+import TravelOrderFormAdmin from "../forms/TravelOrderForm.ui";
+
+type Props = { open: boolean; onClose: () => void };
+
+export default function AdminRequestFormSheet({ open, onClose }: Props) {
+  return (
+    <Transition show={open}>
+      <Dialog onClose={onClose} className="relative z-50">
+        <TransitionChild
+          enter="transition-opacity duration-150"
+          enterFrom="opacity-0"
+          enterTo="opacity-100"
+          leave="transition-opacity duration-150"
+          leaveFrom="opacity-100"
+          leaveTo="opacity-0"
+        >
+          <div className="fixed inset-0 bg-black/30" />
+        </TransitionChild>
+
+        <div className="fixed inset-0 overflow-y-auto">
+          <div className="flex min-h-full items-start justify-center p-4 sm:p-6">
+            <TransitionChild
+              enter="transition duration-200 ease-out"
+              enterFrom="opacity-0 translate-y-2 sm:scale-95"
+              enterTo="opacity-100 translate-y-0 sm:scale-100"
+              leave="transition duration-150 ease-in"
+              leaveFrom="opacity-100 translate-y-0 sm:scale-100"
+              leaveTo="opacity-0 translate-y-2 sm:scale-95"
+            >
+              <DialogPanel className="w-full max-w-5xl rounded-2xl bg-neutral-50 p-4 sm:p-6 shadow-xl">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="text-lg font-semibold">New Travel Order</h2>
+                  <button onClick={onClose} className="rounded-lg px-2 py-1 text-sm hover:bg-neutral-100">
+                    Close
+                  </button>
+                </div>
+                <TravelOrderFormAdmin onClose={onClose} />
+              </DialogPanel>
+            </TransitionChild>
+          </div>
+        </div>
+      </Dialog>
+    </Transition>
+  );
+}
+
+
 ===== components\admin\requests\containers\BulkBar.container.tsx =====
 "use client";
 import React, { forwardRef, useImperativeHandle, useMemo, useState } from "react";
@@ -11857,6 +12613,409 @@ function defaultName(f: FilterState) {
 }
 
 
+===== components\admin\requests\forms\TravelOrderForm.ui.tsx =====
+// src/components/admin/requests/forms/TravelOrderForm.ui.tsx
+"use client";
+
+import * as React from "react";
+import { Calendar, MapPin } from "lucide-react";
+import { useAdminRequestForm } from "@/components/admin/requests/hooks/useAdminRequestForm";
+
+type Props = { onClose?: () => void };
+
+export default function TravelOrderFormAdmin({ onClose }: Props) {
+  const f = useAdminRequestForm();
+
+  // Handle numeric cost fields locally (since the hook doesn't expose onNumber)
+  const onCostChange =
+    (k: keyof typeof f.values.costs) =>
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const raw = e.target.value;
+      const num = raw === "" ? 0 : Number(raw);
+      f.setValues((prev) => ({
+        ...prev,
+        costs: { ...prev.costs, [k]: isNaN(num) ? 0 : num },
+      }));
+    };
+
+  return (
+    <form
+      className="space-y-6"
+      onSubmit={(e) => {
+        e.preventDefault();
+        f.onSubmit();
+        onClose?.();
+      }}
+    >
+      {/* Top chips (Reason / Vehicle / Requester) */}
+      <section className="rounded-2xl border bg-white p-4">
+        <div className="grid gap-4 md:grid-cols-3">
+          <fieldset>
+            <legend className="mb-2 text-xs font-semibold uppercase text-neutral-500">
+              Reason of trip
+            </legend>
+            <div className="grid gap-2">
+              {[
+                "Official business",
+                "CES",
+                "Seminar / Training",
+                "Educational Trip",
+                "Competition",
+                "Visit",
+              ].map((r) => (
+                <label
+                  key={r}
+                  className={`inline-flex items-center justify-between rounded-lg border px-3 py-2 text-sm ${
+                    f.values.reason === r
+                      ? "border-[#7A0010] text-[#7A0010]"
+                      : "border-neutral-200"
+                  }`}
+                >
+                  <span>{r}</span>
+                  <input
+                    type="radio"
+                    name="reason"
+                    className="sr-only"
+                    checked={f.values.reason === r}
+                    onChange={() => f.set("reason", r)}
+                  />
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend className="mb-2 text-xs font-semibold uppercase text-neutral-500">
+              Vehicle
+            </legend>
+            <div className="grid gap-2">
+              {[
+                { label: "Institutional vehicle", v: "Institutional" },
+                { label: "Owned vehicle", v: "Owned" },
+                { label: "Rent (external)", v: "Rent" },
+              ].map(({ label, v }) => (
+                <label
+                  key={v}
+                  className={`inline-flex items-center justify-between rounded-lg border px-3 py-2 text-sm ${
+                    f.values.vehicle === v
+                      ? "border-[#7A0010] text-[#7A0010]"
+                      : "border-neutral-200"
+                  }`}
+                >
+                  <span>{label}</span>
+                  <input
+                    type="radio"
+                    name="vehicle"
+                    className="sr-only"
+                    checked={f.values.vehicle === v}
+                    onChange={() => f.set("vehicle", v as any)}
+                  />
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend className="mb-2 text-xs font-semibold uppercase text-neutral-500">
+              Requester
+            </legend>
+            <div className="grid gap-2">
+              {["Faculty", "Head", "Org"].map((r) => (
+                <label
+                  key={r}
+                  className={`inline-flex items-center justify-between rounded-lg border px-3 py-2 text-sm ${
+                    f.values.requesterType === r
+                      ? "border-[#7A0010] text-[#7A0010]"
+                      : "border-neutral-200"
+                  }`}
+                >
+                  <span>{r}</span>
+                  <input
+                    type="radio"
+                    name="requesterType"
+                    className="sr-only"
+                    checked={f.values.requesterType === r}
+                    onChange={() => f.set("requesterType", r as any)}
+                  />
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        </div>
+      </section>
+
+      {/* Travel order core fields */}
+      <section className="rounded-2xl border bg-white p-4">
+        <h3 className="mb-3 text-base font-semibold">Travel Order</h3>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-sm font-medium">
+              Date <span className="text-rose-600">*</span>
+            </label>
+            <div className="relative">
+              <input
+                type="date"
+                className="h-10 w-full rounded-lg border border-neutral-300 px-3 pr-9"
+                value={f.values.date}
+                onChange={f.onChange("date")}
+              />
+              <Calendar className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium">
+              Department <span className="text-rose-600">*</span>
+            </label>
+            <input
+              placeholder="e.g., CBA, CCMS, ICT Department"
+              className="h-10 w-full rounded-lg border border-neutral-300 px-3"
+              value={f.values.department}
+              onChange={f.onChange("department")}
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium">Destination</label>
+            <div className="relative">
+              <input
+                placeholder="City / Venue / School / Company"
+                className="h-10 w-full rounded-lg border border-neutral-300 px-3 pr-9"
+                value={f.values.destination}
+                onChange={f.onChange("destination")}
+              />
+              <MapPin className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 md:col-span-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium">
+                Departure date <span className="text-rose-600">*</span>
+              </label>
+              <input
+                type="date"
+                className="h-10 w-full rounded-lg border border-neutral-300 px-3"
+                value={f.values.date}
+                onChange={f.onChange("date")}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium">
+                Return date <span className="text-rose-600">*</span>
+              </label>
+              <input
+                type="date"
+                className="h-10 w-full rounded-lg border border-neutral-300 px-3"
+                value={f.values.returnDate}
+                onChange={f.onChange("returnDate")}
+              />
+            </div>
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="mb-1 block text-sm font-medium">
+              Purpose of travel <span className="text-rose-600">*</span>
+            </label>
+            <textarea
+              rows={3}
+              className="w-full rounded-lg border border-neutral-300 px-3 py-2"
+              placeholder="Briefly explain what the trip is for"
+              value={f.values.purpose}
+              onChange={f.onChange("purpose")}
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* Costs (estimate) */}
+      <section className="rounded-2xl border bg-white p-4">
+        <h3 className="mb-3 text-base font-semibold">Travel Cost (estimate)</h3>
+        <div className="grid gap-3 md:grid-cols-2">
+          {[
+            { key: "food", label: "Food" },
+            { key: "driversAllowance", label: "Driver’s allowance" },
+            { key: "rent", label: "Rent vehicles" },
+            { key: "hiredDrivers", label: "Hired drivers" },
+            { key: "accommodation", label: "Accommodation" },
+          ].map(({ key, label }) => (
+            <div key={key}>
+              <label className="mb-1 block text-sm font-medium">{label}</label>
+              <div className="relative">
+                <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-neutral-400">
+                  ₱
+                </span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  className="h-10 w-full rounded-lg border border-neutral-300 pl-6 pr-3"
+                  onChange={onCostChange(key as keyof typeof f.values.costs)}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Endorsement */}
+      <section className="rounded-2xl border bg-white p-4">
+        <h3 className="mb-3 text-base font-semibold">Endorsed by (Dept Head)</h3>
+        <div className="grid gap-3 md:grid-cols-2">
+          <input
+            placeholder="Name of Department Head"
+            className="h-10 w-full rounded-lg border border-neutral-300 px-3"
+            value={f.values.endorserName || ""}
+            onChange={f.onChange("endorserName")}
+          />
+          <input
+            type="date"
+            className="h-10 w-full rounded-lg border border-neutral-300 px-3"
+            value={f.values.endorsementDate || ""}
+            onChange={f.onChange("endorsementDate")}
+          />
+        </div>
+
+        <div className="mt-4 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => f.onSaveDraft()}
+            className="rounded-lg border px-3 py-2 text-sm"
+          >
+            Save draft
+          </button>
+          <button
+            type="submit"
+            className="rounded-lg bg-[#7A0010] px-3 py-2 text-sm font-semibold text-white"
+          >
+            Submit
+          </button>
+          <span className="text-xs text-neutral-500">Review the highlighted fields.</span>
+        </div>
+      </section>
+    </form>
+  );
+}
+
+
+===== components\admin\requests\hooks\useAdminRequestForm.ts =====
+// src/components/admin/requests/hooks/useAdminRequestForm.ts
+"use client";
+
+import * as React from "react";
+
+export type AdminTravelOrder = {
+  requesterType: "Faculty" | "Head" | "Org";
+  reason: string;
+  vehicle: "Institutional" | "Owned" | "Rent";
+
+  date: string;            // request date or departure date (your UI uses same state for both)
+  returnDate: string;
+
+  department: string;
+  destination: string;
+  purpose: string;
+
+  costs: {
+    food: number;
+    driversAllowance: number;
+    rent: number;
+    hiredDrivers: number;
+    accommodation: number;
+  };
+
+  endorserName?: string;
+  endorsementDate?: string;
+
+  signatureDataUrl?: string;
+};
+
+const INITIAL: AdminTravelOrder = {
+  requesterType: "Faculty",
+  reason: "",
+  vehicle: "Owned",
+
+  date: "",
+  returnDate: "",
+
+  department: "",
+  destination: "",
+  purpose: "",
+
+  costs: {
+    food: 0,
+    driversAllowance: 0,
+    rent: 0,
+    hiredDrivers: 0,
+    accommodation: 0,
+  },
+
+  endorserName: "",
+  endorsementDate: "",
+  signatureDataUrl: undefined,
+};
+
+export function useAdminRequestForm() {
+  // ✅ use React.useState, not anything else
+  const [values, setValues] = React.useState<AdminTravelOrder>(INITIAL);
+
+  /** Set a single field */
+  const set = React.useCallback(
+    <K extends keyof AdminTravelOrder>(key: K, v: AdminTravelOrder[K]) => {
+      setValues((prev) => ({ ...prev, [key]: v }));
+    },
+    []
+  );
+
+  /** Standard onChange factory for text/date inputs */
+  const onChange =
+    <K extends keyof AdminTravelOrder>(key: K) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      set(key, e.target.value as AdminTravelOrder[K]);
+    };
+
+  /** Simulated submit — wire this to real API later */
+  const onSubmit = React.useCallback(() => {
+    // TODO: replace with real save (Supabase/REST)
+    console.log("[Admin TO] submit:", values);
+    alert("Submitted (mock). Check console.");
+  }, [values]);
+
+  /** Simulated draft save */
+  const onSaveDraft = React.useCallback(() => {
+    try {
+      localStorage.setItem("admin.to.draft", JSON.stringify(values));
+      alert("Draft saved (localStorage).");
+    } catch {
+      // no-op
+    }
+  }, [values]);
+
+  /** Load draft once, if any */
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem("admin.to.draft");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setValues((prev) => ({ ...prev, ...parsed }));
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  return {
+    values,
+    set,
+    onChange,
+    onSubmit,
+    onSaveDraft,
+    setValues,
+  };
+}
+
+
 ===== components\admin\requests\hooks\useFilterState.ts =====
 "use client";
 import { useEffect, useMemo, useState } from "react";
@@ -12144,6 +13303,9 @@ import {
 } from "lucide-react";
 import { DEPARTMENTS as RAW_DEPARTMENTS } from "@/lib/org/departments";
 
+/** Admin Travel Order sheet (UI container) */
+import AdminRequestFormSheet from "@/components/admin/requests/containers/AdminRequestFormSheet.container";
+
 type Props = {
   tableSearch: string;
   onTableSearch: (v: string) => void;
@@ -12151,7 +13313,8 @@ type Props = {
   sortDir: "asc" | "desc";
   onSortDirChange: (v: "asc" | "desc") => void;
 
-  onAddNew: () => void;
+  /** Optional — any side-effect like toast; sheet opens regardless. */
+  onAddNew?: () => void;
 
   draft: FilterState;
   onDraftChange: (patch: Partial<FilterState>) => void;
@@ -12161,7 +13324,6 @@ type Props = {
   selectedCount?: number;
   onDeleteSelected?: () => void;
 
-  /* NEW */
   onMarkSelectedRead?: () => void;
 };
 
@@ -12199,194 +13361,208 @@ export default function RequestsToolbarUI({
   onDeleteSelected,
   onMarkSelectedRead,
 }: Props) {
-  const [open, setOpen] = React.useState(false);
+  const [filterOpen, setFilterOpen] = React.useState(false);
+
+  /** Local sheet state */
+  const [formOpen, setFormOpen] = React.useState(false);
+
+  /** Always open the sheet; also call parent's callback if provided */
+  const handleAddNew = () => {
+    setFormOpen(true);
+    onAddNew?.();
+  };
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      {/* Search */}
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-60" />
-        <input
-          value={tableSearch}
-          onChange={(e) => onTableSearch(e.target.value)}
-          placeholder="Search requests…"
-          className="h-10 w-64 rounded-xl border border-neutral-300 pl-9 pr-3 text-sm outline-none focus:border-neutral-500"
-          autoComplete="off"
-          suppressHydrationWarning
-        />
-      </div>
+    <>
+      <div className="flex flex-wrap items-center gap-2">
+        {/* Search */}
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-60" />
+          <input
+            value={tableSearch}
+            onChange={(e) => onTableSearch(e.target.value)}
+            placeholder="Search requests…"
+            className="h-10 w-64 rounded-xl border border-neutral-300 pl-9 pr-3 text-sm outline-none focus:border-neutral-500"
+            autoComplete="off"
+            suppressHydrationWarning
+          />
+        </div>
 
-      {/* Filter */}
-      <div className="relative">
+        {/* Filter */}
+        <div className="relative">
+          <button
+            className="inline-flex h-10 items-center gap-2 rounded-xl border border-neutral-300 bg-white px-3 text-sm"
+            onClick={() => setFilterOpen((o) => !o)}
+            aria-expanded={filterOpen}
+          >
+            <Filter className="h-4 w-4" />
+            <span>Filter</span>
+            <ChevronDown className="h-4 w-4 opacity-70" />
+          </button>
+
+          {filterOpen && (
+            <div className="absolute z-20 mt-2 w-80 rounded-2xl border border-neutral-200 bg-white p-4 shadow-lg">
+              {/* Status */}
+              <label className="mb-2 block text-xs font-medium text-neutral-700">
+                Status
+                <select
+                  className="mt-1 w-full rounded-lg border border-neutral-300 px-2 py-2 text-sm"
+                  value={draft.status}
+                  onChange={(e) => onDraftChange({ status: e.target.value as any })}
+                >
+                  <option>All</option>
+                  <option>Pending</option>
+                  <option>Approved</option>
+                  <option>Completed</option>
+                  <option>Rejected</option>
+                </select>
+              </label>
+
+              {/* Department — from lib */}
+              <label className="mb-2 block text-xs font-medium text-neutral-700">
+                Department
+                <select
+                  className="mt-1 w-full rounded-lg border border-neutral-300 px-2 py-2 text-sm"
+                  value={(draft.dept as any) ?? "All"}
+                  onChange={(e) => onDraftChange({ dept: e.target.value as any })}
+                >
+                  {DEPARTMENT_OPTIONS.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {/* Date range */}
+              <div className="mb-2 grid grid-cols-2 gap-2">
+                <label className="block text-xs font-medium text-neutral-700">
+                  From
+                  <div className="relative mt-1">
+                    <CalendarIcon className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 opacity-60" />
+                    <input
+                      type="date"
+                      value={draft.from || ""}
+                      onChange={(e) => onDraftChange({ from: e.target.value })}
+                      className="w-full rounded-lg border border-neutral-300 pl-8 pr-2 py-2 text-sm"
+                      autoComplete="off"
+                      suppressHydrationWarning
+                    />
+                  </div>
+                </label>
+                <label className="block text-xs font-medium text-neutral-700">
+                  To
+                  <div className="relative mt-1">
+                    <CalendarIcon className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 opacity-60" />
+                    <input
+                      type="date"
+                      value={draft.to || ""}
+                      onChange={(e) => onDraftChange({ to: e.target.value })}
+                      className="w-full rounded-lg border border-neutral-300 pl-8 pr-2 py-2 text-sm"
+                      autoComplete="off"
+                      suppressHydrationWarning
+                    />
+                  </div>
+                </label>
+              </div>
+
+              {/* Mode */}
+              <label className="mb-3 block text-xs font-medium text-neutral-700">
+                Mode
+                <select
+                  className="mt-1 w-full rounded-lg border border-neutral-300 px-2 py-2 text-sm"
+                  value={draft.mode}
+                  onChange={(e) => onDraftChange({ mode: e.target.value as any })}
+                >
+                  <option value="auto">Auto (instant)</option>
+                  <option value="apply">Apply button</option>
+                </select>
+              </label>
+
+              <div className="mt-3 flex items-center justify-between">
+                <button
+                  className="inline-flex items-center gap-2 rounded-xl border border-neutral-300 px-3 py-2 text-sm"
+                  onClick={onClearAll}
+                >
+                  Clear All
+                </button>
+                <button
+                  className="inline-flex items-center gap-2 rounded-xl bg-[#7a1f2a] px-4 py-2 text-sm text-white"
+                  onClick={onApply}
+                >
+                  Apply
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Sort */}
         <button
           className="inline-flex h-10 items-center gap-2 rounded-xl border border-neutral-300 bg-white px-3 text-sm"
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
+          onClick={() => onSortDirChange(sortDir === "desc" ? "asc" : "desc")}
+          title="Toggle sort"
         >
-          <Filter className="h-4 w-4" />
-          <span>Filter</span>
-          <ChevronDown className="h-4 w-4 opacity-70" />
+          {sortDir === "desc" ? (
+            <>
+              <ArrowDownWideNarrow className="h-4 w-4" />
+              <span>Newest first</span>
+            </>
+          ) : (
+            <>
+              <ArrowUpNarrowWide className="h-4 w-4" />
+              <span>Oldest first</span>
+            </>
+          )}
         </button>
 
-        {open && (
-          <div className="absolute z-20 mt-2 w-80 rounded-2xl border border-neutral-200 bg-white p-4 shadow-lg">
-            {/* Status */}
-            <label className="mb-2 block text-xs font-medium text-neutral-700">
-              Status
-              <select
-                className="mt-1 w-full rounded-lg border border-neutral-300 px-2 py-2 text-sm"
-                value={draft.status}
-                onChange={(e) => onDraftChange({ status: e.target.value as any })}
-              >
-                <option>All</option>
-                <option>Pending</option>
-                <option>Approved</option>
-                <option>Completed</option>
-                <option>Rejected</option>
-              </select>
-            </label>
+        <div className="flex-1" />
 
-            {/* Department — from lib */}
-            <label className="mb-2 block text-xs font-medium text-neutral-700">
-              Department
-              <select
-                className="mt-1 w-full rounded-lg border border-neutral-300 px-2 py-2 text-sm"
-                value={(draft.dept as any) ?? "All"}
-                onChange={(e) => onDraftChange({ dept: e.target.value as any })}
-              >
-                {DEPARTMENT_OPTIONS.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </label>
+        {/* Quick link to Trash */}
+        <Link
+          href="/admin/requests/trash"
+          className="inline-flex h-10 items-center gap-2 rounded-xl border border-neutral-300 bg-white px-3 text-sm"
+          title="Open Trash"
+        >
+          <Trash2 className="h-4 w-4" />
+          <span>Trash</span>
+        </Link>
 
-            {/* Date range */}
-            <div className="mb-2 grid grid-cols-2 gap-2">
-              <label className="block text-xs font-medium text-neutral-700">
-                From
-                <div className="relative mt-1">
-                  <CalendarIcon className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 opacity-60" />
-                  <input
-                    type="date"
-                    value={draft.from || ""}
-                    onChange={(e) => onDraftChange({ from: e.target.value })}
-                    className="w-full rounded-lg border border-neutral-300 pl-8 pr-2 py-2 text-sm"
-                    autoComplete="off"
-                    suppressHydrationWarning
-                  />
-                </div>
-              </label>
-              <label className="block text-xs font-medium text-neutral-700">
-                To
-                <div className="relative mt-1">
-                  <CalendarIcon className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 opacity-60" />
-                  <input
-                    type="date"
-                    value={draft.to || ""}
-                    onChange={(e) => onDraftChange({ to: e.target.value })}
-                    className="w-full rounded-lg border border-neutral-300 pl-8 pr-2 py-2 text-sm"
-                    autoComplete="off"
-                    suppressHydrationWarning
-                  />
-                </div>
-              </label>
-            </div>
+        {/* Mark as read (bulk) */}
+        <button
+          className="inline-flex h-10 items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-3 text-sm text-emerald-800 disabled:opacity-50"
+          disabled={!selectedCount}
+          onClick={() => onMarkSelectedRead && onMarkSelectedRead()}
+          title="Mark selected as read"
+        >
+          <CheckCircle2 className="h-4 w-4" />
+          <span>Mark as read {selectedCount ? `(${selectedCount})` : ""}</span>
+        </button>
 
-            {/* Mode */}
-            <label className="mb-3 block text-xs font-medium text-neutral-700">
-              Mode
-              <select
-                className="mt-1 w-full rounded-lg border border-neutral-300 px-2 py-2 text-sm"
-                value={draft.mode}
-                onChange={(e) => onDraftChange({ mode: e.target.value as any })}
-              >
-                <option value="auto">Auto (instant)</option>
-                <option value="apply">Apply button</option>
-              </select>
-            </label>
+        {/* Delete selected */}
+        <button
+          className="inline-flex h-10 items-center gap-2 rounded-xl border border-rose-300 bg-rose-50 px-3 text-sm text-rose-800 disabled:opacity-50"
+          disabled={!selectedCount}
+          onClick={() => onDeleteSelected && onDeleteSelected()}
+          title="Move selected to Trash (kept 30 days)"
+        >
+          <Trash2 className="h-4 w-4" />
+          <span>Delete selected {selectedCount ? `(${selectedCount})` : ""}</span>
+        </button>
 
-            <div className="mt-3 flex items-center justify-between">
-              <button
-                className="inline-flex items-center gap-2 rounded-xl border border-neutral-300 px-3 py-2 text-sm"
-                onClick={onClearAll}
-              >
-                Clear All
-              </button>
-              <button
-                className="inline-flex items-center gap-2 rounded-xl bg-[#7a1f2a] px-4 py-2 text-sm text-white"
-                onClick={onApply}
-              >
-                Apply
-              </button>
-            </div>
-          </div>
-        )}
+        {/* Add new */}
+        <button
+          className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#7a1f2a] px-3 text-sm text-white"
+          onClick={handleAddNew}
+        >
+          <Plus className="h-4 w-4" />
+          <span>Add New</span>
+        </button>
       </div>
 
-      {/* Sort */}
-      <button
-        className="inline-flex h-10 items-center gap-2 rounded-xl border border-neutral-300 bg-white px-3 text-sm"
-        onClick={() => onSortDirChange(sortDir === "desc" ? "asc" : "desc")}
-        title="Toggle sort"
-      >
-        {sortDir === "desc" ? (
-          <>
-            <ArrowDownWideNarrow className="h-4 w-4" />
-            <span>Newest first</span>
-          </>
-        ) : (
-          <>
-            <ArrowUpNarrowWide className="h-4 w-4" />
-            <span>Oldest first</span>
-          </>
-        )}
-      </button>
-
-      <div className="flex-1" />
-
-      {/* Quick link to Trash */}
-      <Link
-        href="/admin/requests/trash"
-        className="inline-flex h-10 items-center gap-2 rounded-xl border border-neutral-300 bg-white px-3 text-sm"
-        title="Open Trash"
-      >
-        <Trash2 className="h-4 w-4" />
-        <span>Trash</span>
-      </Link>
-
-      {/* NEW: Mark as read (bulk) */}
-      <button
-        className="inline-flex h-10 items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-3 text-sm text-emerald-800 disabled:opacity-50"
-        disabled={!selectedCount}
-        onClick={() => onMarkSelectedRead && onMarkSelectedRead()}
-        title="Mark selected as read"
-      >
-        <CheckCircle2 className="h-4 w-4" />
-        <span>Mark as read {selectedCount ? `(${selectedCount})` : ""}</span>
-      </button>
-
-      {/* Delete selected */}
-      <button
-        className="inline-flex h-10 items-center gap-2 rounded-xl border border-rose-300 bg-rose-50 px-3 text-sm text-rose-800 disabled:opacity-50"
-        disabled={!selectedCount}
-        onClick={() => onDeleteSelected && onDeleteSelected()}
-        title="Move selected to Trash (kept 30 days)"
-      >
-        <Trash2 className="h-4 w-4" />
-        <span>Delete selected {selectedCount ? `(${selectedCount})` : ""}</span>
-      </button>
-
-      {/* Add new */}
-      <button
-        className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#7a1f2a] px-3 text-sm text-white"
-        onClick={onAddNew}
-      >
-        <Plus className="h-4 w-4" />
-        <span>Add New</span>
-      </button>
-    </div>
+      {/* Admin Travel Order form sheet */}
+      <AdminRequestFormSheet open={formOpen} onClose={() => setFormOpen(false)} />
+    </>
   );
 }
 
@@ -18133,6 +19309,90 @@ export default function StaggerIn({ children, className = "" }: { children: Reac
 }
 
 
+===== components\common\Modal\Modal.tsx =====
+// src/components/common/Modal/Modal.tsx
+"use client";
+import * as React from "react";
+import { useEscapeToClose } from "@/lib/common/useEscapeToClose";
+
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+  maxWidth?: number | string;
+  ariaLabel?: string;
+};
+
+export default function Modal({ open, onClose, children, maxWidth = 760, ariaLabel = "Dialog" }: Props) {
+  useEscapeToClose(open, onClose);
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/40"
+      role="dialog"
+      aria-modal="true"
+      aria-label={ariaLabel}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose(); // backdrop click
+      }}
+    >
+      <div
+        className="max-h-[90vh] w-[min(96vw,var(--mw))] overflow-auto rounded-xl bg-white p-4 shadow-xl"
+        style={{ ["--mw" as any]: typeof maxWidth === "number" ? `${maxWidth}px` : maxWidth }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+
+===== components\common\Modal\ReasonModal.ui.tsx =====
+// src/components/admin/common/ReasonModal.ui.tsx
+"use client";
+import React from "react";
+
+export default function ReasonModalUI({
+  open, title = "Reject request?", placeholder = "Reason…", onCancel, onConfirm,
+}: {
+  open: boolean;
+  title?: string;
+  placeholder?: string;
+  onCancel: () => void;
+  onConfirm: (reason: string) => void;
+}) {
+  const [val, setVal] = React.useState("");
+  React.useEffect(() => { if (!open) setVal(""); }, [open]);
+
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40">
+      <div className="w-full max-w-sm rounded-lg bg-white p-4 shadow-xl">
+        <h3 className="mb-2 text-sm font-semibold">{title}</h3>
+        <textarea
+          className="mb-3 w-full rounded border p-2 text-sm"
+          rows={4}
+          value={val}
+          placeholder={placeholder}
+          onChange={(e) => setVal(e.target.value)}
+        />
+        <div className="flex justify-end gap-2">
+          <button className="rounded border px-3 py-1 text-sm" onClick={onCancel}>Cancel</button>
+          <button
+            className="rounded bg-red-600 px-3 py-1 text-sm text-white disabled:opacity-50"
+            disabled={!val.trim()}
+            onClick={() => onConfirm(val.trim())}
+          >
+            Reject
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 ===== components\common\buttons\BackToRequestButton.ui.tsx =====
 "use client";
 
@@ -19600,90 +20860,6 @@ function Fallback() {
 }
 
 
-===== components\common\modal\Modal.tsx =====
-// src/components/common/Modal/Modal.tsx
-"use client";
-import * as React from "react";
-import { useEscapeToClose } from "@/lib/common/useEscapeToClose";
-
-type Props = {
-  open: boolean;
-  onClose: () => void;
-  children: React.ReactNode;
-  maxWidth?: number | string;
-  ariaLabel?: string;
-};
-
-export default function Modal({ open, onClose, children, maxWidth = 760, ariaLabel = "Dialog" }: Props) {
-  useEscapeToClose(open, onClose);
-  if (!open) return null;
-
-  return (
-    <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/40"
-      role="dialog"
-      aria-modal="true"
-      aria-label={ariaLabel}
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose(); // backdrop click
-      }}
-    >
-      <div
-        className="max-h-[90vh] w-[min(96vw,var(--mw))] overflow-auto rounded-xl bg-white p-4 shadow-xl"
-        style={{ ["--mw" as any]: typeof maxWidth === "number" ? `${maxWidth}px` : maxWidth }}
-      >
-        {children}
-      </div>
-    </div>
-  );
-}
-
-
-===== components\common\modal\ReasonModal.ui.tsx =====
-// src/components/admin/common/ReasonModal.ui.tsx
-"use client";
-import React from "react";
-
-export default function ReasonModalUI({
-  open, title = "Reject request?", placeholder = "Reason…", onCancel, onConfirm,
-}: {
-  open: boolean;
-  title?: string;
-  placeholder?: string;
-  onCancel: () => void;
-  onConfirm: (reason: string) => void;
-}) {
-  const [val, setVal] = React.useState("");
-  React.useEffect(() => { if (!open) setVal(""); }, [open]);
-
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40">
-      <div className="w-full max-w-sm rounded-lg bg-white p-4 shadow-xl">
-        <h3 className="mb-2 text-sm font-semibold">{title}</h3>
-        <textarea
-          className="mb-3 w-full rounded border p-2 text-sm"
-          rows={4}
-          value={val}
-          placeholder={placeholder}
-          onChange={(e) => setVal(e.target.value)}
-        />
-        <div className="flex justify-end gap-2">
-          <button className="rounded border px-3 py-1 text-sm" onClick={onCancel}>Cancel</button>
-          <button
-            className="rounded bg-red-600 px-3 py-1 text-sm text-white disabled:opacity-50"
-            disabled={!val.trim()}
-            onClick={() => onConfirm(val.trim())}
-          >
-            Reject
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-
 ===== components\common\ui\EmptyState.ui.tsx =====
 "use client";
 import * as React from "react";
@@ -20684,6 +21860,25 @@ export default function VehicleCard({ v }: { v: Vehicle }) {
     </div>
   );
 }
+
+
+===== components\driver\common\StatusChip.tsx =====
+"use client";
+
+export default function StatusChip(
+  { s }: { s: "Draft"|"Submitted"|"Acknowledged"|"In-Progress"|"Completed"|"Rejected" }
+) {
+  const map: Record<string,string> = {
+    Draft: "bg-neutral-100 text-neutral-700",
+    Submitted: "bg-amber-100 text-amber-800",
+    Acknowledged: "bg-blue-100 text-blue-800",
+    "In-Progress": "bg-indigo-100 text-indigo-800",
+    Completed: "bg-green-100 text-green-800",
+    Rejected: "bg-rose-100 text-rose-800",
+  };
+  return <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${map[s]}`}>{s}</span>;
+}
+
 
 
 ===== components\driver\dashboard\DashboardView.tsx =====
@@ -30331,175 +31526,484 @@ export type LogFilters = {
 };
 
 
-===== lib\admin\maintenance\csv.ts =====
-import type { Maintenance } from "./types";
+===== lib\admin\maintenance\drivers.repo.ts =====
+"use client";
+import type { Driver } from "./maintenance.types";
 
-export function toCSV(rows: Maintenance[]): string {
-  const head = [
-    "ID","VehicleCode","Plate","Type","Description","OdometerKm",
-    "RequestDate","ServiceDate","Status","Remarks","UpdatedAt"
-  ];
-  const lines = rows.map(r => [
-    r.id, r.vehicleCode, r.plateNo, r.type, r.description, r.odometerKm,
-    r.requestDate, r.serviceDate ?? "", r.status, r.remarks ?? "", r.updatedAt
-  ].map(x => `"${String(x).replaceAll('"','""')}"`).join(","));
-  return [head.join(","), ...lines].join("\n");
-}
+export const DriverRepo = {
+  list(): Driver[] {
+    return [
+      { id: "drv-ramon", name: "Ramon Dela Cruz" },
+      { id: "drv-jose",  name: "Jose Bautista"   },
+      { id: "drv-gina",  name: "Gina Santos"     },
+    ];
+  },
+};
 
 
 ===== lib\admin\maintenance\handlers.ts =====
-import type { Maintenance, MaintFilters } from "./types";
-import { MaintRepo } from "./repo";
-import { applyFilters, validate } from "./service";
-import { toCSV } from "./csv";
+import type { Maintenance } from "./types";
+import { MaintRepo, computeNextDue, uid } from "./maintenance.repo";
+import { tintFrom } from "./types";
 
-export function loadMaintenance(filters?: MaintFilters): Maintenance[] {
-  return applyFilters(MaintRepo.all(), filters);
+/* CREATE */
+export function createMaintenance(
+  data: Omit<Maintenance, "id" | "createdAt" | "updatedAt" | "history">,
+): Maintenance {
+  const now = new Date().toISOString();
+
+  const auto = data.nextDueAuto !== false;
+  const computed = auto
+    ? computeNextDue({
+        type: data.type,
+        date: data.date,
+        odometerAtService: data.odometerAtService ?? undefined,
+      })
+    : {
+        nextDueDateISO: data.nextDueDateISO,
+        nextDueOdometer: data.nextDueOdometer ?? null,
+        nextDueTint: tintFrom(data.nextDueDateISO, data.nextDueOdometer ?? null),
+      };
+
+  const record: Maintenance = {
+    ...data,
+    ...computed,
+    id: uid("maint"),
+    createdAt: now,
+    updatedAt: now,
+    history: [{ atISO: now, action: `Created (${data.status})`, actor: data.createdBy ?? "System" }],
+  };
+
+  MaintRepo.upsert(record);
+  return record;
 }
 
-export function getMaintenance(id: string): Maintenance | null {
-  return MaintRepo.byId(id);
-}
+/* UPDATE (accepts partial patch) */
+export function updateMaintenance(
+  id: string,
+  patch: Partial<Omit<Maintenance, "id" | "createdAt" | "updatedAt" | "history">>,
+): Maintenance | undefined {
+  const prev = MaintRepo.findById(id);
+  if (!prev) return;
 
-export function createMaintenance(data: Omit<Maintenance,"id"|"createdAt"|"updatedAt">): Maintenance {
-  const err = validate(data as any);
-  if (err) throw new Error(err);
-  return MaintRepo.insert(data);
-}
+  const now = new Date().toISOString();
 
-export function updateMaintenance(id: string, data: Omit<Maintenance,"id"|"createdAt"|"updatedAt">): Maintenance | null {
-  const err = validate(data as any);
-  if (err) throw new Error(err);
-  return MaintRepo.patch(id, data);
+  const nextSeed = {
+    nextDueDateISO: patch.nextDueDateISO ?? prev.nextDueDateISO,
+    nextDueOdometer: patch.nextDueOdometer ?? prev.nextDueOdometer,
+    nextDueTint: patch.nextDueTint ?? prev.nextDueTint,
+  };
+
+  const auto = patch.nextDueAuto ?? prev.nextDueAuto ?? true;
+  const computed = auto
+    ? computeNextDue({
+        type: patch.type ?? prev.type,
+        date: patch.date ?? prev.date,
+        odometerAtService: patch.odometerAtService ?? prev.odometerAtService,
+      })
+    : { ...nextSeed, nextDueTint: tintFrom(nextSeed.nextDueDateISO, nextSeed.nextDueOdometer ?? null) };
+
+  const updated: Maintenance = {
+    ...prev,
+    ...patch,
+    ...computed,
+    updatedAt: now,
+    history: [{ atISO: now, action: "Updated", actor: patch.createdBy ?? "System" }, ...prev.history],
+  };
+
+  MaintRepo.upsert(updated);
+  return updated;
 }
 
 export function deleteMaintenance(id: string) {
   MaintRepo.remove(id);
 }
 
-export function deleteManyMaintenance(ids: string[]) {
-  MaintRepo.bulkRemove(ids);
+
+===== lib\admin\maintenance\index.ts =====
+export * from "./maintenance.types";
+export * from "./maintenance.repo";
+export * from "./handlers";
+
+
+===== lib\admin\maintenance\maintenance.attachments.ts =====
+"use client";
+
+import type { MaintAttachment } from "./types";
+import { uid } from "./maintenance.repo";
+
+/* File -> Attachment object (base64 URL) */
+export async function fileToAttachment(file: File): Promise<MaintAttachment> {
+  const name = file.name;
+  const kind: MaintAttachment["kind"] = file.type.includes("pdf") ? "pdf" : "img";
+  const url = await readAsDataURL(file);
+  return { id: uid("att"), name, kind, url };
 }
 
-export function exportMaintenanceCSV(rows: Maintenance[]): Blob {
-  const csv = toCSV(rows);
-  return new Blob([csv], { type: "text/csv;charset=utf-8;" });
-}
-
-
-===== lib\admin\maintenance\repo.ts =====
-import type { Maintenance } from "./types";
-
-const LS_KEY = "tl_maintenance_v2";
-const nowISO = () => new Date().toISOString();
-const uid = () => (globalThis.crypto?.randomUUID?.() ?? `m_${Math.random().toString(36).slice(2)}`);
-
-const seed: Maintenance[] = [
-  {
-    id: uid(), vehicleId: "v1", vehicleCode: "BUS-01", plateNo: "NAB-1234",
-    type: "Preventive", description: "Oil change & tire rotation", odometerKm: 42133,
-    requestDate: "2025-09-05", serviceDate: "2025-09-07", status: "completed",
-    remarks: "Partner shop", photoUrl: null, createdAt: nowISO(), updatedAt: nowISO()
-  },
-  {
-    id: uid(), vehicleId: "v2", vehicleCode: "VAN-03", plateNo: "XAC-9087",
-    type: "Repair", description: "Brake pads replacement", odometerKm: 72810,
-    requestDate: "2025-09-10", status: "in-progress",
-    remarks: "", photoUrl: null, createdAt: nowISO(), updatedAt: nowISO()
-  },
-];
-
-function loadRaw(): Maintenance[] {
-  if (typeof window === "undefined") return seed;
-  const raw = localStorage.getItem(LS_KEY);
-  if (!raw) { localStorage.setItem(LS_KEY, JSON.stringify(seed)); return seed; }
-  try { return JSON.parse(raw) as Maintenance[]; } catch { return seed; }
-}
-function saveRaw(rows: Maintenance[]) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(LS_KEY, JSON.stringify(rows));
-}
-
-export const MaintRepo = {
-  all(): Maintenance[] { return loadRaw(); },
-  byId(id: string): Maintenance | null { return loadRaw().find(r => r.id === id) ?? null; },
-  insert(data: Omit<Maintenance,"id"|"createdAt"|"updatedAt">): Maintenance {
-    const rows = loadRaw();
-    const rec: Maintenance = { ...data, id: uid(), createdAt: nowISO(), updatedAt: nowISO() };
-    rows.unshift(rec); saveRaw(rows); return rec;
-  },
-  patch(id: string, patch: Partial<Maintenance>): Maintenance | null {
-    const rows = loadRaw();
-    const i = rows.findIndex(r => r.id === id); if (i < 0) return null;
-    rows[i] = { ...rows[i], ...patch, updatedAt: nowISO() };
-    saveRaw(rows); return rows[i];
-  },
-  remove(id: string) { saveRaw(loadRaw().filter(r => r.id !== id)); },
-  bulkRemove(ids: string[]) { const set = new Set(ids); saveRaw(loadRaw().filter(r => !set.has(r.id))); }
-};
-
-
-===== lib\admin\maintenance\service.ts =====
-import type { Maintenance, MaintFilters, MaintStatus } from "./types";
-
-export const MaintConstants = {
-  types: ["Preventive","Repair","Inspection"] as const,
-  statuses: ["draft","submitted","acknowledged","in-progress","completed","rejected"] as const satisfies readonly MaintStatus[],
-};
-
-export function validate(m: Partial<Maintenance>): string | null {
-  if (!m.vehicleCode?.trim()) return "Vehicle code is required.";
-  if (!m.plateNo?.trim()) return "Plate number is required.";
-  if (!m.type) return "Type is required.";
-  if (!m.description?.trim()) return "Description is required.";
-  if (typeof m.odometerKm !== "number" || m.odometerKm < 0) return "Odometer must be 0 or more.";
-  if (!m.requestDate) return "Request date is required.";
-  if (!m.status) return "Status is required.";
-  return null;
-}
-
-export function applyFilters(rows: Maintenance[], f?: MaintFilters): Maintenance[] {
-  if (!f) return rows;
-  const q = (f.search ?? "").toLowerCase().trim();
-  return rows.filter(r => {
-    const okQ = !q || [
-      r.vehicleCode, r.plateNo, r.type, r.status, r.description
-    ].join(" ").toLowerCase().includes(q);
-    const okT = !f.type || r.type === f.type;
-    const okS = !f.status || r.status === f.status;
-    return okQ && okT && okS;
+function readAsDataURL(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onerror = () => reject(fr.error);
+    fr.onload = () => resolve(String(fr.result));
+    fr.readAsDataURL(file);
   });
 }
 
 
+===== lib\admin\maintenance\maintenance.repo.ts =====
+import { Maintenance, MaintType, NextDueTint, tintFrom } from "./types";
+
+/* LocalStorage Repo (simple, synchronous) */
+export const LS_KEY = "travilink__maintenance_v1";
+
+type RepoShape = {
+  all(): Maintenance[];
+  saveAll(list: Maintenance[]): void;
+  upsert(item: Maintenance): void;
+  remove(id: string): void;
+  findById(id: string): Maintenance | undefined;
+};
+
+function load(): Maintenance[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    return raw ? (JSON.parse(raw) as Maintenance[]) : [];
+  } catch {
+    return [];
+  }
+}
+function save(list: Maintenance[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(LS_KEY, JSON.stringify(list));
+}
+
+export const MaintRepo: RepoShape = {
+  all: () => load(),
+  saveAll: (list) => save(list),
+  upsert: (item) => {
+    const list = load();
+    const i = list.findIndex((r) => r.id === item.id);
+    if (i >= 0) list[i] = item;
+    else list.unshift(item);
+    save(list);
+  },
+  remove: (id) => {
+    const list = load().filter((r) => r.id !== id);
+    save(list);
+  },
+  findById: (id) => load().find((r) => r.id === id),
+};
+
+/* ---------- Domain computations ---------- */
+
+export function computeNextDue(src: {
+  type: MaintType;
+  date?: string;
+  odometerAtService?: number | null;
+}): Pick<Maintenance, "nextDueDateISO" | "nextDueOdometer" | "nextDueTint"> {
+  let nextDateISO: string | undefined;
+  let nextOdo: number | null | undefined = undefined;
+
+  const start = src.date ? new Date(src.date) : undefined;
+
+  switch (src.type) {
+    case "PMS":
+      if (start) {
+        const d = new Date(start);
+        d.setMonth(d.getMonth() + 6); // +6 months
+        nextDateISO = d.toISOString();
+      }
+      if (src.odometerAtService != null) {
+        nextOdo = src.odometerAtService + 10_000; // +10k km
+      }
+      break;
+
+    case "LTORenewal":
+    case "InsuranceRenewal":
+      if (start) {
+        const d = new Date(start);
+        d.setFullYear(d.getFullYear() + 1);
+        nextDateISO = d.toISOString();
+      }
+      break;
+
+    case "Vulcanize":
+    case "Repair":
+    case "Other":
+    default:
+      // No automatic schedule
+      break;
+  }
+
+  const nextDueTint: NextDueTint = tintFrom(nextDateISO, nextOdo as number | null);
+
+  return { nextDueDateISO: nextDateISO, nextDueOdometer: nextOdo ?? null, nextDueTint };
+}
+
+/* ---------- Utils ---------- */
+
+export function uid(prefix = "id"): string {
+  return `${prefix}-${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-3)}`;
+}
+
+
+===== lib\admin\maintenance\maintenance.types.ts =====
+/* -------------------------------------------------------------------------------------------------
+ * Maintenance domain types
+ * ------------------------------------------------------------------------------------------------*/
+
+export type UID = string;
+
+/** Vehicles used by mock repos / lookups */
+export type Vehicle = {
+  id: UID;
+  plate: string;
+  name: string;
+};
+
+/** Attachment stored on a maintenance record */
+export type MaintAttachmentKind = "img" | "pdf";
+
+export type MaintAttachment = {
+  id: UID;
+  /** File name shown to users */
+  name: string;
+  /** Used for rendering the proper badge / preview */
+  kind: MaintAttachmentKind;
+  /** Data URL or remote URL */
+  url: string;
+};
+
+/** Supported maintenance kinds (UI badges & filters rely on these literal values) */
+export const MAINT_TYPES = [
+  "PMS",
+  "Repair",
+  "LTORenewal",
+  "InsuranceRenewal",
+  "Vulcanize",
+  "Other",
+] as const;
+export type MaintType = (typeof MAINT_TYPES)[number];
+
+/** Workflow status values (table chips & filters rely on these literal values) */
+export const MAINT_STATUSES = [
+  "Submitted",
+  "Acknowledged",
+  "In-Progress",
+  "Completed",
+  "Rejected",
+] as const;
+export type MaintStatus = (typeof MAINT_STATUSES)[number];
+
+/** “Next due” visual state used by filters and badges */
+export type NextDueTint = "ok" | "soon" | "overdue" | "none";
+
+/** Activity log entry */
+export type MaintHistoryItem = {
+  atISO: string;         // when
+  action: string;        // e.g. "Created (Submitted)"
+  actor: string;         // e.g. "Transport Office"
+  notes?: string;
+};
+
+/** Minimal Driver shape used by demo repos / lookups */
+export type Driver = {
+  id: UID;
+  name: string;
+};
+
+/**
+ * Core record.
+ * NOTE: Several fields are optional to allow progressive entry.
+ * UI components should gracefully handle undefined values.
+ */
+export type Maintenance = {
+  id: UID;
+
+  // Basic info
+  vehicle: string;
+  type: MaintType;
+  status: MaintStatus;
+  date?: string;                 // YYYY-MM-DD (ISO date only)
+
+  vendor?: string;
+  costPhp?: number;
+  odometerAtService?: number;
+  tireRotationApplied?: boolean;
+
+  description?: string;
+  attachments?: MaintAttachment[];
+
+  createdBy?: string;
+  assignedDriverId?: string;
+
+  // Computed / manual next-due information
+  /**
+   * If true (default), the system will compute next due values
+   * using business rules. If false, user-provided manual fields
+   * below are respected.
+   */
+  nextDueAuto?: boolean;
+
+  nextDueDateISO?: string;       // YYYY-MM-DD
+  nextDueOdometer?: number;      // km
+  nextDueTint?: NextDueTint;
+
+  // Metadata
+  createdAt?: string;            // ISO datetime
+  updatedAt?: string;            // ISO datetime
+  history?: MaintHistoryItem[];
+};
+
+/** Quick filtering model used by the list page */
+export type MaintFilters = {
+  q?: string;
+  category?: MaintType | "all";
+  status?: MaintStatus | "all";
+  due?: NextDueTint | "all";
+  dateFrom?: string;             // YYYY-MM-DD
+  dateTo?: string;               // YYYY-MM-DD
+  density?: "comfortable" | "compact";
+};
+
+/** Helper: function result when computing next-due values */
+export type NextDueComputation = {
+  nextDueDateISO?: string;
+  nextDueOdometer?: number;
+  nextDueTint: NextDueTint;
+};
+
+
+===== lib\admin\maintenance\mocks.ts =====
+// Mock data helpers (NO auto-seed on import)
+import { createMaintenance } from "./handlers";
+import type {
+  Maintenance,
+  MaintAttachment,
+  MaintStatus,
+  MaintType,
+} from "./maintenance.types";
+import { LS_KEY } from "./maintenance.repo";
+
+const VEHICLES = [
+  "PICKUP-07 • Ford Ranger (NEO-5555)",
+  "SEDAN-04 • Vios (KLM-2345)",
+  "VAN-12 • Hiace (ABC-0912)",
+  "SUV-01 • Fortuner (XYZ-7777)",
+];
+const VENDORS = [
+  "QuickFix Auto",
+  "Malayan Insurance",
+  "LTO",
+  "AutoCare Center",
+];
+const TYPES: MaintType[] = [
+  "PMS",
+  "Repair",
+  "LTORenewal",
+  "InsuranceRenewal",
+  "Vulcanize",
+  "Other",
+];
+const STATUSES: MaintStatus[] = [
+  "Submitted",
+  "Acknowledged",
+  "In-Progress",
+  "Completed",
+  "Rejected",
+];
+
+function rand<T>(arr: T[]) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+function randInt(min: number, max: number) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+function maybe<T>(v: T, p = 0.5): T | undefined {
+  return Math.random() < p ? v : undefined;
+}
+
+function randomAttachment(): MaintAttachment {
+  const isPdf = Math.random() < 0.4;
+  return {
+    id: crypto.randomUUID(),
+    name: isPdf ? "document.pdf" : "photo.jpg",
+    kind: isPdf ? "pdf" : "img",
+    url: "data:,", // stub
+  };
+}
+
+/** Create N random records and save to local storage */
+export function seedMaintenance(count = 12): Maintenance[] {
+  const out: Maintenance[] = [];
+  for (let i = 0; i < count; i++) {
+    const base = {
+      vehicle: rand(VEHICLES),
+      type: rand(TYPES),
+      status: rand(STATUSES),
+      vendor: maybe(rand(VENDORS)),
+      costPhp: maybe(randInt(500, 10_000)),
+      date: `2025-${String(randInt(1, 12)).padStart(2, "0")}-${String(randInt(1, 28)).padStart(2, "0")}`,
+      odometerAtService: maybe(randInt(5_000, 90_000)),
+      tireRotationApplied: Math.random() < 0.3,
+      description: "Auto-generated sample record",
+      attachments: Math.random() < 0.4 ? [randomAttachment()] : [],
+      nextDueAuto: true,
+      createdBy: "Transport Office",
+      history: [],
+    } as Omit<Maintenance, "id" | "createdAt" | "updatedAt" | "history">;
+
+    out.push(createMaintenance(base));
+  }
+  return out;
+}
+
+export function clearMaintenanceSeed() {
+  if (typeof window !== "undefined") localStorage.removeItem(LS_KEY);
+}
+
+
 ===== lib\admin\maintenance\types.ts =====
-export type MaintType = "Preventive" | "Repair" | "Inspection";
-export type MaintStatus = "draft" | "submitted" | "acknowledged" | "in-progress" | "completed" | "rejected";
+export type MaintStatus =
+  | "Submitted"
+  | "Acknowledged"
+  | "In-Progress"
+  | "Completed"
+  | "Rejected";
+
+export type MaintAttachment = {
+  id: string;
+  name: string;
+  kind: "img" | "pdf";
+  url: string;
+};
 
 export type Maintenance = {
   id: string;
-  vehicleId: string;
-  vehicleCode: string;
-  plateNo: string;
-
-  type: MaintType;
-  description: string;
-  odometerKm: number;
-  photoUrl?: string | null;
-
-  requestDate: string;   // ISO
-  serviceDate?: string;  // ISO
+  vehicle: string;
+  type: string;
+  vendor?: string;
   status: MaintStatus;
-
-  remarks?: string | null;
-  createdAt: string;     // ISO
-  updatedAt: string;     // ISO
+  attachments?: MaintAttachment[];
+  costPhp?: number;
+  date?: string;            // ISO 8601
+  nextDueDateISO?: string;  // ISO 8601
+  // keep the rest of your fields as-is
 };
 
-export type MaintFilters = {
-  search?: string;
-  type?: "" | MaintType;
-  status?: "" | MaintStatus;
+
+===== lib\admin\maintenance\vehicles.repo.ts =====
+import type { Vehicle } from "./types";
+
+export const VehiclesRepo = {
+  list(): Vehicle[] {
+    return [
+      { id: "veh-bus-01", plate: "MAB-1234", name: "BUS-01" },
+      { id: "veh-van-03", plate: "XAC-9687", name: "VAN-03" },
+      { id: "veh-pu-02", plate: "TBA-4452", name: "Pickup-02" },
+    ];
+  },
 };
 
 

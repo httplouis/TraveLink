@@ -1,122 +1,142 @@
+// src/lib/admin/maintenance/maintenance.repo.ts
 "use client";
 
-import type {
-  Maintenance,
-  MaintStatus,
-  MaintType,
-  NextDueTint,
-} from "./maintenance.types";
+import { Maintenance, NextDueTint, tintFrom } from "./types";
 
-export const LS_KEY = "travilink:admin:maintenance:v2";
+const STORAGE_KEY = "tl:maintenance";
 
-// -------- storage helpers --------
-function read(): Maintenance[] {
+function loadAll(): Maintenance[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = localStorage.getItem(LS_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY);
     return raw ? (JSON.parse(raw) as Maintenance[]) : [];
   } catch {
     return [];
   }
 }
 
-function write(list: Maintenance[]) {
+function saveAll(rows: Maintenance[]) {
   if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(LS_KEY, JSON.stringify(list));
-  } catch {}
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(rows));
 }
 
-// tiny uid helper used by attachments, etc.
-export function uid(prefix = "m"): string {
-  try {
-    return `${prefix}_${crypto.randomUUID()}`;
-  } catch {
-    return `${prefix}_${Math.random().toString(36).slice(2)}`;
-  }
+export function uid(): string {
+  // short, stable uid for mock/local usage
+  return "m_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
 
-// Public minimal repo API (kept for compatibility)
-export const MaintRepo = {
-  all(): Maintenance[] {
-    return read();
-  },
-  saveAll(list: Maintenance[]) {
-    write(list);
-  },
-  find(id: string): Maintenance | undefined {
-    return read().find((r) => r.id === id);
-  },
-  setStatus(id: string, status: MaintStatus) {
-    const list = read();
-    const i = list.findIndex((r) => r.id === id);
-    if (i >= 0) {
-      const now = new Date().toISOString();
-      list[i] = {
-        ...list[i],
-        status,
-        updatedAt: now,
-        history: [
-          ...(list[i].history || []),
-          { atISO: now, action: `Status changed to ${status}`, actor: "System" },
-        ],
-      };
-      write(list);
-    }
-  },
-  clear() {
-    write([]);
-  },
-};
+/** Recalculate derived fields. Keep logic tiny and deterministic. */
+export function computeNextDue(m: Maintenance): Maintenance {
+  const tint: NextDueTint = tintFrom(m.nextDueDateISO);
+  return { ...m, nextDueTint: tint };
+}
 
-// -------- business logic: next due computation --------
-export function computeNextDue(src: {
-  type: MaintType;
-  date?: string;
-  odometerAtService?: number;
-}): Pick<Maintenance, "nextDueDateISO" | "nextDueOdometer" | "nextDueTint"> {
-  let nextDate: Date | undefined;
-  let nextOdo: number | undefined;
+/** Read with simple in-memory filtering (used by container). */
+export function query(): Maintenance[] {
+  return loadAll();
+}
 
-  const startDate = src.date ? new Date(src.date) : undefined;
+/** Create or replace a row. */
+export function upsert(
+  data: Omit<Maintenance, "id" | "createdAt" | "updatedAt" | "history"> & {
+    id?: string;
+    history?: Maintenance["history"];
+  }
+): Maintenance {
+  const rows = loadAll();
+  const nowISO = new Date().toISOString();
 
-  switch (src.type) {
-    case "PMS":
-      if (startDate) {
-        nextDate = new Date(startDate);
-        nextDate.setMonth(nextDate.getMonth() + 6); // 6 months
-      }
-      if (src.odometerAtService != null) nextOdo = src.odometerAtService + 10000; // +10k km
-      break;
-    case "LTORenewal":
-    case "InsuranceRenewal":
-      if (startDate) {
-        nextDate = new Date(startDate);
-        nextDate.setFullYear(nextDate.getFullYear() + 1); // yearly
-      }
-      break;
-    case "VulcanizeTire":
-    case "Repair":
-    case "Other":
-    default:
-      // no default schedule
-      break;
+  if (data.id) {
+    const idx = rows.findIndex((r) => r.id === data.id);
+    const history = data.history ?? rows[idx]?.history ?? [];
+    const updated: Maintenance = computeNextDue({
+      ...(rows[idx] ?? ({} as Maintenance)),
+      ...data,
+      id: data.id,
+      createdAt: rows[idx]?.createdAt ?? nowISO,
+      updatedAt: nowISO,
+      history,
+    });
+    if (idx >= 0) rows[idx] = updated;
+    else rows.push(updated);
+    saveAll(rows);
+    return updated;
   }
 
-  let tint: NextDueTint = "none";
-  const today = new Date();
+  const created: Maintenance = computeNextDue({
+    ...(data as any),
+    id: uid(),
+    createdAt: nowISO,
+    updatedAt: nowISO,
+    history: data.history ?? [],
+  });
+  rows.push(created);
+  saveAll(rows);
+  return created;
+}
 
-  if (nextDate) {
-    const days = Math.ceil((nextDate.getTime() - today.getTime()) / 86400000);
-    tint = days < 0 ? "overdue" : days <= 14 ? "soon" : "ok";
-  } else if (nextOdo != null) {
-    // If only odometer is present, keep it visible but neutral/ok
-    tint = "ok";
-  }
+/** Patch selected fields on a row. */
+export function patch(
+  id: string,
+  data: Partial<Omit<Maintenance, "id" | "createdAt" | "history">>
+): Maintenance | undefined {
+  const rows = loadAll();
+  const idx = rows.findIndex((r) => r.id === id);
+  if (idx < 0) return undefined;
 
-  return {
-    nextDueDateISO: nextDate ? nextDate.toISOString() : undefined,
-    nextDueOdometer: nextOdo,
-    nextDueTint: tint,
-  };
+  const nowISO = new Date().toISOString();
+  const merged = computeNextDue({
+    ...rows[idx],
+    ...data,
+    id,
+    updatedAt: nowISO,
+  } as Maintenance);
+
+  rows[idx] = merged;
+  saveAll(rows);
+  return merged;
+}
+
+// Provide a friendly alias some files may import
+export const update = patch;
+
+export function remove(id: string) {
+  const rows = loadAll().filter((r) => r.id !== id);
+  saveAll(rows);
+}
+
+export function removeMany(ids: string[]) {
+  const set = new Set(ids);
+  const rows = loadAll().filter((r) => !set.has(r.id));
+  saveAll(rows);
+}
+
+export function exportCSV(rows: Maintenance[]): string {
+  const header = [
+    "id",
+    "vehicle",
+    "type",
+    "status",
+    "vendor",
+    "costPhp",
+    "date",
+    "nextDueDateISO",
+    "nextDueTint",
+  ];
+  const body = rows.map((r) =>
+    [
+      r.id,
+      r.vehicle,
+      r.type,
+      r.status,
+      r.vendor,
+      r.costPhp,
+      r.date,
+      r.nextDueDateISO ?? "",
+      r.nextDueTint,
+    ]
+      .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+      .join(",")
+  );
+  return [header.join(","), ...body].join("\n");
 }

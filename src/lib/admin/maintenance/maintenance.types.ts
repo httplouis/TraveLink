@@ -1,119 +1,95 @@
-/* -------------------------------------------------------------------------------------------------
- * Maintenance domain types
- * ------------------------------------------------------------------------------------------------*/
+/* Central, strict types for Maintenance. Keep names you used in old code. */
 
-export type UID = string;
+export type MaintType =
+  | "PMS"
+  | "Repair"
+  | "LTORenewal"
+  | "InsuranceRenewal"
+  | "Vulcanize"
+  | "Other";
 
-/** Attachment stored on a maintenance record */
-export type MaintAttachment = {
-  id: UID;
-  /** File name shown to users */
-  name: string;
-  /** Used for rendering the proper badge / preview */
-  kind: "image" | "pdf";
-  /** Data URL or remote URL */
-  url: string;
-};
+export type MaintStatus =
+  | "Submitted"
+  | "Acknowledged"
+  | "In-Progress"
+  | "Completed"
+  | "Rejected";
 
-/** Supported maintenance kinds (UI badges & filters rely on these literal values) */
-export const MAINT_TYPES = [
-  "PMS",
-  "Repair",
-  "LTORenewal",
-  "InsuranceRenewal",
-  "Vulcanize",
-  "Other",
-] as const;
-export type MaintType = (typeof MAINT_TYPES)[number];
-
-/** Workflow status values (table chips & filters rely on these literal values) */
-export const MAINT_STATUSES = [
-  "Submitted",
-  "Acknowledged",
-  "In-Progress",
-  "Completed",
-  "Rejected",
-] as const;
-export type MaintStatus = (typeof MAINT_STATUSES)[number];
-
-/** “Next due” visual state used by filters and badges */
+/** next-due indicator used by filters and list tints */
 export type NextDueTint = "ok" | "soon" | "overdue" | "none";
 
-/** Activity log entry */
+export type MaintAttachmentKind = "img" | "pdf";
+
+export type MaintAttachment = {
+  id: string;
+  name: string;
+  kind: MaintAttachmentKind; // "img" | "pdf"
+  url: string;               // data: URL or http(s)
+};
+
 export type MaintHistoryItem = {
-  atISO: string;         // when
-  action: string;        // e.g. "Created (Submitted)"
-  actor: string;         // e.g. "Transport Office"
+  atISO: string;
+  action: string;
+  actor: string;
   notes?: string;
 };
 
-/**
- * Core record.
- * NOTE: Several fields are optional to allow progressive entry.
- * UI components should gracefully handle undefined values.
- */
 export type Maintenance = {
-  id: UID;
-
-  // Basic info
+  id: string;
   vehicle: string;
   type: MaintType;
   status: MaintStatus;
-  date?: string;                 // YYYY-MM-DD (ISO date only)
 
   vendor?: string;
   costPhp?: number;
-  odometerAtService?: number;
-  tireRotationApplied?: boolean;
+  date: string; // ISO string (yyyy-mm-dd or full ISO)
 
+  odometerAtService?: number | null;
   description?: string;
-  attachments?: MaintAttachment[];
 
-  createdBy?: string;
-  assignedDriverId?: string;
+  attachments: MaintAttachment[];
 
-  // Computed / manual next-due information
-  /**
-   * If true (default), the system will compute next due values
-   * using business rules. If false, user-provided manual fields
-   * below are respected.
-   */
-  nextDueAuto?: boolean;         // <- NEW FLAG
+  /** auto-compute next due from type/date/odometer */
+  nextDueAuto?: boolean;
 
-  nextDueDateISO?: string;       // YYYY-MM-DD
-  nextDueOdometer?: number;      // km
-  nextDueTint?: NextDueTint;
-
-  // Metadata
-  createdAt?: string;            // ISO datetime
-  updatedAt?: string;            // ISO datetime
-  history?: MaintHistoryItem[];
-};
-
-/** Quick filtering model used by the list page */
-export type MaintFilters = {
-  q?: string;
-  category?: MaintType | "all";
-  status?: MaintStatus | "all";
-  due?: NextDueTint | "all";
-  dateFrom?: string;             // YYYY-MM-DD
-  dateTo?: string;               // YYYY-MM-DD
-  density?: "comfortable" | "compact";
-};
-
-/* -------------------------------------------------------------------------------------------------
- * Extra types referenced elsewhere
- * ------------------------------------------------------------------------------------------------*/
-
-/** Minimal Driver shape used by demo repos / lookups */
-export type Driver = {
-  id: UID;
-  name: string;
-};
-
-/** Helper: function result when computing next-due values */
-export type NextDueComputation = {
+  /** at least one of date/odometer tint inputs may exist */
   nextDueDateISO?: string;
   nextDueOdometer?: number;
-  nextDueTint: NextDueTint;
+  nextDueTint?: NextDueTint;
+
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+  history: MaintHistoryItem[];
 };
+
+/** Filters used by FiltersBar (with “all” choice kept) */
+export type MaintFilters = {
+  search?: string;
+  type?: MaintType | "all";
+  status?: MaintStatus | "all";
+  nextDueTint?: NextDueTint | "all";
+};
+
+/** Small utility used across UI to convert due → tint */
+export function tintFrom(
+  nextDueDateISO?: string,
+  nextDueOdometer?: number | null
+): NextDueTint {
+  // very lightweight logic; keep identical visuals
+  const now = new Date();
+  if (nextDueDateISO) {
+    const d = new Date(nextDueDateISO);
+    const diff = (d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+    if (diff < 0) return "overdue";
+    if (diff <= 14) return "soon";
+    return "ok";
+  }
+  if (typeof nextDueOdometer === "number") {
+    // You can tune these numbers later; UI unchanged.
+    if (nextDueOdometer <= 0) return "overdue";
+    if (nextDueOdometer < 500) return "soon";
+    return "ok";
+  }
+  return "none";
+}

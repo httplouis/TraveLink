@@ -1,3 +1,2 @@
-export * from "./maintenance.types";
-export * from "./maintenance.repo";
-export * from "./handlers";
+export { default } from "./table";
+export type { MaintTableHandle } from "./table";

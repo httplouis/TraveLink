@@ -1,25 +1,29 @@
 "use client";
-import * as React from "react";
-import type { Maintenance } from "@/lib/admin/maintenance/types";
-import { MaintForm } from "./MaintForm.ui";
 
-export default function NewReportModal({
-  open, initial, onClose, onSubmit,
-}: {
+import * as React from "react";
+import type { Maintenance } from "@/lib/admin/maintenance/maintenance.types";
+import MaintForm from "@/components/admin/maintenance/forms/MaintForm.ui";
+
+type Props = {
   open: boolean;
-  initial?: Maintenance;
+  initial?: Partial<Maintenance>;
   onClose: () => void;
-  onSubmit: (data: Omit<Maintenance, "id" | "createdAt" | "updatedAt" | "history">) => void;
-}) {
+  onSubmit?: (m: Maintenance) => void;
+};
+
+export default function NewReportModal({ open, initial, onClose, onSubmit }: Props) {
   if (!open) return null;
+
   return (
-    <div className="fixed inset-0 z-[80] grid place-items-center bg-black/40" onClick={onClose}>
-      <div className="w-[min(760px,96vw)] rounded-2xl bg-white p-4 shadow-xl" onClick={(e)=>e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-lg font-semibold">{initial ? "Edit Maintenance" : "Add Maintenance"}</h2>
-          <button className="border rounded-md px-2 py-1 bg-white" onClick={onClose}>Close</button>
-        </div>
-        <MaintForm initial={initial} onCancel={onClose} onSubmit={onSubmit} />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+      <div className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl">
+        <div className="text-lg font-semibold mb-2">New Maintenance Report</div>
+
+        <MaintForm
+          initial={initial}
+          onCancel={onClose}
+          onSubmit={(m) => onSubmit?.(m)}
+        />
       </div>
     </div>
   );

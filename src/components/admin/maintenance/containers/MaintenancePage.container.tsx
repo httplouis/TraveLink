@@ -1,110 +1,198 @@
 "use client";
+
 import * as React from "react";
-import type { Maintenance, MaintFilters, MaintStatus } from "@/lib/admin/maintenance/types";
-import { loadMaintenance, createMaintenance, updateMaintenance, deleteMaintenance, deleteManyMaintenance, exportMaintenanceCSV } from "@/lib/admin/maintenance/handlers";
-import { seedMockMaintenance, clearAllMaintenance } from "@/lib/admin/maintenance/mocks";
 
-import MaintenanceKpiBar from "../kpi/MaintenanceKpiBar.ui";
-import MaintFiltersBar from "../filters/FiltersBar.ui";
-import Table, { type MaintTableHandle } from "../table";
-import MaintenanceDrawer from "../ui/MaintenanceDrawer.ui";
-import NewReportModal from "../forms/NewReportModal.ui";
+/* Types */
+import type { Maintenance, MaintFilters } from "@/lib/admin/maintenance/types";
 
+/* Data handlers (facade) */
+import {
+  loadMaintenance as query,
+  createMaintenance as upsert,
+  updateMaintenance as patch,
+  deleteMaintenance as remove,
+  deleteManyMaintenance as removeMany,
+  exportMaintenanceCSV as exportCSV,
+} from "@/lib/admin/maintenance/handlers";
+
+/* Dev helpers */
+import { seedMaintenance, clearAllMaintenance } from "@/lib/admin/maintenance/mocks";
+
+/* UI */
+import MaintenanceKpiBar from "@/components/admin/maintenance/kpi/MaintenanceKpiBar.ui";
+import MaintFiltersBar from "@/components/admin/maintenance/filters/MaintenanceFilterBar.ui";
+import Table, { type MaintTableHandle } from "@/components/admin/maintenance/table";
+import RecordDrawer from "@/components/admin/maintenance/ui/MaintenanceDrawer.ui";
+import NewReportModal from "@/components/admin/maintenance/forms/NewReportModal.ui";
+
+/* Local defaults */
 const DEFAULT_FILTERS: MaintFilters = {
-  q: "",
-  category: "all",
+  search: "",
+  type: "all",
   status: "all",
   due: "all",
-  density: "comfortable",
 };
 
-export default function MaintenancePageContainer() {
-  const [filters, setFilters] = React.useState<MaintFilters>(DEFAULT_FILTERS);
-  const [rows, setRows] = React.useState<Maintenance[]>([]);
-  const [loading, setLoading] = React.useState(true);
+type FormState =
+  | { mode: "create" }
+  | { mode: "edit"; id: string }
+  | null;
 
-  const refresh = React.useCallback(() => {
+export default function MaintenancePageContainer() {
+  const tableRef = React.useRef<MaintTableHandle | null>(null);
+
+  const [rows, setRows] = React.useState<Maintenance[]>([]);
+  const [loading, setLoading] = React.useState(false);
+
+  const [filters, setFilters] = React.useState<MaintFilters>(DEFAULT_FILTERS);
+  const [selection, setSelection] = React.useState<string[]>([]);
+
+  const [form, setForm] = React.useState<FormState>(null);
+  const [drawerRow, setDrawerRow] = React.useState<Maintenance | null>(null);
+
+  /* Load */
+  const load = React.useCallback(async () => {
     setLoading(true);
-    setRows(loadMaintenance(filters));
-    setLoading(false);
+    try {
+      const data = await query(filters as unknown as Record<string, unknown>);
+      setRows(data ?? []);
+    } finally {
+      setLoading(false);
+    }
   }, [filters]);
 
-  React.useEffect(() => { refresh(); }, [refresh]);
+  React.useEffect(() => {
+    load();
+  }, [load]);
 
-  const [selection, setSelection] = React.useState<string[]>([]);
-  const [form, setForm] = React.useState<null | { mode:"create" } | { mode:"edit"; id:string }>(null);
-  const [view, setView] = React.useState<Maintenance | null>(null);
-  const tableRef = React.useRef<MaintTableHandle>(null);
-
-  // Status inline change
-  const onChangeStatus = (id: string, next: MaintStatus) => {
-    updateMaintenance(id, { status: next } as any);
-    refresh();
-  };
-
-  // CRUD
-  const onCreate = (data: Omit<Maintenance,"id"|"createdAt"|"updatedAt"|"history">) => { createMaintenance(data); setForm(null); refresh(); };
-  const onUpdate = (id: string, data: Omit<Maintenance,"id"|"createdAt"|"updatedAt"|"history">) => { updateMaintenance(id, data); setForm(null); refresh(); };
-  const onDelete = (id: string) => { if (confirm("Delete this record?")) { deleteMaintenance(id); refresh(); } };
-  const onDeleteSelected = () => {
-    if (!selection.length) return;
-    if (confirm(`Delete ${selection.length} selected record(s)?`)) {
-      deleteManyMaintenance(selection);
-      setSelection([]);
-      refresh();
+  /* CRUD Handlers */
+  async function onCreate(data: Omit<Maintenance, "id" | "createdAt" | "updatedAt" | "history">) {
+    const created = await upsert(data as any);
+    if (created) {
+      setForm(null);
+      await load();
     }
-  };
-  const onExport = () => {
-    const blob = exportMaintenanceCSV(rows);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = "maintenance.csv"; a.click();
-    URL.revokeObjectURL(url);
-  };
+  }
 
-  const onView = (id: string) => setView(rows.find((r)=>r.id===id) || null);
-  const onEdit = (id: string) => setForm({ mode:"edit", id });
+  async function onUpdate(id: string, data: Partial<Omit<Maintenance, "id" | "createdAt" | "updatedAt" | "history">>) {
+    const updated = await patch(id, data as any);
+    if (updated) {
+      setForm(null);
+      await load();
+    }
+  }
 
-  const current = form?.mode === "edit" ? rows.find((r)=>r.id === (form as any).id) : undefined;
+  async function onDelete(id: string) {
+    const ok = await remove(id);
+    if (ok) await load();
+  }
 
-  // KPI
-  const kpi = React.useMemo(() => {
-    const s = (t: MaintStatus) => rows.filter(r=>r.status===t).length;
-    const d = (n: "ok"|"soon"|"overdue") => rows.filter(r=>r.nextDueTint===n).length;
-    return { all: rows.length, submitted: s("Submitted"), inProgress: s("In-Progress"), completed: s("Completed"), dueSoon: d("soon"), overdue: d("overdue") };
-  }, [rows]);
+  async function onDeleteSelected() {
+    if (!selection.length) return;
+    const ok = await removeMany(selection);
+    if (ok) {
+      setSelection([]);
+      await load();
+    }
+  }
+
+  async function onExportCSV() {
+    await exportCSV(filters as unknown as Record<string, unknown>);
+  }
+
+  /* Drawer + Modal helpers */
+  function drawerOnClose() {
+    setDrawerRow(null);
+  }
+
+  function drawerOnEdit(r: Maintenance) {
+    setForm({ mode: "edit", id: r.id });
+  }
+
+  const initialForModal: Maintenance | undefined =
+    form && form.mode === "edit"
+      ? rows.find((r) => r.id === (form as { mode: "edit"; id: string }).id)
+      : undefined;
+
+  /* Dev actions (optional buttons can call these via Toolbar if you have one) */
+  async function onSeed() {
+    await seedMaintenance();
+    await load();
+  }
+
+  async function onClearAll() {
+    await clearAllMaintenance();
+    await load();
+  }
 
   return (
-    <div className="p-4 space-y-4">
-      <MaintenanceKpiBar {...kpi} />
-      <MaintFiltersBar value={filters} onChange={setFilters} onClear={() => setFilters(DEFAULT_FILTERS)} />
+    <div className="space-y-4">
+      {/* KPI Summary */}
+      <MaintenanceKpiBar items={rows} />
 
+      {/* Filters */}
+      <MaintFiltersBar
+        value={filters}
+        onChange={(f: MaintFilters) => setFilters(f)}
+        onClear={() => setFilters(DEFAULT_FILTERS)}
+      />
+
+      {/* Table */}
       <Table
         ref={tableRef}
-        loading={loading}
         rows={rows}
+        loading={loading}
+        /* Selection (if your Table supports it) */
         selection={selection}
-        setSelection={setSelection}
-        onView={onView}
-        onEdit={onEdit}
-        onDelete={onDelete}
-        onExport={onExport}
+        onSelectionChange={(ids: string[]) => setSelection(ids)}
+        /* Inline actions bridge back here */
+        onUpdated={async () => {
+          await load();
+        }}
+        onDeleted={async (id: string) => {
+          await onDelete(id);
+        }}
+        onView={(r: Maintenance) => setDrawerRow(r)}
+        onEdit={(r: Maintenance) => drawerOnEdit(r)}
+        onExport={onExportCSV}
         onDeleteSelected={onDeleteSelected}
-        onAdd={() => setForm({ mode:"create" })}
-        pageSize={10}
-        onChangeStatus={onChangeStatus}
-        onSeedDemo={() => { seedMockMaintenance(12); refresh(); }}
-        onClearAll={() => { if (confirm("Clear all maintenance records?")) { clearAllMaintenance(); refresh(); } }}
       />
 
-      <MaintenanceDrawer open={!!view} row={view} onClose={() => setView(null)} />
-
-      <NewReportModal
-        open={!!form}
-        initial={current}
-        onClose={() => setForm(null)}
-        onSubmit={(data) => form?.mode === "create" ? onCreate(data) : onUpdate((form as any).id, data)}
+      {/* Drawer (record details) */}
+      <RecordDrawer
+        open={!!drawerRow}
+        row={drawerRow}
+        onClose={drawerOnClose}
       />
+
+      {/* Create / Edit */}
+      {form && (
+        <NewReportModal
+          open={!!form}
+          initial={initialForModal}
+          onClose={() => setForm(null)}
+          onSubmit={(data: Maintenance) => {
+            if (form.mode === "create") {
+              // when NewReportModal returns a full Maintenance, pass only allowed fields to upsert
+              const {
+                id, createdAt, updatedAt, history, ...rest
+              } = data as any;
+              return onCreate(rest as any);
+            } else {
+              const {
+                id, createdAt, updatedAt, history, ...rest
+              } = data as any;
+              return onUpdate(form.id, rest as any);
+            }
+          }}
+        />
+      )}
+
+      {/* Optional dev utilities — wire these to buttons in your toolbar if you want */}
+      <div className="hidden">
+        <button onClick={onSeed}>Seed</button>
+        <button onClick={onClearAll}>Clear</button>
+      </div>
     </div>
   );
 }

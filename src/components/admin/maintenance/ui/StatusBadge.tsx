@@ -1,20 +1,38 @@
 "use client";
-import type { MaintStatus } from "@/lib/admin/maintenance/types";
+import * as React from "react";
+import type { MaintStatus } from "@/lib/admin/maintenance/maintenance.types";
 
-type Props = { value?: MaintStatus; s?: MaintStatus; className?: string };
-const MAP: Record<MaintStatus, { bg: string; text: string; ring: string; dot: string }> = {
-  Submitted:     { bg:"bg-indigo-50",  text:"text-indigo-700",  ring:"ring-indigo-200",  dot:"bg-indigo-500" },
-  Acknowledged:  { bg:"bg-blue-50",    text:"text-blue-700",    ring:"ring-blue-200",    dot:"bg-blue-500" },
-  "In-Progress": { bg:"bg-amber-50",   text:"text-amber-800",   ring:"ring-amber-200",   dot:"bg-amber-500" },
-  Completed:     { bg:"bg-emerald-50", text:"text-emerald-800", ring:"ring-emerald-200", dot:"bg-emerald-500" },
-  Rejected:      { bg:"bg-rose-50",    text:"text-rose-800",    ring:"ring-rose-200",    dot:"bg-rose-500" },
+const COLORS: Record<MaintStatus, string> = {
+  Submitted: "bg-indigo-50 text-indigo-700 ring-indigo-200",
+  Acknowledged: "bg-sky-50 text-sky-700 ring-sky-200",
+  "In-Progress": "bg-amber-50 text-amber-700 ring-amber-200",
+  Completed: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  Rejected: "bg-rose-50 text-rose-700 ring-rose-200",
 };
-export default function StatusBadge({ value, s, className="" }: Props) {
-  const val = (value ?? s)!;
-  const c = MAP[val];
+
+export default function StatusBadge({
+  value,
+  onClick,
+  className,
+}: {
+  value: MaintStatus;
+  onClick?: () => void;
+  className?: string;
+}) {
   return (
-    <span className={["inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-medium ring-1 ring-inset", c.bg, c.text, c.ring, className].join(" ")}>
-      <span className={["h-1.5 w-1.5 rounded-full", c.dot].join(" ")} /> {val}
-    </span>
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset",
+        COLORS[value],
+        onClick ? "hover:opacity-90 transition" : "pointer-events-none",
+        className ?? "",
+      ].join(" ")}
+      title="Click to change status"
+    >
+      <span className="inline-block h-1.5 w-1.5 rounded-full bg-current/60" />
+      {value}
+    </button>
   );
 }

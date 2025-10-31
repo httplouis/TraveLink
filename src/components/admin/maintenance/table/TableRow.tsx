@@ -1,132 +1,103 @@
 "use client";
+
 import * as React from "react";
-import type { Maintenance, MaintStatus } from "@/lib/admin/maintenance/types";
-import AttachmentBadges from "../ui/AttachmentBadges.ui";
-import StatusBadge from "../ui/StatusBadge";
-import TypeBadge from "../ui/TypeBadge";
-import StatusSwitch from "../ui/StatusSwitch";
-
-function peso(v?: number | null) {
-  if (v == null) return "—";
-  return `PHP ${new Intl.NumberFormat("en-PH", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(v)}`;
-}
-
-function fmtDate(iso?: string | null) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return d.toLocaleDateString("en-PH", {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-  });
-}
+import type {
+  Maintenance,
+  MaintAttachment,
+} from "@/lib/admin/maintenance/types";
+import StatusSwitch from "@/components/admin/maintenance/ui/StatusSwitch";
 
 type Props = {
   r: Maintenance;
-  checked: boolean;
-  onCheck: (id: string, checked: boolean) => void;
-  onChangeStatus: (id: string, s: MaintStatus) => void;
-  onView: (id: string) => void;
-  onEdit: (id: string) => void;
-  onDelete: (id: string) => void;
+  onView?: (row: Maintenance) => void;
+  onEdit?: (row: Maintenance) => void;
+  onDelete?: (row: Maintenance) => void;
+  onChangeStatus2?: (row: Maintenance) => void; // keep your existing callback name
 };
 
-export default function TableRow({
-  r,
-  checked,
-  onCheck,
-  onChangeStatus,
-  onView,
-  onEdit,
-  onDelete,
-}: Props) {
-  const dueTone =
-    r.nextDueTint === "overdue"
-      ? "bg-rose-100 text-rose-800"
-      : r.nextDueTint === "soon"
-      ? "bg-amber-100 text-amber-800"
-      : r.nextDueTint === "ok"
-      ? "bg-emerald-100 text-emerald-800"
-      : "bg-neutral-100 text-neutral-700";
+/* attachment badge kept simple (IMG / PDF) per your request */
+function AttachmentBadge({ a }: { a: MaintAttachment }) {
+  const tag = a.kind === "img" ? "IMG" : "PDF";
+  return (
+    <a
+      href={a.url}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ring-neutral-300 mr-1"
+      title={a.name}
+    >
+      {tag}
+    </a>
+  );
+}
 
-  const nextDueStr =
-    r.nextDueDateISO
-      ? fmtDate(r.nextDueDateISO)
-      : r.nextDueOdometer
-      ? `${r.nextDueOdometer.toLocaleString()} km`
-      : "—";
+export default function TableRow({ r, onView, onEdit, onDelete, onChangeStatus2 }: Props) {
+  /* when status changes inside StatusSwitch, bubble the updated row up */
+  const handleStatusChanged = (updated: Maintenance) => {
+    onChangeStatus2?.(updated);
+  };
 
   return (
-    <tr className="even:bg-white odd:bg-neutral-50 hover:bg-neutral-100 transition-colors">
-      <td className="px-4 py-3 w-[34px]">
-        <input
-          type="checkbox"
-          checked={checked}
-          className="accent-[#7a1f2a]"
-          onChange={(e) => onCheck(r.id, e.target.checked)}
-        />
+    <tr className="border-b last:border-b-0">
+      {/* Vehicle */}
+      <td className="px-3 py-2 text-sm text-neutral-800">
+        {r.vehicle}
       </td>
 
-      <td className="px-4 py-3">
-        <div className="font-medium text-neutral-900">{r.vehicle}</div>
-        {r.vendor && <div className="text-xs text-neutral-500">{r.vendor}</div>}
+      {/* Type */}
+      <td className="px-3 py-2 text-sm text-neutral-700">
+        {r.type}
       </td>
 
-      <td className="px-4 py-3 hidden sm:table-cell">
-        <TypeBadge value={r.type} />
+      {/* Status — colored pill, clickable */}
+      <td className="px-3 py-2">
+        <StatusSwitch row={r} onChanged={handleStatusChanged} />
       </td>
 
-      <td className="px-4 py-3">
+      {/* Date */}
+      <td className="px-3 py-2 text-sm text-neutral-700">
+        {r.date?.slice(0, 10) ?? ""}
+      </td>
+
+      {/* Next Due (kept simple; you already style elsewhere) */}
+      <td className="px-3 py-2 text-sm text-neutral-700">
+        {r.nextDueDateISO?.slice(0, 10) ?? (r.nextDueOdometer ? `${r.nextDueOdometer} km` : "—")}
+      </td>
+
+      {/* Attachments — show IMG / PDF badges (clickable) */}
+      <td className="px-3 py-2">
+        {(r.attachments?.length ?? 0) > 0 ? (
+          <div className="flex flex-wrap">
+            {r.attachments!.map((a) => (
+              <AttachmentBadge key={a.id} a={a} />
+            ))}
+          </div>
+        ) : (
+          <div className="text-xs text-neutral-400">No preview available</div>
+        )}
+      </td>
+
+      {/* Actions */}
+      <td className="px-3 py-2">
         <div className="flex items-center gap-2">
-          <StatusBadge value={r.status} />
-          <StatusSwitch value={r.status} onChange={(s) => onChangeStatus(r.id, s)} />
-        </div>
-      </td>
-
-      <td className="px-4 py-3 hidden md:table-cell">
-        <AttachmentBadges items={r.attachments ?? []} />
-      </td>
-
-      <td className="px-4 py-3 text-right tabular-nums hidden lg:table-cell">
-        {peso(r.costPhp ?? undefined)}
-      </td>
-
-      <td className="px-4 py-3 hidden sm:table-cell">
-        {fmtDate(r.date ?? undefined)}
-      </td>
-
-      <td className="px-4 py-3">
-        <span
-          className={[
-            "inline-flex items-center gap-2 rounded-md px-2.5 py-1 text-xs font-medium",
-            dueTone,
-          ].join(" ")}
-        >
-          {nextDueStr}
-          {r.nextDueTint === "overdue" && <span className="ml-1">⟶ urgent</span>}
-        </span>
-      </td>
-
-      <td className="px-4 py-3 text-right">
-        <div className="inline-flex items-center gap-1">
           <button
-            onClick={(e) => { e.stopPropagation(); onView(r.id); }}
-            className="px-2 py-1 text-xs rounded-md border border-neutral-300 hover:bg-neutral-100"
+            type="button"
+            onClick={() => onView?.(r)}
+            className="text-xs px-2 h-7 rounded-md border border-neutral-300 hover:bg-neutral-50"
           >
             View
           </button>
           <button
-            onClick={(e) => { e.stopPropagation(); onEdit(r.id); }}
-            className="px-2 py-1 text-xs rounded-md border border-neutral-300 hover:bg-neutral-100"
+            type="button"
+            onClick={() => onEdit?.(r)}
+            className="text-xs px-2 h-7 rounded-md border border-neutral-300 hover:bg-neutral-50"
           >
             Edit
           </button>
           <button
-            onClick={(e) => { e.stopPropagation(); onDelete(r.id); }}
-            className="px-2 py-1 text-xs rounded-md border border-rose-300 text-rose-600 hover:bg-rose-50"
+            type="button"
+            onClick={() => onDelete?.(r)}
+            className="text-xs px-2 h-7 rounded-md border border-rose-200 text-rose-700 hover:bg-rose-50"
           >
             Delete
           </button>

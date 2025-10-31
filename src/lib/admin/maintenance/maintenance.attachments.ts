@@ -1,16 +1,20 @@
-"use client";
 import type { MaintAttachment } from "./maintenance.types";
-import { uid } from "./maintenance.repo";
 
+/** Map a File → MaintAttachment (keeps your dataURL behavior) */
 export async function fileToAttachment(file: File): Promise<MaintAttachment> {
   const name = file.name;
-  const kind = file.type.includes("pdf") ? "pdf" : "image";
+  const kind = file.type.startsWith("image/") ? "img" : "pdf";
   const url = await readAsDataURL(file);
-  return { id: uid("att"), name, kind, url };
+  return {
+    id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()),
+    name,
+    kind,
+    url,
+  };
 }
 
-function readAsDataURL(file: File) {
-  return new Promise<string>((resolve, reject) => {
+function readAsDataURL(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
     const fr = new FileReader();
     fr.onerror = () => reject(fr.error);
     fr.onload = () => resolve(String(fr.result));
