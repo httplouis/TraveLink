@@ -4,6 +4,7 @@ import * as React from "react";
 import type { VehicleMode } from "@/lib/user/request/types";
 import { getDepartmentHead } from "@/lib/org/departments";
 import TravelOrderFormView from "./TravelOrderForm.view";
+import { AdminRequestsRepo } from "@/lib/admin/requests/store";
 
 type Props = {
   data: any;
@@ -29,21 +30,8 @@ export default function TravelOrderForm({
   // If user types a head name manually, don’t auto-overwrite next time
   const headEditedRef = React.useRef(false);
 
-  // Signature UI state
-  const [sigDirty, setSigDirty] = React.useState(false);
-  const [sigSaved, setSigSaved] = React.useState<boolean>(
-    !!data?.endorsedByHeadSignature
-  );
-  const [sigSavedAt, setSigSavedAt] = React.useState<string | null>(
-    data?.endorsedByHeadSignature ? new Date().toLocaleString() : null
-  );
-
-  // ✅ Keep badge in sync with store updates (autosave, fill current, load draft, etc.)
-  React.useEffect(() => {
-    const has = !!data?.endorsedByHeadSignature;
-    setSigSaved(has);
-    if (has) setSigSavedAt(new Date().toLocaleString());
-  }, [data?.endorsedByHeadSignature]);
+  // Sending state for the new flow
+  const [sending, setSending] = React.useState(false);
 
   function handleDepartmentChange(nextDept: string) {
     const patch: any = { department: nextDept };
@@ -57,6 +45,52 @@ export default function TravelOrderForm({
     onChange(patch);
   }
 
+  async function submitToHead() {
+    if (!data?.department) {
+      alert("Please select Department first.");
+      return;
+    }
+
+    setSending(true);
+    try {
+      const now = new Date().toISOString();
+      const id =
+        data?.id ?? (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`);
+
+      // Create/Update an AdminRequest record with status: pending_head
+      AdminRequestsRepo.upsert({
+        id,
+        createdAt: data?.createdAt || now,
+        updatedAt: now,
+        status: "pending_head", // NEW head step
+        driver: undefined,
+        vehicle: undefined,
+
+        // For quick admin/head reads
+        travelOrder: { ...(data ?? {}) } as any,
+
+        // Keep the whole payload if you have it; here we only ensure shape
+        payload: { travelOrder: { ...(data ?? {}) } } as any,
+
+        // No admin approval yet
+        approverSignature: null,
+        approvedAt: null,
+        approvedBy: null,
+      });
+
+      // Also reflect the id back to form state so subsequent saves keep same record
+      onChange({ id, updatedAt: now });
+
+      alert(
+        `Sent to Department Head for endorsement${
+          data?.endorsedByHeadName ? ` (${data.endorsedByHeadName})` : ""
+        }.`
+      );
+    } finally {
+      setSending(false);
+    }
+  }
+
   return (
     <TravelOrderFormView
       data={data}
@@ -65,36 +99,19 @@ export default function TravelOrderForm({
       onChange={onChange}
       onChangeCosts={onChangeCosts}
       onDepartmentChange={handleDepartmentChange}
-      // signature props
-      signature={data?.endorsedByHeadSignature || null}
-      sigDirty={sigDirty}
-      sigSaved={sigSaved}
-      sigSavedAt={sigSavedAt}
-      onSigDraw={() => setSigDirty(true)}
-      onSigSave={(dataUrl) => {
-        onChange({ endorsedByHeadSignature: dataUrl });
-        setSigSaved(true);
-        setSigDirty(false);
-        setSigSavedAt(new Date().toLocaleString());
-      }}
-      onSigClear={() => {
-        onChange({ endorsedByHeadSignature: "" });
-        setSigDirty(false);
-        setSigSaved(false);
-        setSigSavedAt(null);
-      }}
-      onSigUpload={async (file) => {
-        const buf = await file.arrayBuffer();
-        const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
-        const dataUrl = `data:${file.type};base64,${b64}`;
-        onChange({ endorsedByHeadSignature: dataUrl });
-        setSigSaved(true);
-        setSigDirty(false);
-        setSigSavedAt(new Date().toLocaleString());
-      }}
       setHeadEdited={() => {
         headEditedRef.current = true;
       }}
+      // Footer action: send to head
+      footerRight={
+        <button
+          disabled={sending}
+          onClick={submitToHead}
+          className="rounded-md bg-[#7a1f2a] px-4 py-2 text-white disabled:opacity-50"
+        >
+          {sending ? "Sending…" : "Send to Department Head"}
+        </button>
+      }
     />
   );
 }

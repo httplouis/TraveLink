@@ -2,11 +2,9 @@
 
 import * as React from "react";
 import TopGridFields from "./parts/TopGridFields.view";
-// ⛔️ Removed the old PurposeField import to avoid duplicate purpose UI
-// import PurposeField from "./parts/PurposeField.view";
+// ⛔️ Purpose is already part of TopGridFields; keep it centralized there.
 import CostsSection from "./parts/CostsSection.view";
 import EndorsementSection from "./parts/EndorsementSection.view";
-import SignatureSection from "./parts/SignatureSection.view";
 import { UI_TEXT } from "@/lib/user/request/uiText";
 
 type ViewProps = {
@@ -16,17 +14,10 @@ type ViewProps = {
   onChange: (patch: any) => void;
   onChangeCosts: (patch: any) => void;
   onDepartmentChange: (dept: string) => void;
-
-  // Endorser signature (department head)
-  signature: string | null;
-  sigDirty: boolean;
-  sigSaved: boolean;
-  sigSavedAt: string | null;
-  onSigDraw: () => void;
-  onSigSave: (dataUrl: string) => void;
-  onSigClear: () => void;
-  onSigUpload: (file: File) => void | Promise<void>;
   setHeadEdited: () => void;
+
+  // New, optional action slot for the footer (e.g., "Send to Department Head")
+  footerRight?: React.ReactNode;
 };
 
 export default function TravelOrderFormView({
@@ -36,17 +27,11 @@ export default function TravelOrderFormView({
   onChange,
   onChangeCosts,
   onDepartmentChange,
-  signature,
-  sigDirty,
-  sigSaved,
-  sigSavedAt,
-  onSigDraw,
-  onSigSave,
-  onSigClear,
-  onSigUpload,
   setHeadEdited,
+  footerRight,
 }: ViewProps) {
   const c = data?.costs || {};
+
   return (
     <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
@@ -54,15 +39,13 @@ export default function TravelOrderFormView({
         <span className="text-xs text-neutral-500">{UI_TEXT.requiredHint}</span>
       </div>
 
-      {/* Top half of the form: date, requester, dept, destination, purpose moved here, requester signature */}
+      {/* Top half of the form: date, requester, dept, destination, purpose (inside TopGridFields), requester signature */}
       <TopGridFields
         data={data}
         errors={errors}
         onChange={onChange}
         onDepartmentChange={onDepartmentChange}
       />
-
-      {/* PurposeField was removed; purpose is now inside TopGridFields only */}
 
       <CostsSection
         costs={c}
@@ -71,6 +54,7 @@ export default function TravelOrderFormView({
         onChangeCosts={onChangeCosts}
       />
 
+      {/* Head details (name/date) remain editable to route correctly; signature is NOT in user step */}
       <EndorsementSection
         nameValue={data?.endorsedByHeadName ?? ""}
         dateValue={data?.endorsedByHeadDate ?? ""}
@@ -81,18 +65,10 @@ export default function TravelOrderFormView({
         onDateChange={(v) => onChange({ endorsedByHeadDate: v })}
       />
 
-      {/* Endorser (department head) signature block */}
-      <SignatureSection
-        signature={signature}
-        sigDirty={sigDirty}
-        sigSaved={sigSaved}
-        sigSavedAt={sigSavedAt}
-        errors={errors}
-        onSigDraw={onSigDraw}
-        onSigSave={onSigSave}
-        onSigClear={onSigClear}
-        onSigUpload={onSigUpload}
-      />
+      {/* Footer actions */}
+      <div className="mt-5 flex items-center justify-end gap-2">
+        {footerRight}
+      </div>
     </section>
   );
 }
