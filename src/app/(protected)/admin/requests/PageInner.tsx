@@ -1,3 +1,4 @@
+// src/app/(protected)/admin/requests/PageInner.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -15,26 +16,40 @@ import type { RequestRow, Pagination as Pg, FilterState } from "@/lib/admin/type
 import * as TrashRepo from "@/lib/admin/requests/trashRepo";
 import {
   markVisitedNow,           // keep for badge
-  getReadIds,               // NEW: highlight uses this
+  getReadIds,               // highlight uses this
   markRead as markReqRead,
   markManyRead,
 } from "@/lib/admin/requests/notifs";
 
-/* mapper omitted for brevity – unchanged */
+/* ---------- row mapper ---------- */
+type RowStatus = RequestRow["status"]; // typically "Pending" | "Approved" | "Rejected" | "Completed"
+
+function normalizeStatus(s: AdminRequest["status"]): RowStatus {
+  if (
+    s === "pending" ||
+    s === "pending_head" ||
+    s === "admin_received" ||
+    s === "head_approved"
+  ) return "Pending";
+  if (s === "approved") return "Approved";
+  if (s === "rejected" || s === "head_rejected" || s === "cancelled") return "Rejected";
+  if (s === "completed") return "Completed";
+  // Fallback: treat unknowns as Pending
+  return "Pending";
+}
+
 function toRequestRow(req: AdminRequest): RequestRow {
+  const t = req.travelOrder as any;
+
   return {
     id: req.id,
-    dept: req.travelOrder?.department || "",
-    purpose: req.travelOrder?.purposeOfTravel || "",
-    requester: req.travelOrder?.requestingPerson || "",
+    dept: t?.department || "",
+    purpose: t?.purposeOfTravel || t?.purpose || "",
+    requester: t?.requestingPerson || "",
     driver: req.driver || "—",
     vehicle: req.vehicle || "—",
     date: req.createdAt,
-    status:
-      req.status === "pending" ? "Pending"
-      : req.status === "approved" ? "Approved"
-      : req.status === "rejected" ? "Rejected"
-      : "Completed",
+    status: normalizeStatus(req.status),
   };
 }
 
@@ -69,9 +84,11 @@ export default function PageInner() {
   useEffect(() => { TrashRepo.purgeOlderThan(30); }, []);
 
   // Poll list; highlight = ids NOT in the read set (doesn't clear on page view)
+  // Admin view hides items awaiting head endorsement and those rejected by head.
   useEffect(() => {
     const load = () => {
-      const list = AdminRequestsRepo.list();
+      const list = AdminRequestsRepo.list()
+        .filter(r => r.status !== "pending_head" && r.status !== "head_rejected");
       setAllRows(list.map(toRequestRow));
 
       const read = getReadIds();
@@ -209,7 +226,11 @@ export default function PageInner() {
     if (repoAny.removeMany) repoAny.removeMany(ids);
     else if (repoAny.remove) ids.forEach((id) => repoAny.remove!(id));
 
-    setAllRows(AdminRequestsRepo.list().map(toRequestRow));
+    // Recompute after deletion with the same hide rules
+    const list = AdminRequestsRepo.list()
+      .filter(r => r.status !== "pending_head" && r.status !== "head_rejected");
+    setAllRows(list.map(toRequestRow));
+
     setSelected(new Set());
     toast({ message: `Moved ${ids.length} to Trash (kept for 30 days)`, kind: "success" });
   };

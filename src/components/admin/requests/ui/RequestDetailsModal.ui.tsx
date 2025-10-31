@@ -3,7 +3,7 @@
 
 import * as React from "react";
 import { Dialog } from "@headlessui/react";
-import { X, FileDown, CheckCircle } from "lucide-react";
+import { X, FileDown, CheckCircle, AlertTriangle } from "lucide-react";
 
 import type { AdminRequest } from "@/lib/admin/requests/store";
 import { AdminRequestsRepo } from "@/lib/admin/requests/store";
@@ -89,7 +89,7 @@ export default function RequestDetailsModalUI({
     setVehicle(veh);
   }, [row]);
 
-  // Persist driver/vehicle assignments back to repo when changed (only if not approved)
+  // Persist driver/vehicle assignments back to repo when changed (only if not final approved)
   React.useEffect(() => {
     if (row?.id && row.status !== "approved") AdminRequestsRepo.setDriver(row.id, driver);
   }, [driver, row?.id, row?.status]);
@@ -98,7 +98,7 @@ export default function RequestDetailsModalUI({
     if (row?.id && row.status !== "approved") AdminRequestsRepo.setVehicle(row.id, vehicle);
   }, [vehicle, row?.id, row?.status]);
 
-  // Compute total cost — explicitly sum base categories + otherItems + single "other"
+  // Compute total cost — sum base categories + otherItems + single "other"
   const totalCost = React.useMemo(() => {
     const c: any = row?.travelOrder?.costs || {};
     const baseKeys = ["food", "driversAllowance", "rentVehicles", "hiredDrivers", "accommodation"] as const;
@@ -123,7 +123,30 @@ export default function RequestDetailsModalUI({
 
   const deptName = row?.travelOrder?.department || "";
 
-  // Build a payload for PDF that always includes current dropdown selections (top-level only)
+  // Derived rules for routing after Admin approval
+  const usesVehicle = React.useMemo(() => {
+    const t: any = row?.travelOrder || {};
+    const vm = (t.vehicleMode || "").toString().toLowerCase();
+    // Treat any non-empty mode as vehicle use; if you have "none" as value, it will be skipped
+    return !!vm && vm !== "none";
+  }, [row?.travelOrder]);
+
+  const requiresComptroller = usesVehicle || totalCost > 0;
+
+  // Can Admin approve now?
+  const awaitingHead = row?.status === "pending_head";
+  const canAdminApprove =
+    !!row &&
+    !awaitingHead &&
+    (row.status === "head_approved" ||
+      row.status === "admin_received" ||
+      row.status === "pending" || // legacy fallback
+      row.status === "comptroller_pending" || // allow re-approval loops if needed
+      row.status === "hr_pending" ||
+      row.status === "executive_pending" ||
+      row.status === "approved"); // already approved (button hidden below anyway)
+
+  // PDF uses current driver/vehicle selections
   const handlePrintTravelPDF = React.useCallback(() => {
     if (!row) return;
     const printable: AdminRequest = {
@@ -148,10 +171,40 @@ export default function RequestDetailsModalUI({
 
   function confirmSignature() {
     if (!row?.id || !sigDataUrl) return;
-    AdminRequestsRepo.approve(row.id, {
-      signature: sigDataUrl,
-      approvedBy: "Admin User", // TODO: inject current admin name
-    });
+
+    const nowIso = new Date().toISOString();
+    const nextStatus =
+      requiresComptroller
+        ? ("comptroller_pending" as AdminRequest["status"])
+        : ("hr_pending" as AdminRequest["status"]);
+
+    // 👉 Use an "any" shim to avoid TS narrowing issues
+    const repoAny = AdminRequestsRepo as unknown as {
+      adminApproveAndRoute?: (
+        id: string,
+        opts: { signature: string; approvedBy?: string | null; requiresComptroller: boolean }
+      ) => void;
+      upsert: (req: AdminRequest) => void;
+    };
+
+    if (typeof repoAny.adminApproveAndRoute === "function") {
+      repoAny.adminApproveAndRoute(row.id, {
+        signature: sigDataUrl,
+        approvedBy: "Admin User", // TODO: inject current admin name
+        requiresComptroller,
+      });
+    } else {
+      // Fallback: emulate same effect via upsert
+      repoAny.upsert({
+        ...row,
+        approverSignature: sigDataUrl,
+        approvedAt: nowIso,
+        approvedBy: "Admin User",
+        updatedAt: nowIso,
+        status: nextStatus,
+      } as AdminRequest);
+    }
+
     onApprove?.();
     setSignOpen(false);
   }
@@ -169,7 +222,7 @@ export default function RequestDetailsModalUI({
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold">Request Details</h2>
 
-              {/* Status pill (only shows when approved) */}
+              {/* Status pill for final approved */}
               {isApproved && (
                 <div className="flex items-center gap-2 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-sm text-green-700">
                   <CheckCircle className="h-4 w-4" />
@@ -187,6 +240,22 @@ export default function RequestDetailsModalUI({
                 <X className="h-5 w-5" />
               </button>
             </div>
+
+            {/* Context banners */}
+            {awaitingHead && (
+              <div className="mb-4 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <div>
+                  <div className="font-medium">Awaiting Department Head Endorsement</div>
+                  <div>Admin approval is disabled until the Head signs.</div>
+                </div>
+              </div>
+            )}
+            {row.status === "head_approved" && (
+              <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                Head endorsement received. You may review and approve.
+              </div>
+            )}
 
             {/* Scrollable body */}
             <div className="space-y-8 max-h-[72vh] overflow-y-auto pr-2">
@@ -334,7 +403,7 @@ export default function RequestDetailsModalUI({
                 </div>
               </section>
 
-              {/* Assignments */}
+              {/* Assignments + Admin Note */}
               <section>
                 <h3 className="mb-2 text-sm font-semibold text-neutral-700">Assignments</h3>
                 <div className="grid grid-cols-2 gap-4">
@@ -374,6 +443,37 @@ export default function RequestDetailsModalUI({
                       ))}
                     </select>
                   </div>
+
+                  {/* Admin vehicle note (owned / for rent) */}
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium mb-1">Vehicle Note</label>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => row?.id && AdminRequestsRepo.setTmNote(row.id, "Owned vehicle")}
+                        className="rounded-md border px-3 py-1.5 text-sm hover:bg-neutral-50"
+                      >
+                        Mark as Owned
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => row?.id && AdminRequestsRepo.setTmNote(row.id, "For rent")}
+                        className="rounded-md border px-3 py-1.5 text-sm hover:bg-neutral-50"
+                      >
+                        Mark as For Rent
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => row?.id && AdminRequestsRepo.setTmNote(row.id, null)}
+                        className="rounded-md border px-3 py-1.5 text-sm hover:bg-neutral-50"
+                      >
+                        Clear note
+                      </button>
+                      {row?.tmNote && (
+                        <span className="ml-2 text-xs text-neutral-600">Current note: {row.tmNote}</span>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </section>
 
@@ -404,10 +504,15 @@ export default function RequestDetailsModalUI({
 
               {/* Right side: actions or status */}
               {!isApproved ? (
-                <div className="flex gap-2">
+                <div className="flex items-center gap-2">
                   <button
                     onClick={requestApproval}
-                    className="rounded-md bg-green-600 hover:bg-green-700 px-4 py-2 text-sm text-white transition"
+                    disabled={!canAdminApprove}
+                    className={`rounded-md px-4 py-2 text-sm text-white transition ${
+                      canAdminApprove
+                        ? "bg-green-600 hover:bg-green-700"
+                        : "bg-neutral-400 cursor-not-allowed"
+                    }`}
                   >
                     Approve
                   </button>
@@ -466,7 +571,7 @@ export default function RequestDetailsModalUI({
                 sigDataUrl ? "bg-green-600 hover:bg-green-700" : "bg-neutral-400 cursor-not-allowed"
               }`}
             >
-              Approve &amp; Sign
+              {sigDataUrl ? (requiresComptroller ? "Approve & Send to Comptroller" : "Approve & Send to HR") : "Approve"}
             </button>
           </div>
         </div>

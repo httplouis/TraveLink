@@ -1,3 +1,4 @@
+// src/lib/admin/requests/store.ts
 "use client";
 
 import type { RequestFormData } from "@/lib/user/request/types";
@@ -5,8 +6,17 @@ import type { RequestFormData } from "@/lib/user/request/types";
 /* ---------- Types ---------- */
 
 export type AdminRequestStatus =
-  | "pending"
-  | "approved"
+  | "pending"          // legacy direct-to-admin
+  | "pending_head"     // awaiting Department Head endorsement
+  | "head_approved"    // endorsed by head; forward to Admin
+  | "head_rejected"    // rejected by head
+  | "admin_received"   // optional: queued in Admin
+  // ── Routed stages after Admin approves & signs ──
+  | "comptroller_pending" // budget check / edits
+  | "hr_pending"          // HR sign-off
+  | "executive_pending"   // Executive final sign-off
+  // ── Terminal-ish ──
+  | "approved"         // final approved (after executive)
   | "rejected"
   | "completed"
   | "cancelled";
@@ -31,10 +41,28 @@ export type AdminRequest = {
   /** Keep the whole user payload for future editing/auditing */
   payload: RequestFormData;
 
-  /** ✅ Approval fields (captured in admin modal) */
+  /** ✅ Admin (Ma'am TM) approval fields */
   approverSignature?: string | null;
   approvedAt?: string | null;
   approvedBy?: string | null;
+
+  /** 🧾 Comptroller sign-off (budget check / edit) */
+  comptrollerSignature?: string | null;
+  comptrollerAt?: string | null;
+  comptrollerBy?: string | null;
+
+  /** 👥 HR sign-off */
+  hrSignature?: string | null;
+  hrAt?: string | null;
+  hrBy?: string | null;
+
+  /** 🏛️ Executive final sign-off */
+  executiveSignature?: string | null;
+  executiveAt?: string | null;
+  executiveBy?: string | null;
+
+  /** 📝 Optional notes (e.g., Ma'am TM note when renting vehicle) */
+  tmNote?: string | null;
 };
 
 const STORAGE_KEY = "admin.requests.v1";
@@ -151,10 +179,17 @@ export const AdminRequestsRepo = {
     this.upsert(it);
   },
 
-  /** Called by user form on submit */
+  setTmNote(id: string, note: string | null) {
+    const it = this.get(id);
+    if (!it) return;
+    it.tmNote = note ?? null;
+    it.updatedAt = new Date().toISOString();
+    this.upsert(it);
+  },
+
+  /** Called by user form on submit (legacy direct-to-admin path) */
   acceptFromUser(data: RequestFormData): string {
-    const id =
-      crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+    const id = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
     const now = new Date().toISOString();
 
     const rec: AdminRequest = {
@@ -173,13 +208,27 @@ export const AdminRequestsRepo = {
       approverSignature: null,
       approvedAt: null,
       approvedBy: null,
+
+      comptrollerSignature: null,
+      comptrollerAt: null,
+      comptrollerBy: null,
+
+      hrSignature: null,
+      hrAt: null,
+      hrBy: null,
+
+      executiveSignature: null,
+      executiveAt: null,
+      executiveBy: null,
+
+      tmNote: null,
     };
 
     this.upsert(rec);
     return id;
   },
 
-  /** ✅ Approve a request with signature (persist in localStorage). */
+  /** Legacy: one-step approve (kept for backward compatibility) */
   approve(id: string, opts: { signature: string; approvedBy?: string | null }) {
     const it = this.get(id);
     if (!it) return;
@@ -187,6 +236,102 @@ export const AdminRequestsRepo = {
     it.approverSignature = opts.signature;
     it.approvedAt = new Date().toISOString();
     it.approvedBy = opts.approvedBy ?? null;
+    it.updatedAt = new Date().toISOString();
+    this.upsert(it);
+  },
+
+  /** ✅ New: Admin approves and **routes** to the next stage */
+  adminApproveAndRoute(
+    id: string,
+    opts: { signature: string; approvedBy?: string | null; requiresComptroller: boolean }
+  ) {
+    const it = this.get(id);
+    if (!it) return;
+    const now = new Date().toISOString();
+    it.approverSignature = opts.signature;
+    it.approvedAt = now;
+    it.approvedBy = opts.approvedBy ?? null;
+    it.updatedAt = now;
+    it.status = opts.requiresComptroller ? "comptroller_pending" : "hr_pending";
+    this.upsert(it);
+  },
+
+  /** Comptroller approves (and forwards to HR) */
+  comptrollerApprove(id: string, opts: { signature: string; by?: string | null }) {
+    const it = this.get(id);
+    if (!it) return;
+    const now = new Date().toISOString();
+    it.comptrollerSignature = opts.signature;
+    it.comptrollerBy = opts.by ?? null;
+    it.comptrollerAt = now;
+    it.updatedAt = now;
+    it.status = "hr_pending";
+    this.upsert(it);
+  },
+
+  /** HR approves (and forwards to Executive) */
+  hrApprove(id: string, opts: { signature: string; by?: string | null }) {
+    const it = this.get(id);
+    if (!it) return;
+    const now = new Date().toISOString();
+    it.hrSignature = opts.signature;
+    it.hrBy = opts.by ?? null;
+    it.hrAt = now;
+    it.updatedAt = now;
+    it.status = "executive_pending";
+    this.upsert(it);
+  },
+
+  /** Executive final approval (marks overall as approved) */
+  executiveApprove(id: string, opts: { signature: string; by?: string | null }) {
+    const it = this.get(id);
+    if (!it) return;
+    const now = new Date().toISOString();
+    it.executiveSignature = opts.signature;
+    it.executiveBy = opts.by ?? null;
+    it.executiveAt = now;
+    it.updatedAt = now;
+    it.status = "approved";
+    this.upsert(it);
+  },
+
+  /** Simple state moves (useful for queues) */
+  routeToHead(id: string) {
+    const it = this.get(id);
+    if (!it) return;
+    it.status = "pending_head";
+    it.updatedAt = new Date().toISOString();
+    this.upsert(it);
+  },
+
+  routeToAdmin(id: string) {
+    const it = this.get(id);
+    if (!it) return;
+    it.status = "admin_received";
+    it.updatedAt = new Date().toISOString();
+    this.upsert(it);
+  },
+
+  routeToComptroller(id: string) {
+    const it = this.get(id);
+    if (!it) return;
+    it.status = "comptroller_pending";
+    it.updatedAt = new Date().toISOString();
+    this.upsert(it);
+  },
+
+  routeToHR(id: string) {
+    const it = this.get(id);
+    if (!it) return;
+    it.status = "hr_pending";
+    it.updatedAt = new Date().toISOString();
+    this.upsert(it);
+  },
+
+  routeToExecutive(id: string) {
+    const it = this.get(id);
+    if (!it) return;
+    it.status = "executive_pending";
     it.updatedAt = new Date().toISOString();
     this.upsert(it);
   },
@@ -200,16 +345,41 @@ export const AdminRequestsRepo = {
     this.upsert(it);
   },
 
+  markCompleted(id: string) {
+    const it = this.get(id);
+    if (!it) return;
+    it.status = "completed";
+    it.updatedAt = new Date().toISOString();
+    this.upsert(it);
+  },
+
+  cancel(id: string) {
+    const it = this.get(id);
+    if (!it) return;
+    it.status = "cancelled";
+    it.updatedAt = new Date().toISOString();
+    this.upsert(it);
+  },
+
   /** ✅ Handy counts for KPI cards */
   counts() {
     const list = readAll();
     return {
-      pending:  list.filter(i => i.status === "pending").length,
-      approved: list.filter(i => i.status === "approved").length,
-      completed:list.filter(i => i.status === "completed").length,
-      rejected: list.filter(i => i.status === "rejected").length,
-      cancelled:list.filter(i => i.status === "cancelled").length,
-      all: list.length,
+      // Treat flow states as "pending-like" for dashboards
+      pending: list.filter(i =>
+        i.status === "pending" ||
+        i.status === "pending_head" ||
+        i.status === "head_approved" ||
+        i.status === "admin_received" ||
+        i.status === "comptroller_pending" ||
+        i.status === "hr_pending" ||
+        i.status === "executive_pending"
+      ).length,
+      approved:  list.filter(i => i.status === "approved").length,
+      completed: list.filter(i => i.status === "completed").length,
+      rejected:  list.filter(i => i.status === "rejected" || i.status === "head_rejected").length,
+      cancelled: list.filter(i => i.status === "cancelled").length,
+      all:       list.length,
     };
   },
 };
