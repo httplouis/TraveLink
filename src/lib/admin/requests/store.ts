@@ -6,62 +6,55 @@ import type { RequestFormData } from "@/lib/user/request/types";
 /* ---------- Types ---------- */
 
 export type AdminRequestStatus =
-  | "pending"          // legacy direct-to-admin
-  | "pending_head"     // awaiting Department Head endorsement
-  | "head_approved"    // endorsed by head; forward to Admin
-  | "head_rejected"    // rejected by head
-  | "admin_received"   // optional: queued in Admin
-  // ── Routed stages after Admin approves & signs ──
-  | "comptroller_pending" // budget check / edits
-  | "hr_pending"          // HR sign-off
-  | "executive_pending"   // Executive final sign-off
-  // ── Terminal-ish ──
-  | "approved"         // final approved (after executive)
+  | "pending"            // user → legacy direct to admin
+  | "pending_head"       // user (faculty) → waiting for dept head
+  | "head_approved"      // head endorsed → send to admin
+  | "head_rejected"
+  | "admin_received"     // nasa admin queue (Ma’am TM / Cleofe)
+  | "comptroller_pending"// budget check / edits
+  | "hr_pending"         // HR sign-off
+  | "executive_pending"  // VP / Pres sign-off
+  | "approved"           // final ok, balik kay TM & requester
   | "rejected"
   | "completed"
   | "cancelled";
 
 export type AdminRequest = {
   id: string;
-  createdAt: string;  // ISO
-  updatedAt: string;  // ISO
+  createdAt: string;
+  updatedAt: string;
   status: AdminRequestStatus;
 
   driver?: string;
   vehicle?: string;
 
-  /**
-   * Flattened copies taken at submit time (for quick reads in Admin UI).
-   * NOTE: travelOrder already includes requesterSignature (see types file).
-   */
   travelOrder?: RequestFormData["travelOrder"];
   seminar?: RequestFormData["seminar"];
   schoolService?: RequestFormData["schoolService"];
 
-  /** Keep the whole user payload for future editing/auditing */
   payload: RequestFormData;
 
-  /** ✅ Admin (Ma'am TM) approval fields */
+  // Admin (Ma’am TM)
   approverSignature?: string | null;
   approvedAt?: string | null;
   approvedBy?: string | null;
 
-  /** 🧾 Comptroller sign-off (budget check / edit) */
+  // Comptroller
   comptrollerSignature?: string | null;
   comptrollerAt?: string | null;
   comptrollerBy?: string | null;
 
-  /** 👥 HR sign-off */
+  // HR
   hrSignature?: string | null;
   hrAt?: string | null;
   hrBy?: string | null;
 
-  /** 🏛️ Executive final sign-off */
+  // Executive
   executiveSignature?: string | null;
   executiveAt?: string | null;
   executiveBy?: string | null;
 
-  /** 📝 Optional notes (e.g., Ma'am TM note when renting vehicle) */
+  // Notes (for rent, owned, etc.)
   tmNote?: string | null;
 };
 
@@ -90,7 +83,7 @@ function writeAll(list: AdminRequest[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
 }
 
-/* ---------- small pub/sub for screens that are open together ---------- */
+/* ---------- pub/sub ---------- */
 
 type Unsub = () => boolean;
 const listeners = new Set<() => void>();
@@ -120,7 +113,6 @@ export const AdminRequestsRepo = {
   },
 
   list(): AdminRequest[] {
-    // newest first
     return readAll().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
 
@@ -187,7 +179,7 @@ export const AdminRequestsRepo = {
     this.upsert(it);
   },
 
-  /** Called by user form on submit (legacy direct-to-admin path) */
+  // user submit → admin inbox
   acceptFromUser(data: RequestFormData): string {
     const id = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
     const now = new Date().toISOString();
@@ -197,30 +189,22 @@ export const AdminRequestsRepo = {
       createdAt: now,
       updatedAt: now,
       status: "pending",
-
-      // keep originals for admin views
       payload: data,
-      travelOrder: data.travelOrder,       // includes requesterSignature
+      travelOrder: data.travelOrder,
       seminar: data.seminar,
       schoolService: data.schoolService,
-
-      // approval defaults
       approverSignature: null,
       approvedAt: null,
       approvedBy: null,
-
       comptrollerSignature: null,
       comptrollerAt: null,
       comptrollerBy: null,
-
       hrSignature: null,
       hrAt: null,
       hrBy: null,
-
       executiveSignature: null,
       executiveAt: null,
       executiveBy: null,
-
       tmNote: null,
     };
 
@@ -228,19 +212,19 @@ export const AdminRequestsRepo = {
     return id;
   },
 
-  /** Legacy: one-step approve (kept for backward compatibility) */
+  // legacy one-step approve
   approve(id: string, opts: { signature: string; approvedBy?: string | null }) {
     const it = this.get(id);
     if (!it) return;
+    const now = new Date().toISOString();
     it.status = "approved";
     it.approverSignature = opts.signature;
-    it.approvedAt = new Date().toISOString();
+    it.approvedAt = now;
     it.approvedBy = opts.approvedBy ?? null;
-    it.updatedAt = new Date().toISOString();
+    it.updatedAt = now;
     this.upsert(it);
   },
 
-  /** ✅ New: Admin approves and **routes** to the next stage */
   adminApproveAndRoute(
     id: string,
     opts: { signature: string; approvedBy?: string | null; requiresComptroller: boolean }
@@ -256,7 +240,6 @@ export const AdminRequestsRepo = {
     this.upsert(it);
   },
 
-  /** Comptroller approves (and forwards to HR) */
   comptrollerApprove(id: string, opts: { signature: string; by?: string | null }) {
     const it = this.get(id);
     if (!it) return;
@@ -269,7 +252,6 @@ export const AdminRequestsRepo = {
     this.upsert(it);
   },
 
-  /** HR approves (and forwards to Executive) */
   hrApprove(id: string, opts: { signature: string; by?: string | null }) {
     const it = this.get(id);
     if (!it) return;
@@ -282,7 +264,6 @@ export const AdminRequestsRepo = {
     this.upsert(it);
   },
 
-  /** Executive final approval (marks overall as approved) */
   executiveApprove(id: string, opts: { signature: string; by?: string | null }) {
     const it = this.get(id);
     if (!it) return;
@@ -295,7 +276,6 @@ export const AdminRequestsRepo = {
     this.upsert(it);
   },
 
-  /** Simple state moves (useful for queues) */
   routeToHead(id: string) {
     const it = this.get(id);
     if (!it) return;
@@ -336,7 +316,6 @@ export const AdminRequestsRepo = {
     this.upsert(it);
   },
 
-  /** ✅ Reject a request */
   reject(id: string) {
     const it = this.get(id);
     if (!it) return;
@@ -361,25 +340,25 @@ export const AdminRequestsRepo = {
     this.upsert(it);
   },
 
-  /** ✅ Handy counts for KPI cards */
   counts() {
     const list = readAll();
     return {
-      // Treat flow states as "pending-like" for dashboards
-      pending: list.filter(i =>
-        i.status === "pending" ||
-        i.status === "pending_head" ||
-        i.status === "head_approved" ||
-        i.status === "admin_received" ||
-        i.status === "comptroller_pending" ||
-        i.status === "hr_pending" ||
-        i.status === "executive_pending"
+      pending: list.filter((i) =>
+        [
+          "pending",
+          "pending_head",
+          "head_approved",
+          "admin_received",
+          "comptroller_pending",
+          "hr_pending",
+          "executive_pending",
+        ].includes(i.status)
       ).length,
-      approved:  list.filter(i => i.status === "approved").length,
-      completed: list.filter(i => i.status === "completed").length,
-      rejected:  list.filter(i => i.status === "rejected" || i.status === "head_rejected").length,
-      cancelled: list.filter(i => i.status === "cancelled").length,
-      all:       list.length,
+      approved: list.filter((i) => i.status === "approved").length,
+      completed: list.filter((i) => i.status === "completed").length,
+      rejected: list.filter((i) => i.status === "rejected" || i.status === "head_rejected").length,
+      cancelled: list.filter((i) => i.status === "cancelled").length,
+      all: list.length,
     };
   },
 };

@@ -15,14 +15,16 @@ import { AdminRequestsRepo, type AdminRequest } from "@/lib/admin/requests/store
 import type { RequestRow, Pagination as Pg, FilterState } from "@/lib/admin/types";
 import * as TrashRepo from "@/lib/admin/requests/trashRepo";
 import {
-  markVisitedNow,           // keep for badge
-  getReadIds,               // highlight uses this
+  markVisitedNow,
+  getReadIds,
   markRead as markReqRead,
   markManyRead,
 } from "@/lib/admin/requests/notifs";
 
-/* ---------- row mapper ---------- */
-type RowStatus = RequestRow["status"]; // typically "Pending" | "Approved" | "Rejected" | "Completed"
+import { useRequestsFromSupabase } from "@/lib/admin/requests/useRequestsFromSupabase";
+
+/* helpers -------------------------------------------------- */
+type RowStatus = RequestRow["status"];
 
 function normalizeStatus(s: AdminRequest["status"]): RowStatus {
   if (
@@ -30,17 +32,16 @@ function normalizeStatus(s: AdminRequest["status"]): RowStatus {
     s === "pending_head" ||
     s === "admin_received" ||
     s === "head_approved"
-  ) return "Pending";
+  )
+    return "Pending";
   if (s === "approved") return "Approved";
   if (s === "rejected" || s === "head_rejected" || s === "cancelled") return "Rejected";
   if (s === "completed") return "Completed";
-  // Fallback: treat unknowns as Pending
   return "Pending";
 }
 
-function toRequestRow(req: AdminRequest): RequestRow {
+function toRequestRowLocal(req: AdminRequest): RequestRow {
   const t = req.travelOrder as any;
-
   return {
     id: req.id,
     dept: t?.department || "",
@@ -53,12 +54,27 @@ function toRequestRow(req: AdminRequest): RequestRow {
   };
 }
 
+function toRequestRowRemote(r: any): RequestRow {
+  const t = r.payload?.travelOrder ?? {};
+  return {
+    id: r.id,
+    dept: t.department || "",
+    purpose: t.purposeOfTravel || t.purpose || "",
+    requester: t.requestingPerson || "",
+    driver: r.driver || "—",
+    vehicle: r.vehicle || "—",
+    date: r.created_at,
+    status: normalizeStatus(r.current_status as any),
+  };
+}
+
 const PAGE_SIZE = 12;
 
 export default function PageInner() {
   const toast = useToast();
 
   const [mounted, setMounted] = useState(false);
+
   const [allRows, setAllRows] = useState<RequestRow[]>([]);
   const [filteredRows, setFilteredRows] = useState<RequestRow[]>([]);
   const [unreadIds, setUnreadIds] = useState<Set<string>>(new Set());
@@ -66,41 +82,97 @@ export default function PageInner() {
   const [tableSearch, setTableSearch] = useState("");
   const debouncedQ = useDebouncedValue(tableSearch, 300);
   const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
-  const [pagination, setPagination] = useState<Pg>({ page: 1, pageSize: PAGE_SIZE, total: 0 });
+  const [pagination, setPagination] = useState<Pg>({
+    page: 1,
+    pageSize: PAGE_SIZE,
+    total: 0,
+  });
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [openDetails, setOpenDetails] = useState(false);
   const [activeRow, setActiveRow] = useState<AdminRequest | undefined>();
 
   const [draft, setDraft] = useState<FilterState>({
-    status: "All", dept: "All", from: "", to: "", search: "", mode: "auto",
+    status: "All",
+    dept: "All",
+    from: "",
+    to: "",
+    search: "",
+    mode: "auto",
   });
+
+  // remote
+  const {
+    loading: loadingRemote,
+    error: remoteError,
+    requests: remoteRequests,
+  } = useRequestsFromSupabase();
+
+  // para alam natin kung tapos na talaga yung remote attempt (success OR fail)
+  const [remoteSettled, setRemoteSettled] = useState(false);
 
   useEffect(() => setMounted(true), []);
 
-  // Keep this so the LEFT-NAV badge resets when you visit the page
-  useEffect(() => { markVisitedNow(); }, []);
-
-  useEffect(() => { TrashRepo.purgeOlderThan(30); }, []);
-
-  // Poll list; highlight = ids NOT in the read set (doesn't clear on page view)
-  // Admin view hides items awaiting head endorsement and those rejected by head.
   useEffect(() => {
-    const load = () => {
-      const list = AdminRequestsRepo.list()
-        .filter(r => r.status !== "pending_head" && r.status !== "head_rejected");
-      setAllRows(list.map(toRequestRow));
-
-      const read = getReadIds();
-      const unread = new Set(list.filter(r => !read.has(r.id)).map(r => r.id));
-      setUnreadIds(unread);
-    };
-    load();
-    const id = setInterval(load, 1500);
-    return () => clearInterval(id);
+    markVisitedNow();
   }, []);
 
-  useEffect(() => setFilteredRows(allRows), [allRows]);
+  useEffect(() => {
+    TrashRepo.purgeOlderThan(30);
+  }, []);
+
+  // kapag tumigil na si remote sa pag-load
+  useEffect(() => {
+    if (!loadingRemote) {
+      setRemoteSettled(true);
+    }
+  }, [loadingRemote]);
+
+  // CASE 1: remote SUCCESS
+  useEffect(() => {
+    if (loadingRemote) return;
+    if (remoteError) return;
+    if (!remoteRequests) return;
+
+    const list = remoteRequests
+      .filter(
+        (r: any) =>
+          r.current_status !== "pending_head" && r.current_status !== "head_rejected",
+      )
+      .map((r: any) => toRequestRowRemote(r));
+
+    setAllRows(list);
+    setFilteredRows(list);
+
+    const read = getReadIds();
+    const unread = new Set<string>(list.filter((r) => !read.has(r.id)).map((r) => r.id));
+    setUnreadIds(unread);
+  }, [loadingRemote, remoteError, remoteRequests]);
+
+  // CASE 2: remote FAILED → saka lang mag-local
+  useEffect(() => {
+    if (!remoteSettled) return;
+    if (remoteRequests && !remoteError) return; // may remote, wag na mag-local
+
+    const loadLocal = () => {
+      const list = AdminRequestsRepo.list()
+        .filter((r) => r.status !== "pending_head" && r.status !== "head_rejected")
+        .map(toRequestRowLocal);
+
+      setAllRows(list);
+      setFilteredRows(list);
+
+      const read = getReadIds();
+      const unread = new Set<string>(
+        list.filter((r) => !read.has(r.id)).map((r) => r.id),
+      );
+      setUnreadIds(unread);
+    };
+
+    loadLocal();
+    const id = setInterval(loadLocal, 1500);
+    return () => clearInterval(id);
+  }, [remoteSettled, remoteRequests, remoteError]);
 
   const applyFilters = () => {
     setSelected(new Set());
@@ -112,18 +184,26 @@ export default function PageInner() {
         const fromOk = !draft.from || created >= new Date(draft.from);
         const toOk = !draft.to || created <= new Date(draft.to);
         return okStatus && okDept && fromOk && toOk;
-      })
+      }),
     );
     setPagination((p) => ({ ...p, page: 1 }));
   };
 
   const clearFilters = () => {
-    setDraft({ status: "All", dept: "All", from: "", to: "", search: "", mode: "auto" });
+    setDraft({
+      status: "All",
+      dept: "All",
+      from: "",
+      to: "",
+      search: "",
+      mode: "auto",
+    });
     setFilteredRows(allRows);
     setSelected(new Set());
     setPagination((p) => ({ ...p, page: 1 }));
   };
 
+  // ✅ ito yung kailangan ng toolbar
   const handleDraftChange = (patch: Partial<FilterState>) => {
     setDraft((d) => {
       const next = { ...d, ...patch };
@@ -139,12 +219,14 @@ export default function PageInner() {
           [r.id, r.purpose, r.dept, r.requester ?? "", r.driver ?? "", r.vehicle ?? ""]
             .join(" ")
             .toLowerCase()
-            .includes(q)
+            .includes(q),
         )
       : filteredRows;
 
     return [...searched].sort((a, b) =>
-      sortDir === "desc" ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date)
+      sortDir === "desc"
+        ? b.date.localeCompare(a.date)
+        : a.date.localeCompare(b.date),
     );
   }, [filteredRows, debouncedQ, sortDir]);
 
@@ -173,7 +255,6 @@ export default function PageInner() {
   const openRow = (r: RequestRow) => {
     const full = AdminRequestsRepo.get(r.id);
     if (full) setActiveRow(full);
-    // Only mark as read when the user actually opened the details
     markOneRead(r.id);
     setOpenDetails(true);
   };
@@ -216,7 +297,9 @@ export default function PageInner() {
       .filter(Boolean) as AdminRequest[];
 
     if (items.length) {
-      TrashRepo.addMany(items.map((it) => ({ ...it, deletedAt: new Date().toISOString() })));
+      TrashRepo.addMany(
+        items.map((it) => ({ ...it, deletedAt: new Date().toISOString() })),
+      );
     }
 
     const repoAny = AdminRequestsRepo as unknown as {
@@ -226,13 +309,16 @@ export default function PageInner() {
     if (repoAny.removeMany) repoAny.removeMany(ids);
     else if (repoAny.remove) ids.forEach((id) => repoAny.remove!(id));
 
-    // Recompute after deletion with the same hide rules
     const list = AdminRequestsRepo.list()
-      .filter(r => r.status !== "pending_head" && r.status !== "head_rejected");
-    setAllRows(list.map(toRequestRow));
-
+      .filter((r) => r.status !== "pending_head" && r.status !== "head_rejected")
+      .map(toRequestRowLocal);
+    setAllRows(list);
+    setFilteredRows(list);
     setSelected(new Set());
-    toast({ message: `Moved ${ids.length} to Trash (kept for 30 days)`, kind: "success" });
+    toast({
+      message: `Moved ${ids.length} to Trash (kept for 30 days)`,
+      kind: "success",
+    });
   };
 
   const summary = useMemo(
@@ -242,13 +328,24 @@ export default function PageInner() {
       completed: filteredRows.filter((r) => r.status === "Completed").length,
       rejected: filteredRows.filter((r) => r.status === "Rejected").length,
     }),
-    [filteredRows]
+    [filteredRows],
   );
 
   if (!mounted) return <div />;
 
   return (
     <div className="space-y-4">
+      {loadingRemote && (
+        <div className="rounded-md bg-amber-50 px-4 py-2 text-sm text-amber-900">
+          Loading requests from Supabase...
+        </div>
+      )}
+      {remoteSettled && remoteError && (
+        <div className="rounded-md bg-red-50 px-4 py-2 text-sm text-red-900">
+          Failed to load from Supabase. Showing local data.
+        </div>
+      )}
+
       <div className="space-y-2 pr-2">
         <RequestsSummaryUI summary={summary} />
       </div>
@@ -260,7 +357,7 @@ export default function PageInner() {
         onSortDirChange={setSortDir}
         onAddNew={() => toast({ message: "Add New clicked!", kind: "success" })}
         draft={draft}
-        onDraftChange={handleDraftChange}
+        onDraftChange={handleDraftChange} 
         onApply={applyFilters}
         onClearAll={clearFilters}
         selectedCount={selected.size}
@@ -276,7 +373,7 @@ export default function PageInner() {
         selectedIds={selected}
         onToggleOne={onToggleOne}
         onToggleAllOnPage={onToggleAllOnPage}
-        unreadIds={unreadIds}    // highlight driven by read-set now
+        unreadIds={unreadIds}
         onMarkRead={markOneRead}
       />
 

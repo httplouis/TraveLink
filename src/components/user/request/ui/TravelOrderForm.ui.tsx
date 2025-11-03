@@ -4,7 +4,6 @@ import * as React from "react";
 import type { VehicleMode } from "@/lib/user/request/types";
 import { getDepartmentHead } from "@/lib/org/departments";
 import TravelOrderFormView from "./TravelOrderForm.view";
-import { AdminRequestsRepo } from "@/lib/admin/requests/store";
 
 type Props = {
   data: any;
@@ -27,16 +26,12 @@ export default function TravelOrderForm({
     Number(c.rentVehicles || 0) > 0 ||
     Number(c.hiredDrivers || 0) > 0;
 
-  // If user types a head name manually, don’t auto-overwrite next time
   const headEditedRef = React.useRef(false);
-
-  // Sending state for the new flow
   const [sending, setSending] = React.useState(false);
 
   function handleDepartmentChange(nextDept: string) {
     const patch: any = { department: nextDept };
 
-    // Auto-fill head if not manually edited yet or currently empty
     const currentHead = data?.endorsedByHeadName ?? "";
     if (!headEditedRef.current || !currentHead) {
       patch.endorsedByHeadName = getDepartmentHead(nextDept);
@@ -51,41 +46,55 @@ export default function TravelOrderForm({
       return;
     }
 
+    // ❶ signature must exist
+    const requesterSig =
+      data?.requestingPersonSignature ||
+      data?.requesterSignature ||
+      data?.signature ||
+      null;
+
+    if (!requesterSig) {
+      alert("Please sign the form first before sending.");
+      return;
+    }
+
     setSending(true);
     try {
-      const now = new Date().toISOString();
-      const id =
-        data?.id ?? (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`);
-
-      // Create/Update an AdminRequest record with status: pending_head
-      AdminRequestsRepo.upsert({
-        id,
-        createdAt: data?.createdAt || now,
-        updatedAt: now,
-        status: "pending_head", // NEW head step
-        driver: undefined,
-        vehicle: undefined,
-
-        // For quick admin/head reads
-        travelOrder: { ...(data ?? {}) } as any,
-
-        // Keep the whole payload if you have it; here we only ensure shape
-        payload: { travelOrder: { ...(data ?? {}) } } as any,
-
-        // No admin approval yet
-        approverSignature: null,
-        approvedAt: null,
-        approvedBy: null,
+      const res = await fetch("/api/requests/submit", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          user_id: data?.created_by ?? "00000000-0000-0000-0000-000000000000",
+          current_status: "pending_head",
+          payload: {
+            travelOrder: {
+              ...(data ?? {}),
+            },
+          },
+        }),
       });
 
-      // Also reflect the id back to form state so subsequent saves keep same record
-      onChange({ id, updatedAt: now });
+      const json = await res.json();
+
+      if (!res.ok || !json.ok) {
+        console.error("submit-to-head error:", json);
+        alert("Failed to send to Department Head. Check console.");
+        return;
+      }
 
       alert(
         `Sent to Department Head for endorsement${
           data?.endorsedByHeadName ? ` (${data.endorsedByHeadName})` : ""
         }.`
       );
+
+      onChange({
+        id: json.data.id,
+        updatedAt: json.data.updated_at,
+      });
+    } catch (err) {
+      console.error(err);
+      alert("Failed to send to Department Head. Check console.");
     } finally {
       setSending(false);
     }
@@ -102,7 +111,6 @@ export default function TravelOrderForm({
       setHeadEdited={() => {
         headEditedRef.current = true;
       }}
-      // Footer action: send to head
       footerRight={
         <button
           disabled={sending}

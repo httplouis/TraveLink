@@ -1,4 +1,4 @@
-// src/components/auth/register/DriverFlow.tsx
+// app/(auth)/register/DriverFlow.tsx
 "use client";
 
 import * as React from "react";
@@ -12,14 +12,21 @@ type Props = {
   msg: string | null;
 
   dStep: Step;
-  dPhone: string; setDPhone: (v: string) => void;
-  dOtp: string; setDOtp: (v: string) => void;
+  dPhone: string;
+  setDPhone: (v: string) => void;
+  dOtp: string;
+  setDOtp: (v: string) => void;
 
-  dFirst: string; setDFirst: (v: string) => void;
-  dMiddle: string; setDMiddle: (v: string) => void;
-  dLast: string; setDLast: (v: string) => void;
-  dSuffix: string; setDSuffix: (v: string) => void;
-  dAddress: string; setDAddress: (v: string) => void;
+  dFirst: string;
+  setDFirst: (v: string) => void;
+  dMiddle: string;
+  setDMiddle: (v: string) => void;
+  dLast: string;
+  setDLast: (v: string) => void;
+  dSuffix: string;
+  setDSuffix: (v: string) => void;
+  dAddress: string;
+  setDAddress: (v: string) => void;
 
   verifiedPhone: string | null;
 

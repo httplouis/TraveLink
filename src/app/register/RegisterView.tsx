@@ -17,6 +17,7 @@ type Props = {
   msg: string | null;
   onResend?: () => void;
 
+  // faculty
   fFirst: string; setFFirst: (v: string) => void;
   fMiddle: string; setFMiddle: (v: string) => void;
   fLast: string; setFLast: (v: string) => void;
@@ -27,8 +28,12 @@ type Props = {
   fEmail: string; setFEmail: (v: string) => void;
   fPw: string; setFPw: (v: string) => void;
   fPwConfirm: string; setFPwConfirm: (v: string) => void;
+  // NEW
+  fWantsHead: boolean;
+  setFWantsHead: (v: boolean) => void;
   onFacultySubmit: (e: React.FormEvent) => void;
 
+  // driver
   dStep: DriverStep;
   dPhone: string; setDPhone: (v: string) => void;
   dOtp: string; setDOtp: (v: string) => void;
@@ -46,7 +51,7 @@ type Props = {
 export default function RegisterView(props: Props) {
   const { role, setRole } = props;
 
-  // Lock page scroll while this screen is mounted
+  // lock scroll (same as dati)
   useEffect(() => {
     const prevHtmlOverflow = document.documentElement.style.overflow;
     const prevBodyOverflow = document.body.style.overflow;
@@ -80,6 +85,7 @@ export default function RegisterView(props: Props) {
           <div className="rounded-2xl bg-gradient-to-br from-white/60 via-white/20 to-transparent p-[1.5px] shadow-2xl">
             <div className="rounded-2xl bg-white backdrop-blur-xl ring-1 ring-black/10">
               <div className="px-6 py-6 lg:px-8">
+                {/* header */}
                 <div className="flex items-center gap-3">
                   <img src="/eulogo.png" alt="Enverga University Logo" className="h-10 w-10" />
                   <div>
@@ -94,6 +100,7 @@ export default function RegisterView(props: Props) {
 
                 <div className="my-4 h-[2px] w-full rounded bg-gradient-to-r from-red-900/70 via-red-900/30 to-transparent" />
 
+                {/* tabs */}
                 <div className="mb-4 grid grid-cols-2 gap-2">
                   <button
                     type="button"
@@ -126,16 +133,28 @@ export default function RegisterView(props: Props) {
                     msg={props.msg}
                     onResend={props.onResend}
                     onSubmit={props.onFacultySubmit}
-                    fFirst={props.fFirst} setFFirst={props.setFFirst}
-                    fMiddle={props.fMiddle} setFMiddle={props.setFMiddle}
-                    fLast={props.fLast} setFLast={props.setFLast}
-                    fSuffix={props.fSuffix} setFSuffix={props.setFSuffix}
-                    fDept={props.fDept} setFDept={props.setFDept}
-                    fBirthdate={props.fBirthdate} setFBirthdate={props.setFBirthdate}
-                    fAddress={props.fAddress} setFAddress={props.setFAddress}
-                    fEmail={props.fEmail} setFEmail={props.setFEmail}
-                    fPw={props.fPw} setFPw={props.setFPw}
-                    fPwConfirm={props.fPwConfirm} setFPwConfirm={props.setFPwConfirm}
+                    fFirst={props.fFirst}
+                    setFFirst={props.setFFirst}
+                    fMiddle={props.fMiddle}
+                    setFMiddle={props.setFMiddle}
+                    fLast={props.fLast}
+                    setFLast={props.setFLast}
+                    fSuffix={props.fSuffix}
+                    setFSuffix={props.setFSuffix}
+                    fDept={props.fDept}
+                    setFDept={props.setFDept}
+                    fBirthdate={props.fBirthdate}
+                    setFBirthdate={props.setFBirthdate}
+                    fAddress={props.fAddress}
+                    setFAddress={props.setFAddress}
+                    fEmail={props.fEmail}
+                    setFEmail={props.setFEmail}
+                    fPw={props.fPw}
+                    setFPw={props.setFPw}
+                    fPwConfirm={props.fPwConfirm}
+                    setFPwConfirm={props.setFPwConfirm}
+                    wantsHead={props.fWantsHead}
+                    onWantsHeadChange={props.setFWantsHead}
                   />
                 )}
 
@@ -145,13 +164,20 @@ export default function RegisterView(props: Props) {
                     err={props.err}
                     msg={props.msg}
                     dStep={props.dStep}
-                    dPhone={props.dPhone} setDPhone={props.setDPhone}
-                    dOtp={props.dOtp} setDOtp={props.setDOtp}
-                    dFirst={props.dFirst} setDFirst={props.setDFirst}
-                    dMiddle={props.dMiddle} setDMiddle={props.setDMiddle}
-                    dLast={props.dLast} setDLast={props.setDLast}
-                    dSuffix={props.dSuffix} setDSuffix={props.setDSuffix}
-                    dAddress={props.dAddress} setDAddress={props.setDAddress}
+                    dPhone={props.dPhone}
+                    setDPhone={props.setDPhone}
+                    dOtp={props.dOtp}
+                    setDOtp={props.setDOtp}
+                    dFirst={props.dFirst}
+                    setDFirst={props.setDFirst}
+                    dMiddle={props.dMiddle}
+                    setDMiddle={props.setDMiddle}
+                    dLast={props.dLast}
+                    setDLast={props.setDLast}
+                    dSuffix={props.dSuffix}
+                    setDSuffix={props.setDSuffix}
+                    dAddress={props.dAddress}
+                    setDAddress={props.setDAddress}
                     verifiedPhone={props.verifiedPhone}
                     onDriverSendOtp={props.onDriverSendOtp}
                     onDriverVerify={props.onDriverVerify}

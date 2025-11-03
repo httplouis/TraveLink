@@ -1,8 +1,8 @@
+// src/components/user/request/ui/TravelOrderForm.view.tsx
 "use client";
 
 import * as React from "react";
 import TopGridFields from "./parts/TopGridFields.view";
-// ⛔️ Purpose is already part of TopGridFields; keep it centralized there.
 import CostsSection from "./parts/CostsSection.view";
 import EndorsementSection from "./parts/EndorsementSection.view";
 import { UI_TEXT } from "@/lib/user/request/uiText";
@@ -15,9 +15,11 @@ type ViewProps = {
   onChangeCosts: (patch: any) => void;
   onDepartmentChange: (dept: string) => void;
   setHeadEdited: () => void;
-
-  // New, optional action slot for the footer (e.g., "Send to Department Head")
   footerRight?: React.ReactNode;
+
+  // extra props
+  isHeadRequester?: boolean;
+  currentUserName?: string;
 };
 
 export default function TravelOrderFormView({
@@ -29,6 +31,8 @@ export default function TravelOrderFormView({
   onDepartmentChange,
   setHeadEdited,
   footerRight,
+  isHeadRequester,
+  currentUserName,
 }: ViewProps) {
   const c = data?.costs || {};
 
@@ -39,7 +43,7 @@ export default function TravelOrderFormView({
         <span className="text-xs text-neutral-500">{UI_TEXT.requiredHint}</span>
       </div>
 
-      {/* Top half of the form: date, requester, dept, destination, purpose (inside TopGridFields), requester signature */}
+      {/* Top half: date, requester, dept, destination, purpose */}
       <TopGridFields
         data={data}
         errors={errors}
@@ -54,7 +58,7 @@ export default function TravelOrderFormView({
         onChangeCosts={onChangeCosts}
       />
 
-      {/* Head details (name/date) remain editable to route correctly; signature is NOT in user step */}
+      {/* Head details + (optionally) signature kapag head mismo nagrerequest */}
       <EndorsementSection
         nameValue={data?.endorsedByHeadName ?? ""}
         dateValue={data?.endorsedByHeadDate ?? ""}
@@ -63,12 +67,16 @@ export default function TravelOrderFormView({
           onChange({ endorsedByHeadName: v });
         }}
         onDateChange={(v) => onChange({ endorsedByHeadDate: v })}
+        isHeadRequester={isHeadRequester}
+        currentUserName={currentUserName}
+        // kung may na-upload na e-signature ng head (head requester case)
+        signature={data?.endorsedByHeadSignature ?? null}
+        onSignatureChange={(dataUrl) => {
+          onChange({ endorsedByHeadSignature: dataUrl });
+        }}
       />
 
-      {/* Footer actions */}
-      <div className="mt-5 flex items-center justify-end gap-2">
-        {footerRight}
-      </div>
+      <div className="mt-5 flex items-center justify-end gap-2">{footerRight}</div>
     </section>
   );
 }

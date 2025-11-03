@@ -5,12 +5,13 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import RegisterView, { DriverStep, RolePick } from "./RegisterView";
 
+// basic email + pw checks
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 function validatePassword(pw: string): string | null {
   if (pw.length < 8) return "Password must be at least 8 characters long.";
   if (!/[0-9]/.test(pw)) return "Password must contain at least one number.";
-  if (!/[!@#$%^&*(),.?":{}|<>]/.test(pw)) return "Password must contain at least one special character.";
+  if (!/[!@#$%^&*(),.?\":{}|<>]/.test(pw)) return "Password must contain at least one special character.";
   return null;
 }
 
@@ -26,7 +27,7 @@ function normalizePhone(p: string) {
 export default function RegisterPage() {
   const [role, setRole] = useState<RolePick>("faculty");
 
-  // Faculty state
+  // faculty state
   const [fFirst, setFFirst] = useState("");
   const [fMiddle, setFMiddle] = useState("");
   const [fLast, setFLast] = useState("");
@@ -37,8 +38,10 @@ export default function RegisterPage() {
   const [fEmail, setFEmail] = useState("");
   const [fPw, setFPw] = useState("");
   const [fPwConfirm, setFPwConfirm] = useState("");
+  // ito yung checkbox: “I am the head of this department”
+  const [fWantsHead, setFWantsHead] = useState(false);
 
-  // Driver state (dev OTP flow)
+  // driver state
   const [dStep, setDStep] = useState<DriverStep>("phone");
   const [dPhone, setDPhone] = useState("");
   const [verifiedPhone, setVerifiedPhone] = useState<string | null>(null);
@@ -49,75 +52,95 @@ export default function RegisterPage() {
   const [dSuffix, setDSuffix] = useState("");
   const [dAddress, setDAddress] = useState("");
 
-  // UI
+  // ui
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [justSignedUpEmail, setJustSignedUpEmail] = useState<string | null>(null);
 
+  // linis message pag palit tab
   useEffect(() => {
     setMsg(null);
     setErr(null);
   }, [role]);
 
+  // ================== FACULTY REGISTER ==================
   async function registerFaculty(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
     setMsg(null);
 
-    const nameFull = [fFirst, fMiddle, fLast, fSuffix]
+    const fullName = [fFirst, fMiddle, fLast, fSuffix]
       .filter(Boolean)
       .join(" ")
       .replace(/\s+/g, " ")
       .trim();
 
-    if (fFirst.trim().length < 1 || fLast.trim().length < 1) return setErr("Please enter your first and last name.");
-    if (!emailRegex.test(fEmail)) return setErr("Please enter a valid email address.");
-    if (!fBirthdate) return setErr("Please select your birthdate.");
-    if (!fAddress.trim()) return setErr("Please enter your address.");
+    if (!fFirst.trim() || !fLast.trim()) {
+      setErr("Please complete your name.");
+      return;
+    }
+    if (!fDept) {
+      setErr("Please select your department / office.");
+      return;
+    }
+    if (!fEmail.trim() || !emailRegex.test(fEmail.trim())) {
+      setErr("Please use a valid email address.");
+      return;
+    }
     const pwErr = validatePassword(fPw);
-    if (pwErr) return setErr(pwErr);
-    if (fPw !== fPwConfirm) return setErr("Passwords do not match.");
+    if (pwErr) {
+      setErr(pwErr);
+      return;
+    }
+    if (fPw !== fPwConfirm) {
+      setErr("Passwords do not match.");
+      return;
+    }
 
     try {
       setLoading(true);
 
-      // sign up (no dummy precheck)
+      // 1) supabase sign up
       const { error } = await supabase.auth.signUp({
-        email: fEmail,
+        email: fEmail.trim(),
         password: fPw,
         options: {
           data: {
-            role: "faculty",
-            first_name: fFirst,
-            middle_name: fMiddle || null,
-            last_name: fLast,
-            suffix: fSuffix || null,
-            name_full: nameFull,
-            department: fDept || null,
-            birthdate: fBirthdate,
-            address: fAddress,
+            full_name: fullName,
+            department: fDept,
+            role: "faculty",        // fixed: hindi siya agad head
+            wants_head: fWantsHead, // dito lang natin sinasabi na gusto niyang maging head
           },
         },
       });
 
       if (error) {
-        const m = (error.message || "").toLowerCase();
-        if (m.includes("already")) {
-          setErr("This email is already registered. Try logging in or resetting your password.");
-          return;
-        }
-        if (m.includes("rate")) {
-          setErr("Too many attempts. Please wait a few minutes and try again.");
-          return;
-        }
-        setErr(error.message || "Sign up failed.");
+        setErr(error.message);
         return;
       }
 
-      setJustSignedUpEmail(fEmail);
+      setJustSignedUpEmail(fEmail.trim());
+
+      // 2) app DB (best-effort lang)
+      await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: fEmail.trim(),
+          full_name: fullName,
+          department: fDept,
+          birthdate: fBirthdate || null,
+          address: fAddress || null,
+          role: "faculty",
+          wants_head: fWantsHead,
+        }),
+      }).catch(() => {});
+
       setMsg(
-        "If this email is new, we sent a confirmation link. If it’s already registered, please check your inbox (and spam) or try logging in / resetting your password."
+        fWantsHead
+          ? "Account created. We also received your request to be marked as Department Head. Please wait for approval."
+          : "Account created. Please check your email to confirm."
       );
     } catch (e: any) {
       setErr(e?.message ?? "Registration failed.");
@@ -126,38 +149,18 @@ export default function RegisterPage() {
     }
   }
 
-  async function resendConfirmation() {
-    if (!justSignedUpEmail) return;
-    setErr(null);
-    setMsg(null);
-    try {
-      setLoading(true);
-      const { error } = await supabase.auth.resend({ type: "signup", email: justSignedUpEmail });
-      if (error) {
-        const m = (error.message || "").toLowerCase();
-        if (m.includes("already confirmed")) {
-          setErr("This email is already confirmed. You can log in now.");
-          return;
-        }
-        throw error;
-      }
-      setMsg("Confirmation email sent. Please check your inbox (and spam).");
-    } catch (e: any) {
-      setErr(e.message ?? "Could not resend confirmation.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
+  // ================== DRIVER (DEV FLOW) ==================
   function driverSendOtp(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
     setMsg(null);
+
     const normalized = normalizePhone(dPhone);
     if (!/^\+63\d{10}$/.test(normalized)) {
       setErr("Please enter a valid PH mobile (e.g., 09XXXXXXXXX).");
       return;
     }
+    // dev: code = 1234
     setMsg("Dev mode: use code 1234 to continue.");
     setDStep("otp");
   }
@@ -166,10 +169,12 @@ export default function RegisterPage() {
     e.preventDefault();
     setErr(null);
     setMsg(null);
+
     if (dOtp.trim() !== "1234") {
       setErr("Invalid code. (Dev mode: the code is 1234)");
       return;
     }
+
     const normalized = normalizePhone(dPhone);
     setVerifiedPhone(normalized);
     setDStep("profile");
@@ -179,9 +184,19 @@ export default function RegisterPage() {
     e.preventDefault();
     setErr(null);
     setMsg(null);
-    if (!verifiedPhone) return setErr("Missing verified phone. Please restart driver signup.");
-    if (dFirst.trim().length < 1 || dLast.trim().length < 1) return setErr("Please enter your first and last name.");
-    if (!dAddress.trim()) return setErr("Please enter your address.");
+
+    if (!verifiedPhone) {
+      setErr("Missing verified phone. Please restart driver signup.");
+      return;
+    }
+    if (!dFirst.trim() || !dLast.trim()) {
+      setErr("Please enter your first and last name.");
+      return;
+    }
+    if (!dAddress.trim()) {
+      setErr("Please enter your address.");
+      return;
+    }
 
     try {
       setLoading(true);
@@ -198,11 +213,33 @@ export default function RegisterPage() {
           address: dAddress,
         }),
       });
+
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to save driver profile.");
-      setMsg("Profile saved (dev). Your driver account is now pending admin approval.");
+
+      setMsg("Driver profile saved. Please wait for admin approval.");
     } catch (e: any) {
-      setErr(e.message ?? "Could not save profile.");
+      setErr(e.message ?? "Could not save driver profile.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function resendConfirmation() {
+    if (!justSignedUpEmail) return;
+    setErr(null);
+    setMsg(null);
+
+    try {
+      setLoading(true);
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: justSignedUpEmail,
+      });
+      if (error) throw error;
+      setMsg("Confirmation email sent. Please check your inbox (and spam).");
+    } catch (e: any) {
+      setErr(e.message ?? "Could not resend confirmation.");
     } finally {
       setLoading(false);
     }
@@ -237,6 +274,8 @@ export default function RegisterPage() {
       setFPw={setFPw}
       fPwConfirm={fPwConfirm}
       setFPwConfirm={setFPwConfirm}
+      fWantsHead={fWantsHead}
+      setFWantsHead={setFWantsHead}
       onFacultySubmit={registerFaculty}
       /* driver */
       dStep={dStep}

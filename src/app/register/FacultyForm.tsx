@@ -1,4 +1,4 @@
-// src/app/register/FacultyForm.tsx
+// app/(auth)/register/FacultyForm.tsx
 "use client";
 
 import * as React from "react";
@@ -21,6 +21,10 @@ export type FacultyFormProps = {
   fEmail: string; setFEmail: (v: string) => void;
   fPw: string; setFPw: (v: string) => void;
   fPwConfirm: string; setFPwConfirm: (v: string) => void;
+
+  // NEW
+  wantsHead?: boolean;
+  onWantsHeadChange?: (v: boolean) => void;
 };
 
 export default function FacultyForm(props: FacultyFormProps) {
@@ -36,11 +40,12 @@ export default function FacultyForm(props: FacultyFormProps) {
     fEmail, setFEmail,
     fPw, setFPw,
     fPwConfirm, setFPwConfirm,
+    wantsHead, onWantsHeadChange,
   } = props;
 
   return (
     <form onSubmit={onSubmit} className="grid gap-4">
-      {/* Alerts */}
+      {/* alerts */}
       {err && (
         <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
           {err}
@@ -52,8 +57,8 @@ export default function FacultyForm(props: FacultyFormProps) {
           {onResend && (
             <button
               type="button"
-              className="text-xs underline hover:opacity-80"
               onClick={onResend}
+              className="text-xs underline hover:opacity-80"
             >
               Resend
             </button>
@@ -61,7 +66,7 @@ export default function FacultyForm(props: FacultyFormProps) {
         </div>
       )}
 
-      {/* Name */}
+      {/* name */}
       <div className="grid gap-3 md:grid-cols-3">
         <label className="grid gap-1">
           <span className="text-xs font-medium text-neutral-700">First name</span>
@@ -91,7 +96,7 @@ export default function FacultyForm(props: FacultyFormProps) {
         </label>
       </div>
 
-      {/* Suffix / Birthdate */}
+      {/* suffix + birthdate */}
       <div className="grid gap-3 md:grid-cols-3">
         <label className="grid gap-1">
           <span className="text-xs font-medium text-neutral-700">Suffix</span>
@@ -114,16 +119,32 @@ export default function FacultyForm(props: FacultyFormProps) {
         </label>
       </div>
 
-      {/* Department — searchable combobox */}
-      <DepartmentSelect
-        label="Department / Office"
-        value={fDept}
-        onChange={setFDept}
-        required
-        placeholder="Search or type department…"
-      />
+      {/* department */}
+      <div className="grid gap-2">
+        <DepartmentSelect
+          value={fDept}
+          onChange={setFDept}
+          required
+          placeholder="Type to search..."
+        />
+        {/* checkbox for “I am the head” */}
+        <label className="flex items-start gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2">
+          <input
+            type="checkbox"
+            checked={wantsHead ?? false}
+            onChange={(e) => onWantsHeadChange?.(e.target.checked)}
+            className="mt-[2px] h-4 w-4 rounded border-neutral-300 text-red-900"
+          />
+          <span className="text-xs text-neutral-700 leading-tight">
+            I am the Department / Office Head of the selected unit. Please flag this account for head privileges.
+            <span className="block text-[10px] text-neutral-500">
+              (Admin will still verify this. If not approved, you stay as regular faculty.)
+            </span>
+          </span>
+        </label>
+      </div>
 
-      {/* Address */}
+      {/* address */}
       <label className="grid gap-1">
         <span className="text-xs font-medium text-neutral-700">Address</span>
         <input
@@ -134,18 +155,19 @@ export default function FacultyForm(props: FacultyFormProps) {
         />
       </label>
 
-      {/* Email / Password */}
+      {/* email + password */}
+      <label className="grid gap-1">
+        <span className="text-xs font-medium text-neutral-700">Email</span>
+        <input
+          type="email"
+          className="h-10 rounded-md border border-neutral-300 px-3 text-sm outline-none focus:ring-2 focus:ring-neutral-200"
+          value={fEmail}
+          onChange={(e) => setFEmail(e.target.value)}
+          placeholder="you@mseuf.edu.ph"
+          required
+        />
+      </label>
       <div className="grid gap-3 md:grid-cols-2">
-        <label className="grid gap-1">
-          <span className="text-xs font-medium text-neutral-700">Email</span>
-          <input
-            type="email"
-            className="h-10 rounded-md border border-neutral-300 px-3 text-sm outline-none focus:ring-2 focus:ring-neutral-200"
-            value={fEmail}
-            onChange={(e) => setFEmail(e.target.value)}
-            required
-          />
-        </label>
         <label className="grid gap-1">
           <span className="text-xs font-medium text-neutral-700">Password</span>
           <input
@@ -157,19 +179,18 @@ export default function FacultyForm(props: FacultyFormProps) {
             minLength={8}
           />
         </label>
+        <label className="grid gap-1">
+          <span className="text-xs font-medium text-neutral-700">Confirm password</span>
+          <input
+            type="password"
+            className="h-10 rounded-md border border-neutral-300 px-3 text-sm outline-none focus:ring-2 focus:ring-neutral-200"
+            value={fPwConfirm}
+            onChange={(e) => setFPwConfirm(e.target.value)}
+            required
+            minLength={8}
+          />
+        </label>
       </div>
-
-      <label className="grid gap-1">
-        <span className="text-xs font-medium text-neutral-700">Confirm password</span>
-        <input
-          type="password"
-          className="h-10 rounded-md border border-neutral-300 px-3 text-sm outline-none focus:ring-2 focus:ring-neutral-200"
-          value={fPwConfirm}
-          onChange={(e) => setFPwConfirm(e.target.value)}
-          required
-          minLength={8}
-        />
-      </label>
 
       <button
         type="submit"
