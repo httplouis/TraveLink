@@ -3,7 +3,7 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
-import Modal from "@/components/common/modal/Modal";
+import Modal from "@/components/common/Modal/Modal";
 
 // Leaflet picker (client-only)
 const CommonMapPicker = dynamic(
