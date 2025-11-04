@@ -25,7 +25,7 @@ type Props = {
 };
 
 /** Filter-only URL sync (does NOT touch q/sort) */
-export function RequestsURLSync({ draft, onDraftChange }: Props) {
+function RequestsURLSyncContent({ draft, onDraftChange }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -88,4 +88,12 @@ export function RequestsURLSync({ draft, onDraftChange }: Props) {
   }, [draft, pathname, router, searchParams]);
 
   return null;
+}
+
+export function RequestsURLSync(props: Props) {
+  return (
+    <React.Suspense fallback={null}>
+      <RequestsURLSyncContent {...props} />
+    </React.Suspense>
+  );
 }
