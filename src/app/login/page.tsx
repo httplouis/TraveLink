@@ -3,7 +3,7 @@
 
 import React, { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient"; // ← named import
+import { createSupabaseClient } from "@/lib/supabase/client";
 import LoginView from "./LoginView";
 
 export default function LoginPage() {
@@ -15,74 +15,53 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [remember, setRemember] = useState(false);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setErr(null);
-    setLoading(true);
-
-    // 1) login
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      setErr(error.message);
-      setLoading(false);
-      return;
-    }
-
-    // 2) get current user
-    const {
-      data: { user },
-      error: userErr,
-    } = await supabase.auth.getUser();
-
-    if (userErr || !user) {
-      setErr(userErr?.message || "No user returned from Supabase.");
-      setLoading(false);
-      return;
-    }
-
-    // 3) get app-level role
-    const { data: profile, error: profErr } = await supabase
-      .from("users")
-      .select("role, department")
-      .eq("auth_user_id", user.id)
-      .maybeSingle();
-
-    if (profErr) {
-      setErr(profErr.message);
-      setLoading(false);
-      return;
-    }
-
-    const role = profile?.role ?? "faculty";
-
-    // 4) redirect
-    if (nextUrl) {
-      router.push(nextUrl);
-    } else {
-      switch (role) {
-        case "admin":
-          router.push("/admin");
-          break;
-        case "head":
-          router.push("/head/inbox");
-          break;
-        case "hr":
-          router.push("/hr/inbox");
-          break;
-        case "exec":
-          router.push("/exec/inbox");
-          break;
-        default:
-          router.push("/user/request");
+  // Check if user already logged in via Supabase session
+  // Only redirect if there's a nextUrl (came from middleware redirect)
+  React.useEffect(() => {
+    if (!nextUrl) return; // Don't auto-redirect if manually visiting /login
+    
+    const supabase = createSupabaseClient();
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session && nextUrl) {
+        // Already logged in and trying to access protected page
+        router.push(nextUrl);
       }
-    }
+    });
+  }, [nextUrl, router]);
 
-    setLoading(false);
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setErr("");
+
+    try {
+      // Call server-side login API
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setErr(data.error || 'Login failed');
+        setLoading(false);
+        return;
+      }
+
+      // Redirect to the path determined by the server
+      const redirectPath = nextUrl || data.redirectPath || '/user';
+      window.location.href = redirectPath;
+
+    } catch (error: any) {
+      setErr(error.message || 'An error occurred');
+      setLoading(false);
+    }
   }
 
   return (
@@ -93,7 +72,9 @@ export default function LoginPage() {
       setPassword={setPassword}
       loading={loading}
       err={err}
-      onSubmit={handleSubmit}
+      onSubmit={onSubmit}
+      remember={remember}
+      setRemember={setRemember}
     />
   );
 }

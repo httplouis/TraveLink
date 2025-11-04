@@ -38,8 +38,9 @@ export default function RegisterPage() {
   const [fEmail, setFEmail] = useState("");
   const [fPw, setFPw] = useState("");
   const [fPwConfirm, setFPwConfirm] = useState("");
-  // ito yung checkbox: “I am the head of this department”
-  const [fWantsHead, setFWantsHead] = useState(false);
+  // REMOVED: fWantsHead - violates RBAC Ground Truth (no self-declaration)
+  const [emailDirectoryData, setEmailDirectoryData] = useState<any>(null);
+  const [emailCheckLoading, setEmailCheckLoading] = useState(false);
 
   // driver state
   const [dStep, setDStep] = useState<DriverStep>("phone");
@@ -64,20 +65,57 @@ export default function RegisterPage() {
     setErr(null);
   }, [role]);
 
+  // Check email in directory on blur
+  async function checkEmailDirectory() {
+    if (!fEmail.trim() || !emailRegex.test(fEmail.trim())) return;
+    
+    setEmailCheckLoading(true);
+    try {
+      const res = await fetch(`/api/email-directory?email=${encodeURIComponent(fEmail.trim())}`);
+      const data = await res.json();
+      
+      if (data.ok && data.data) {
+        setEmailDirectoryData(data.data);
+        // Auto-fill from directory
+        const names = data.data.name.split(" ");
+        if (names.length >= 2 && !fFirst) {
+          setFFirst(names[0]);
+          setFLast(names[names.length - 1]);
+          if (names.length > 2) {
+            setFMiddle(names.slice(1, -1).join(" "));
+          }
+        }
+        if (data.data.department && !fDept) {
+          setFDept(data.data.department);
+        }
+        // Directory data is PREFILL ONLY per RBAC Ground Truth
+        setMsg(`✓ Email verified from directory (${data.data.position}). Note: Department and position data is for reference only. Actual roles are assigned via official roster.`);
+      } else {
+        setEmailDirectoryData(null);
+        setMsg("Email not found in directory. You can still register with any institutional email.");
+      }
+    } catch {
+      setEmailDirectoryData(null);
+    } finally {
+      setEmailCheckLoading(false);
+    }
+  }
+
   // ================== FACULTY REGISTER ==================
   async function registerFaculty(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
     setMsg(null);
 
+    // Name should be auto-filled from directory check
     const fullName = [fFirst, fMiddle, fLast, fSuffix]
       .filter(Boolean)
       .join(" ")
       .replace(/\s+/g, " ")
       .trim();
 
-    if (!fFirst.trim() || !fLast.trim()) {
-      setErr("Please complete your name.");
+    if (!fullName) {
+      setErr("Please enter a valid institutional email first to auto-fill your name.");
       return;
     }
     if (!fDept) {
@@ -101,7 +139,7 @@ export default function RegisterPage() {
     try {
       setLoading(true);
 
-      // 1) supabase sign up
+      // 1) supabase sign up (RBAC Ground Truth: role assigned via roster/admin only)
       const { error } = await supabase.auth.signUp({
         email: fEmail.trim(),
         password: fPw,
@@ -109,8 +147,8 @@ export default function RegisterPage() {
           data: {
             full_name: fullName,
             department: fDept,
-            role: "faculty",        // fixed: hindi siya agad head
-            wants_head: fWantsHead, // dito lang natin sinasabi na gusto niyang maging head
+            role: "faculty",  // Everyone starts as faculty
+            // NO wants_head - violates Ground Truth RBAC (no self-declaration)
           },
         },
       });
@@ -133,14 +171,12 @@ export default function RegisterPage() {
           birthdate: fBirthdate || null,
           address: fAddress || null,
           role: "faculty",
-          wants_head: fWantsHead,
+          // NO wants_head - Ground Truth RBAC: roles assigned via roster/admin
         }),
       }).catch(() => {});
 
       setMsg(
-        fWantsHead
-          ? "Account created. We also received your request to be marked as Department Head. Please wait for approval."
-          : "Account created. Please check your email to confirm."
+        "Account created successfully! Please check your email to confirm. If you are a department head, your role will be automatically assigned when you first log in."
       );
     } catch (e: any) {
       setErr(e?.message ?? "Registration failed.");
@@ -274,9 +310,9 @@ export default function RegisterPage() {
       setFPw={setFPw}
       fPwConfirm={fPwConfirm}
       setFPwConfirm={setFPwConfirm}
-      fWantsHead={fWantsHead}
-      setFWantsHead={setFWantsHead}
       onFacultySubmit={registerFaculty}
+      onEmailBlur={checkEmailDirectory}
+      emailCheckLoading={emailCheckLoading}
       /* driver */
       dStep={dStep}
       dPhone={dPhone}

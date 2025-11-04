@@ -1,11 +1,16 @@
-let supabaseClient: any = null;
-try { supabaseClient = require("@/supabaseClient").supabase; } catch {}
+import { createSupabaseClient } from "@/lib/supabase/client";
+
 export const AuthRepo = {
   async signOut() {
-    try { if (supabaseClient?.auth?.signOut) await supabaseClient.auth.signOut(); } catch {}
-    try { if (typeof window !== "undefined") {
-      localStorage.removeItem("tl.session");
-      localStorage.removeItem("tl.user");
-    }} catch {}
+    try {
+      if (typeof window !== "undefined") {
+        const supabase = createSupabaseClient();
+        await supabase.auth.signOut();
+        localStorage.removeItem("tl.session");
+        localStorage.removeItem("tl.user");
+      }
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
   },
 };

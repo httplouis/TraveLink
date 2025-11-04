@@ -1,16 +1,15 @@
 // src/app/(protected)/admin/layout.tsx
+"use client";
+
 import "@/app/globals.css";
 import "@/app/styles/admin/admin.css";
 
-import type { Metadata } from "next";
 import AdminLeftNav from "@/components/admin/nav/AdminLeftNav";
 import Breadcrumbs from "@/components/admin/nav/Breadcrumbs";
 import ProfileMenu from "@/components/admin/nav/ProfileMenu";
 import NotificationBell from "@/components/admin/nav/NotificationBell";
 import { Search } from "lucide-react";
 import ProfileContainer from "@/components/admin/profile/containers/ProfileContainer";
-
-export const metadata: Metadata = { title: "TraviLink · Admin" };
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -76,8 +75,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
           {/* Right actions */}
           <div className="absolute right-4 flex items-center gap-2 sm:right-6" suppressHydrationWarning>
-            <NotificationBell variant="onMaroon" />
-            <ProfileMenu variant="onMaroon" />
+            <NotificationBell />
+            <ProfileMenu />
           </div>
         </div>
 

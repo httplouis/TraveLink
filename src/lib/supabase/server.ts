@@ -31,11 +31,19 @@ export async function createSupabaseServerClient(useServiceRole = false) {
         return cookieStore.get(name)?.value;
       },
       set(name: string, value: string, options: any) {
-        // para sa SSR token refresh
-        cookieStore.set({ name, value, ...options });
+        try {
+          cookieStore.set({ name, value, ...options });
+        } catch (error) {
+          // Cookie setting might fail in middleware/server components
+          // This is expected in some contexts
+        }
       },
       remove(name: string, options: any) {
-        cookieStore.set({ name, value: "", ...options });
+        try {
+          cookieStore.set({ name, value: "", ...options });
+        } catch (error) {
+          // Cookie removal might fail in middleware/server components
+        }
       },
     },
   });

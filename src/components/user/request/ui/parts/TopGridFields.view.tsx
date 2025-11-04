@@ -47,9 +47,13 @@ export default function TopGridFields({
             placeholder={UI_TEXT.dept.placeholder}
             onChange={onDepartmentChange}
           />
-          {errors["travelOrder.department"] && (
+          {errors["travelOrder.department"] ? (
             <span className="text-xs text-red-600">
               {errors["travelOrder.department"]}
+            </span>
+          ) : (
+            <span className="text-xs text-slate-500">
+              💡 Select the requester's department/office (can be different from yours if filling for others)
             </span>
           )}
         </div>
@@ -86,13 +90,20 @@ export default function TopGridFields({
           value={data?.requestingPerson || ""}
           onChange={(e) => onChange({ requestingPerson: e.target.value })}
           error={errors["travelOrder.requestingPerson"]}
-          helper=""
+          helper="💡 You can edit this if you're filling out the form for someone else (e.g., your department head)"
         />
 
-        {/* Requesting person’s signature (compact) */}
-        <div className="rounded-xl border border-neutral-200 bg-neutral-50/60 p-3">
-          <div className="mb-2 text-sm font-medium">
-            {UI_TEXT.requesterSignature?.title ?? "Requesting person’s signature"}
+        {/* Requesting person's signature (compact) */}
+        <div className={`rounded-xl border p-3 ${errors["travelOrder.requesterSignature"] ? "border-red-300 bg-red-50/30" : "border-neutral-200 bg-neutral-50/60"}`}>
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-sm font-medium">
+              {UI_TEXT.requesterSignature?.title ?? "Requesting person's signature"} <span className="text-red-500">*</span>
+            </span>
+            {errors["travelOrder.requesterSignature"] && (
+              <span className="text-xs font-semibold text-red-600">
+                {errors["travelOrder.requesterSignature"]}
+              </span>
+            )}
           </div>
           <SignaturePad
             height={160}

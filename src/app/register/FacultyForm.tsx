@@ -25,6 +25,8 @@ export type FacultyFormProps = {
   // NEW
   wantsHead?: boolean;
   onWantsHeadChange?: (v: boolean) => void;
+  onEmailBlur?: () => void;
+  emailCheckLoading?: boolean;
 };
 
 export default function FacultyForm(props: FacultyFormProps) {
@@ -41,6 +43,7 @@ export default function FacultyForm(props: FacultyFormProps) {
     fPw, setFPw,
     fPwConfirm, setFPwConfirm,
     wantsHead, onWantsHeadChange,
+    onEmailBlur, emailCheckLoading,
   } = props;
 
   return (
@@ -66,58 +69,37 @@ export default function FacultyForm(props: FacultyFormProps) {
         </div>
       )}
 
-      {/* name */}
-      <div className="grid gap-3 md:grid-cols-3">
-        <label className="grid gap-1">
-          <span className="text-xs font-medium text-neutral-700">First name</span>
-          <input
-            className="h-10 rounded-md border border-neutral-300 px-3 text-sm outline-none focus:ring-2 focus:ring-neutral-200"
-            value={fFirst}
-            onChange={(e) => setFFirst(e.target.value)}
-            required
-          />
-        </label>
-        <label className="grid gap-1">
-          <span className="text-xs font-medium text-neutral-700">Middle name</span>
-          <input
-            className="h-10 rounded-md border border-neutral-300 px-3 text-sm outline-none focus:ring-2 focus:ring-neutral-200"
-            value={fMiddle}
-            onChange={(e) => setFMiddle(e.target.value)}
-          />
-        </label>
-        <label className="grid gap-1">
-          <span className="text-xs font-medium text-neutral-700">Last name</span>
-          <input
-            className="h-10 rounded-md border border-neutral-300 px-3 text-sm outline-none focus:ring-2 focus:ring-neutral-200"
-            value={fLast}
-            onChange={(e) => setFLast(e.target.value)}
-            required
-          />
-        </label>
-      </div>
+      {/* Email FIRST - triggers directory lookup */}
+      <label className="grid gap-1">
+        <span className="text-xs font-medium text-neutral-700">Email</span>
+        <input
+          type="email"
+          className="h-10 rounded-md border border-neutral-300 px-3 text-sm outline-none focus:ring-2 focus:ring-neutral-200"
+          value={fEmail}
+          onChange={(e) => setFEmail(e.target.value)}
+          onBlur={onEmailBlur}
+          placeholder="you@mseuf.edu.ph"
+          required
+        />
+        {emailCheckLoading && (
+          <span className="text-xs text-slate-500">Checking directory...</span>
+        )}
+      </label>
 
-      {/* suffix + birthdate */}
-      <div className="grid gap-3 md:grid-cols-3">
-        <label className="grid gap-1">
-          <span className="text-xs font-medium text-neutral-700">Suffix</span>
-          <input
-            className="h-10 rounded-md border border-neutral-300 px-3 text-sm outline-none focus:ring-2 focus:ring-neutral-200"
-            placeholder="Jr., II, etc."
-            value={fSuffix}
-            onChange={(e) => setFSuffix(e.target.value)}
-          />
-        </label>
-        <label className="grid gap-1 md:col-span-2">
-          <span className="text-xs font-medium text-neutral-700">Birthdate</span>
-          <input
-            type="date"
-            className="h-10 rounded-md border border-neutral-300 px-3 text-sm outline-none focus:ring-2 focus:ring-neutral-200"
-            value={fBirthdate}
-            onChange={(e) => setFBirthdate(e.target.value)}
-            required
-          />
-        </label>
-      </div>
+      {/* Name fields - auto-filled from directory */}
+      {fFirst ? (
+        <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2">
+          <p className="text-xs text-green-800">
+            <strong>✓ Name auto-filled from directory:</strong> {fFirst} {fMiddle} {fLast} {fSuffix}
+          </p>
+        </div>
+      ) : (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+          <p className="text-xs text-amber-800">
+            <strong>⚠ Enter your institutional email above</strong> to auto-fill your name from the directory.
+          </p>
+        </div>
+      )}
 
       {/* department */}
       <div className="grid gap-2">
@@ -127,46 +109,14 @@ export default function FacultyForm(props: FacultyFormProps) {
           required
           placeholder="Type to search..."
         />
-        {/* checkbox for “I am the head” */}
-        <label className="flex items-start gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2">
-          <input
-            type="checkbox"
-            checked={wantsHead ?? false}
-            onChange={(e) => onWantsHeadChange?.(e.target.checked)}
-            className="mt-[2px] h-4 w-4 rounded border-neutral-300 text-red-900"
-          />
-          <span className="text-xs text-neutral-700 leading-tight">
-            I am the Department / Office Head of the selected unit. Please flag this account for head privileges.
-            <span className="block text-[10px] text-neutral-500">
-              (Admin will still verify this. If not approved, you stay as regular faculty.)
-            </span>
-          </span>
-        </label>
+        <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2">
+          <p className="text-xs text-blue-800 leading-tight">
+            <strong>Department Head Access:</strong> If you are a department head, your role will be automatically granted when you log in (if your email is in the official roster). No need to request it here.
+          </p>
+        </div>
       </div>
 
-      {/* address */}
-      <label className="grid gap-1">
-        <span className="text-xs font-medium text-neutral-700">Address</span>
-        <input
-          className="h-10 rounded-md border border-neutral-300 px-3 text-sm outline-none focus:ring-2 focus:ring-neutral-200"
-          value={fAddress}
-          onChange={(e) => setFAddress(e.target.value)}
-          required
-        />
-      </label>
-
-      {/* email + password */}
-      <label className="grid gap-1">
-        <span className="text-xs font-medium text-neutral-700">Email</span>
-        <input
-          type="email"
-          className="h-10 rounded-md border border-neutral-300 px-3 text-sm outline-none focus:ring-2 focus:ring-neutral-200"
-          value={fEmail}
-          onChange={(e) => setFEmail(e.target.value)}
-          placeholder="you@mseuf.edu.ph"
-          required
-        />
-      </label>
+      {/* password */}
       <div className="grid gap-3 md:grid-cols-2">
         <label className="grid gap-1">
           <span className="text-xs font-medium text-neutral-700">Password</span>

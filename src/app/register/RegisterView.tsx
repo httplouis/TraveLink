@@ -28,10 +28,9 @@ type Props = {
   fEmail: string; setFEmail: (v: string) => void;
   fPw: string; setFPw: (v: string) => void;
   fPwConfirm: string; setFPwConfirm: (v: string) => void;
-  // NEW
-  fWantsHead: boolean;
-  setFWantsHead: (v: boolean) => void;
   onFacultySubmit: (e: React.FormEvent) => void;
+  onEmailBlur?: () => void;
+  emailCheckLoading?: boolean;
 
   // driver
   dStep: DriverStep;
@@ -153,8 +152,8 @@ export default function RegisterView(props: Props) {
                     setFPw={props.setFPw}
                     fPwConfirm={props.fPwConfirm}
                     setFPwConfirm={props.setFPwConfirm}
-                    wantsHead={props.fWantsHead}
-                    onWantsHeadChange={props.setFWantsHead}
+                    onEmailBlur={props.onEmailBlur}
+                    emailCheckLoading={props.emailCheckLoading}
                   />
                 )}
 

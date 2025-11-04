@@ -1,0 +1,45 @@
+// Get user's submitted requests with history
+import { NextResponse } from "next/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+
+export async function GET() {
+  try {
+    const supabase = await createSupabaseServerClient(true);
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Get user profile
+    const { data: profile } = await supabase
+      .from("users")
+      .select("id")
+      .eq("auth_user_id", user.id)
+      .single();
+
+    if (!profile) {
+      return NextResponse.json({ ok: false, error: "Profile not found" }, { status: 404 });
+    }
+
+    // Get all requests by this user
+    const { data: requests, error } = await supabase
+      .from("requests")
+      .select(`
+        *,
+        department:departments!department_id(id, code, name)
+      `)
+      .eq("requester_id", profile.id)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("[GET /api/requests/my-submissions] Error:", error);
+      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true, data: requests || [] });
+  } catch (err: any) {
+    console.error("[GET /api/requests/my-submissions] Unexpected error:", err);
+    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
+  }
+}

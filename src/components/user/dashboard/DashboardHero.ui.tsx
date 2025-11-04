@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { useState, useEffect } from "react";
 
 export default function DashboardHero({
   userName = "Traveler",
@@ -11,9 +12,19 @@ export default function DashboardHero({
   onOpenSchedule?: () => void;
   onNewRequest?: () => void;
 }) {
-  const now = new Date();
-  const day = now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
-  const time = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  // ✨ REAL-TIME CLOCK - Updates every second!
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000); // Update every second
+
+    return () => clearInterval(timer); // Cleanup on unmount
+  }, []);
+
+  const day = currentTime.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+  const time = currentTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
   return (
     <motion.section
@@ -35,25 +46,82 @@ export default function DashboardHero({
 
       <div className="relative flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-sm/5 text-white/85">Welcome to TraviLink</p>
-          <h1 className="text-2xl font-semibold">{userName}</h1>
-          <p className="mt-1 text-sm text-white/80">{day} · {time}</p>
+          <motion.p 
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.1 }}
+            className="text-sm/5 text-white/85 font-medium"
+          >
+            Welcome to TraviLink 👋
+          </motion.p>
+          <motion.h1 
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.2 }}
+            className="text-3xl font-bold tracking-tight"
+          >
+            {userName}
+          </motion.h1>
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.3 }}
+            className="mt-2 flex items-center gap-2"
+          >
+            <div className="flex items-center gap-1.5 text-sm text-white/90">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <span suppressHydrationWarning>{day}</span>
+            </div>
+            <span className="text-white/50">•</span>
+            <div className="flex items-center gap-1.5 text-sm font-mono text-white/90 tabular-nums">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <motion.span
+                key={time}
+                initial={{ opacity: 0, y: -5 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2 }}
+                suppressHydrationWarning
+              >
+                {time}
+              </motion.span>
+            </div>
+          </motion.div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.4 }}
+          className="flex flex-wrap items-center gap-2"
+        >
           <button
             onClick={onNewRequest}
-            className="rounded-xl bg-white px-3 py-2 text-sm font-medium text-[#7A0010] shadow hover:opacity-95"
+            className="group relative overflow-hidden rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[#7A0010] shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105"
           >
-            New request
+            <span className="relative z-10 flex items-center gap-2">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              New request
+            </span>
+            <div className="absolute inset-0 bg-gradient-to-r from-white to-gray-50 opacity-0 group-hover:opacity-100 transition-opacity" />
           </button>
           <button
             onClick={onOpenSchedule}
-            className="rounded-xl bg-white/10 px-3 py-2 text-sm font-medium backdrop-blur hover:bg-white/20"
+            className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold backdrop-blur hover:bg-white/20 transition-all duration-200 hover:scale-105"
           >
-            View schedule
+            <span className="flex items-center gap-2">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              View schedule
+            </span>
           </button>
-        </div>
+        </motion.div>
       </div>
 
       <div className="relative mt-4 flex flex-wrap gap-2">

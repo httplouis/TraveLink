@@ -11,6 +11,8 @@ type Props = {
   loading: boolean;
   err: string | null;
   onSubmit: (e: React.FormEvent) => void;
+  remember: boolean;
+  setRemember: (v: boolean) => void;
 };
 
 export default function LoginView({
@@ -21,9 +23,10 @@ export default function LoginView({
   loading,
   err,
   onSubmit,
+  remember,
+  setRemember,
 }: Props) {
   const [showPw, setShowPw] = React.useState(false);
-  const [remember, setRemember] = React.useState(false);
 
   return (
     <div className="fixed inset-0 font-sans h-dvh overflow-hidden">
@@ -53,7 +56,7 @@ export default function LoginView({
     <div className="absolute inset-0 bg-[#7A0010]/70" />
 
     {/* logo */}
-    <div className="absolute right-6 top-6">
+    <div className="absolute right-6 top-6 z-20">
       <img
         src="/euwhite.png"
         alt="EU Logo"
@@ -62,7 +65,7 @@ export default function LoginView({
     </div>
 
     {/* overlay text */}
-    <div className="absolute bottom-0 left-0 right-0 p-10 text-white">
+    <div className="absolute bottom-0 left-0 right-0 p-10 text-white z-20">
       <p className="text-sm uppercase tracking-[0.18em] font-semibold opacity-90">
         Welcome to
       </p>

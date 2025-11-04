@@ -31,6 +31,7 @@ import {
   QuickFillCurrentButton,
   QuickFillMenu,
 } from "@/components/user/request/dev/QuickFillButton.ui";
+import SuccessModal from "@/components/user/request/SuccessModal";
 
 // Admin list sink (mock inbox)
 import { AdminRequestsRepo } from "@/lib/admin/requests/store";
@@ -257,22 +258,17 @@ export default function RequestWizard() {
     }
   }
 
+  const [showSuccessModal, setShowSuccessModal] = React.useState(false);
+  const [submittedData, setSubmittedData] = React.useState<any>(null);
+
   async function handleSubmit() {
     // library validation
     const v = canSubmit(data);
 
-    // local extra rule: endorser signature required (requester signature is optional)
-    const extra: Record<string, string> = {};
-    const sig = data?.travelOrder?.endorsedByHeadSignature;
-    if (!sig || typeof sig !== "string" || sig.trim().length < 20) {
-      extra["travelOrder.endorsedByHeadSignature"] =
-        "Endorser signature is required.";
-    }
-
-    const mergedErrors = { ...v.errors, ...extra };
+    const mergedErrors = { ...v.errors };
     setErrors(mergedErrors);
 
-    const ok = v.ok && Object.keys(extra).length === 0;
+    const ok = v.ok;
     if (!ok) {
       scrollToFirstError(mergedErrors);
       toast({
@@ -285,19 +281,32 @@ export default function RequestWizard() {
 
     setSubmitting(true);
     try {
-      // push to admin inbox (mock sink)
-      AdminRequestsRepo.acceptFromUser(data);
-      toast({
-        kind: "success",
-        title: "Submitted",
-        message: "Request has been submitted and sent to Admin.",
+      // Call real API
+      const response = await fetch("/api/requests/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          travelOrder: data.travelOrder,
+          reason: data.reason,
+          vehicleMode: data.vehicleMode,
+        }),
       });
+
+      const result = await response.json();
+
+      if (!result.ok) {
+        throw new Error(result.error || "Failed to submit");
+      }
+
+      // Show success modal
+      setSubmittedData(result.data);
+      setShowSuccessModal(true);
       afterSuccessfulSubmitReset();
-    } catch {
+    } catch (err: any) {
       toast({
         kind: "error",
         title: "Submit failed",
-        message: "Please try again.",
+        message: err.message || "Please try again.",
       });
     } finally {
       setSubmitting(false);
@@ -313,6 +322,13 @@ export default function RequestWizard() {
 
   return (
     <>
+      {showSuccessModal && (
+        <SuccessModal
+          data={submittedData}
+          onClose={() => setShowSuccessModal(false)}
+        />
+      )}
+
       <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
         <div className="space-y-4">
           <div className="flex items-center justify-between">
@@ -381,6 +397,8 @@ export default function RequestWizard() {
             submitting={submitting}
             onSaveDraft={handleSaveDraft}
             onSubmit={handleSubmit}
+            headName={data.travelOrder?.endorsedByHeadName}
+            department={data.travelOrder?.department}
           />
         </div>
 

@@ -39,31 +39,63 @@ export default function HeadInboxPage() {
       </h1>
 
       {loading ? (
-        <p className="text-sm text-slate-500">Loading…</p>
+        <div className="flex items-center justify-center py-12">
+          <div className="text-center">
+            <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-[#7A0010] border-r-transparent"></div>
+            <p className="mt-2 text-sm text-slate-500">Loading requests...</p>
+          </div>
+        </div>
       ) : items.length === 0 ? (
-        <p className="text-sm text-slate-500">No requests assigned to you.</p>
+        <div className="rounded-lg border-2 border-dashed border-slate-200 bg-white px-8 py-12 text-center">
+          <svg className="mx-auto h-12 w-12 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          <h3 className="mt-4 text-lg font-medium text-slate-900">No requests pending</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            When faculty submit requests, they will appear here for your approval.
+          </p>
+        </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {items.map((item) => {
-            const to = item.payload?.travelOrder ?? {};
+            const requester = item.requester?.name || "Unknown";
+            const department = item.department?.name || item.department?.code || "—";
+            const purpose = item.purpose || "No purpose indicated";
+            const requestNumber = item.request_number || "—";
+            const travelDate = item.travel_start_date ? new Date(item.travel_start_date).toLocaleDateString() : "—";
+            
             return (
               <button
                 key={item.id}
                 onClick={() => setSelected(item)}
-                className="flex w-full items-center justify-between rounded-md border border-slate-200 bg-white px-5 py-4 text-left shadow-sm hover:border-[#7A0010]/50"
+                className="group flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-6 py-4 text-left shadow-sm transition-all hover:border-[#7A0010] hover:shadow-md"
               >
-                <div>
-                  <p className="font-semibold text-slate-900">
-                    {to.requestingPerson ?? "Requesting person"}
+                <div className="flex-1">
+                  <div className="flex items-center gap-3">
+                    <span className="rounded-md bg-[#7A0010]/10 px-2.5 py-0.5 text-xs font-semibold text-[#7A0010]">
+                      {requestNumber}
+                    </span>
+                    <span className="text-xs text-slate-400">•</span>
+                    <span className="text-xs text-slate-500">{travelDate}</span>
+                  </div>
+                  <p className="mt-2 font-semibold text-slate-900">
+                    {requester}
                   </p>
-                  <p className="text-xs text-slate-500">
-                    {(to.department as string) ?? "—"} •{" "}
-                    {to.purposeOfTravel ?? to.purpose ?? "No purpose indicated"}
+                  <p className="mt-1 text-sm text-slate-600 line-clamp-1">
+                    {purpose}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {department}
                   </p>
                 </div>
-                <span className="rounded-md bg-[#7A0010]/10 px-4 py-1 text-sm font-medium text-[#7A0010]">
-                  Approve
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="rounded-lg bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 group-hover:bg-amber-100">
+                    Pending Review
+                  </span>
+                  <svg className="h-5 w-5 text-slate-400 group-hover:text-[#7A0010]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
               </button>
             );
           })}

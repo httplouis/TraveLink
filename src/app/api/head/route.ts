@@ -1,72 +1,224 @@
 // src/app/api/head/route.ts
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { WorkflowEngine } from "@/lib/workflow/engine";
 
-// GET /api/head  → list all pending_head
+// GET /api/head  → list all pending_head for THIS head's departments
 export async function GET() {
-  const supabase = await createSupabaseServerClient(true);
+  try {
+    const supabase = await createSupabaseServerClient(true);
 
-  // get only those that are waiting for dept head
-  const { data, error } = await supabase
-    .from("requests")
-    .select("id, created_by, current_status, payload")
-    .eq("current_status", "pending_head")
-    .order("created_at", { ascending: false });
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
 
-  if (error) {
-    console.error("GET /api/head error:", error);
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    // Get user profile
+    const { data: profile, error: profileError } = await supabase
+      .from("users")
+      .select("id, name, email, department_id, is_head")
+      .eq("auth_user_id", user.id)
+      .single();
+
+    if (profileError) {
+      console.error("[GET /api/head] Profile error:", profileError);
+      return NextResponse.json({ ok: false, error: "Profile not found: " + profileError.message }, { status: 404 });
+    }
+
+    if (!profile) {
+      return NextResponse.json({ ok: false, error: "Profile not found" }, { status: 404 });
+    }
+
+    if (!profile.is_head) {
+      console.log("[GET /api/head] User is not a head, returning empty list");
+      return NextResponse.json({ ok: true, data: [] });
+    }
+
+    if (!profile.department_id) {
+      console.log("[GET /api/head] Head has no department_id, returning empty list");
+      return NextResponse.json({ ok: true, data: [] });
+    }
+
+    console.log(`[GET /api/head] Fetching requests for head: ${profile.email}, dept: ${profile.department_id}`);
+
+    // Get requests for THIS head's department with status = pending_head or pending_parent_head
+    const { data, error } = await supabase
+      .from("requests")
+      .select(`
+        *,
+        requester:users!requester_id(id, name, email),
+        department:departments!department_id(id, name, code)
+      `)
+      .in("status", ["pending_head", "pending_parent_head"])
+      .eq("department_id", profile.department_id)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("[GET /api/head] Query error:", error);
+      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    }
+
+    console.log(`[GET /api/head] Found ${data?.length || 0} pending requests`);
+
+    return NextResponse.json({ ok: true, data: data || [] });
+  } catch (err: any) {
+    console.error("[GET /api/head] Unexpected error:", err);
+    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
   }
-
-  return NextResponse.json({ ok: true, data });
 }
 
-// PATCH /api/head  → approve / reject
+// PATCH /api/head  → approve / reject using Workflow Engine
 export async function PATCH(req: Request) {
-  const body = await req.json();
-  const {
-    id,
-    action = "approve",
-    head_name = "Department Head",
-    head_signature = "signed-by-head",
-  } = body as {
-    id: string;
-    action?: "approve" | "reject";
-    head_name?: string;
-    head_signature?: string;
-  };
+  try {
+    const supabase = await createSupabaseServerClient(true);
 
-  if (!id) {
-    return NextResponse.json({ ok: false, error: "Missing id" }, { status: 400 });
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { data: profile } = await supabase
+      .from("users")
+      .select("id, name, email, department_id, is_head")
+      .eq("auth_user_id", user.id)
+      .single();
+
+    if (!profile || !profile.is_head) {
+      return NextResponse.json({ ok: false, error: "Not authorized as head" }, { status: 403 });
+    }
+
+    const body = await req.json();
+    const {
+      id,
+      action = "approve",
+      signature = "",
+      comments = "",
+    } = body as {
+      id: string;
+      action?: "approve" | "reject";
+      signature?: string;
+      comments?: string;
+    };
+
+    if (!id) {
+      return NextResponse.json({ ok: false, error: "Missing request id" }, { status: 400 });
+    }
+
+    // Get request
+    const { data: request, error: fetchError } = await supabase
+      .from("requests")
+      .select("*, department:departments!department_id(id, code, name, parent_department_id)")
+      .eq("id", id)
+      .single();
+
+    if (fetchError || !request) {
+      console.error("[PATCH /api/head] Request fetch error:", fetchError);
+      return NextResponse.json({ ok: false, error: "Request not found" }, { status: 404 });
+    }
+
+    // Verify status is pending_head or pending_parent_head
+    if (request.status !== "pending_head" && request.status !== "pending_parent_head") {
+      return NextResponse.json({ 
+        ok: false, 
+        error: `Request is in ${request.status} status, not pending head approval` 
+      }, { status: 400 });
+    }
+
+    // Verify user is head of this department
+    if (request.department_id !== profile.department_id) {
+      return NextResponse.json({ ok: false, error: "Not authorized for this department" }, { status: 403 });
+    }
+
+    const now = new Date().toISOString();
+
+    if (action === "approve") {
+      // Determine next status using workflow engine
+      const hasParentDepartment = !!(request.department as any)?.parent_department_id;
+      const nextStatus = WorkflowEngine.getNextStatus(
+        request.status,
+        request.requester_is_head || false,
+        request.has_budget || false,
+        hasParentDepartment
+      );
+
+      console.log(`[PATCH /api/head] Approving request ${id}: ${request.status} → ${nextStatus}`);
+
+      // Update request with approval
+      const updateData: any = {
+        status: nextStatus,
+        current_approver_role: WorkflowEngine.getApproverRole(nextStatus),
+      };
+
+      // Set appropriate approval fields based on current status
+      if (request.status === "pending_head") {
+        updateData.head_approved_at = now;
+        updateData.head_approved_by = profile.id;
+        updateData.head_signature = signature;
+        updateData.head_comments = comments;
+      } else if (request.status === "pending_parent_head") {
+        updateData.parent_head_approved_at = now;
+        updateData.parent_head_approved_by = profile.id;
+        updateData.parent_head_signature = signature;
+        updateData.parent_head_comments = comments;
+      }
+
+      const { error: updateError } = await supabase
+        .from("requests")
+        .update(updateData)
+        .eq("id", id);
+
+      if (updateError) {
+        console.error("[PATCH /api/head] Update error:", updateError);
+        return NextResponse.json({ ok: false, error: updateError.message }, { status: 500 });
+      }
+
+      // Log in history
+      await supabase.from("request_history").insert({
+        request_id: id,
+        action: "approved",
+        actor_id: profile.id,
+        actor_role: "head",
+        previous_status: request.status,
+        new_status: nextStatus,
+        comments: comments || "Approved by department head",
+      });
+
+      console.log(`[PATCH /api/head] Success! Next status: ${nextStatus}`);
+
+      return NextResponse.json({ ok: true, nextStatus, data: { status: nextStatus } });
+      
+    } else {
+      // Reject
+      console.log(`[PATCH /api/head] Rejecting request ${id}`);
+
+      const { error: updateError } = await supabase
+        .from("requests")
+        .update({
+          status: "rejected",
+          head_comments: comments,
+        })
+        .eq("id", id);
+
+      if (updateError) {
+        console.error("[PATCH /api/head] Reject error:", updateError);
+        return NextResponse.json({ ok: false, error: updateError.message }, { status: 500 });
+      }
+
+      // Log in history
+      await supabase.from("request_history").insert({
+        request_id: id,
+        action: "rejected",
+        actor_id: profile.id,
+        actor_role: "head",
+        previous_status: request.status,
+        new_status: "rejected",
+        comments: comments || "Rejected by department head",
+      });
+
+      return NextResponse.json({ ok: true, data: { status: "rejected" } });
+    }
+  } catch (err: any) {
+    console.error("[PATCH /api/head] Unexpected error:", err);
+    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
   }
-
-  const supabase = await createSupabaseServerClient(true);
-
-  const update: any = {
-    updated_at: new Date().toISOString(),
-    head_signed_by: head_name,
-    head_signature: head_signature,
-  };
-
-  if (action === "approve") {
-    update.current_status = "head_approved";
-    update.status = "head_approved";
-  } else {
-    update.current_status = "head_rejected";
-    update.status = "head_rejected";
-  }
-
-  const { data, error } = await supabase
-    .from("requests")
-    .update(update)
-    .eq("id", id)
-    .select("*")
-    .single();
-
-  if (error) {
-    console.error("PATCH /api/head error:", error);
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ ok: true, data });
 }

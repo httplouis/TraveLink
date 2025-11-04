@@ -27,7 +27,6 @@ export default function TravelOrderForm({
     Number(c.hiredDrivers || 0) > 0;
 
   const headEditedRef = React.useRef(false);
-  const [sending, setSending] = React.useState(false);
 
   function handleDepartmentChange(nextDept: string) {
     const patch: any = { department: nextDept };
@@ -40,65 +39,8 @@ export default function TravelOrderForm({
     onChange(patch);
   }
 
-  async function submitToHead() {
-    if (!data?.department) {
-      alert("Please select Department first.");
-      return;
-    }
-
-    // ❶ signature must exist
-    const requesterSig =
-      data?.requestingPersonSignature ||
-      data?.requesterSignature ||
-      data?.signature ||
-      null;
-
-    if (!requesterSig) {
-      alert("Please sign the form first before sending.");
-      return;
-    }
-
-    setSending(true);
-    try {
-      const res = await fetch("/api/requests/submit", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          user_id: data?.created_by ?? "00000000-0000-0000-0000-000000000000",
-          current_status: "pending_head",
-          payload: {
-            travelOrder: {
-              ...(data ?? {}),
-            },
-          },
-        }),
-      });
-
-      const json = await res.json();
-
-      if (!res.ok || !json.ok) {
-        console.error("submit-to-head error:", json);
-        alert("Failed to send to Department Head. Check console.");
-        return;
-      }
-
-      alert(
-        `Sent to Department Head for endorsement${
-          data?.endorsedByHeadName ? ` (${data.endorsedByHeadName})` : ""
-        }.`
-      );
-
-      onChange({
-        id: json.data.id,
-        updatedAt: json.data.updated_at,
-      });
-    } catch (err) {
-      console.error(err);
-      alert("Failed to send to Department Head. Check console.");
-    } finally {
-      setSending(false);
-    }
-  }
+  // Submission is now handled by SubmitBar component in RequestWizard
+  // This form should only handle data input, not submission
 
   return (
     <TravelOrderFormView
@@ -111,15 +53,7 @@ export default function TravelOrderForm({
       setHeadEdited={() => {
         headEditedRef.current = true;
       }}
-      footerRight={
-        <button
-          disabled={sending}
-          onClick={submitToHead}
-          className="rounded-md bg-[#7a1f2a] px-4 py-2 text-white disabled:opacity-50"
-        >
-          {sending ? "Sending…" : "Send to Department Head"}
-        </button>
-      }
+      // No footerRight - submission handled by SubmitBar at bottom
     />
   );
 }

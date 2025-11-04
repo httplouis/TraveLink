@@ -128,6 +128,20 @@ export default function Sidebar({ me }: { me: Me }) {
           </div>
         ) : null}
 
+        {/* EXEC extra */}
+        {base === "/exec" ? (
+          <div>
+            <p className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+              Executive
+            </p>
+            <NavItem
+              href="/exec/review"
+              label="Executive review"
+              active={pathname.startsWith("/exec/review")}
+            />
+          </div>
+        ) : null}
+
         {/* ADMIN extra */}
         {base === "/admin" ? (
           <div>
@@ -138,6 +152,26 @@ export default function Sidebar({ me }: { me: Me }) {
               href="/admin/requests"
               label="Admin panel"
               active={pathname.startsWith("/admin/requests")}
+            />
+            <NavItem
+              href="/admin/queues/comptroller"
+              label="Comptroller queue"
+              active={pathname.startsWith("/admin/queues/comptroller")}
+            />
+            <NavItem
+              href="/admin/queues/hr"
+              label="HR queue"
+              active={pathname.startsWith("/admin/queues/hr")}
+            />
+            <NavItem
+              href="/admin/queues/exec"
+              label="Executive queue"
+              active={pathname.startsWith("/admin/queues/exec")}
+            />
+            <NavItem
+              href="/admin/queues/head"
+              label="Head endorsements"
+              active={pathname.startsWith("/admin/queues/head")}
             />
           </div>
         ) : null}

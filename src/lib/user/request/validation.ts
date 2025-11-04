@@ -30,10 +30,13 @@ export function canSubmit(data: RequestFormData) {
   if (!req(to.returnDate)) errors["travelOrder.returnDate"] = "Required";
   if (!req(to.purposeOfTravel)) errors["travelOrder.purposeOfTravel"] = "Required";
 
-  // ✅ REQUIRED: signature must be saved (and not blank)
-  if (!hasSignature(to.endorsedByHeadSignature)) {
-    errors["travelOrder.endorsedByHeadSignature"] = "Endorser signature is required.";
+  // ✅ REQUIRED: Requester signature must be saved (and not blank)
+  if (!hasSignature(to.requesterSignature)) {
+    errors["travelOrder.requesterSignature"] = "Requester signature is required.";
   }
+
+  // Note: Head signature is NOT required for initial submission
+  // Head will sign AFTER reviewing the request
 
   const needsJustif =
     data.vehicleMode === "rent" ||
