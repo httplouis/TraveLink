@@ -1,12 +1,12 @@
 // src/app/api/auth/after-signup/route.ts
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabaseServer"; // kung meron ka
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function POST(req: Request) {
   const body = await req.json();
 
   // body: { user_id, email, meta }
-  const supabase = createClient();
+  const supabase = await createSupabaseServerClient(true);
 
   // 1) check authorized_personnel
   const { data: authPerson } = await supabase
