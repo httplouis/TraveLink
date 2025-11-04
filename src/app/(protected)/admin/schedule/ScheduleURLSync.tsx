@@ -12,7 +12,7 @@ type Props = {
 };
 
 /** Syncs ?q= and ?sort=asc|desc with local state (newest↔desc, oldest↔asc) */
-export default function ScheduleURLSync({ q, sort, onQ, onSort }: Props) {
+function ScheduleURLSyncContent({ q, sort, onQ, onSort }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -38,4 +38,12 @@ export default function ScheduleURLSync({ q, sort, onQ, onSort }: Props) {
   }, [q, sort, pathname, router, searchParams]);
 
   return null;
+}
+
+export default function ScheduleURLSync(props: Props) {
+  return (
+    <React.Suspense fallback={null}>
+      <ScheduleURLSyncContent {...props} />
+    </React.Suspense>
+  );
 }
