@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import * as React from "react";
 
 type Props = {
@@ -32,10 +33,13 @@ export default function LoginView({
     <div className="fixed inset-0 font-sans h-dvh overflow-hidden">
       {/* page background */}
       <div className="absolute inset-0 -z-10">
-        <img
+        <Image
           src="/pattern-light.jpg"
           alt="Campus background"
-          className="w-full h-full object-cover"
+          fill
+          priority
+          className="object-cover"
+          sizes="100vw"
         />
         <div className="absolute inset-0 bg-black/30" />
       </div>
@@ -48,19 +52,25 @@ export default function LoginView({
 >
   {/* LEFT: image panel */}
   <div className="relative hidden md:block overflow-hidden rounded-l-3xl group">
-    <img
+    <Image
       src="/pattern-light.jpg"
       alt="Campus"
-      className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+      fill
+      priority
+      className="object-cover transition-transform duration-500 group-hover:scale-105"
+      sizes="50vw"
     />
     <div className="absolute inset-0 bg-[#7A0010]/70" />
 
     {/* logo */}
     <div className="absolute right-6 top-6 z-20">
-      <img
+      <Image
         src="/euwhite.png"
         alt="EU Logo"
-        className="h-10 w-10 object-contain drop-shadow-lg"
+        width={40}
+        height={40}
+        className="object-contain drop-shadow-lg"
+        priority
       />
     </div>
 
