@@ -36,7 +36,7 @@ import SuccessModal from "@/components/user/request/SuccessModal";
 // Admin list sink (mock inbox)
 import { AdminRequestsRepo } from "@/lib/admin/requests/store";
 
-export default function RequestWizard() {
+function RequestWizardContent() {
   const search = useSearchParams();
   const toast = useToast();
   const { ask, ui: confirmUI } = useConfirm();
@@ -414,5 +414,13 @@ export default function RequestWizard() {
 
       {confirmUI}
     </>
+  );
+}
+
+export default function RequestWizard() {
+  return (
+    <React.Suspense fallback={<div>Loading...</div>}>
+      <RequestWizardContent />
+    </React.Suspense>
   );
 }

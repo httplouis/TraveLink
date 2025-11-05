@@ -17,7 +17,7 @@ const isIn = <T extends readonly string[]>(vs: T, v: string): v is T[number] => 
 
 type Props = { draft: VehiclesFilterDraft; onDraftChange: (n: Partial<VehiclesFilterDraft>) => void; };
 
-export default function VehiclesURLSync({ draft, onDraftChange }: Props) {
+function VehiclesURLSyncContent({ draft, onDraftChange }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -60,4 +60,12 @@ export default function VehiclesURLSync({ draft, onDraftChange }: Props) {
   }, [draft, pathname, router, searchParams]);
 
   return null;
+}
+
+export default function VehiclesURLSync(props: Props) {
+  return (
+    <React.Suspense fallback={null}>
+      <VehiclesURLSyncContent {...props} />
+    </React.Suspense>
+  );
 }
