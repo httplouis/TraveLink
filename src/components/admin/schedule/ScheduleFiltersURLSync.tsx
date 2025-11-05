@@ -31,7 +31,7 @@ type Props = {
   onDraftChange: (patch: Partial<ScheduleFilterDraft>) => void;
 };
 
-export default function ScheduleFiltersURLSync({ draft, onDraftChange }: Props) {
+function ScheduleFiltersURLSyncContent({ draft, onDraftChange }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -112,4 +112,12 @@ export default function ScheduleFiltersURLSync({ draft, onDraftChange }: Props) 
   }, [draft, pathname, router, searchParams]);
 
   return null;
+}
+
+export default function ScheduleFiltersURLSync(props: Props) {
+  return (
+    <React.Suspense fallback={null}>
+      <ScheduleFiltersURLSyncContent {...props} />
+    </React.Suspense>
+  );
 }

@@ -20,7 +20,7 @@ type Props = {
   onDraftChange: (next: Partial<DriversFilterDraft>) => void;
 };
 
-export default function DriversURLSync({ draft, onDraftChange }: Props) {
+function DriversURLSyncContent({ draft, onDraftChange }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -79,4 +79,12 @@ export default function DriversURLSync({ draft, onDraftChange }: Props) {
   }, [draft, pathname, router, searchParams]);
 
   return null;
+}
+
+export default function DriversURLSync(props: Props) {
+  return (
+    <React.Suspense fallback={null}>
+      <DriversURLSyncContent {...props} />
+    </React.Suspense>
+  );
 }
