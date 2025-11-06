@@ -5,13 +5,16 @@ import Sidebar from "@/components/driver/Sidebar";              // container (be
 import Topbar from "@/components/driver/Topbar";
 import ProfilePanel from "@/components/driver/ProfilePanel";
 import MiniCalendar from "@/components/driver/MiniCalendar";
+import PageTitle from "@/components/common/PageTitle";
 import "@/app/styles/driver/driver.css";
 
 const TOPBAR_H = 64; // adjust if your Topbar is not h-16
 
 export default function DriverLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div data-role="driver" className="min-h-screen bg-[var(--bg)]">
+    <>
+      <PageTitle title="TraviLink | Driver" />
+      <div data-role="driver" className="min-h-screen bg-[var(--bg)]">
       {/* keep the topbar visible while center scrolls */}
       <div className="sticky top-0 z-40">
         <Topbar title="Driver Transport Portal" />
@@ -70,5 +73,6 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
         </aside>
       </div>
     </div>
+    </>
   );
 }

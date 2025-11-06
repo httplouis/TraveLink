@@ -42,10 +42,16 @@ export interface Request {
   created_at: string;
   updated_at: string;
   
-  // Requester
+  // Requester (person who needs the travel)
   requester_id: string;
+  requester_name?: string;
   requester_is_head: boolean;
   department_id: string;
+  
+  // Submitter (account that clicked submit - may be different)
+  submitted_by_user_id?: string;
+  submitted_by_name?: string;
+  is_representative: boolean;
   
   // Participants
   participants: Participant[];
@@ -61,6 +67,14 @@ export interface Request {
   vehicle_type?: string;
   needs_rental: boolean;
   rental_note?: string;
+  
+  // Preferred/Suggested (Faculty suggestion - optional)
+  preferred_driver_id?: string;
+  preferred_vehicle_id?: string;
+  preferred_driver_note?: string;
+  preferred_vehicle_note?: string;
+  
+  // Final Assignment (Admin decision)
   assigned_vehicle_id?: string;
   assigned_driver_id?: string;
   
@@ -107,7 +121,6 @@ export interface Request {
   rejection_stage?: string;
   
   // Meta
-  is_representative: boolean;
   representative_note?: string;
 }
 

@@ -14,6 +14,17 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
 
+  // Image configuration - fix for local images
+  images: {
+    unoptimized: true, // Disable image optimization for development
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: '**', // Allow all HTTPS images
+      },
+    ],
+  },
+
   /* Add other config options here if needed */
 };
 

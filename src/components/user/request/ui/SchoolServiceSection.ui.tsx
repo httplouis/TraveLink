@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { TextInput, DateInput } from "@/components/user/request/ui/controls";
+import { SelectInput } from "@/components/user/request/ui/controls";
 
 export default function SchoolServiceSection({
   data,
@@ -13,60 +13,83 @@ export default function SchoolServiceSection({
   onChange: (patch: any) => void;
   errors: Record<string, string>;
 }) {
+  const [drivers, setDrivers] = React.useState<{ value: string; label: string; id: string }[]>([]);
+  const [vehicles, setVehicles] = React.useState<{ value: string; label: string; id: string }[]>([]);
+  const [loading, setLoading] = React.useState(true);
+
+  // Fetch drivers and vehicles from API
+  React.useEffect(() => {
+    async function fetchData() {
+      try {
+        setLoading(true);
+
+        // Fetch drivers
+        const driversRes = await fetch("/api/drivers");
+        const driversData = await driversRes.json();
+        
+        if (driversData.ok && driversData.data) {
+          const driverOptions = driversData.data.map((driver: any) => ({
+            value: driver.id, // Use ID as value for DB storage
+            label: driver.name,
+            id: driver.id,
+          }));
+          setDrivers(driverOptions);
+        }
+
+        // Fetch vehicles
+        const vehiclesRes = await fetch("/api/vehicles?status=available");
+        const vehiclesData = await vehiclesRes.json();
+        
+        if (vehiclesData.ok && vehiclesData.data) {
+          const vehicleOptions = vehiclesData.data.map((vehicle: any) => ({
+            value: vehicle.id, // Use ID as value for DB storage
+            label: `${vehicle.name} • ${vehicle.plate_number}`,
+            id: vehicle.id,
+          }));
+          setVehicles(vehicleOptions);
+        }
+      } catch (error) {
+        console.error("Error fetching drivers/vehicles:", error);
+        // Fallback to empty arrays if fetch fails
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchData();
+  }, []);
   return (
     <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4">
         <h3 className="text-lg font-semibold">School Service Request</h3>
-        <span className="text-xs text-neutral-500">Required fields marked with *</span>
+        <p className="text-xs text-neutral-500 mt-1">
+          Suggest your preferred driver and vehicle (optional). The admin will make the final assignment.
+        </p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <TextInput
+        <SelectInput
           id="ss-driver"
-          label="Driver"
-          required
-          placeholder="Assigned driver’s full name"
-          value={data?.driver ?? ""}
-          onChange={(e) => onChange({ driver: e.target.value })}
-          error={errors["schoolService.driver"]}
+          label="Preferred Driver (Suggestion)"
+          placeholder={loading ? "Loading drivers..." : "Select a driver (optional)"}
+          value={data?.preferredDriver ?? ""}
+          onChange={(e) => onChange({ preferredDriver: e.target.value })}
+          error={errors["schoolService.preferredDriver"]}
+          options={drivers}
+          disabled={loading}
+          helper="Suggest a driver you prefer to work with"
         />
 
-        <TextInput
+        <SelectInput
           id="ss-vehicle"
-          label="Vehicle"
-          required
-          placeholder="e.g., L300 Van • ABC-1234"
-          value={data?.vehicle ?? ""}
-          onChange={(e) => onChange({ vehicle: e.target.value })}
-          error={errors["schoolService.vehicle"]}
-        />
-
-        {/* Dispatcher sign-off */}
-        <label className="col-span-full flex items-start gap-3 rounded-xl border border-neutral-200 p-3">
-          <input
-            type="checkbox"
-            className="mt-1 h-4 w-4"
-            checked={!!data?.vehicleDispatcherSigned}
-            onChange={(e) => onChange({ vehicleDispatcherSigned: e.target.checked })}
-          />
-          <div className="grid">
-            <span className="text-sm font-medium text-neutral-800">
-              Vehicle Dispatcher signature (Trizzia Maree Z. Casino)
-            </span>
-            <span className="text-xs text-neutral-500">
-              Check this once the dispatcher has reviewed and signed.
-            </span>
-          </div>
-        </label>
-
-        <DateInput
-          id="ss-dispatcher-date"
-          label="Dispatcher date"
-          required
-          value={data?.vehicleDispatcherDate ?? ""}
-          onChange={(e) => onChange({ vehicleDispatcherDate: e.target.value })}
-          error={errors["schoolService.vehicleDispatcherDate"]}
-          helper="Date when the dispatcher signed."
+          label="Preferred Vehicle (Suggestion)"
+          placeholder={loading ? "Loading vehicles..." : "Select a vehicle (optional)"}
+          value={data?.preferredVehicle ?? ""}
+          onChange={(e) => onChange({ preferredVehicle: e.target.value })}
+          error={errors["schoolService.preferredVehicle"]}
+          options={vehicles}
+          disabled={loading}
+          helper="Suggest a vehicle you'd like to use"
         />
       </div>
     </section>

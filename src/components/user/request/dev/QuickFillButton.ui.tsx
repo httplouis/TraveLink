@@ -18,19 +18,40 @@ export function QuickFillCurrentButton() {
   const toast = useToast();
 
   function handleClick() {
-    const filled = buildFilledData({
-      requesterRole: data.requesterRole,
-      reason: data.reason,
-      vehicleMode: data.vehicleMode,
-    });
-    // ✅ important: detach any draft/submission id
-    clearIds?.();
-    hardSet(filled);
-    toast({
-      kind: "success",
-      title: "Form populated",
-      message: "Sample values were added based on your current choices.",
-    });
+    try {
+      console.log("[QuickFill] Button clicked!"); // First log to confirm button works
+      console.log("[QuickFill] Current data:", data);
+      
+      const filled = buildFilledData({
+        requesterRole: data.requesterRole,
+        reason: data.reason,
+        vehicleMode: data.vehicleMode,
+      });
+      
+      console.log("[QuickFill] Built data:", filled);
+      // Log what was filled for debugging
+      console.log("[QuickFill] Celebrity:", filled.travelOrder?.requestingPerson);
+      console.log("[QuickFill] Destination:", filled.travelOrder?.destination);
+      console.log("[QuickFill] Driver ID:", filled.schoolService?.preferredDriver);
+      console.log("[QuickFill] Vehicle ID:", filled.schoolService?.preferredVehicle);
+      console.log("[QuickFill] NOTE: Driver ID is test UUID, Vehicle ID is real UUID from DB");
+      
+      // ✅ important: detach any draft/submission id
+      clearIds?.();
+      hardSet(filled);
+      toast({
+        kind: "success",
+        title: "Form populated",
+        message: "Sample values were added based on your current choices.",
+      });
+    } catch (error) {
+      console.error("[QuickFill] ERROR:", error);
+      toast({
+        kind: "error",
+        title: "QuickFill Error",
+        message: String(error),
+      });
+    }
   }
 
   return (
@@ -180,28 +201,67 @@ function buildFilledData({
     return x.toISOString().slice(0, 10);
   };
 
+  // Hollywood celebrity names for CNAHS (Random each time!)
+  const celebrities = [
+    "Leonardo DiCaprio",
+    "Scarlett Johansson", 
+    "Tom Holland",
+    "Emma Stone",
+    "Chris Hemsworth",
+    "Zendaya Coleman",
+    "Ryan Reynolds",
+    "Margot Robbie",
+    "Anne Hathaway",
+    "Tom Cruise",
+    "Jennifer Lawrence",
+    "Chris Evans",
+    "Emma Watson",
+    "Dwayne Johnson",
+    "Michael B. Jordan",
+    "Brie Larson",
+    "Benedict Cumberbatch",
+    "Florence Pugh",
+    "Timothée Chalamet",
+    "Lupita Nyong'o"
+  ];
+  // Pick random celebrity - different every time!
+  const randomCelebrity = celebrities[Math.floor(Math.random() * celebrities.length)];
+
+  // Random hospitals and destinations
+  const hospitals = [
+    "Philippine General Hospital, Manila",
+    "St. Luke's Medical Center, Quezon City",
+    "Makati Medical Center, Makati City",
+    "Asian Hospital and Medical Center, Muntinlupa",
+    "Philippine Heart Center, Quezon City",
+    "Veterans Memorial Medical Center, Quezon City",
+    "The Medical City, Pasig",
+    "Manila Doctor's Hospital, Manila"
+  ];
+  const randomHospital = hospitals[Math.floor(Math.random() * hospitals.length)];
+
   const travelOrder: RequestFormData["travelOrder"] = {
     date: today.toISOString().slice(0, 10),
-    requestingPerson: requesterRole === "head" ? "Dr. Jane Head" : "Prof. Juan Dela Cruz",
-    department: requesterRole === "head" ? "Admin" : "CITE",
+    requestingPerson: requesterRole === "head" ? "Dr. Jane Head" : randomCelebrity,
+    department: requesterRole === "head" ? "Admin" : "College of Nursing and Allied Health Sciences (CNAHS)",
     destination:
       reason === "seminar"
-        ? "Quezon City"
+        ? "SMX Convention Center, Pasay City"
         : reason === "educational"
-        ? "Science City of Muñoz"
+        ? randomHospital
         : reason === "competition"
-        ? "Makati City"
-        : "Bulacan",
+        ? "St. Luke's Medical Center, Quezon City"
+        : randomHospital,
     departureDate: plus(7),
     returnDate: plus(9),
     purposeOfTravel:
       reason === "seminar"
-        ? "Attend the National Research Conference and coordination meeting."
+        ? "Nursing Leadership and Management Seminar"
         : reason === "educational"
-        ? "Educational exposure trip to partner institution and museum."
+        ? "Clinical rotation and hospital exposure program"
         : reason === "competition"
-        ? "Coach and support students in inter-school skills competition."
-        : "Campus visit and coordination with partner school.",
+        ? "Inter-school nursing skills competition"
+        : "Campus visit and coordination with partner hospital",
     costs: {
       food: 1500,
       driversAllowance: v === "institutional" ? 1000 : 0,
@@ -216,13 +276,35 @@ function buildFilledData({
     endorsedByHeadDate: requesterRole === "faculty" ? plus(1) : "",
   };
 
+  // REAL vehicle IDs from your database!
+  const vehicles = [
+    { name: "Bus 1", plate: "ABC-1234", id: "0e9dc284-d380-46a7-8aa9-27baba0b5100" },
+    { name: "Van 2", plate: "DRV-1001", id: "781d619f-2134-4f2f-e6a4-88bc269529aa" },
+    { name: "Van 1", plate: "XYZ-5678", id: "b336080f-a797-4a33-b53d-35ea5e417e1a" },
+    { name: "Car 3", plate: "QWE-1122", id: "32be315f-4981-4850-b111-a5b8b4bb4e38" },
+    { name: "Bus 1", plate: "MSE-001", id: "eac79a97-86c8-4cdf-9f12-9c472223d249" },
+  ];
+  
+  // Test driver IDs (these might not match real DB, but for testing data flow)
+  const drivers = [
+    { name: "Driver A - Juan Santos", id: "test-driver-uuid-1" },
+    { name: "Driver B - Maria Cruz", id: "test-driver-uuid-2" },
+    { name: "Driver C - Pedro Reyes", id: "test-driver-uuid-3" },
+  ];
+  
+  const randomDriver = drivers[Math.floor(Math.random() * drivers.length)];
+  const randomVehicle = vehicles[Math.floor(Math.random() * vehicles.length)];
+
   const schoolService: RequestFormData["schoolService"] =
     v === "institutional"
       ? {
-          driver: "R. Santos",
-          vehicle: "L300 Van • ABC-1234",
+          driver: randomDriver.name,
+          vehicle: `${randomVehicle.name} • ${randomVehicle.plate}`,
           vehicleDispatcherSigned: true,
           vehicleDispatcherDate: plus(2),
+          // CRITICAL: Only set vehicle ID (driver is optional)
+          // Driver ID left empty to avoid foreign key error with test UUIDs
+          preferredVehicle: randomVehicle.id,  // Real vehicle UUID
         }
       : undefined;
 

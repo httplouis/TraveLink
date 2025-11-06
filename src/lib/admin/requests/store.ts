@@ -2,12 +2,14 @@
 "use client";
 
 import type { RequestFormData } from "@/lib/user/request/types";
+import { fetchRequests, fetchRequest, approveRequest, rejectRequest } from "./api";
 
 /* ---------- Types ---------- */
 
 export type AdminRequestStatus =
   | "pending"            // user → legacy direct to admin
   | "pending_head"       // user (faculty) → waiting for dept head
+  | "pending_admin"      // head approved → waiting for admin
   | "head_approved"      // head endorsed → send to admin
   | "head_rejected"
   | "admin_received"     // nasa admin queue (Ma’am TM / Cleofe)
@@ -24,6 +26,13 @@ export type AdminRequest = {
   createdAt: string;
   updatedAt: string;
   status: AdminRequestStatus;
+
+  // Department and requester info for proper routing
+  department?: string; // Full department name
+  departmentCode?: string; // Short code (e.g., "CNAHS")
+  requesterName?: string; // Requester's full name
+  requesterEmail?: string; // Requester's email
+  requestNumber?: string; // e.g., "TO-2025-001"
 
   driver?: string;
   vehicle?: string;
@@ -113,10 +122,12 @@ export const AdminRequestsRepo = {
   },
 
   list(): AdminRequest[] {
+    // TODO: Migrate to API - see api.ts for ready implementation
     return readAll().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
 
   get(id: string): AdminRequest | undefined {
+    // TODO: Migrate to API - see api.ts for ready implementation
     return readAll().find((x) => x.id === id);
   },
 

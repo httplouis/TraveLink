@@ -49,6 +49,7 @@ export default function TravelOrderFormView({
         errors={errors}
         onChange={onChange}
         onDepartmentChange={onDepartmentChange}
+        isHeadRequester={isHeadRequester}
       />
 
       <CostsSection

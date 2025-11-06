@@ -70,6 +70,9 @@ export interface SchoolService {
   vehicle: string;
   vehicleDispatcherSigned?: boolean;
   vehicleDispatcherDate?: string;
+  // Faculty suggestions (optional) - for preferred driver/vehicle
+  preferredDriver?: string;  // Driver ID
+  preferredVehicle?: string; // Vehicle ID
 }
 
 /* ---------- Seminar Application ---------- */

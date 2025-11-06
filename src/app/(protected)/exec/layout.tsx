@@ -4,16 +4,19 @@
 import React from "react";
 import ExecTopBar from "@/components/exec/nav/ExecTopBar";
 import ExecLeftNav from "@/components/exec/nav/ExecLeftNav";
+import PageTitle from "@/components/common/PageTitle";
 import "leaflet/dist/leaflet.css";
 
 export default function ExecLayout({ children }: { children: React.ReactNode }) {
   const topbarH = "56px";
 
   return (
-    <div
-      className="bg-[var(--background)] text-[var(--foreground)]"
-      style={{ ["--topbar-h" as any]: topbarH }}
-    >
+    <>
+      <PageTitle title="TraviLink | Executive" />
+      <div
+        className="bg-[var(--background)] text-[var(--foreground)]"
+        style={{ ["--topbar-h" as any]: topbarH }}
+      >
       {/* fixed top bar */}
       <div className="fixed inset-x-0 top-0 z-50 h-[var(--topbar-h)]">
         <ExecTopBar />
@@ -32,5 +35,6 @@ export default function ExecLayout({ children }: { children: React.ReactNode }) 
         </main>
       </div>
     </div>
+    </>
   );
 }

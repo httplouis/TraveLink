@@ -3,17 +3,19 @@
 
 import React from "react";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
+import { Users, UserCircle, User, Car, UserCog } from "lucide-react";
 
 type Props = {
   request: any;
   onClose: () => void;
   onApproved: (id: string) => void;
   onRejected: (id: string) => void;
+  viewOnly?: boolean; // For history - no approval actions
 };
 
 function peso(n?: number | null) {
-  if (!n) return "";
-  return `₱ ${Number(n).toLocaleString("en-PH")}`;
+  if (!n) return "₱0.00";
+  return `₱${Number(n).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 export default function HeadRequestModal({
@@ -21,9 +23,14 @@ export default function HeadRequestModal({
   onClose,
   onApproved,
   onRejected,
+  viewOnly = false,
 }: Props) {
   // New schema: data is directly on request object, not in payload
   const t = request;
+  
+  // Comments/rejection reason
+  const [comments, setComments] = React.useState("");
+  const [showRejectDialog, setShowRejectDialog] = React.useState(false);
   const [headName, setHeadName] = React.useState<string>(
     request.head_signed_by ?? ""
   );
@@ -32,34 +39,114 @@ export default function HeadRequestModal({
     request.head_signature ?? ""
   );
   const [submitting, setSubmitting] = React.useState(false);
+  const [requesterSignature, setRequesterSignature] = React.useState<string>(
+    request.requester_signature ?? ""
+  );
+  const [isLoading, setIsLoading] = React.useState(true);
+  const [preferredDriverName, setPreferredDriverName] = React.useState<string>("");
+  const [preferredVehicleName, setPreferredVehicleName] = React.useState<string>("");
 
   // Auto-load saved signature and head info
   React.useEffect(() => {
-    // Load current user (head) info
-    fetch("/api/me")
-      .then(res => res.json())
-      .then(data => {
-        if (data.name) {
-          setHeadName(data.name);
-          setHeadProfile(data);
+    async function loadData() {
+      try {
+        setIsLoading(true);
+        
+        // Load current user (head) info
+        console.log("[HeadRequestModal] Loading head info from /api/me");
+        const meRes = await fetch("/api/me");
+        const meData = await meRes.json();
+        console.log("[HeadRequestModal] Head info loaded:", meData);
+        
+        if (meData) {
+          const name = meData.name || meData.email || "";
+          setHeadName(name);
+          setHeadProfile(meData);
+          console.log("[HeadRequestModal] Set head name:", name);
         }
-      });
 
-    // Load saved signature if exists
-    if (!headSignature) {
-      fetch("/api/signature")
-        .then(res => res.json())
-        .then(data => {
-          if (data.ok && data.signature) {
-            setHeadSignature(data.signature);
+        // Load saved signature if not already present
+        if (!headSignature) {
+          console.log("[HeadRequestModal] Loading saved signature");
+          const sigRes = await fetch("/api/signature");
+          const sigData = await sigRes.json();
+          if (sigData.ok && sigData.signature) {
+            setHeadSignature(sigData.signature);
+            console.log("[HeadRequestModal] Saved signature loaded");
           }
-        });
+        }
+        
+        // Load requester signature from request data
+        if (request.requester_signature) {
+          setRequesterSignature(request.requester_signature);
+          console.log("[HeadRequestModal] Requester signature loaded");
+        }
+      } catch (err) {
+        console.error("[HeadRequestModal] Failed to load data:", err);
+      } finally {
+        setIsLoading(false);
+      }
     }
-  }, []);
+    
+    loadData();
+  }, [request.requester_signature, headSignature]);
+  
+  // Load preferred driver/vehicle names
+  React.useEffect(() => {
+    async function loadPreferences() {
+      try {
+        // Fetch driver name if ID exists
+        if (t.preferred_driver_id) {
+          const driverRes = await fetch(`/api/drivers`);
+          const driverData = await driverRes.json();
+          if (driverData.ok && driverData.data) {
+            const driver = driverData.data.find((d: any) => d.id === t.preferred_driver_id);
+            if (driver) {
+              setPreferredDriverName(driver.name);
+            }
+          }
+        }
+        
+        // Fetch vehicle name if ID exists
+        if (t.preferred_vehicle_id) {
+          const vehicleRes = await fetch(`/api/vehicles`);
+          const vehicleData = await vehicleRes.json();
+          if (vehicleData.ok && vehicleData.data) {
+            const vehicle = vehicleData.data.find((v: any) => v.id === t.preferred_vehicle_id);
+            if (vehicle) {
+              setPreferredVehicleName(`${vehicle.name} • ${vehicle.plate_number}`);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("[HeadRequestModal] Failed to load preferences:", err);
+      }
+    }
+    
+    if (t.preferred_driver_id || t.preferred_vehicle_id) {
+      loadPreferences();
+    }
+  }, [t.preferred_driver_id, t.preferred_vehicle_id]);
 
   // New schema uses expense_breakdown array
   const expenseBreakdown = t.expense_breakdown || [];
   const totalCost = t.total_budget || expenseBreakdown.reduce((sum: number, item: any) => sum + (item.amount || 0), 0);
+  
+  // Debug logging
+  console.log("[HeadRequestModal] Request data:", t);
+  console.log("[HeadRequestModal] Preferred driver ID:", t.preferred_driver_id);
+  console.log("[HeadRequestModal] Preferred vehicle ID:", t.preferred_vehicle_id);
+  console.log("[HeadRequestModal] Expense breakdown:", expenseBreakdown);
+  console.log("[HeadRequestModal] Total cost:", totalCost);
+  
+  // Log each expense for debugging
+  expenseBreakdown.forEach((exp: any, i: number) => {
+    console.log(`[HeadRequestModal] Expense ${i}:`, {
+      item: exp.item,
+      description: exp.description,
+      amount: exp.amount
+    });
+  });
 
   async function doApprove() {
     if (submitting) return;
@@ -92,43 +179,48 @@ export default function HeadRequestModal({
   }
 
   async function doReject() {
-    // ✅ confirm muna bago mag PATCH
-    const ok = window.confirm(
-      "Reject this request? The requester will have to resend."
-    );
-    if (!ok) return;
-
     if (submitting) return;
+    if (!comments.trim()) {
+      alert("Please provide a reason for rejection.");
+      return;
+    }
+    
     setSubmitting(true);
     try {
       const res = await fetch("/api/head", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          id: request.id,
+        body: JSON.stringify({ 
+          id: t.id, 
           action: "reject",
-          comments: "",
+          comments: comments.trim()
         }),
       });
-      const j = await res.json();
-      if (j.ok) {
-        onRejected(request.id);
+      const json = await res.json();
+      if (json.ok) {
+        onRejected(t.id);
+        onClose();
       } else {
-        alert("Reject failed: " + (j.error ?? "unknown error"));
+        alert("Reject failed: " + (json.error || "unknown"));
       }
     } catch (err) {
       console.error(err);
       alert("Reject failed.");
     } finally {
       setSubmitting(false);
+      setShowRejectDialog(false);
     }
   }
 
+  function initiateReject() {
+    setShowRejectDialog(true);
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4 py-10">
-      <div className="relative w-full max-w-5xl rounded-2xl bg-white shadow-2xl transform transition-all duration-300 scale-100">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 pt-20 pb-8">
+      <div className="relative w-full max-w-5xl max-h-[85vh] rounded-3xl bg-white shadow-2xl transform transition-all duration-300 scale-100 flex flex-col overflow-hidden">
         {/* header */}
-        <div className="flex items-center justify-between border-b bg-gradient-to-r from-[#7A0010] to-[#5e000d] px-6 py-4 rounded-t-2xl">
+        <div className="flex items-center justify-between border-b bg-[#7A0010] px-6 py-4 rounded-t-3xl flex-shrink-0">
           <div>
             <h2 className="text-lg font-semibold text-white">
               Request Details
@@ -175,31 +267,124 @@ export default function HeadRequestModal({
         </div>
 
         {/* body */}
-        <div className="grid gap-8 px-6 py-6 lg:grid-cols-[1.1fr_0.9fr]">
+        <div className="grid gap-8 px-6 py-6 lg:grid-cols-[1.1fr_0.9fr] overflow-y-auto flex-1">
           {/* LEFT */}
           <div className="space-y-5">
-            <section className="rounded-xl bg-gradient-to-br from-slate-50 to-slate-100/50 p-4 border border-slate-200">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-2">
-                    Requesting person
-                  </p>
-                  <p className="text-base font-bold text-slate-900">
-                    {t.requester_name || t.requester?.name || t.requester?.email || "Unknown Requester"}
-                  </p>
-                  <p className="text-sm text-slate-600 mt-1">
-                    {t.department?.name || t.department?.code || "No department indicated"}
-                  </p>
-                  {t.created_at && (
-                    <p className="text-xs text-slate-500 mt-2 flex items-center gap-1">
-                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      Submitted {new Date(t.created_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
-                    </p>
-                  )}
+            <section className="rounded-lg bg-white p-5 border border-slate-200 shadow-sm">
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-500 mb-3">
+                Requesting person
+              </p>
+              
+              {/* Show submitter badge if representative */}
+              {t.is_representative && t.submitted_by_name ? (
+                <div className="space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
+                      <Users className="h-5 w-5 text-slate-600" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="text-base font-semibold text-slate-900">
+                          {t.requester_name || "Unknown Requester"}
+                        </p>
+                        <span className="text-[10px] font-medium uppercase tracking-wider text-slate-500 bg-slate-50 px-2 py-1 rounded border border-slate-200">
+                          On behalf
+                        </span>
+                      </div>
+                      <p className="text-sm text-slate-600">
+                        {t.department?.name || t.department?.code || "No department indicated"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="pl-[52px] border-l-2 border-slate-100 ml-5">
+                    <p className="text-xs text-slate-500 mb-1">Submitted by</p>
+                    <p className="text-sm font-medium text-slate-900">{t.submitted_by_name}</p>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="flex items-start gap-3">
+                  <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
+                    <User className="h-5 w-5 text-slate-600" />
+                  </div>
+                  <div>
+                    <p className="text-base font-semibold text-slate-900 mb-1">
+                      {t.requester_name || t.requester?.name || t.requester?.email || "Unknown Requester"}
+                    </p>
+                    <p className="text-sm text-slate-600">
+                      {t.department?.name || t.department?.code || "No department indicated"}
+                    </p>
+                  </div>
+                </div>
+              )}
+              
+              {t.created_at && (
+                <div className="mt-4 pt-4 border-t border-slate-100">
+                  <p className="text-xs text-slate-500 flex items-center gap-1.5">
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Submitted {new Date(t.created_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                  </p>
+                </div>
+              )}
+            </section>
+            
+            {/* Preferred Driver/Vehicle Section - ALWAYS SHOW FOR DEBUG */}
+            <section className="rounded-lg bg-white p-5 border border-slate-200 shadow-sm">
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-500 mb-3">
+                Service Preferences
+              </p>
+              
+              {(t.preferred_driver_id || t.preferred_vehicle_id) ? (
+                <div className="space-y-3">
+                  {t.preferred_driver_id ? (
+                    <div className="flex items-start gap-3 pb-3 border-b border-slate-100 last:border-0 last:pb-0">
+                      <div className="h-9 w-9 rounded-lg bg-slate-50 flex items-center justify-center flex-shrink-0">
+                        <UserCog className="h-5 w-5 text-slate-500" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-slate-500 mb-1">Preferred Driver</p>
+                        <p className="text-sm font-medium text-slate-900">
+                          {preferredDriverName || "Loading..."}
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
+                  
+                  {t.preferred_vehicle_id ? (
+                    <div className="flex items-start gap-3">
+                      <div className="h-9 w-9 rounded-lg bg-slate-50 flex items-center justify-center flex-shrink-0">
+                        <Car className="h-5 w-5 text-slate-500" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-slate-500 mb-1">Preferred Vehicle</p>
+                        <p className="text-sm font-medium text-slate-900">
+                          {preferredVehicleName || "Loading..."}
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
+                  
+                  <div className="mt-3 pt-3 border-t border-slate-100">
+                    <p className="text-xs text-slate-500 flex items-center gap-1.5">
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Suggestions only — Admin makes final assignment
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-6">
+                  <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-slate-50 mb-3">
+                    <svg className="h-6 w-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                    </svg>
+                  </div>
+                  <p className="text-sm text-slate-600">No driver or vehicle preferences</p>
+                  <p className="text-xs text-slate-500 mt-1">Admin will assign resources</p>
+                </div>
+              )}
             </section>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -268,130 +453,276 @@ export default function HeadRequestModal({
             </section>
 
             {/* requester sig */}
-            <section className="rounded-lg bg-amber-50/50 border border-amber-200 p-4">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700 flex items-center gap-1.5 mb-3">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                </svg>
-                Requesting person's signature
+            <section className="rounded-lg bg-slate-50 border border-slate-200 p-4">
+              <p className="text-xs font-semibold uppercase text-slate-700 mb-3">
+                Requester's Signature
               </p>
-              {t.requesterSignature ? (
-                <div className="flex items-center justify-center bg-white rounded-lg border-2 border-amber-200 p-4">
+              {isLoading ? (
+                <div className="flex items-center justify-center bg-white rounded-lg border border-slate-200 p-6">
+                  <div className="flex items-center gap-2 text-sm text-slate-500">
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-400 border-t-transparent"></div>
+                    Loading signature...
+                  </div>
+                </div>
+              ) : (requesterSignature || request.requester_signature) ? (
+                <div className="bg-white rounded-lg border border-slate-200 p-4">
                   <img
-                    src={t.requesterSignature}
+                    src={requesterSignature || request.requester_signature}
                     alt="Requester signature"
-                    className="h-[80px] max-w-full object-contain"
+                    className="h-[100px] w-full object-contain"
                   />
+                  <p className="text-center text-xs text-slate-600 mt-2 font-medium">
+                    Signed by: {t.requester_name || "Requester"}
+                  </p>
                 </div>
               ) : (
-                <div className="flex items-center justify-center gap-2 text-sm italic text-amber-600 bg-white rounded-lg border border-amber-200 p-3">
+                <div className="flex items-center justify-center gap-2 text-sm text-slate-600 bg-white rounded-lg border border-slate-200 p-4">
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                   </svg>
-                  No signature provided by requester
+                  <span>No signature provided by requester</span>
                 </div>
               )}
             </section>
 
-            {/* costs */}
-            {expenseBreakdown.length > 0 && (
-              <section>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                  Travel cost (estimate)
-                </p>
-                <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-                  {expenseBreakdown.map((expense: any, idx: number) => (
-                    expense.amount > 0 && (
-                      <div key={idx} className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-2 text-sm">
-                        <span>{expense.item || expense.description}</span>
-                        <span className="font-semibold">{peso(expense.amount)}</span>
+            {/* Budget Breakdown - Professional */}
+            <section className="rounded-lg bg-slate-50 border border-slate-200 p-4">
+              <div className="flex items-center gap-2 mb-3 pb-3 border-b border-slate-200">
+                <span className="text-lg font-bold text-slate-700">₱</span>
+                <h3 className="text-sm font-semibold text-slate-900">Budget Breakdown</h3>
+              </div>
+
+              {expenseBreakdown.length > 0 ? (
+                <>
+                  <div className="space-y-2 mb-3">
+                    {expenseBreakdown.map((expense: any, idx: number) => {
+                      // Show custom label if "Other" has a description
+                      const label = expense.item === "Other" && expense.description 
+                        ? expense.description 
+                        : expense.item || expense.description;
+                      
+                      return expense.amount > 0 && (
+                        <div key={idx} className="flex items-center justify-between py-2">
+                          <span className="text-sm text-slate-600">{label}</span>
+                          <span className="text-sm font-semibold text-slate-900">{peso(expense.amount)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  
+                  {totalCost > 0 && (
+                    <div className="pt-3 border-t border-slate-300">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-bold text-slate-900">TOTAL BUDGET</span>
+                        <span className="text-lg font-bold text-[#7A0010]">{peso(totalCost)}</span>
                       </div>
-                    )
-                  ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="py-4 text-center">
+                  <p className="text-sm text-slate-500">No budget specified</p>
                 </div>
-                {totalCost > 0 && (
-                  <p className="mt-2 text-sm font-semibold text-slate-900">
-                    Total: {peso(totalCost)}
-                  </p>
-                )}
-              </section>
-            )}
+              )}
+            </section>
           </div>
 
           {/* RIGHT */}
-          <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/60 p-5">
-            <div className="flex items-center gap-3 pb-4 border-b">
-              <div className="h-12 w-12 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-lg">
-                {headName ? headName.charAt(0).toUpperCase() : 'H'}
+          <div className="space-y-5 rounded-xl border-2 border-[#7A0010]/20 bg-gradient-to-br from-white to-red-50/30 p-6 shadow-lg">
+            <div className="flex items-center gap-3 pb-4 border-b-2 border-[#7A0010]/10">
+              <div className="h-14 w-14 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-xl shadow-lg">
+                {isLoading ? (
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                ) : headName ? (
+                  headName.charAt(0).toUpperCase()
+                ) : (
+                  'H'
+                )}
               </div>
               <div className="flex-1">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                <p className="text-xs font-bold uppercase tracking-wider text-[#7A0010]/70">
                   Department Head Endorsement
                 </p>
-                <p className="text-sm font-semibold text-slate-900 mt-0.5">
-                  {headName || headProfile?.email || "Loading..."}
-                </p>
+                <div className="text-base font-bold text-slate-900 mt-1">
+                  {isLoading ? (
+                    <span className="flex items-center gap-2 text-slate-400">
+                      <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-400 border-t-transparent"></span>
+                      Loading...
+                    </span>
+                  ) : headName || headProfile?.name ? (
+                    headName || headProfile?.name
+                  ) : headProfile?.email ? (
+                    headProfile.email
+                  ) : (
+                    <span className="text-slate-400 font-normal">Loading user info...</span>
+                  )}
+                </div>
                 {headProfile?.department && (
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-slate-600 mt-0.5 font-medium">
                     {headProfile.department.name || headProfile.department.code}
                   </p>
                 )}
               </div>
             </div>
 
-            <div>
-              <label className="mb-1 block text-xs text-slate-500">
-                Signature
-              </label>
-              <div className="rounded-md bg-white p-2">
-                <SignaturePad
-                  height={140}
-                  initialImage={headSignature || undefined}
-                  onSave={(dataUrl) => {
-                    setHeadSignature(dataUrl);
-                  }}
-                  onClear={() => setHeadSignature("")}
-                  hideSaveButton
-                  className="h-[140px] w-full"
-                />
+            {viewOnly ? (
+              // View-only: Show saved signature
+              <div>
+                <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
+                  Head Signature
+                </label>
+                <div className="rounded-xl bg-slate-50 p-4 border-2 border-slate-200">
+                  {request.head_signature ? (
+                    <img 
+                      src={request.head_signature} 
+                      alt="Head Signature" 
+                      className="max-h-40 mx-auto"
+                    />
+                  ) : (
+                    <p className="text-sm text-slate-500 text-center py-8">
+                      No signature available
+                    </p>
+                  )}
+                  {request.head_approved_at && (
+                    <p className="text-xs text-slate-500 text-center mt-2">
+                      Signed on {new Date(request.head_approved_at).toLocaleString()}
+                    </p>
+                  )}
+                </div>
               </div>
-              <div className="mt-2 flex items-center gap-2 text-[10px] text-slate-500">
-                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span>Sign above to approve this request</span>
+            ) : (
+              // Edit mode: Signature pad
+              <div>
+                <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
+                  Your Signature *
+                </label>
+                <div className="rounded-xl bg-white p-3 border-2 border-[#7A0010]/20 shadow-sm">
+                  <SignaturePad
+                    height={160}
+                    initialImage={headSignature || undefined}
+                    onSave={(dataUrl) => {
+                      setHeadSignature(dataUrl);
+                    }}
+                    onClear={() => setHeadSignature("")}
+                    hideSaveButton
+                  />
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
 
         {/* footer */}
-        <div className="flex items-center justify-between border-t bg-slate-50 px-6 py-4">
-          <button
-            onClick={doReject}
-            disabled={submitting}
-            className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 disabled:opacity-60"
-          >
-            Reject
-          </button>
-          <div className="flex gap-3">
+        {viewOnly ? (
+          // View-only footer: Just close button
+          <div className="flex items-center justify-end border-t bg-slate-50 px-6 py-4 flex-shrink-0 rounded-b-3xl">
             <button
               onClick={onClose}
               type="button"
-              className="rounded-md px-4 py-2 text-sm text-slate-500 hover:bg-slate-100"
+              className="rounded-md bg-slate-600 px-6 py-2 text-sm font-semibold text-white hover:bg-slate-700"
             >
               Close
             </button>
+          </div>
+        ) : (
+          // Edit mode footer: Reject, Close, and Approve buttons
+          <div className="flex items-center justify-between border-t bg-slate-50 px-6 py-4 flex-shrink-0 rounded-b-3xl">
             <button
-              onClick={doApprove}
-              disabled={submitting || !headSignature}
-              className="rounded-md bg-[#7A0010] px-5 py-2 text-sm font-semibold text-white hover:bg-[#5e000d] disabled:opacity-50"
+              onClick={initiateReject}
+              disabled={submitting}
+              className="rounded-md border border-red-200 bg-white px-4 py-2 text-sm text-red-600 hover:bg-red-50 disabled:opacity-60 flex items-center gap-2"
             >
-              {submitting ? "Saving…" : "Approve"}
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              Reject
             </button>
+            <div className="flex gap-3">
+              <button
+                onClick={onClose}
+                type="button"
+                className="rounded-md px-4 py-2 text-sm text-slate-500 hover:bg-slate-100"
+              >
+                Close
+              </button>
+              <button
+                onClick={doApprove}
+                disabled={submitting || !headSignature}
+                className="rounded-md bg-[#7A0010] px-5 py-2 text-sm font-semibold text-white hover:bg-[#5e000d] disabled:opacity-50"
+              >
+                {submitting ? "Saving…" : "Approve"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Rejection Dialog */}
+      {showRejectDialog && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                <svg className="h-5 w-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-bold text-slate-900">Reject Request</h3>
+                <p className="text-sm text-slate-600 mt-1">
+                  Please provide a reason for rejecting this request. This will be sent to the requester.
+                </p>
+              </div>
+            </div>
+
+            <div className="mb-5">
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Rejection Reason <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                value={comments}
+                onChange={(e) => setComments(e.target.value)}
+                placeholder="e.g., Insufficient budget documentation, duplicate request, etc."
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none"
+                rows={4}
+                autoFocus
+              />
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => {
+                  setShowRejectDialog(false);
+                  setComments("");
+                }}
+                disabled={submitting}
+                className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={doReject}
+                disabled={submitting || !comments.trim()}
+                className="px-5 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {submitting ? (
+                  <>
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                    Rejecting...
+                  </>
+                ) : (
+                  <>
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    Confirm Rejection
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

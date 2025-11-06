@@ -1,32 +1,160 @@
+// src/app/api/feedback/route.ts
+/**
+ * Feedback API - Full CRUD
+ */
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://placeholder.supabase.co";
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsYWNlaG9sZGVyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTY0NTE5MjgwMCwiZXhwIjoxOTYwNzY4ODAwfQ.placeholder";
-
-const supabase = createClient(supabaseUrl, supabaseKey);
-
-export async function POST(req: Request) {
+/**
+ * GET /api/feedback
+ * List all feedback with filters
+ */
+export async function GET(request: Request) {
   try {
-    const body = await req.json();
-    // Expecting: { category, rating, subject, message, anonymous, contact, attachmentUrl }
+    const supabase = await createSupabaseServerClient(true);
+    const { searchParams } = new URL(request.url);
+    
+    const status = searchParams.get("status");
+    const category = searchParams.get("category");
+    const limit = parseInt(searchParams.get("limit") || "50");
+    
+    let query = supabase
+      .from("feedback")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    
+    if (status) {
+      query = query.eq("status", status);
+    }
+    
+    if (category) {
+      query = query.eq("category", category);
+    }
+    
+    const { data, error } = await query;
+    
+    if (error) {
+      console.error("[GET /api/feedback] Error:", error);
+      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    }
+    
+    return NextResponse.json({ ok: true, data: data || [] });
+  } catch (err: any) {
+    console.error("[GET /api/feedback] Unexpected error:", err);
+    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
+  }
+}
+
+/**
+ * POST /api/feedback
+ * Create new feedback
+ */
+export async function POST(request: Request) {
+  try {
+    const supabase = await createSupabaseServerClient(true);
+    const body = await request.json();
+    
     const { data, error } = await supabase
       .from("feedback")
       .insert({
-        category: body.category,
+        user_id: body.user_id || body.userId,
+        user_name: body.user_name || body.userName || "Anonymous",
+        user_email: body.user_email || body.userEmail,
+        trip_id: body.trip_id || body.tripId,
+        driver_id: body.driver_id || body.driverId,
+        vehicle_id: body.vehicle_id || body.vehicleId,
         rating: body.rating,
-        subject: body.subject || null,
         message: body.message,
-        anonymous: body.anonymous,
-        contact: body.contact || null,
-        attachment_url: body.attachmentUrl || null,
+        category: body.category || "general",
+        status: "new",
       })
-      .select("id")
+      .select()
       .single();
+    
+    if (error) {
+      console.error("[POST /api/feedback] Error:", error);
+      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    }
+    
+    return NextResponse.json({ ok: true, data });
+  } catch (err: any) {
+    console.error("[POST /api/feedback] Unexpected error:", err);
+    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
+  }
+}
 
-    if (error) throw error;
-    return NextResponse.json({ id: data.id }, { status: 201 });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message ?? "Failed" }, { status: 400 });
+/**
+ * PATCH /api/feedback
+ * Update feedback (admin response)
+ */
+export async function PATCH(request: Request) {
+  try {
+    const supabase = await createSupabaseServerClient(true);
+    const body = await request.json();
+    const { id, ...updates } = body;
+    
+    if (!id) {
+      return NextResponse.json({ ok: false, error: "ID required" }, { status: 400 });
+    }
+    
+    const dbUpdates: any = {
+      updated_at: new Date().toISOString(),
+    };
+    
+    if (updates.status) dbUpdates.status = updates.status;
+    if (updates.admin_response || updates.adminResponse) {
+      dbUpdates.admin_response = updates.admin_response || updates.adminResponse;
+      dbUpdates.responded_at = new Date().toISOString();
+    }
+    if (updates.responded_by || updates.respondedBy) dbUpdates.responded_by = updates.responded_by || updates.respondedBy;
+    
+    const { data, error } = await supabase
+      .from("feedback")
+      .update(dbUpdates)
+      .eq("id", id)
+      .select()
+      .single();
+    
+    if (error) {
+      console.error("[PATCH /api/feedback] Error:", error);
+      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    }
+    
+    return NextResponse.json({ ok: true, data });
+  } catch (err: any) {
+    console.error("[PATCH /api/feedback] Unexpected error:", err);
+    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
+  }
+}
+
+/**
+ * DELETE /api/feedback
+ * Delete feedback
+ */
+export async function DELETE(request: Request) {
+  try {
+    const supabase = await createSupabaseServerClient(true);
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+    
+    if (!id) {
+      return NextResponse.json({ ok: false, error: "ID required" }, { status: 400 });
+    }
+    
+    const { error } = await supabase
+      .from("feedback")
+      .delete()
+      .eq("id", id);
+    
+    if (error) {
+      console.error("[DELETE /api/feedback] Error:", error);
+      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    }
+    
+    return NextResponse.json({ ok: true });
+  } catch (err: any) {
+    console.error("[DELETE /api/feedback] Unexpected error:", err);
+    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
   }
 }

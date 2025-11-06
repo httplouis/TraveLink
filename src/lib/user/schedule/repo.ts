@@ -1,7 +1,7 @@
 // src/lib/user/schedule/repo.ts
 /**
  * Read-only repository for USER calendar.
- * Replace with real DB later; deterministic localStorage seed for now.
+ * NOW USES DATABASE via /api/trips/my-trips! ✅
  */
 
 import type { Booking, VehicleType } from "./types";
@@ -18,7 +18,12 @@ type ListArgs = {
   q: string;
 };
 
-const LS_KEY = "travilink_user_bookings_v1";
+const LS_KEY = "travilink_user_bookings_v1"; // Kept for fallback
+
+// Cache for API data
+let cachedBookings: BookingsByDate | null = null;
+let lastFetch: number = 0;
+const CACHE_TTL = 30000; // 30 seconds
 
 export function statusOfCount(n: number): "Available" | "Partial" | "Full" {
   if (n <= 0) return "Available";
@@ -26,10 +31,50 @@ export function statusOfCount(n: number): "Available" | "Partial" | "Full" {
   return "Partial";
 }
 
+/** Fetch bookings from API */
+async function fetchFromAPI(): Promise<BookingsByDate> {
+  try {
+    const response = await fetch("/api/trips/my-trips");
+    const result = await response.json();
+    
+    if (!result.ok || !result.data) {
+      console.warn("[Schedule] API returned error, using fallback");
+      return ensureSeed();
+    }
+
+    // Group by date
+    const byDate: BookingsByDate = {};
+    result.data.forEach((booking: Booking) => {
+      if (!byDate[booking.dateISO]) {
+        byDate[booking.dateISO] = [];
+      }
+      byDate[booking.dateISO].push(booking);
+    });
+
+    return byDate;
+  } catch (error) {
+    console.error("[Schedule] API fetch failed:", error);
+    return ensureSeed();
+  }
+}
+
+/** Get bookings (with cache) */
+async function getBookings(): Promise<BookingsByDate> {
+  const now = Date.now();
+  if (cachedBookings && (now - lastFetch) < CACHE_TTL) {
+    return cachedBookings;
+  }
+
+  const bookings = await fetchFromAPI();
+  cachedBookings = bookings;
+  lastFetch = now;
+  return bookings;
+}
+
 export const UserScheduleRepo = {
-  /** Availability counts for a month (after filters) */
-  list(args: ListArgs): AvailabilityMap {
-    const byDate = ensureSeed();
+  /** Availability counts for a month (after filters) - NOW ASYNC! */
+  async list(args: ListArgs): Promise<AvailabilityMap> {
+    const byDate = await getBookings();
     const prefix = `${args.year}-${String(args.month + 1).padStart(2, "0")}-`;
     const out: AvailabilityMap = {};
     Object.entries(byDate).forEach(([iso, bookings]) => {
@@ -51,9 +96,9 @@ export const UserScheduleRepo = {
     return out;
   },
 
-  /** Get bookings for a specific date (after filters) */
-  getBookings(dateISO: string, args: Omit<ListArgs, "month" | "year">): Booking[] {
-    const byDate = ensureSeed();
+  /** Get bookings for a specific date (after filters) - NOW ASYNC! */
+  async getBookings(dateISO: string, args: Omit<ListArgs, "month" | "year">): Promise<Booking[]> {
+    const byDate = await getBookings();
     const arr = byDate[dateISO] || [];
     return arr
       .filter((b) => (args.vehicle === "All" ? true : b.vehicle === args.vehicle))
@@ -69,6 +114,12 @@ export const UserScheduleRepo = {
         );
       })
       .slice(0, MAX_SLOTS); // safety
+  },
+  
+  /** Clear cache (call this after submitting new request) */
+  clearCache() {
+    cachedBookings = null;
+    lastFetch = 0;
   },
 };
 

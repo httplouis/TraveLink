@@ -12,7 +12,7 @@ export default function DashboardHero({
   onOpenSchedule?: () => void;
   onNewRequest?: () => void;
 }) {
-  // ✨ REAL-TIME CLOCK - Updates every second!
+  // REAL-TIME CLOCK - Updates every second
   const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {

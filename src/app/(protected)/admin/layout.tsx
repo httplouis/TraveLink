@@ -8,12 +8,15 @@ import AdminLeftNav from "@/components/admin/nav/AdminLeftNav";
 import Breadcrumbs from "@/components/admin/nav/Breadcrumbs";
 import ProfileMenu from "@/components/admin/nav/ProfileMenu";
 import NotificationBell from "@/components/admin/nav/NotificationBell";
+import PageTitle from "@/components/common/PageTitle";
 import { Search } from "lucide-react";
 import ProfileContainer from "@/components/admin/profile/containers/ProfileContainer";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="relative min-h-dvh w-full bg-[#F7F7F8] text-neutral-900">
+    <>
+      <PageTitle title="TraviLink | Admin" />
+      <div className="relative min-h-dvh w-full bg-[#F7F7F8] text-neutral-900">
       {/* ===== Floating Sidebar (follows CSS vars set by AdminLeftNav) ===== */}
       <aside
         className="
@@ -94,5 +97,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       {/* Mount the profile slide-over once at the root */}
       <ProfileContainer />
     </div>
+    </>
   );
 }

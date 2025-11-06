@@ -95,46 +95,82 @@ export async function saveDraft(data: RequestFormData, draftId?: string) {
 /* ---------- Submissions API ---------- */
 
 export async function listSubmissions(): Promise<Submission[]> {
-  return safeRead<Submission>(SUBMITS_KEY).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  // NOW USES REAL API instead of localStorage!
+  try {
+    const response = await fetch("/api/requests/my-submissions");
+    const result = await response.json();
+
+    if (!result.ok) {
+      console.error("Failed to fetch submissions:", result.error);
+      return [];
+    }
+
+    // Transform database format to match Submission type
+    const submissions: Submission[] = (result.data || []).map((req: any) => {
+      const first = firstReceiver({
+        requesterRole: req.requester_is_head ? "head" : "faculty",
+        vehicleMode: req.needs_rental ? "rent" : req.needs_vehicle ? "institutional" : "owned",
+        reason: req.request_type === "seminar" ? "seminar" : "official",
+      });
+      
+      const path = fullApprovalPath({
+        requesterRole: req.requester_is_head ? "head" : "faculty",
+        vehicleMode: req.needs_rental ? "rent" : req.needs_vehicle ? "institutional" : "owned",
+      });
+
+      return {
+        id: req.id,
+        title: req.title || `${req.purpose} - ${req.destination}`,
+        data: null as any, // Not needed for list view
+        status: req.status === "rejected" ? "cancelled" : req.status === "approved" ? "approved" : "pending",
+        firstReceiver: first,
+        approvalPath: path,
+        createdAt: req.created_at,
+        updatedAt: req.updated_at || req.created_at,
+      };
+    });
+
+    return submissions;
+  } catch (error) {
+    console.error("Error fetching submissions:", error);
+    return [];
+  }
 }
 
 export async function getSubmission(id: string): Promise<Submission | undefined> {
-  return safeRead<Submission>(SUBMITS_KEY).find((s) => s.id === id);
+  // Fetch from API instead of localStorage
+  const submissions = await listSubmissions();
+  return submissions.find((s) => s.id === id);
 }
 
 /** Create the user-facing submission record.
- * If `forcedId` is provided, it will be used so it matches AdminRequestsRepo. */
+ * NOW USES REAL API instead of localStorage! */
 export async function createSubmission(data: RequestFormData, forcedId?: string) {
-  const now = new Date().toISOString();
-  const title = buildTitle(data);
-  const list = safeRead<Submission>(SUBMITS_KEY);
-
-  const id = forcedId ?? crypto.randomUUID();
-
-  const first = firstReceiver({
-    requesterRole: data.requesterRole,
-    vehicleMode: data.vehicleMode,
-    reason: data.reason,
-  });
-  const path = fullApprovalPath({
-    requesterRole: data.requesterRole,
-    vehicleMode: data.vehicleMode,
+  // Call real API to submit to database
+  const response = await fetch("/api/requests/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      travelOrder: data.travelOrder,
+      reason: data.reason,
+      vehicleMode: data.vehicleMode,
+      requesterRole: data.requesterRole,
+      schoolService: data.schoolService,
+      seminar: data.seminar,
+    }),
   });
 
-  const row: Submission = {
-    id,
-    title,
-    data,
-    status: "pending",
-    firstReceiver: first,
-    approvalPath: path,
-    createdAt: now,
-    updatedAt: now,
+  const result = await response.json();
+
+  if (!result.ok) {
+    throw new Error(result.error || "Failed to submit request");
+  }
+
+  // Return format matching the old interface
+  return { 
+    id: result.data.id, 
+    submittedAt: result.data.created_at 
   };
-
-  list.unshift(row);
-  safeWrite<Submission>(SUBMITS_KEY, list);
-  return { id, submittedAt: now };
 }
 
 export async function updateSubmission(id: string, data: RequestFormData) {

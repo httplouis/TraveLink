@@ -81,15 +81,85 @@ export async function POST(req: Request) {
 
     // Extract request data from body
     const travelOrder = body.travelOrder ?? body.payload?.travelOrder ?? {};
-    const costs = body.costs ?? {};
+    const costs = travelOrder.costs ?? {};
     const vehicleMode = body.vehicleMode ?? "owned"; // "owned", "institutional", "rent"
     const reason = body.reason ?? "visit"; // "visit", "seminar", "official", etc.
+
+    // Get the department ID from the selected department in the form
+    let departmentId = profile.department_id;
+    let selectedDepartment: any = profile.department;
+    
+    console.log(`[/api/requests/submit] Initial dept: ${(profile.department as any)?.name} (${departmentId})`);
+    console.log(`[/api/requests/submit] Form selected dept: ${travelOrder.department}`);
+    
+    if (travelOrder.department && travelOrder.department !== (profile.department as any)?.name) {
+      // User selected a different department - look it up
+      // Try multiple search strategies to handle different name formats
+      let deptData = null;
+      
+      // Strategy 1: Exact match
+      const { data: exactMatch } = await supabase
+        .from("departments")
+        .select("id, code, name, parent_department_id")
+        .eq("name", travelOrder.department)
+        .maybeSingle();
+      
+      if (exactMatch) {
+        deptData = exactMatch;
+      } else {
+        // Strategy 2: Extract code from format "Name (CODE)" and search by code
+        const codeMatch = travelOrder.department.match(/\(([^)]+)\)$/);
+        if (codeMatch) {
+          const code = codeMatch[1];
+          console.log(`[/api/requests/submit] Trying to find by code: ${code}`);
+          const { data: codeSearch } = await supabase
+            .from("departments")
+            .select("id, code, name, parent_department_id")
+            .eq("code", code)
+            .maybeSingle();
+          
+          if (codeSearch) {
+            deptData = codeSearch;
+          }
+        }
+        
+        // Strategy 3: Search by name using ILIKE (case-insensitive partial match)
+        if (!deptData) {
+          const searchName = travelOrder.department.replace(/\s*\([^)]*\)\s*$/, '').trim();
+          console.log(`[/api/requests/submit] Trying ILIKE search: ${searchName}`);
+          const { data: likeSearch } = await supabase
+            .from("departments")
+            .select("id, code, name, parent_department_id")
+            .ilike("name", `%${searchName}%`)
+            .maybeSingle();
+          
+          if (likeSearch) {
+            deptData = likeSearch;
+          }
+        }
+      }
+      
+      if (deptData) {
+        departmentId = deptData.id;
+        selectedDepartment = deptData;
+        console.log(`[/api/requests/submit] ✅ Using selected department: ${deptData.name} (${deptData.code}) (${deptData.id})`);
+      } else {
+        console.warn(`[/api/requests/submit] ⚠️ Could not find department: ${travelOrder.department}`);
+        // Fall back to requester's department
+        console.warn(`[/api/requests/submit] 🔄 Falling back to requester's department`);
+      }
+    } else {
+      console.log(`[/api/requests/submit] ℹ️ Using requester's own department`);
+    }
 
     // Determine request type
     const requestType = reason === "seminar" ? "seminar" : "travel_order";
     
     // Calculate budget
     const hasBudget = costs && Object.keys(costs).length > 0;
+    
+    console.log("[/api/requests/submit] Costs data:", costs);
+    console.log("[/api/requests/submit] Has budget:", hasBudget);
     const expenseBreakdown = hasBudget ? [
       { item: "Food", amount: parseFloat(costs.food || 0), description: "Meals" },
       { item: "Accommodation", amount: parseFloat(costs.accommodation || 0), description: "Lodging" },
@@ -102,6 +172,15 @@ export async function POST(req: Request) {
 
     // Determine if vehicle needed
     const needsVehicle = vehicleMode === "institutional" || vehicleMode === "rent";
+    
+    // Get preferred driver/vehicle suggestions from schoolService
+    console.log("[/api/requests/submit] Full body:", JSON.stringify(body, null, 2));
+    const schoolService = body.schoolService || {};
+    console.log("[/api/requests/submit] School Service data:", schoolService);
+    const preferredDriverId = schoolService.preferredDriver || null;
+    const preferredVehicleId = schoolService.preferredVehicle || null;
+    console.log("[/api/requests/submit] Preferred driver ID:", preferredDriverId);
+    console.log("[/api/requests/submit] Preferred vehicle ID:", preferredVehicleId);
 
     // Check if requester is a head
     const requesterIsHead = profile.is_head === true;
@@ -115,6 +194,11 @@ export async function POST(req: Request) {
 
     // Prepare participants (simplified for now)
     const participants = travelOrder.participants || [];
+    
+    // Determine if this is a representative submission
+    const requestingPersonName = travelOrder.requestingPerson || profile.name || profile.email || "Unknown";
+    const submitterName = profile.name || profile.email || "Unknown";
+    const isRepresentative = requestingPersonName.trim().toLowerCase() !== submitterName.trim().toLowerCase();
 
     // Build request object
     const requestData = {
@@ -126,13 +210,20 @@ export async function POST(req: Request) {
       travel_start_date: travelOrder.departureDate || travelOrder.date || new Date().toISOString(),
       travel_end_date: travelOrder.returnDate || travelOrder.dateTo || travelOrder.date || new Date().toISOString(),
       
+      // Requester = person who needs the travel (from form)
       requester_id: profile.id,
-      requester_name: travelOrder.requestingPerson || profile.name || profile.email || "Unknown",
+      requester_name: requestingPersonName,
+      requester_signature: travelOrder.requesterSignature || null,
       requester_is_head: requesterIsHead,
-      department_id: profile.department_id,
+      department_id: departmentId,
+      
+      // Submitter = account that clicked submit (logged in user)
+      submitted_by_user_id: profile.id,
+      submitted_by_name: submitterName,
+      is_representative: isRepresentative,
       // Only include parent_department_id if the column exists (optional for now)
-      ...((profile.department as any)?.parent_department_id ? { 
-        parent_department_id: (profile.department as any).parent_department_id 
+      ...((selectedDepartment as any)?.parent_department_id ? { 
+        parent_department_id: (selectedDepartment as any).parent_department_id 
       } : {}),
       
       participants: participants,
@@ -145,6 +236,10 @@ export async function POST(req: Request) {
       needs_vehicle: needsVehicle,
       vehicle_type: vehicleMode === "rent" ? "Rental" : vehicleMode === "institutional" ? "University Vehicle" : null,
       needs_rental: vehicleMode === "rent",
+      
+      // Preferred suggestions (faculty can suggest, admin decides)
+      preferred_driver_id: preferredDriverId,
+      preferred_vehicle_id: preferredVehicleId,
       
       status: initialStatus,
       current_approver_role: WorkflowEngine.getApproverRole(initialStatus),
@@ -187,12 +282,35 @@ export async function POST(req: Request) {
 
     if (error) {
       console.error("[/api/requests/submit] Insert failed after retries:", error);
+      
+      // Convert database errors to user-friendly messages
+      let userFriendlyError = "Failed to submit request. Please try again.";
+      
+      if (error.code === '23505') {
+        userFriendlyError = "Failed to generate unique request number. Please try again.";
+      } else if (error.message?.includes('valid_dates')) {
+        userFriendlyError = "Invalid dates: Return date must be on or after departure date. Please check your travel dates.";
+      } else if (error.message?.includes('check constraint')) {
+        // Generic constraint violation
+        if (error.message.includes('budget')) {
+          userFriendlyError = "Invalid budget amount. Please check your expense breakdown.";
+        } else if (error.message.includes('date')) {
+          userFriendlyError = "Invalid dates. Please ensure departure and return dates are valid and in the future.";
+        } else {
+          userFriendlyError = "Invalid data provided. Please check all required fields.";
+        }
+      } else if (error.code === '23503') {
+        // Foreign key violation
+        userFriendlyError = "Invalid department or user information. Please refresh the page and try again.";
+      } else if (error.message?.includes('not null')) {
+        // NOT NULL constraint
+        userFriendlyError = "Missing required information. Please fill in all required fields.";
+      }
+      
       return NextResponse.json({ 
         ok: false, 
-        error: error.code === '23505' 
-          ? "Failed to generate unique request number. Please try again." 
-          : error.message 
-      }, { status: 500 });
+        error: userFriendlyError
+      }, { status: 400 });
     }
 
     if (!data) {
