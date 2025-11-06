@@ -21,6 +21,11 @@ export async function createSupabaseServerClient(useServiceRole = false) {
     console.warn("Supabase key is missing - using placeholder for build");
   }
 
+  // Log what key type we're using for debugging
+  if (useServiceRole) {
+    console.log("[createSupabaseServerClient] Using SERVICE ROLE key");
+  }
+
   // Use placeholders during build, real values at runtime
   const finalUrl = url || "https://placeholder.supabase.co";
   const finalKey = key || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsYWNlaG9sZGVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE2NDUxOTI4MDAsImV4cCI6MTk2MDc2ODgwMH0.placeholder";

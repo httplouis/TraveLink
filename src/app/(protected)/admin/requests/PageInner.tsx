@@ -30,6 +30,7 @@ function normalizeStatus(s: AdminRequest["status"]): RowStatus {
   if (
     s === "pending" ||
     s === "pending_head" ||
+    s === "pending_admin" ||
     s === "admin_received" ||
     s === "head_approved"
   )
@@ -55,16 +56,16 @@ function toRequestRowLocal(req: AdminRequest): RequestRow {
 }
 
 function toRequestRowRemote(r: any): RequestRow {
-  const t = r.payload?.travelOrder ?? {};
+  // New schema: data is directly on request object, not in payload
   return {
     id: r.id,
-    dept: t.department || "",
-    purpose: t.purposeOfTravel || t.purpose || "",
-    requester: t.requestingPerson || "",
-    driver: r.driver || "—",
-    vehicle: r.vehicle || "—",
+    dept: r.department?.name || r.department?.code || "",
+    purpose: r.purpose || "",
+    requester: r.requester?.name || r.requester?.email || "",
+    driver: r.assigned_driver_id || "—",
+    vehicle: r.assigned_vehicle_id || "—",
     date: r.created_at,
-    status: normalizeStatus(r.current_status as any),
+    status: normalizeStatus(r.status as any),
   };
 }
 
@@ -129,16 +130,27 @@ export default function PageInner() {
   }, [loadingRemote]);
 
   // CASE 1: remote SUCCESS
+  // Use JSON stringify of IDs to prevent infinite loop from array reference changes
+  const remoteRequestIds = useMemo(
+    () => JSON.stringify(remoteRequests?.map((r: any) => r.id) || []),
+    [remoteRequests]
+  );
+
   useEffect(() => {
     if (loadingRemote) return;
     if (remoteError) return;
-    if (!remoteRequests) return;
+    if (!remoteRequests || remoteRequests.length === 0) return;
 
+    // TEMP DEBUG: Show ALL requests including pending_head
+    console.log("🔍 Total requests from Supabase:", remoteRequests.length);
+    console.log("🔍 Request statuses:", remoteRequests.map((r: any) => `${r.id.slice(0,8)}: ${r.status}`));
+    
     const list = remoteRequests
-      .filter(
-        (r: any) =>
-          r.current_status !== "pending_head" && r.current_status !== "head_rejected",
-      )
+      // TEMP: Comment out filter to see all requests
+      // .filter(
+      //   (r: any) =>
+      //     r.status !== "pending_head" && r.status !== "head_rejected",
+      // )
       .map((r: any) => toRequestRowRemote(r));
 
     setAllRows(list);
@@ -147,7 +159,8 @@ export default function PageInner() {
     const read = getReadIds();
     const unread = new Set<string>(list.filter((r) => !read.has(r.id)).map((r) => r.id));
     setUnreadIds(unread);
-  }, [loadingRemote, remoteError, remoteRequests]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadingRemote, remoteError, remoteRequestIds]);
 
   // CASE 2: remote FAILED → saka lang mag-local
   useEffect(() => {
@@ -155,8 +168,13 @@ export default function PageInner() {
     if (remoteRequests && !remoteError) return; // may remote, wag na mag-local
 
     const loadLocal = () => {
-      const list = AdminRequestsRepo.list()
-        .filter((r) => r.status !== "pending_head" && r.status !== "head_rejected")
+      console.log("📦 Loading from LocalStorage (fallback)");
+      const allLocal = AdminRequestsRepo.list();
+      console.log("📦 Total localStorage requests:", allLocal.length);
+      
+      const list = allLocal
+        // TEMP: Comment out filter
+        // .filter((r) => r.status !== "pending_head" && r.status !== "head_rejected")
         .map(toRequestRowLocal);
 
       setAllRows(list);
@@ -253,8 +271,114 @@ export default function PageInner() {
   };
 
   const openRow = (r: RequestRow) => {
-    const full = AdminRequestsRepo.get(r.id);
-    if (full) setActiveRow(full);
+    // Try to get from remote (Supabase) first
+    const remoteReq = remoteRequests?.find((req: any) => req.id === r.id);
+    
+    console.log("🔍 Opening row:", r.id);
+    console.log("📡 Remote data found?", !!remoteReq);
+    if (remoteReq) {
+      console.log("✅ Using SUPABASE data for:", remoteReq.requester?.name || remoteReq.requester?.email);
+    }
+    
+    if (remoteReq) {
+      // Transform Supabase data to match AdminRequest format expected by modal
+      const transformed: AdminRequest = {
+        id: remoteReq.id,
+        createdAt: remoteReq.created_at,
+        updatedAt: remoteReq.updated_at,
+        status: remoteReq.status as AdminRequest["status"],
+        department: remoteReq.department?.name || remoteReq.department?.code,
+        departmentCode: remoteReq.department?.code,
+        requesterName: remoteReq.requester?.name || remoteReq.requester?.email,
+        requesterEmail: remoteReq.requester?.email,
+        requestNumber: remoteReq.request_number,
+        driver: remoteReq.assigned_driver_id || '',
+        vehicle: remoteReq.assigned_vehicle_id || '',
+        
+        // Transform request data to travelOrder format
+        travelOrder: {
+          date: remoteReq.travel_start_date?.split('T')[0] || remoteReq.created_at?.split('T')[0] || '',
+          requestingPerson: remoteReq.requester?.name || remoteReq.requester?.email || '',
+          department: remoteReq.department?.name || remoteReq.department?.code || '',
+          destination: remoteReq.destination || '',
+          departureDate: remoteReq.travel_start_date?.split('T')[0] || '',
+          returnDate: remoteReq.travel_end_date?.split('T')[0] || '',
+          purposeOfTravel: remoteReq.purpose || '',
+          
+          // Transform expense_breakdown array to costs object format
+          costs: (() => {
+            const breakdown = remoteReq.expense_breakdown || [];
+            const costs: any = {};
+            
+            // Map items to expected field names
+            breakdown.forEach((item: any) => {
+              const itemName = item.item?.toLowerCase() || '';
+              
+              if (itemName === 'food') costs.food = item.amount;
+              else if (itemName === 'accommodation') costs.accommodation = item.amount;
+              else if (itemName.includes('driver')) costs.driversAllowance = item.amount;
+              else if (itemName.includes('rent') || itemName.includes('vehicle')) costs.rentVehicles = item.amount;
+              else if (itemName === 'other' && item.description) {
+                costs.otherLabel = item.description;
+                costs.otherAmount = item.amount;
+              } else if (itemName !== '') {
+                // Store as other with item name as label
+                costs.otherLabel = item.item;
+                costs.otherAmount = item.amount;
+              }
+            });
+            
+            return costs;
+          })(),
+          
+          // Signatures
+          requesterSignature: remoteReq.requester_signature,
+          endorsedByHeadSignature: remoteReq.head_signature,
+          endorsedByHeadName: remoteReq.head_approver?.name || remoteReq.head_approver?.email || '',
+          endorsedByHeadDate: remoteReq.head_approved_at ? new Date(remoteReq.head_approved_at).toLocaleDateString() : '',
+        } as any,
+        
+        // Seminar data if exists
+        seminar: remoteReq.seminar_details,
+        schoolService: remoteReq.school_service_details,
+        
+        // Store original payload for compatibility
+        payload: remoteReq as any,
+        
+        // Admin approval fields
+        approverSignature: remoteReq.admin_signature || null,
+        approvedAt: remoteReq.admin_approved_at || null,
+        approvedBy: remoteReq.admin_approved_by || null,
+        
+        // Other approval fields
+        comptrollerSignature: remoteReq.comptroller_signature || null,
+        comptrollerAt: remoteReq.comptroller_approved_at || null,
+        comptrollerBy: remoteReq.comptroller_approved_by || null,
+        
+        hrSignature: remoteReq.hr_signature || null,
+        hrAt: remoteReq.hr_approved_at || null,
+        hrBy: remoteReq.hr_approved_by || null,
+        
+        executiveSignature: remoteReq.executive_signature || null,
+        executiveAt: remoteReq.executive_approved_at || null,
+        executiveBy: remoteReq.executive_approved_by || null,
+        
+        tmNote: remoteReq.admin_notes || null,
+      };
+      
+      setActiveRow(transformed);
+    } else {
+      // Fallback to localStorage
+      console.log("⚠️ Using LOCALSTORAGE data (Supabase data not found)");
+      const full = AdminRequestsRepo.get(r.id);
+      if (full) {
+        console.log("📦 LocalStorage data:", full.travelOrder?.requestingPerson || full.requesterName);
+        setActiveRow(full);
+      } else {
+        console.log("❌ No data found in localStorage either");
+      }
+    }
+    
     markOneRead(r.id);
     setOpenDetails(true);
   };
@@ -343,6 +467,22 @@ export default function PageInner() {
       {remoteSettled && remoteError && (
         <div className="rounded-md bg-red-50 px-4 py-2 text-sm text-red-900">
           Failed to load from Supabase. Showing local data.
+        </div>
+      )}
+      
+      {/* Debug: Clear localStorage button */}
+      {remoteRequests && remoteRequests.length > 0 && (
+        <div className="rounded-md bg-blue-50 px-4 py-2 text-sm text-blue-900 flex items-center justify-between">
+          <span>✅ Loaded {remoteRequests.length} requests from Supabase</span>
+          <button
+            onClick={() => {
+              localStorage.clear();
+              toast({ message: "LocalStorage cleared! Refresh to reload from Supabase only.", kind: "success" });
+            }}
+            className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+          >
+            Clear LocalStorage
+          </button>
         </div>
       )}
 

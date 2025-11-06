@@ -11,6 +11,8 @@ type Props = {
   onChangeCosts: (patch: any) => void;
   errors: Record<string, string>;
   vehicleMode: VehicleMode;
+  isHeadRequester?: boolean;
+  currentUserName?: string;
 };
 
 export default function TravelOrderForm({
@@ -19,6 +21,8 @@ export default function TravelOrderForm({
   onChangeCosts,
   errors,
   vehicleMode,
+  isHeadRequester,
+  currentUserName,
 }: Props) {
   const c = data?.costs || {};
   const needsJustif =
@@ -53,6 +57,8 @@ export default function TravelOrderForm({
       setHeadEdited={() => {
         headEditedRef.current = true;
       }}
+      isHeadRequester={isHeadRequester}
+      currentUserName={currentUserName}
       // No footerRight - submission handled by SubmitBar at bottom
     />
   );

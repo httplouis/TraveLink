@@ -119,3 +119,13 @@ input[type="date"]:required:invalid::-webkit-datetime-edit {
 input[type="date"]::-webkit-calendar-picker-indicator {
   opacity: 0.9;
 }
+
+/* Skeleton loading animation */
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}

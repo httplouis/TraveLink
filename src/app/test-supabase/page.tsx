@@ -53,7 +53,7 @@ export default function TestSupabasePage() {
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">🚀 Supabase Users Test</h1>
+      <h1 className="text-2xl font-bold mb-4">Supabase Users Test</h1>
 
       {/* ADD USER FORM */}
       <form onSubmit={handleAddUser} className="space-y-3 mb-6">

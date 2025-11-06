@@ -74,8 +74,8 @@ export default function DepartmentSelect({
   const showClear = !!q;
 
   return (
-    <label className={`grid gap-1 ${className}`}>
-      <span className="text-xs font-medium text-neutral-700">
+    <label className={`grid w-full gap-1 ${className}`}>
+      <span className="text-[13px] font-medium text-neutral-700">
         {label} {required ? <span className="text-red-500">*</span> : null}
       </span>
 
@@ -94,7 +94,7 @@ export default function DepartmentSelect({
           onFocus={() => setOpen(true)}
           onBlur={closeSoon}
           onKeyDown={onKeyDown}
-          className="h-10 w-full rounded-md border border-neutral-300 bg-white px-3 pr-10 text-sm outline-none focus:ring-2 focus:ring-neutral-200"
+          className="h-10 w-full rounded-xl border border-neutral-300 bg-white px-3 pr-10 text-sm outline-none transition focus:border-neutral-400 focus:ring-2 focus:ring-neutral-200"
         />
 
         {/* Clear (×) — borderless, centered, clear hover affordance */}

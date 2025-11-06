@@ -4,7 +4,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = await createSupabaseServerClient(true);
@@ -14,7 +14,7 @@ export async function GET(
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const requestId = params.id;
+    const { id: requestId } = await params;
 
     if (!requestId) {
       return NextResponse.json({ ok: false, error: "Missing request ID" }, { status: 400 });

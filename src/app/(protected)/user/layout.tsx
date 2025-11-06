@@ -4,6 +4,7 @@
 import React from "react";
 import TopBar from "@/components/user/nav/TopBar";
 import UserLeftNav from "@/components/user/nav/UserLeftNav";
+import PageTitle from "@/components/common/PageTitle";
 import "leaflet/dist/leaflet.css";
 
 // Keep Toasts at this level
@@ -14,6 +15,7 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <ToastProvider>
+      <PageTitle title="TraviLink | Faculty" />
       <div
         className="bg-[var(--background)] text-[var(--foreground)]"
         style={{ ["--topbar-h" as any]: topbarH }}

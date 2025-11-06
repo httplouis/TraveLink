@@ -18,23 +18,82 @@ const seed: AdminProfile = {
   updatedAt: new Date().toISOString(),
 };
 
-export async function getProfile(): Promise<AdminProfile> {
-  const raw = typeof window !== "undefined" ? localStorage.getItem(KEY) : null;
-  if (!raw) {
-    localStorage.setItem(KEY, JSON.stringify(seed));
+function cacheProfile(profile: AdminProfile) {
+  if (typeof window !== "undefined") {
+    localStorage.setItem(KEY, JSON.stringify(profile));
+  }
+}
+
+function getCachedProfile(): AdminProfile {
+  if (typeof window === "undefined") return seed;
+  try {
+    const raw = localStorage.getItem(KEY);
+    return raw ? (JSON.parse(raw) as AdminProfile) : seed;
+  } catch {
     return seed;
   }
-  return JSON.parse(raw) as AdminProfile;
+}
+
+export async function getProfile(): Promise<AdminProfile> {
+  try {
+    // Fetch from API
+    const response = await fetch('/api/profile');
+    const result = await response.json();
+    
+    if (result.ok && result.data) {
+      const profile: AdminProfile = {
+        id: result.data.id || seed.id,
+        role: result.data.role || 'Admin',
+        firstName: result.data.firstName || seed.firstName,
+        lastName: result.data.lastName || seed.lastName,
+        email: result.data.email || seed.email,
+        phone: result.data.phone || seed.phone,
+        department: result.data.department || seed.department,
+        avatarUrl: result.data.avatarUrl || "",
+        createdAt: result.data.joinedAt || seed.createdAt,
+        updatedAt: new Date().toISOString(),
+      };
+      
+      cacheProfile(profile);
+      return profile;
+    }
+  } catch (error) {
+    console.error('[AdminProfile] Load failed:', error);
+  }
+  
+  // Fallback to cache
+  return getCachedProfile();
 }
 
 export async function updateProfile(patch: Partial<AdminProfile>): Promise<AdminProfile> {
-  const current = await getProfile();
+  try {
+    // Update via API
+    const response = await fetch('/api/profile', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    
+    const result = await response.json();
+    
+    if (result.ok) {
+      const current = await getProfile();
+      const next: AdminProfile = { ...current, ...patch, updatedAt: new Date().toISOString() };
+      cacheProfile(next);
+      return next;
+    }
+  } catch (error) {
+    console.error('[AdminProfile] Update failed:', error);
+  }
+  
+  // Fallback to local
+  const current = getCachedProfile();
   const next: AdminProfile = { ...current, ...patch, updatedAt: new Date().toISOString() };
-  localStorage.setItem(KEY, JSON.stringify(next));
+  cacheProfile(next);
   return next;
 }
 
 export async function resetProfile(): Promise<AdminProfile> {
-  localStorage.setItem(KEY, JSON.stringify(seed));
+  cacheProfile(seed);
   return seed;
 }

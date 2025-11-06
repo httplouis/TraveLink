@@ -26,12 +26,14 @@ import {
   clearAutosave,
 } from "@/lib/user/request/persist";
 import { useConfirm } from "@/components/common/hooks/useConfirm";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 import {
   QuickFillCurrentButton,
   QuickFillMenu,
 } from "@/components/user/request/dev/QuickFillButton.ui";
 import SuccessModal from "@/components/user/request/SuccessModal";
+import SubmitConfirmationDialog from "@/components/user/request/SubmitConfirmationDialog";
 
 // Admin list sink (mock inbox)
 import { AdminRequestsRepo } from "@/lib/admin/requests/store";
@@ -40,6 +42,7 @@ function RequestWizardContent() {
   const search = useSearchParams();
   const toast = useToast();
   const { ask, ui: confirmUI } = useConfirm();
+  const { user: currentUser, loading: userLoading } = useCurrentUser();
 
   const {
     data,
@@ -154,6 +157,16 @@ function RequestWizardContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Pre-fill requesting person with current user's name - ALWAYS update when user loads
+  React.useEffect(() => {
+    if (currentUser && currentUser.name) {
+      // Only update if empty OR different from current user
+      if (!data.travelOrder?.requestingPerson || data.travelOrder.requestingPerson !== currentUser.name) {
+        patchTravelOrder({ requestingPerson: currentUser.name });
+      }
+    }
+  }, [currentUser]);
+
   // autosave on change (debounced)
   React.useEffect(() => {
     const id = setTimeout(() => saveAutosave(data), 400);
@@ -240,7 +253,6 @@ function RequestWizardContent() {
       "travelOrder.costs.justification": "to-justification",
       "schoolService.driver": "ss-driver",
       "schoolService.vehicle": "ss-vehicle",
-      "schoolService.vehicleDispatcherDate": "ss-dispatcher-date",
       "seminar.applicationDate": "sem-applicationDate",
       "seminar.title": "sem-title",
       "seminar.dateFrom": "sem-dateFrom",
@@ -260,6 +272,7 @@ function RequestWizardContent() {
 
   const [showSuccessModal, setShowSuccessModal] = React.useState(false);
   const [submittedData, setSubmittedData] = React.useState<any>(null);
+  const [showConfirmDialog, setShowConfirmDialog] = React.useState(false);
 
   async function handleSubmit() {
     // library validation
@@ -279,9 +292,18 @@ function RequestWizardContent() {
       return;
     }
 
+    // Show confirmation dialog instead of submitting immediately
+    setShowConfirmDialog(true);
+  }
+
+  async function handleConfirmedSubmit() {
+    setShowConfirmDialog(false);
     setSubmitting(true);
     try {
       // Call real API
+      console.log("[Submit] Full form data:", data);
+      console.log("[Submit] School Service:", data.schoolService);
+      
       const response = await fetch("/api/requests/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -289,6 +311,8 @@ function RequestWizardContent() {
           travelOrder: data.travelOrder,
           reason: data.reason,
           vehicleMode: data.vehicleMode,
+          schoolService: data.schoolService, // ✅ NOW INCLUDED!
+          seminar: data.seminar,
         }),
       });
 
@@ -373,6 +397,8 @@ function RequestWizardContent() {
             onChangeCosts={onChangeCosts}
             errors={errors}
             vehicleMode={data.vehicleMode}
+            isHeadRequester={currentUser?.role === "head"}
+            currentUserName={currentUser?.name}
           />
 
           {showSchoolService && (
@@ -399,6 +425,8 @@ function RequestWizardContent() {
             onSubmit={handleSubmit}
             headName={data.travelOrder?.endorsedByHeadName}
             department={data.travelOrder?.department}
+            isHeadRequester={currentUser?.role === "head"}
+            vehicleMode={data.vehicleMode}
           />
         </div>
 
@@ -413,6 +441,25 @@ function RequestWizardContent() {
       </div>
 
       {confirmUI}
+
+      {/* Confirmation Dialog */}
+      <SubmitConfirmationDialog
+        isOpen={showConfirmDialog}
+        onClose={() => setShowConfirmDialog(false)}
+        onConfirm={handleConfirmedSubmit}
+        requesterName={data.travelOrder?.requestingPerson || ""}
+        department={data.travelOrder?.department || ""}
+        purpose={data.travelOrder?.purposeOfTravel || ""}
+        destination={data.travelOrder?.destination || ""}
+        travelDate={data.travelOrder?.departureDate || ""}
+        returnDate={data.travelOrder?.returnDate || ""}
+        approvalPath={fullApprovalPath({
+          requesterRole: data.requesterRole,
+          vehicleMode: data.vehicleMode,
+        })}
+        firstReceiver={firstHop}
+        isSubmitting={submitting}
+      />
     </>
   );
 }

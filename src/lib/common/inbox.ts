@@ -1,22 +1,21 @@
-// Simple localStorage "inbox" used by both User and Admin.
-// Switch this to Supabase later without changing call sites.
+// Inbox/Notifications using database API
 
 export type InboxItem = {
-  id: string;             // e.g., "RQ-2025-0001"
-  createdAt: string;      // ISO
-  unread: boolean;        // drives badges
-  // Minimal fields Admin table needs; add more as you like:
+  id: string;
+  createdAt: string;
+  unread: boolean;
   dept: string;
   purpose: string;
   requester?: string | null;
   vehicle?: string | null;
-  date: string;           // yyyy-mm-dd (request date)
-  status: "Pending";      // new submissions are pending
+  date: string;
+  status: "Pending";
 };
 
 const KEY = "travilink_requests_inbox";
 
-function read(): InboxItem[] {
+function loadCache(): InboxItem[] {
+  if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(KEY);
     return raw ? (JSON.parse(raw) as InboxItem[]) : [];
@@ -25,40 +24,124 @@ function read(): InboxItem[] {
   }
 }
 
-function write(items: InboxItem[]) {
-  localStorage.setItem(KEY, JSON.stringify(items));
-  // let other tabs (Admin/User) react
-  window.dispatchEvent(new StorageEvent("storage", { key: KEY }));
+function saveCache(items: InboxItem[]) {
+  if (typeof window !== "undefined") {
+    localStorage.setItem(KEY, JSON.stringify(items));
+    window.dispatchEvent(new StorageEvent("storage", { key: KEY }));
+  }
 }
 
-export function inboxCount(): number {
-  return read().filter((i) => i.unread).length;
+export async function inboxCount(): Promise<number> {
+  try {
+    // Get unread notifications count
+    const response = await fetch('/api/notifications?unread=true&limit=100');
+    const result = await response.json();
+    
+    if (result.ok && result.data) {
+      return result.data.length;
+    }
+  } catch (error) {
+    console.error('[Inbox] Count failed:', error);
+  }
+  
+  // Fallback to cache
+  return loadCache().filter((i) => i.unread).length;
 }
 
-export function addToInbox(item: Omit<InboxItem, "id" | "createdAt" | "unread" | "status"> & { id?: string }) {
-  const items = read();
+export async function addToInbox(item: Omit<InboxItem, "id" | "createdAt" | "unread" | "status"> & { id?: string, userId?: string }) {
   const id = item.id ?? `RQ-${Date.now()}`;
+  
+  try {
+    // Create notification in database
+    await fetch('/api/notifications', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: item.userId,
+        notification_type: 'new_request',
+        title: 'New Request',
+        message: `New request from ${item.dept}: ${item.purpose}`,
+        related_type: 'request',
+        related_id: id,
+        priority: 'normal',
+      }),
+    });
+  } catch (error) {
+    console.error('[Inbox] Add notification failed:', error);
+  }
+  
+  // Also update local cache
+  const items = loadCache();
   items.unshift({ ...item, id, createdAt: new Date().toISOString(), unread: true, status: "Pending" });
-  write(items);
+  saveCache(items);
+  
   return id;
 }
 
-export function peekAll(): InboxItem[] {
-  return read();
+export async function peekAll(): Promise<InboxItem[]> {
+  try {
+    // Fetch from API
+    const response = await fetch('/api/notifications?limit=50');
+    const result = await response.json();
+    
+    if (result.ok && result.data) {
+      // Transform to InboxItem format
+      const items: InboxItem[] = result.data.map((n: any) => ({
+        id: n.related_id || n.id,
+        createdAt: n.created_at,
+        unread: !n.is_read,
+        dept: 'N/A',
+        purpose: n.message,
+        requester: null,
+        vehicle: null,
+        date: n.created_at.split('T')[0],
+        status: "Pending" as const,
+      }));
+      
+      saveCache(items);
+      return items;
+    }
+  } catch (error) {
+    console.error('[Inbox] Fetch failed:', error);
+  }
+  
+  // Fallback to cache
+  return loadCache();
 }
 
-export function takeAll(): InboxItem[] {
-  const items = read();
-  write(items); // no-op, keeps unread
-  return items;
+export async function takeAll(): Promise<InboxItem[]> {
+  return peekAll();
 }
 
-export function markRead(ids: string[]) {
+export async function markRead(ids: string[]): Promise<void> {
   if (!ids.length) return;
-  const items = read().map(i => (ids.includes(i.id) ? { ...i, unread: false } : i));
-  write(items);
+  
+  try {
+    // Mark as read in API
+    await fetch('/api/notifications', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ids,
+        is_read: true,
+      }),
+    });
+  } catch (error) {
+    console.error('[Inbox] Mark read failed:', error);
+  }
+  
+  // Update cache
+  const items = loadCache().map(i => (ids.includes(i.id) ? { ...i, unread: false } : i));
+  saveCache(items);
 }
 
-export function clearInbox() {
-  write([]);
+export async function clearInbox(): Promise<void> {
+  try {
+    // This would delete all read notifications
+    // Implementation depends on your needs
+  } catch (error) {
+    console.error('[Inbox] Clear failed:', error);
+  }
+  
+  saveCache([]);
 }

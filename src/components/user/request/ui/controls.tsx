@@ -210,3 +210,51 @@ export function CurrencyInput({
     </FieldWrap>
   );
 }
+
+type SelectInputProps = Omit<BaseProps, "onChange"> & {
+  options: { value: string; label: string }[];
+  onChange?: (e: React.ChangeEvent<HTMLSelectElement>) => void;
+};
+
+export function SelectInput({
+  id,
+  label,
+  placeholder,
+  value,
+  onChange,
+  error,
+  required,
+  helper,
+  className,
+  disabled,
+  options,
+}: SelectInputProps) {
+  return (
+    <FieldWrap label={label} error={error} helper={helper} required={required}>
+      <select
+        id={id}
+        className={clsx(
+          "h-10 w-full rounded-xl border bg-white px-3 text-sm outline-none",
+          error
+            ? "border-rose-500 ring-2 ring-rose-100"
+            : "border-neutral-300 focus:border-neutral-400 focus:ring-2 focus:ring-neutral-200",
+          disabled && "bg-neutral-100 text-neutral-500",
+          !value && "text-neutral-400",
+          className
+        )}
+        value={value ?? ""}
+        onChange={onChange as any}
+        disabled={disabled}
+      >
+        <option value="" disabled>
+          {placeholder || "Select an option"}
+        </option>
+        {options.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    </FieldWrap>
+  );
+}

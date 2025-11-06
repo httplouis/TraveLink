@@ -112,8 +112,20 @@ export default function SignaturePad({
 
   // Preload existing signature if any
   React.useEffect(() => {
-    if (value) drawImageToCanvas(value);
-    else if (initialImage) drawImageToCanvas(initialImage);
+    if (value) {
+      drawImageToCanvas(value);
+    } else if (initialImage) {
+      drawImageToCanvas(initialImage);
+    } else {
+      // Clear canvas when no signature
+      const ctx = ctxRef.current;
+      const wrapper = wrapperRef.current;
+      if (ctx && wrapper) {
+        const rect = wrapper.getBoundingClientRect();
+        ctx.clearRect(0, 0, rect.width, rect.height);
+        drewOnceRef.current = false; // Reset draw state
+      }
+    }
   }, [value, initialImage, drawImageToCanvas]);
 
   // Pointer utilities

@@ -162,6 +162,12 @@ export async function PATCH(req: Request) {
         updateData.parent_head_comments = comments;
       }
 
+      console.log(`[PATCH /api/head] Updating request with:`, {
+        id,
+        updateData,
+        profile_id: profile.id
+      });
+
       const { error: updateError } = await supabase
         .from("requests")
         .update(updateData)
@@ -171,6 +177,14 @@ export async function PATCH(req: Request) {
         console.error("[PATCH /api/head] Update error:", updateError);
         return NextResponse.json({ ok: false, error: updateError.message }, { status: 500 });
       }
+      
+      // Verify the update
+      const { data: verifyData } = await supabase
+        .from("requests")
+        .select("id, status, head_approved_by, parent_head_approved_by")
+        .eq("id", id)
+        .single();
+      console.log(`[PATCH /api/head] Verification after update:`, verifyData);
 
       // Log in history
       await supabase.from("request_history").insert({

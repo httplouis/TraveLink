@@ -1,5 +1,7 @@
 "use client";
 
+import { Send, AlertTriangle, Lightbulb } from "lucide-react";
+
 export default function SubmitBar({
   invalid,
   saving,
@@ -8,6 +10,8 @@ export default function SubmitBar({
   onSubmit,
   headName,
   department,
+  isHeadRequester,
+  vehicleMode,
 }: {
   invalid: boolean;
   saving: boolean;
@@ -16,23 +20,45 @@ export default function SubmitBar({
   onSubmit: () => void;
   headName?: string;
   department?: string;
+  isHeadRequester?: boolean;
+  vehicleMode?: "owned" | "institutional" | "rent";
 }) {
+  // Determine button text based on role
+  const submitButtonText = isHeadRequester 
+    ? (vehicleMode === "institutional" ? "Send to Transport Manager" : "Send to Comptroller")
+    : "Send to Department Head";
+  
+  // Determine helper text
+  const helperRecipient = isHeadRequester
+    ? (vehicleMode === "institutional" ? "Transport Manager" : "Comptroller")
+    : "your department head";
+  
   return (
     <div className="sticky bottom-3 z-30 mt-2 flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-lg">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-semibold text-gray-900">Ready to submit?</p>
-          {headName && department ? (
-            <p className="text-xs text-gray-500">
-              📩 Will be sent to: <span className="font-medium text-[#7A0010]">{headName}</span> ({department})
+          {isHeadRequester ? (
+            <p className="flex items-center gap-1.5 text-xs text-gray-500">
+              <Send className="h-3.5 w-3.5" />
+              Your request will be sent to {helperRecipient}
+            </p>
+          ) : headName && department ? (
+            <p className="flex items-center gap-1.5 text-xs text-gray-500">
+              <Send className="h-3.5 w-3.5" />
+              Will be sent to: <span className="font-medium text-[#7A0010]">{headName}</span> ({department})
             </p>
           ) : (
-            <p className="text-xs text-gray-500">Your request will be sent to your department head</p>
+            <p className="flex items-center gap-1.5 text-xs text-gray-500">
+              <Send className="h-3.5 w-3.5" />
+              Your request will be sent to your department head
+            </p>
           )}
         </div>
         {invalid && (
-          <span className="rounded-md bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
-            ⚠️ Review fields
+          <span className="flex items-center gap-1.5 rounded-md bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            Review fields
           </span>
         )}
       </div>
@@ -73,14 +99,15 @@ export default function SubmitBar({
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
               </svg>
-              Send to Department Head
+              {submitButtonText}
             </span>
           )}
         </button>
       </div>
       
-      <p className="text-center text-xs text-gray-400">
-        💡 Tip: Save as draft if you need to continue later
+      <p className="flex items-center justify-center gap-1.5 text-center text-xs text-gray-400">
+        <Lightbulb className="h-3.5 w-3.5" />
+        Tip: Save as draft if you need to continue later
       </p>
     </div>
   );

@@ -49,6 +49,7 @@ export default function LoginView({
         <form
   onSubmit={onSubmit}
   className="w-full max-w-6xl grid grid-cols-1 md:grid-cols-2 rounded-3xl shadow-2xl bg-white overflow-hidden"
+  suppressHydrationWarning
 >
   {/* LEFT: image panel */}
   <div className="relative hidden md:block overflow-hidden rounded-l-3xl group">
@@ -113,6 +114,7 @@ export default function LoginView({
                   placeholder="you@mseuf.edu.ph"
                   required
                   className="h-12 w-full rounded-md border border-gray-300 pl-10 pr-3 text-gray-900 placeholder-gray-400 shadow-sm outline-none focus:border-[#7A0010] focus:ring-2 focus:ring-[#7A0010]/20"
+                  suppressHydrationWarning
                 />
               </div>
             </div>
@@ -135,12 +137,14 @@ export default function LoginView({
                   placeholder="••••••••"
                   required
                   className="h-12 w-full rounded-md border border-gray-300 pl-10 pr-10 text-gray-900 placeholder-gray-400 shadow-sm outline-none focus:border-[#7A0010] focus:ring-2 focus:ring-[#7A0010]/20"
+                  suppressHydrationWarning
                 />
                 <button
                   type="button"
                   onClick={() => setShowPw((v) => !v)}
                   aria-label={showPw ? "Hide password" : "Show password"}
                   className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-2 py-1 text-gray-500 hover:bg-gray-100"
+                  suppressHydrationWarning
                 >
                   {showPw ? (
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
@@ -177,6 +181,7 @@ export default function LoginView({
               type="submit"
               disabled={loading}
               className="h-12 w-full rounded-md bg-[#7A0010] text-white font-semibold shadow-md transition hover:bg-[#69000d] disabled:opacity-60"
+              suppressHydrationWarning
             >
               {loading ? "Signing in..." : "Login"}
             </button>

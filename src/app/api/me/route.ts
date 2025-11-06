@@ -17,10 +17,18 @@ export async function GET(request: NextRequest) {
             return cookieStore.get(name)?.value;
           },
           set(name: string, value: string, options: any) {
-            // Not needed for GET requests
+            try {
+              cookieStore.set({ name, value, ...options });
+            } catch (error) {
+              // Handle cookie setting errors silently
+            }
           },
           remove(name: string, options: any) {
-            // Not needed for GET requests
+            try {
+              cookieStore.set({ name, value: '', ...options });
+            } catch (error) {
+              // Handle cookie removal errors silently
+            }
           },
         },
       }
