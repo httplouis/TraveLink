@@ -25,6 +25,11 @@ function loadFromCache(): MaintRecord[] {
 }
 
 export const MaintRepo = {
+  // Synchronous method to get local cache (for SSR/build time)
+  listLocal(): MaintRecord[] {
+    return loadFromCache();
+  },
+
   async list(): Promise<MaintRecord[]> {
     try {
       const response = await fetch('/api/maintenance?limit=100');
