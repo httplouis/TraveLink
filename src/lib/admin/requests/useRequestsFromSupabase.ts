@@ -85,10 +85,10 @@ export function useRequestsFromSupabase() {
     "/api/requests/list",
     fetcher,
     {
-      refreshInterval: 30000, // Reduced: Auto-refresh every 30 seconds (was 10s)
-      revalidateOnFocus: false, // Disabled: Don't auto-refresh on focus (real-time handles it)
+      refreshInterval: 10000, // Auto-refresh every 10 seconds for backup
+      revalidateOnFocus: true, // Re-fetch when window gains focus
       revalidateOnReconnect: true, // Refresh when internet reconnects
-      dedupingInterval: 5000, // Prevent duplicate requests within 5 seconds
+      dedupingInterval: 2000, // Prevent duplicate requests within 2 seconds
       errorRetryCount: 2, // Only retry twice on error
       errorRetryInterval: 3000, // Wait 3 seconds between retries
     }
@@ -119,12 +119,12 @@ export function useRequestsFromSupabase() {
         (payload) => {
           console.log("[useRequestsFromSupabase] Real-time change detected:", payload);
           
-          // Debounce: only trigger refetch after 1 second of no changes
+          // Debounce: only trigger refetch after 500ms of no changes for faster updates
           if (mutateTimeout) clearTimeout(mutateTimeout);
           mutateTimeout = setTimeout(() => {
             console.log("[useRequestsFromSupabase] Triggering refetch after debounce");
             mutate();
-          }, 1000);
+          }, 500);
         }
       )
       .subscribe((status) => {

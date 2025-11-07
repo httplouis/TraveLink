@@ -206,7 +206,7 @@ export default function PageInner() {
     };
 
     loadLocal();
-    const id = setInterval(loadLocal, 5000); // Reduced frequency: every 5 seconds (was 1.5s)
+    const id = setInterval(loadLocal, 3000); // Poll every 3 seconds for faster updates
     return () => clearInterval(id);
   }, [remoteSettled, remoteRequests, remoteError]);
 
