@@ -291,8 +291,9 @@ export async function POST(req: Request) {
       needs_rental: vehicleMode === "rent",
       
       // Preferred suggestions (faculty can suggest, admin decides)
-      preferred_driver_id: preferredDriverId,
-      preferred_vehicle_id: preferredVehicleId,
+      // Only include if they have values to avoid undefined in DB
+      ...(preferredDriverId ? { preferred_driver_id: preferredDriverId } : {}),
+      ...(preferredVehicleId ? { preferred_vehicle_id: preferredVehicleId } : {}),
       
       status: initialStatus,
       current_approver_role: WorkflowEngine.getApproverRole(initialStatus),
