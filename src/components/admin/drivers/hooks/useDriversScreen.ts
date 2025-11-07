@@ -18,10 +18,10 @@ export function useDriversScreen() {
   const [selection, setSelection] = React.useState<string[]>([]);
   const [form, setForm] = React.useState<FormState>(null);
 
-  const [rows, setRows] = React.useState<Driver[]>(() => DriversRepo.list({}));
+  const [rows, setRows] = React.useState<Driver[]>(() => DriversRepo.listLocal({}));
 
   const refresh = React.useCallback(() => {
-    const base = DriversRepo.list(filters);
+    const base = DriversRepo.listLocal(filters);
     setRows(applyTab(base, tab));
   }, [filters, tab]);
 
