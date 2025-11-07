@@ -57,6 +57,11 @@ export const DriversRepo = {
     licenseClasses: ["A", "B", "C", "D", "E"] as readonly LicenseClass[],
   },
 
+  // Synchronous method to get local db (for SSR/build time)
+  listLocal(filters: DriverFilters = {}) {
+    return db.filter(d => matches(d, filters));
+  },
+
   async list(filters: DriverFilters = {}) {
     // NOW USES API! Fetch from database
     try {

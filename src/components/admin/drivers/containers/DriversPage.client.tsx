@@ -92,7 +92,7 @@ export default function DriversPageClient() {
 
   // counts for header tabs (derive once per rows refresh)
   const counts = React.useMemo(() => {
-    const list = DriversRepo.list({});
+    const list = DriversRepo.listLocal({});
     const all = list.length;
     const available = list.filter((d) => d.status === "active" && !d.assignedVehicleId).length;
     const on_trip = list.filter((d) => d.status === "on_trip").length;
