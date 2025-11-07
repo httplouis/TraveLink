@@ -98,7 +98,14 @@ export default function SubmissionsView() {
       const res = await fetch(`/api/requests/${request.id}`);
       const json = await res.json();
       
+      console.log("[SubmissionsView] Fetched request details:", json);
+      
       if (json.ok) {
+        console.log("[SubmissionsView] Full request data:", json.data);
+        console.log("[SubmissionsView] Preferred driver ID:", json.data.preferred_driver_id);
+        console.log("[SubmissionsView] Preferred driver name:", json.data.preferred_driver_name);
+        console.log("[SubmissionsView] Preferred vehicle ID:", json.data.preferred_vehicle_id);
+        console.log("[SubmissionsView] Preferred vehicle name:", json.data.preferred_vehicle_name);
         setFullRequestData(json.data);
       }
     } catch (err) {
@@ -484,27 +491,40 @@ export default function SubmissionsView() {
                   )}
 
                   {/* Service Preferences */}
-                  {fullRequestData && (fullRequestData.preferred_driver_id || fullRequestData.preferred_vehicle_id) && (
+                  {fullRequestData && (
                     <div className="border-t pt-4">
                       <label className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 block">Service Preferences</label>
                       <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
                         <div className="text-xs text-gray-600 mb-3">Suggestions from requester (Admin will make final assignment)</div>
-                        <div className="space-y-2">
-                          {fullRequestData.preferred_driver_id && (
-                            <div className="flex items-center gap-2 text-sm">
-                              <User className="h-4 w-4 text-blue-600" />
-                              <span className="text-gray-700">Preferred Driver: <span className="font-medium">{fullRequestData.preferred_driver_name || 'Loading...'}</span></span>
+                        
+                        {(fullRequestData.preferred_driver_id || fullRequestData.preferred_vehicle_id) ? (
+                          <div className="space-y-2">
+                            {fullRequestData.preferred_driver_id && (
+                              <div className="flex items-center gap-2 text-sm">
+                                <User className="h-4 w-4 text-blue-600" />
+                                <span className="text-gray-700">Preferred Driver: <span className="font-medium">{fullRequestData.preferred_driver_name || 'Loading...'}</span></span>
+                              </div>
+                            )}
+                            {fullRequestData.preferred_vehicle_id && (
+                              <div className="flex items-center gap-2 text-sm">
+                                <svg className="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <span className="text-gray-700">Preferred Vehicle: <span className="font-medium">{fullRequestData.preferred_vehicle_name || 'Loading...'}</span></span>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 py-2 text-gray-500">
+                            <svg className="h-10 w-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                            </svg>
+                            <div>
+                              <div className="text-sm font-medium text-gray-600">No driver or vehicle preferences</div>
+                              <div className="text-xs text-gray-500">Admin will assign resources</div>
                             </div>
-                          )}
-                          {fullRequestData.preferred_vehicle_id && (
-                            <div className="flex items-center gap-2 text-sm">
-                              <svg className="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                              <span className="text-gray-700">Preferred Vehicle: <span className="font-medium">{fullRequestData.preferred_vehicle_name || 'Loading...'}</span></span>
-                            </div>
-                          )}
-                        </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}

@@ -218,13 +218,16 @@ export default function SignaturePad({
 
   // Public actions
   function clear() {
+    // Clear canvas immediately for instant feedback
     const ctx = ctxRef.current;
     const wrapper = wrapperRef.current;
-    if (!ctx || !wrapper) return;
-    const rect = wrapper.getBoundingClientRect();
-    ctx.clearRect(0, 0, rect.width, rect.height);
-    onClear?.();
+    if (ctx && wrapper) {
+      const rect = wrapper.getBoundingClientRect();
+      ctx.clearRect(0, 0, rect.width, rect.height);
+    }
     drewOnceRef.current = false;
+    // Also notify parent to update state
+    onClear?.();
   }
 
   function onFilePicked(e: React.ChangeEvent<HTMLInputElement>) {

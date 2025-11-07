@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     const userRole = profile.role?.toLowerCase() || "faculty";
     const userEmail = data.user.email?.toLowerCase() || "";
     
-    const adminEmails = ["admin@mseuf.edu.ph", "admin.cleofe@mseuf.edu.ph"];
+    const adminEmails = ["admin@mseuf.edu.ph", "admin.cleofe@mseuf.edu.ph", "casinotrizzia@mseuf.edu.ph"];
     const isAdmin = userRole === "admin" || adminEmails.includes(userEmail);
     const isHead = userRole === "head" || profile.is_head === true;
     const isHR = userRole === "hr" || profile.is_hr === true;

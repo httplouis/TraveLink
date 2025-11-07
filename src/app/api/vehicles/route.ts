@@ -41,6 +41,8 @@ export async function GET(request: Request) {
     const vehicles = data?.map((v: any) => ({
       id: v.id,
       name: v.vehicle_name,  // Map vehicle_name to name
+      label: v.vehicle_name,  // Also provide as label for consistency
+      vehicle_name: v.vehicle_name,  // Keep original
       plate_number: v.plate_number,
       type: v.type,
       capacity: v.capacity,

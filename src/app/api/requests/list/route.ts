@@ -22,7 +22,10 @@ export async function GET(request: NextRequest) {
         *,
         requester:users!requester_id(id, name, email),
         department:departments!department_id(id, name, code),
-        head_approver:users!head_approved_by(id, name, email)
+        head_approver:users!head_approved_by(id, name, email),
+        admin_approver:users!admin_approved_by(id, name, email),
+        preferred_driver:users!preferred_driver_id(id, name, email),
+        preferred_vehicle:vehicles!preferred_vehicle_id(id, vehicle_name, plate_number, type)
       `)
       .order("created_at", { ascending: false });
 
@@ -81,6 +84,22 @@ export async function GET(request: NextRequest) {
       console.log("  - Head:", data[0].head_approver?.name || data[0].head_approver?.email);
       console.log("  - Total budget:", data[0].total_budget);
       console.log("  - Expense breakdown items:", data[0].expense_breakdown?.length || 0);
+      console.log("  - Preferred driver:", data[0].preferred_driver);
+      console.log("  - Preferred vehicle:", data[0].preferred_vehicle);
+    }
+
+    // Add preferred names as flat fields for easier access
+    if (data) {
+      data.forEach((request: any) => {
+        // Add driver name as flat field
+        if (request.preferred_driver) {
+          request.preferred_driver_name = request.preferred_driver.name;
+        }
+        // Add vehicle name as flat field
+        if (request.preferred_vehicle) {
+          request.preferred_vehicle_name = `${request.preferred_vehicle.vehicle_name} • ${request.preferred_vehicle.plate_number}`;
+        }
+      });
     }
 
     // Return just the data array
