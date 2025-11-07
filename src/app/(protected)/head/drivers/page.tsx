@@ -11,18 +11,18 @@ export default function HeadDriversPage() {
   const [status, setStatus] = React.useState<"" | DriverStatus>("");
   const [license, setLicense] = React.useState<"" | LicenseClass>("");
 
-  const [rows, setRows] = React.useState(() => DriversRepo.list({}));
+  const [rows, setRows] = React.useState(() => DriversRepo.listLocal({}));
 
   // initial load
   React.useEffect(() => {
     DriversRepo.hydrateFromStorage();
-    setRows(DriversRepo.list({}));
+    setRows(DriversRepo.listLocal({}));
   }, []);
 
   // apply filters — map "" -> undefined so types match the repo input
   React.useEffect(() => {
     setRows(
-      DriversRepo.list({
+      DriversRepo.listLocal({
         search: q || undefined,
         status: (status || undefined) as DriverStatus | undefined,
         licenseClass: (license || undefined) as LicenseClass | undefined,
