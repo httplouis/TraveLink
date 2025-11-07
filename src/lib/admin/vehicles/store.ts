@@ -51,6 +51,11 @@ export const VehiclesRepo = {
     statuses: ["active", "maintenance", "inactive"] as readonly VehicleStatus[],
   },
 
+  // Synchronous method to get local db (for SSR/build time)
+  listLocal(filters: VehicleFilters = {}) {
+    return db.filter(v => matches(v, filters));
+  },
+
   async list(filters: VehicleFilters = {}) {
     // NOW USES API! Fetch from database
     try {

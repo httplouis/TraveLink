@@ -70,7 +70,7 @@ export default function MaintenancePage() {
   }
 
   function seed() {
-    const has = MaintRepo.list().length > 0;
+    const has = MaintRepo.listLocal().length > 0;
     if (has && !confirm("Replace existing local data with demo records?")) return;
     const demo = buildDemoRecords(vehicles, drivers);
     MaintRepo.save(demo);
@@ -83,7 +83,7 @@ export default function MaintenancePage() {
 
   function createRecord(rec: MaintRecord) {
     // Persist to local repo and refresh
-    const all = MaintRepo.list();
+    const all = MaintRepo.listLocal();
     MaintRepo.save([rec, ...all]);
     setRows(loadMaintenance(filters));
   }
