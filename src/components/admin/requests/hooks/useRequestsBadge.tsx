@@ -1,30 +1,64 @@
 "use client";
 
 import * as React from "react";
-import { AdminRequestsRepo } from "@/lib/admin/requests/store";
-import { computeNavBadgeCount } from "@/lib/admin/requests/notifs";
+import { createSupabaseClient } from "@/lib/supabase/client";
 
 export function useRequestsNavBadge() {
   const [count, setCount] = React.useState(0);
 
   React.useEffect(() => {
-    const tick = () => {
-      const list = AdminRequestsRepo.list();
-      setCount(computeNavBadgeCount(list));
+    const supabase = createSupabaseClient();
+    
+    const fetchPendingCount = async () => {
+      try {
+        // Count requests that need admin attention
+        const { count: pendingCount } = await supabase
+          .from("requests")
+          .select("*", { count: "exact", head: true })
+          .in("status", [
+            "head_approved",
+            "pending_admin",
+            "admin_received",
+            "comptroller_pending",
+            "hr_pending",
+            "executive_pending"
+          ]);
+
+        setCount(pendingCount || 0);
+      } catch (error) {
+        console.error("[useRequestsNavBadge] Error fetching count:", error);
+      }
     };
 
-    tick();
+    // Initial fetch
+    fetchPendingCount();
 
-    // update when repo changes + little poll fallback
-    const unsub = AdminRequestsRepo.subscribe?.(() => {
-      tick();
-      return true;
-    });
-    const id = setInterval(tick, 1500);
+    // Set up real-time subscription
+    console.log("[useRequestsNavBadge] Setting up real-time subscription...");
+    const channel = supabase
+      .channel("badge-requests-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*", // Listen to INSERT, UPDATE, DELETE
+          schema: "public",
+          table: "requests",
+        },
+        (payload) => {
+          console.log("[useRequestsNavBadge] Change detected, refetching count...");
+          fetchPendingCount();
+        }
+      )
+      .subscribe((status) => {
+        console.log("[useRequestsNavBadge] Subscription status:", status);
+      });
+
+    // Also poll every 30 seconds as backup
+    const id = setInterval(fetchPendingCount, 30000);
 
     return () => {
       clearInterval(id);
-      unsub?.();
+      supabase.removeChannel(channel);
     };
   }, []);
 

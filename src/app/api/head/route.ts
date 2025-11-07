@@ -205,10 +205,15 @@ export async function PATCH(req: Request) {
       // Reject
       console.log(`[PATCH /api/head] Rejecting request ${id}`);
 
+      const now = new Date().toISOString();
       const { error: updateError } = await supabase
         .from("requests")
         .update({
           status: "rejected",
+          rejected_at: now,
+          rejected_by: profile.id,
+          rejection_reason: comments || "Rejected by department head",
+          rejection_stage: request.status,
           head_comments: comments,
         })
         .eq("id", id);

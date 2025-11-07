@@ -34,7 +34,7 @@ export function QuickFillCurrentButton() {
       console.log("[QuickFill] Destination:", filled.travelOrder?.destination);
       console.log("[QuickFill] Driver ID:", filled.schoolService?.preferredDriver);
       console.log("[QuickFill] Vehicle ID:", filled.schoolService?.preferredVehicle);
-      console.log("[QuickFill] NOTE: Driver ID is test UUID, Vehicle ID is real UUID from DB");
+      console.log("[QuickFill] ✅ Both Driver and Vehicle IDs are real UUIDs from DB!");
       
       // ✅ important: detach any draft/submission id
       clearIds?.();
@@ -285,11 +285,13 @@ function buildFilledData({
     { name: "Bus 1", plate: "MSE-001", id: "eac79a97-86c8-4cdf-9f12-9c472223d249" },
   ];
   
-  // Test driver IDs (these might not match real DB, but for testing data flow)
+  // REAL driver IDs from your database! (user_id from users table)
   const drivers = [
-    { name: "Driver A - Juan Santos", id: "test-driver-uuid-1" },
-    { name: "Driver B - Maria Cruz", id: "test-driver-uuid-2" },
-    { name: "Driver C - Pedro Reyes", id: "test-driver-uuid-3" },
+    { name: "Juan Dela Cruz", id: "07ebccfa-2d2a-400b-bc8c-18c8caa528f3" },
+    { name: "Maria Santos", id: "52fbc959-4e7c-4c1a-a266-f11010285fb8" },
+    { name: "Pedro Reyes", id: "697765f0-0c33-4b0d-aa0b-de39a1dab693" },
+    { name: "Ana Garcia", id: "413fae40-a49c-4519-9bc4-05d16871b9c0" },
+    { name: "Roberto Fernandez", id: "3b887fd1-85db-4c93-b4d5-5c57b5f12088" },
   ];
   
   const randomDriver = drivers[Math.floor(Math.random() * drivers.length)];
@@ -302,8 +304,8 @@ function buildFilledData({
           vehicle: `${randomVehicle.name} • ${randomVehicle.plate}`,
           vehicleDispatcherSigned: true,
           vehicleDispatcherDate: plus(2),
-          // CRITICAL: Only set vehicle ID (driver is optional)
-          // Driver ID left empty to avoid foreign key error with test UUIDs
+          // ✅ NOW SAFE: Set both driver and vehicle IDs (validation fixed!)
+          preferredDriver: randomDriver.id,  // Real driver user_id (from users table)
           preferredVehicle: randomVehicle.id,  // Real vehicle UUID
         }
       : undefined;

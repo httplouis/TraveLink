@@ -76,6 +76,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Profile not found" }, { status: 404 });
     }
 
+    // Validate department exists
+    if (!profile.department_id) {
+      console.error("[/api/requests/submit] User has no department assigned:", profile.email);
+      return NextResponse.json({ 
+        ok: false, 
+        error: "Your account is not assigned to a department. Please contact your administrator to assign you to a department before submitting requests." 
+      }, { status: 400 });
+    }
+
     // Check if department has parent (for office hierarchy)
     const hasParentDepartment = !!(profile.department as any)?.parent_department_id;
 
@@ -174,13 +183,57 @@ export async function POST(req: Request) {
     const needsVehicle = vehicleMode === "institutional" || vehicleMode === "rent";
     
     // Get preferred driver/vehicle suggestions from schoolService
-    console.log("[/api/requests/submit] Full body:", JSON.stringify(body, null, 2));
+    console.log("[/api/requests/submit] ========== DRIVER/VEHICLE DEBUG ==========");
+    console.log("[/api/requests/submit] Full body.schoolService:", JSON.stringify(body.schoolService, null, 2));
     const schoolService = body.schoolService || {};
-    console.log("[/api/requests/submit] School Service data:", schoolService);
-    const preferredDriverId = schoolService.preferredDriver || null;
-    const preferredVehicleId = schoolService.preferredVehicle || null;
-    console.log("[/api/requests/submit] Preferred driver ID:", preferredDriverId);
-    console.log("[/api/requests/submit] Preferred vehicle ID:", preferredVehicleId);
+    console.log("[/api/requests/submit] School Service keys:", Object.keys(schoolService));
+    let preferredDriverId = schoolService.preferredDriver || null;
+    let preferredVehicleId = schoolService.preferredVehicle || null;
+    console.log("[/api/requests/submit] ✏️ Initial driver ID from client:", preferredDriverId);
+    console.log("[/api/requests/submit] ✏️ Initial vehicle ID from client:", preferredVehicleId);
+    console.log("[/api/requests/submit] ==========================================");
+
+    // Validate driver exists if provided
+    // Note: preferredDriverId is the USER ID (from /api/drivers response)
+    if (preferredDriverId) {
+      const { data: driverExists } = await supabase
+        .from("drivers")
+        .select("user_id")  // Only select user_id (drivers table has no "id" column!)
+        .eq("user_id", preferredDriverId)
+        .maybeSingle();
+      
+      if (!driverExists) {
+        console.warn(`[/api/requests/submit] ⚠️ Driver with user_id ${preferredDriverId} not found in drivers table`);
+        console.warn(`[/api/requests/submit] ⚠️ Setting preferred_driver_id to NULL to prevent FK error`);
+        preferredDriverId = null;
+      } else {
+        console.log(`[/api/requests/submit] ✅ Driver with user_id ${preferredDriverId} validated successfully!`);
+        console.log(`[/api/requests/submit] ✅ Will save preferred_driver_id = ${preferredDriverId}`);
+        // Keep the user_id as preferred_driver_id (FK references users table)
+      }
+    } else {
+      console.log(`[/api/requests/submit] ℹ️ No driver preference provided by client`);
+    }
+
+    // Validate vehicle exists if provided
+    if (preferredVehicleId) {
+      const { data: vehicleExists } = await supabase
+        .from("vehicles")
+        .select("id")
+        .eq("id", preferredVehicleId)
+        .maybeSingle();
+      
+      if (!vehicleExists) {
+        console.warn(`[/api/requests/submit] ⚠️ Vehicle ID ${preferredVehicleId} not found in vehicles table`);
+        console.warn(`[/api/requests/submit] ⚠️ Setting preferred_vehicle_id to NULL to prevent FK error`);
+        preferredVehicleId = null;
+      } else {
+        console.log(`[/api/requests/submit] ✅ Vehicle ID ${preferredVehicleId} validated`);
+        console.log(`[/api/requests/submit] ✅ Will save preferred_vehicle_id = ${preferredVehicleId}`);
+      }
+    } else {
+      console.log(`[/api/requests/submit] ℹ️ No vehicle preference provided by client`);
+    }
 
     // Check if requester is a head
     const requesterIsHead = profile.is_head === true;
@@ -282,6 +335,10 @@ export async function POST(req: Request) {
 
     if (error) {
       console.error("[/api/requests/submit] Insert failed after retries:", error);
+      console.error("[/api/requests/submit] Error code:", error.code);
+      console.error("[/api/requests/submit] Error message:", error.message);
+      console.error("[/api/requests/submit] Error details:", error.details);
+      console.error("[/api/requests/submit] Request data being inserted:", JSON.stringify(requestData, null, 2));
       
       // Convert database errors to user-friendly messages
       let userFriendlyError = "Failed to submit request. Please try again.";
@@ -300,8 +357,14 @@ export async function POST(req: Request) {
           userFriendlyError = "Invalid data provided. Please check all required fields.";
         }
       } else if (error.code === '23503') {
-        // Foreign key violation
-        userFriendlyError = "Invalid department or user information. Please refresh the page and try again.";
+        // Foreign key violation - be more specific
+        if (error.message?.includes('department')) {
+          userFriendlyError = "Invalid department. Your account may not be properly configured. Please contact your administrator.";
+        } else if (error.message?.includes('driver') || error.message?.includes('vehicle')) {
+          userFriendlyError = "Invalid driver or vehicle selection. Please refresh the page and try again.";
+        } else {
+          userFriendlyError = "Invalid information provided. Please refresh the page and try again.";
+        }
       } else if (error.message?.includes('not null')) {
         // NOT NULL constraint
         userFriendlyError = "Missing required information. Please fill in all required fields.";

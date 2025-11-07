@@ -37,18 +37,16 @@ export async function GET(request: Request) {
       console.error("[API /drivers] Error fetching users:", usersError);
     }
     
-    // Filter for drivers manually - must have role='driver' AND email with 'driver'
+    // Filter for drivers manually - only check role='driver'
     const finalUsersData = allUsers?.filter((u: any) => {
       const roleStr = u.role ? u.role.toString().trim().toLowerCase() : '';
-      const emailStr = u.email ? u.email.toString().toLowerCase() : '';
       const hasDriverRole = roleStr === 'driver';
-      const hasDriverEmail = emailStr.includes('driver');
       
-      if (hasDriverRole || hasDriverEmail) {
-        console.log(`[API /drivers] User ${u.name} (${u.email}): role="${roleStr}", matches: ${hasDriverRole && hasDriverEmail}`);
+      if (hasDriverRole) {
+        console.log(`[API /drivers] Found driver: ${u.name} (${u.email})`);
       }
       
-      return hasDriverRole && hasDriverEmail; // Both must be true
+      return hasDriverRole; // Only role check, no email requirement
     }) || [];
     
     console.log("[API /drivers] Filtered driver users:", finalUsersData.length);

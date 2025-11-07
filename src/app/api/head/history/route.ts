@@ -37,7 +37,7 @@ export async function GET() {
     console.log(`[GET /api/head/history] Fetching history for head: ${profile.email}, dept: ${profile.department_id}`);
 
     // Get requests where this head has already approved or rejected
-    // Check if head_approved_by or parent_head_approved_by matches this user
+    // Include: approved (has head_approved_by) OR rejected status
     const { data, error } = await supabase
       .from("requests")
       .select(`
@@ -46,9 +46,9 @@ export async function GET() {
         department:departments!department_id(id, name, code)
       `)
       .eq("department_id", profile.department_id)
-      .or(`head_approved_by.eq.${profile.id},parent_head_approved_by.eq.${profile.id}`)
-      .order("head_approved_at", { ascending: false, nullsFirst: false })
-      .order("parent_head_approved_at", { ascending: false, nullsFirst: false })
+      .or(`head_approved_by.eq.${profile.id},parent_head_approved_by.eq.${profile.id},status.eq.rejected`)
+      .not("status", "in", '("pending_head","pending_parent_head")')
+      .order("updated_at", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false });
     
     console.log(`[GET /api/head/history] Query filters:`, {

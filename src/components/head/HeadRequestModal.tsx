@@ -42,7 +42,6 @@ export default function HeadRequestModal({
   const [requesterSignature, setRequesterSignature] = React.useState<string>(
     request.requester_signature ?? ""
   );
-  const [isLoading, setIsLoading] = React.useState(true);
   const [preferredDriverName, setPreferredDriverName] = React.useState<string>("");
   const [preferredVehicleName, setPreferredVehicleName] = React.useState<string>("");
 
@@ -50,46 +49,36 @@ export default function HeadRequestModal({
   React.useEffect(() => {
     async function loadData() {
       try {
-        setIsLoading(true);
-        
         // Load current user (head) info
-        console.log("[HeadRequestModal] Loading head info from /api/me");
         const meRes = await fetch("/api/me");
         const meData = await meRes.json();
-        console.log("[HeadRequestModal] Head info loaded:", meData);
         
         if (meData) {
           const name = meData.name || meData.email || "";
           setHeadName(name);
           setHeadProfile(meData);
-          console.log("[HeadRequestModal] Set head name:", name);
         }
 
         // Load saved signature if not already present
         if (!headSignature) {
-          console.log("[HeadRequestModal] Loading saved signature");
           const sigRes = await fetch("/api/signature");
           const sigData = await sigRes.json();
           if (sigData.ok && sigData.signature) {
             setHeadSignature(sigData.signature);
-            console.log("[HeadRequestModal] Saved signature loaded");
           }
         }
         
         // Load requester signature from request data
         if (request.requester_signature) {
           setRequesterSignature(request.requester_signature);
-          console.log("[HeadRequestModal] Requester signature loaded");
         }
       } catch (err) {
         console.error("[HeadRequestModal] Failed to load data:", err);
-      } finally {
-        setIsLoading(false);
       }
     }
     
     loadData();
-  }, [request.requester_signature, headSignature]);
+  }, [request.requester_signature]);
   
   // Load preferred driver/vehicle names
   React.useEffect(() => {
@@ -235,6 +224,7 @@ export default function HeadRequestModal({
             <span className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 ${
               t.status === 'pending_head' ? 'bg-amber-100 text-amber-700' :
               t.status === 'approved_head' ? 'bg-green-100 text-green-700' :
+              t.status === 'rejected' ? 'bg-red-100 text-red-700' :
               'bg-slate-100 text-slate-700'
             }`}>
               {t.status === 'pending_head' ? (
@@ -250,6 +240,13 @@ export default function HeadRequestModal({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
                   Approved
+                </>
+              ) : t.status === 'rejected' ? (
+                <>
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  Rejected
                 </>
               ) : (
                 t.status || 'Pending'
@@ -457,14 +454,7 @@ export default function HeadRequestModal({
               <p className="text-xs font-semibold uppercase text-slate-700 mb-3">
                 Requester's Signature
               </p>
-              {isLoading ? (
-                <div className="flex items-center justify-center bg-white rounded-lg border border-slate-200 p-6">
-                  <div className="flex items-center gap-2 text-sm text-slate-500">
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-400 border-t-transparent"></div>
-                    Loading signature...
-                  </div>
-                </div>
-              ) : (requesterSignature || request.requester_signature) ? (
+              {(requesterSignature || request.requester_signature) ? (
                 <div className="bg-white rounded-lg border border-slate-200 p-4">
                   <img
                     src={requesterSignature || request.requester_signature}
@@ -484,6 +474,26 @@ export default function HeadRequestModal({
                 </div>
               )}
             </section>
+
+            {/* Rejection Reason - Show if rejected */}
+            {t.status === 'rejected' && t.rejection_reason && (
+              <section className="rounded-lg bg-red-50 border-2 border-red-200 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <svg className="h-5 w-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <h3 className="text-sm font-bold text-red-900 uppercase tracking-wide">Reason for Rejection</h3>
+                </div>
+                <div className="bg-white rounded-lg p-4 border border-red-200">
+                  <p className="text-sm text-gray-900 whitespace-pre-wrap">{t.rejection_reason}</p>
+                </div>
+                {t.rejected_at && (
+                  <p className="text-xs text-red-600 mt-2">
+                    Rejected on {new Date(t.rejected_at).toLocaleString()}
+                  </p>
+                )}
+              </section>
+            )}
 
             {/* Budget Breakdown - Professional */}
             <section className="rounded-lg bg-slate-50 border border-slate-200 p-4">
@@ -531,9 +541,7 @@ export default function HeadRequestModal({
           <div className="space-y-5 rounded-xl border-2 border-[#7A0010]/20 bg-gradient-to-br from-white to-red-50/30 p-6 shadow-lg">
             <div className="flex items-center gap-3 pb-4 border-b-2 border-[#7A0010]/10">
               <div className="h-14 w-14 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-xl shadow-lg">
-                {isLoading ? (
-                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-                ) : headName ? (
+                {headName ? (
                   headName.charAt(0).toUpperCase()
                 ) : (
                   'H'
@@ -544,12 +552,7 @@ export default function HeadRequestModal({
                   Department Head Endorsement
                 </p>
                 <div className="text-base font-bold text-slate-900 mt-1">
-                  {isLoading ? (
-                    <span className="flex items-center gap-2 text-slate-400">
-                      <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-400 border-t-transparent"></span>
-                      Loading...
-                    </span>
-                  ) : headName || headProfile?.name ? (
+                  {headName || headProfile?.name ? (
                     headName || headProfile?.name
                   ) : headProfile?.email ? (
                     headProfile.email
@@ -599,11 +602,14 @@ export default function HeadRequestModal({
                 <div className="rounded-xl bg-white p-3 border-2 border-[#7A0010]/20 shadow-sm">
                   <SignaturePad
                     height={160}
-                    initialImage={headSignature || undefined}
+                    value={headSignature || null}
                     onSave={(dataUrl) => {
                       setHeadSignature(dataUrl);
                     }}
-                    onClear={() => setHeadSignature("")}
+                    onClear={() => {
+                      console.log("[HeadRequestModal] Clearing signature");
+                      setHeadSignature("");
+                    }}
                     hideSaveButton
                   />
                 </div>

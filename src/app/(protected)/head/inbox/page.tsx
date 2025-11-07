@@ -86,6 +86,11 @@ export default function HeadInboxPage() {
     }, 500);
   }
 
+  // Count rejected items
+  const rejectedCount = React.useMemo(() => {
+    return historyItems.filter(item => item.status === 'rejected').length;
+  }, [historyItems]);
+
   // Filter and search logic
   const filteredItems = React.useMemo(() => {
     let filtered = activeTab === 'pending' ? items : historyItems;
@@ -198,17 +203,44 @@ export default function HeadInboxPage() {
         </div>
         
         {activeTab === 'history' && (
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="px-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#7A0010] focus:border-transparent bg-white"
-          >
-            <option value="all">All Status</option>
-            <option value="approved_head">Approved</option>
-            <option value="pending_comptroller">Forwarded to Comptroller</option>
-            <option value="pending_hr">Forwarded to HR</option>
-            <option value="rejected">Rejected</option>
-          </select>
+          <div className="flex gap-2">
+            {/* Quick filter for rejected */}
+            {rejectedCount > 0 && (
+              <button
+                onClick={() => setFilterStatus(filterStatus === 'rejected' ? 'all' : 'rejected')}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  filterStatus === 'rejected'
+                    ? 'bg-red-100 text-red-700 border-2 border-red-300'
+                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-red-50 hover:text-red-600'
+                }`}
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Rejected
+                <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                  filterStatus === 'rejected'
+                    ? 'bg-red-200 text-red-800'
+                    : 'bg-red-100 text-red-700'
+                }`}>
+                  {rejectedCount}
+                </span>
+              </button>
+            )}
+            
+            {/* Status dropdown */}
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="px-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#7A0010] focus:border-transparent bg-white"
+            >
+              <option value="all">All Status</option>
+              <option value="approved_head">Approved</option>
+              <option value="pending_comptroller">Forwarded to Comptroller</option>
+              <option value="pending_hr">Forwarded to HR</option>
+              <option value="rejected">Rejected ({rejectedCount})</option>
+            </select>
+          </div>
         )}
       </div>
 
@@ -283,15 +315,45 @@ export default function HeadInboxPage() {
                   <p className="text-sm text-slate-600 line-clamp-1 mb-1">
                     {purpose}
                   </p>
-                  <div className="flex items-center gap-2 text-xs">
+                  <div className="flex items-center gap-2 text-xs mb-2">
                     <svg className="h-3.5 w-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                     </svg>
                     <span className="text-slate-500 font-medium">{department}</span>
                   </div>
+                  
+                  {/* History timestamps */}
+                  {activeTab === 'history' && (
+                    <div className="flex flex-wrap items-center gap-3 text-xs">
+                      {item.head_approved_at && (
+                        <div className="flex items-center gap-1.5 text-green-600">
+                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                          <span>Approved: {new Date(item.head_approved_at).toLocaleDateString()} {new Date(item.head_approved_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                        </div>
+                      )}
+                      {item.rejected_at && (
+                        <div className="flex items-center gap-1.5 text-red-600">
+                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                          <span>Rejected: {new Date(item.rejected_at).toLocaleDateString()} {new Date(item.rejected_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                        </div>
+                      )}
+                      {item.parent_head_approved_at && !item.head_approved_at && (
+                        <div className="flex items-center gap-1.5 text-green-600">
+                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                          <span>Approved: {new Date(item.parent_head_approved_at).toLocaleDateString()} {new Date(item.parent_head_approved_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-center gap-3 ml-4">
-                  <span className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${statusBadge.color}`}>
+                <div className="flex flex-col items-end gap-2 ml-4">
+                  <span className={`rounded-lg border px-3 py-1.5 text-xs font-semibold whitespace-nowrap ${statusBadge.color}`}>
                     {statusBadge.text}
                   </span>
                   <svg className="h-5 w-5 text-slate-300 group-hover:text-[#7A0010] transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
