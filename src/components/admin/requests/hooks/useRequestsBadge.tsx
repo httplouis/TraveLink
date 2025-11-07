@@ -11,22 +11,30 @@ export function useRequestsNavBadge() {
     
     const fetchPendingCount = async () => {
       try {
-        // Count requests that need admin attention
-        const { count: pendingCount } = await supabase
+        // Fetch requests waiting for ADMIN action
+        // Status: pending_admin = after head approval, waiting for admin (Ma'am TM) to process
+        const { data, error } = await supabase
           .from("requests")
-          .select("*", { count: "exact", head: true })
-          .in("status", [
-            "head_approved",
-            "pending_admin",
-            "admin_received",
-            "comptroller_pending",
-            "hr_pending",
-            "executive_pending"
-          ]);
+          .select("id, status, request_number")
+          .eq("status", "pending_admin");
 
-        setCount(pendingCount || 0);
+        if (error) {
+          console.error("[useRequestsNavBadge] ❌ Query error:", error);
+          console.error("[useRequestsNavBadge] Error details:", JSON.stringify(error, null, 2));
+          setCount(0);
+          return;
+        }
+
+        const count = data?.length || 0;
+        console.log("[useRequestsNavBadge] ✅ Success! Admin pending requests:", count);
+        if (count > 0) {
+          console.log("[useRequestsNavBadge] 📋 Request IDs:", data?.map(r => r.request_number).join(", "));
+        }
+        
+        setCount(count);
       } catch (error) {
-        console.error("[useRequestsNavBadge] Error fetching count:", error);
+        console.error("[useRequestsNavBadge] ⚠️ Caught error:", error);
+        setCount(0);
       }
     };
 

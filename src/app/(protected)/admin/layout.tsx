@@ -44,31 +44,50 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           willChange: "padding",
         }}
       >
-        {/* ===== Top bar (maroon) ===== */}
+        {/* ===== Premium Top Bar ===== */}
         <div
           className="
             sticky top-4 z-30 relative flex h-16 items-center
-            rounded-xl border border-transparent bg-[#7a1f2a] text-white
-            shadow-[0_8px_24px_rgba(17,24,39,.10)] px-4 sm:px-6
+            rounded-2xl border border-white/10 
+            bg-gradient-to-r from-[#7a1f2a] via-[#5a1520] to-[#4a0d15]
+            text-white
+            shadow-[0_8px_32px_rgba(0,0,0,0.12)]
+            backdrop-blur-xl
+            px-4 sm:px-6
+            overflow-hidden
           "
           suppressHydrationWarning
         >
+          {/* Subtle gradient overlay */}
+          <div className="absolute inset-0 bg-gradient-to-r from-white/[0.05] via-transparent to-white/[0.02] pointer-events-none" />
+          
           {/* Left brand chip */}
-          <div className="absolute left-4 hidden items-center gap-2 md:flex">
-            <div className="grid h-8 w-8 place-items-center rounded-lg bg-white/15 font-semibold">TL</div>
-            <span className="text-sm font-semibold tracking-wide">TraviLink</span>
+          <div className="absolute left-6 hidden items-center gap-3 md:flex z-10">
+            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-white/20 to-white/5 backdrop-blur-sm flex items-center justify-center font-bold text-sm shadow-lg">
+              TL
+            </div>
+            <div>
+              <div className="text-sm font-bold tracking-wide">TraviLink</div>
+              <div className="text-[10px] text-white/60 font-medium">Admin Portal</div>
+            </div>
           </div>
 
           {/* Centered search */}
-          <div className="mx-auto w-full max-w-[720px]">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 opacity-85" />
+          <div className="mx-auto w-full max-w-[720px] z-10">
+            <div className="relative group">
+              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400 group-focus-within:text-neutral-600 transition-colors duration-200" strokeWidth={2.5} />
               <input
                 placeholder="Search schedules, vehicles, drivers…  (Ctrl/⌘+K)"
                 className="
-                  h-11 w-full rounded-lg border border-white/20 bg-white/95 pl-10 pr-3
-                  text-neutral-900 placeholder-neutral-500 outline-none
-                  focus:border-white focus:ring-2 focus:ring-white/35
+                  h-12 w-full rounded-xl 
+                  border border-white/20 
+                  bg-white/95 backdrop-blur-sm
+                  pl-11 pr-4
+                  text-sm text-neutral-900 placeholder-neutral-400 
+                  outline-none
+                  transition-all duration-200
+                  hover:bg-white hover:border-white/40
+                  focus:bg-white focus:border-white focus:ring-2 focus:ring-white/50 focus:shadow-lg
                 "
                 suppressHydrationWarning
                 autoComplete="off"
@@ -77,8 +96,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
 
           {/* Right actions */}
-          <div className="absolute right-4 flex items-center gap-2 sm:right-6" suppressHydrationWarning>
+          <div className="absolute right-6 flex items-center gap-3 z-10" suppressHydrationWarning>
             <NotificationBell />
+            <div className="h-8 w-[1px] bg-white/20" />
             <ProfileMenu />
           </div>
         </div>

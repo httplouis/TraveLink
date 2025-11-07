@@ -15,7 +15,28 @@ function statusAccent(status: RequestRow["status"]) {
     case "Rejected":
       return { bar: "bg-rose-500", badge: "border-rose-300 bg-rose-50 text-rose-800" };
     default: // Pending
-      return { bar: "bg-amber-500", badge: "border-amber-300 bg-amber-50 text-amber-800" };
+      return { bar: "bg-orange-500", badge: "border-orange-400 bg-orange-100 text-orange-800" };
+  }
+}
+
+/* Format timestamp to user-friendly date & time */
+function formatDateTime(dateStr: string | null | undefined): string {
+  if (!dateStr) return "—";
+  try {
+    const date = new Date(dateStr);
+    const dateFormatted = date.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+    const timeFormatted = date.toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
+    return `${dateFormatted} • ${timeFormatted}`;
+  } catch {
+    return dateStr;
   }
 }
 
@@ -200,7 +221,7 @@ export default function RequestsReceiverViewUI({
                     </svg>
                     Submitted
                   </div>
-                  <div className="text-sm font-medium text-neutral-900">{r.date}</div>
+                  <div className="text-sm font-medium text-neutral-900">{formatDateTime(r.date)}</div>
                 </div>
                 <div>
                   <div className="text-xs text-neutral-500 mb-0.5 flex items-center gap-1">
