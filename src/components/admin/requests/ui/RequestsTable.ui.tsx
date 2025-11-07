@@ -7,6 +7,27 @@ import StatusBadge from "./StatusBadge";
 import PaginationUI from "./Pagination";
 import RequestsToolbar from "@/components/admin/requests/toolbar/RequestsToolbar.ui";
 
+/* Format timestamp to user-friendly date & time */
+function formatDateTime(dateStr: string | null | undefined): string {
+  if (!dateStr) return "—";
+  try {
+    const date = new Date(dateStr);
+    const dateFormatted = date.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+    const timeFormatted = date.toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
+    return `${dateFormatted} • ${timeFormatted}`;
+  } catch {
+    return dateStr;
+  }
+}
+
 type Props = {
   rows: RequestRow[];
   pagination: Pagination;
@@ -136,7 +157,7 @@ export default function RequestsTable(props: Props) {
                 <Td className="tabular-nums whitespace-nowrap">
                   {(r as any).receivedAt ?? (r as any).createdAt ?? "—"}
                 </Td>
-                <Td className="tabular-nums whitespace-nowrap">{r.date}</Td>
+                <Td className="tabular-nums whitespace-nowrap">{formatDateTime(r.date)}</Td>
                 <Td><StatusBadge status={r.status} /></Td>
 
                 <Td className="text-right" onClick={(e) => e.stopPropagation()}>

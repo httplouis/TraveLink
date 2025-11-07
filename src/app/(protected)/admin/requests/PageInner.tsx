@@ -145,32 +145,30 @@ export default function PageInner() {
     if (remoteError) return;
     if (!remoteRequests || remoteRequests.length === 0) return;
 
-    // Split requests into pending and history
+    // Split requests into pending and history (using actual enum values)
     const pendingRequests = remoteRequests.filter((r: any) => 
-      r.status === "pending_admin" || 
-      r.status === "admin_received" ||
-      r.status === "pending" ||
-      r.status === "head_approved"
+      r.status === "pending_admin"  // Waiting for admin (Ma'am TM) to process
     );
     
-    // History should ONLY show requests where ADMIN took action
-    // NOT head rejections - those never reach admin
+    // History: Requests where ADMIN already took action (approved/rejected)
     const historyRequests = remoteRequests.filter((r: any) => {
       // Must have admin approval timestamp = admin acted on it
-      const adminActed = r.admin_approved_at || (r as any).admin_rejected_at;
+      const adminActed = r.admin_approved_at || r.admin_approved_by;
       
       return adminActed && (
         r.status === "pending_comptroller" ||  // Admin approved, sent to comptroller
         r.status === "pending_hr" ||           // Admin approved, sent to HR
-        r.status === "pending_exec" ||         // In later stages
+        r.status === "pending_exec" ||         // Admin approved, sent to exec
         r.status === "approved" ||             // Fully approved
-        r.status === "completed" ||            // Completed (if exists)
-        r.status === "admin_rejected"          // Admin rejected (not head rejected)
+        r.status === "rejected"                // Admin rejected
       );
     });
 
     const pendingList = pendingRequests.map((r: any) => toRequestRowRemote(r));
     const historyList = historyRequests.map((r: any) => toRequestRowRemote(r));
+
+    console.log("[PageInner] 📊 Pending requests for admin:", pendingList.length);
+    console.log("[PageInner] 📚 History requests (admin acted):", historyList.length);
 
     setAllRows(pendingList);
     setFilteredRows(pendingList);
