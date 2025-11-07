@@ -17,7 +17,7 @@ export function canTransition(from: MaintStatus, to: MaintStatus) {
 }
 
 export function pushStatus(id: string, next: MaintStatus, note?: string) {
-  const all = MaintRepo.list();
+  const all = MaintRepo.listLocal();
   const i = all.findIndex((x) => x.id === id);
   if (i < 0) throw "Record not found";
 
@@ -42,7 +42,7 @@ export function pushStatus(id: string, next: MaintStatus, note?: string) {
 }
 
 export function loadMaintenance(f: MaintFilters): MaintRecord[] {
-  const all = MaintRepo.list();
+  const all = MaintRepo.listLocal();
   const q = (f.q || "").toLowerCase().trim();
 
   return all.filter((r) => {
