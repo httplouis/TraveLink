@@ -74,12 +74,13 @@ export default function VehiclesPageClient() {
 
   // counts for tabs
   const counts = React.useMemo(() => {
+    const list = VehiclesRepo.listLocal({});
     return {
-      all: VehiclesRepo.list({}).length,
-      assigned: VehiclesRepo.list({}).filter((v) => (v as any).assignedDriver).length,
-      out_of_order: VehiclesRepo.list({}).filter((v) => v.status === "inactive").length,
-      available: VehiclesRepo.list({}).filter((v) => v.status === "active" && !(v as any).assignedDriver).length,
-      service_needed: VehiclesRepo.list({}).filter((v) => {
+      all: list.length,
+      assigned: list.filter((v) => (v as any).assignedDriver).length,
+      out_of_order: list.filter((v) => v.status === "inactive").length,
+      available: list.filter((v) => v.status === "active" && !(v as any).assignedDriver).length,
+      service_needed: list.filter((v) => {
         const due = (v as any).nextServiceISO as string | undefined;
         return due && new Date(due) <= new Date();
       }).length,

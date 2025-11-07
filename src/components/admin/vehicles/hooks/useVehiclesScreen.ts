@@ -14,7 +14,7 @@ export function useVehiclesScreen() {
   const [tab, setTab] = React.useState<VehiclePrimaryTab>("all");
 
   const refresh = React.useCallback(() => {
-    let list = VehiclesRepo.list(filters);
+    let list = VehiclesRepo.listLocal(filters);
     // apply tab logic without leaking into filters UI
     if (tab === "assigned") list = list.filter(v => (v as any).assignedDriver);
     if (tab === "out_of_order") list = list.filter(v => v.status === "inactive");
