@@ -7,16 +7,16 @@ export default function UserVehiclesPage() {
   const [q, setQ] = React.useState("");
   const [type, setType] = React.useState<"" | "Bus" | "Van" | "Car" | "SUV" | "Motorcycle">("");
   const [status, setStatus] = React.useState<"" | "active" | "maintenance" | "inactive">("");
-  const [rows, setRows] = React.useState(() => VehiclesRepo.list({}));
+  const [rows, setRows] = React.useState(() => VehiclesRepo.listLocal({}));
 
   React.useEffect(() => {
     // hydrate localStorage -> memory then refresh list
     VehiclesRepo.hydrateFromStorage();
-    setRows(VehiclesRepo.list({}));
+    setRows(VehiclesRepo.listLocal({}));
   }, []);
 
   React.useEffect(() => {
-    setRows(VehiclesRepo.list({ search: q, type, status }));
+    setRows(VehiclesRepo.listLocal({ search: q, type, status }));
   }, [q, type, status]);
 
   return (
