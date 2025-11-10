@@ -1,6 +1,7 @@
 // src/app/layout.tsx
 import "./globals.css";
 import type { Viewport } from "next";
+import { ToastProvider } from "@/components/common/ui/Toast";
 
 // Remove static metadata to allow dynamic title changes
 // export const metadata: Metadata = {
@@ -18,6 +19,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <title>TraviLink</title>
         <meta name="description" content="University Vehicle Scheduling & Reservation Portal" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
         <link rel="icon" href="/vercel.svg" />
         <link rel="icon" type="image/png" sizes="32x32" href="/icon-32.png" />
         <link rel="icon" type="image/png" sizes="16x16" href="/icon-16.png" />
@@ -26,7 +30,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {supabaseUrl && <link rel="preconnect" href={supabaseUrl} crossOrigin="" />}
       </head>
       <body className="min-h-dvh antialiased bg-white text-neutral-900" suppressHydrationWarning>
-        {children}
+        <ToastProvider>
+          {children}
+        </ToastProvider>
       </body>
     </html>
   );

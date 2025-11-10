@@ -4,6 +4,8 @@
 import React from "react";
 import HeadRequestModal from "@/components/head/HeadRequestModal";
 import { SkeletonRequestCard } from "@/components/common/ui/Skeleton";
+import StatusBadge from "@/components/common/StatusBadge";
+import PersonDisplay from "@/components/common/PersonDisplay";
 
 export default function HeadInboxPage() {
   const [items, setItems] = React.useState<any[]>([]);
@@ -18,6 +20,48 @@ export default function HeadInboxPage() {
   // Search and filter
   const [searchQuery, setSearchQuery] = React.useState("");
   const [filterStatus, setFilterStatus] = React.useState<string>("all");
+  
+  // Advanced filters
+  const [dateFrom, setDateFrom] = React.useState("");
+  const [dateTo, setDateTo] = React.useState("");
+  const [filterDepartment, setFilterDepartment] = React.useState<string>("all");
+  const [filterRequestType, setFilterRequestType] = React.useState<string>("all");
+  const [sortBy, setSortBy] = React.useState<string>("newest");
+  const [showFilters, setShowFilters] = React.useState(false);
+  
+  // Track viewed requests (mark as read)
+  const [viewedRequests, setViewedRequests] = React.useState<Set<string>>(new Set());
+  
+  // Load viewed requests from localStorage on mount
+  React.useEffect(() => {
+    const stored = localStorage.getItem('head_viewed_requests');
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        setViewedRequests(new Set(parsed));
+      } catch (e) {
+        console.error('Failed to parse viewed requests', e);
+      }
+    }
+  }, []);
+  
+  // Mark request as viewed when opened
+  const markAsViewed = (requestId: string) => {
+    const newViewed = new Set(viewedRequests);
+    newViewed.add(requestId);
+    setViewedRequests(newViewed);
+    localStorage.setItem('head_viewed_requests', JSON.stringify(Array.from(newViewed)));
+  };
+  
+  // Extract unique departments for filter
+  const departments = React.useMemo(() => {
+    const depts = new Set<string>();
+    [...items, ...historyItems].forEach(item => {
+      const deptName = item.department?.name || item.department?.code;
+      if (deptName) depts.add(deptName);
+    });
+    return Array.from(depts).sort();
+  }, [items, historyItems]);
 
   async function load(showLoader = true) {
     if (showLoader) setLoading(true);
@@ -99,6 +143,33 @@ export default function HeadInboxPage() {
     if (activeTab === 'history' && filterStatus !== "all") {
       filtered = filtered.filter(item => item.status === filterStatus);
     }
+    
+    // Apply department filter
+    if (filterDepartment !== "all") {
+      filtered = filtered.filter(item => {
+        const deptName = item.department?.name || item.department?.code;
+        return deptName === filterDepartment;
+      });
+    }
+    
+    // Apply request type filter
+    if (filterRequestType !== "all") {
+      filtered = filtered.filter(item => item.request_type === filterRequestType);
+    }
+    
+    // Apply date range filter
+    if (dateFrom) {
+      filtered = filtered.filter(item => {
+        const travelDate = item.travel_start_date ? new Date(item.travel_start_date) : null;
+        return travelDate && travelDate >= new Date(dateFrom);
+      });
+    }
+    if (dateTo) {
+      filtered = filtered.filter(item => {
+        const travelDate = item.travel_start_date ? new Date(item.travel_start_date) : null;
+        return travelDate && travelDate <= new Date(dateTo);
+      });
+    }
 
     // Apply search
     if (searchQuery.trim()) {
@@ -115,9 +186,30 @@ export default function HeadInboxPage() {
                requestNumber.includes(query);
       });
     }
+    
+    // Apply sorting
+    filtered = [...filtered].sort((a, b) => {
+      const dateA = new Date(a.created_at || 0);
+      const dateB = new Date(b.created_at || 0);
+      const travelA = new Date(a.travel_start_date || 0);
+      const travelB = new Date(b.travel_start_date || 0);
+      
+      switch (sortBy) {
+        case "newest":
+          return dateB.getTime() - dateA.getTime();
+        case "oldest":
+          return dateA.getTime() - dateB.getTime();
+        case "travel-soon":
+          return travelA.getTime() - travelB.getTime();
+        case "travel-later":
+          return travelB.getTime() - travelA.getTime();
+        default:
+          return 0;
+      }
+    });
 
     return filtered;
-  }, [items, historyItems, activeTab, filterStatus, searchQuery]);
+  }, [items, historyItems, activeTab, filterStatus, searchQuery, dateFrom, dateTo, filterDepartment, filterRequestType, sortBy]);
 
   return (
     <div className="min-h-screen">
@@ -178,68 +270,187 @@ export default function HeadInboxPage() {
       </div>
 
       {/* Search and Filter Bar */}
-      <div className="mb-6 flex flex-col sm:flex-row gap-3">
-        <div className="flex-1 relative">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input
-            type="text"
-            placeholder="Search by requester, department, purpose, or request number..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#7A0010] focus:border-transparent"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-            >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          )}
-        </div>
-        
-        {activeTab === 'history' && (
-          <div className="flex gap-2">
-            {/* Quick filter for rejected */}
-            {rejectedCount > 0 && (
+      <div className="mb-6 space-y-3">
+        {/* Search + Filter Toggle Row */}
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex-1 relative">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Search by requester, department, purpose, or request number..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#7A0010] focus:border-transparent"
+            />
+            {searchQuery && (
               <button
-                onClick={() => setFilterStatus(filterStatus === 'rejected' ? 'all' : 'rejected')}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                  filterStatus === 'rejected'
-                    ? 'bg-red-100 text-red-700 border-2 border-red-300'
-                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-red-50 hover:text-red-600'
-                }`}
+                onClick={() => setSearchQuery("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
               >
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
-                Rejected
-                <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-                  filterStatus === 'rejected'
-                    ? 'bg-red-200 text-red-800'
-                    : 'bg-red-100 text-red-700'
-                }`}>
-                  {rejectedCount}
-                </span>
               </button>
             )}
-            
-            {/* Status dropdown */}
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#7A0010] focus:border-transparent bg-white"
+          </div>
+          
+          {/* Filter Toggle Button */}
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
+              showFilters || dateFrom || dateTo || filterDepartment !== 'all' || filterRequestType !== 'all'
+                ? 'bg-[#7A0010] text-white border-2 border-[#7A0010]'
+                : 'bg-white text-slate-600 border border-slate-200 hover:border-[#7A0010]/50'
+            }`}
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+            </svg>
+            Filters
+            {(dateFrom || dateTo || filterDepartment !== 'all' || filterRequestType !== 'all') && (
+              <span className="ml-1 px-1.5 py-0.5 bg-white/20 rounded text-xs font-bold">Active</span>
+            )}
+          </button>
+          
+          {activeTab === 'history' && rejectedCount > 0 && (
+            <button
+              onClick={() => setFilterStatus(filterStatus === 'rejected' ? 'all' : 'rejected')}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                filterStatus === 'rejected'
+                  ? 'bg-red-100 text-red-700 border-2 border-red-300'
+                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-red-50 hover:text-red-600'
+              }`}
             >
-              <option value="all">All Status</option>
-              <option value="approved_head">Approved</option>
-              <option value="pending_comptroller">Forwarded to Comptroller</option>
-              <option value="pending_hr">Forwarded to HR</option>
-              <option value="rejected">Rejected ({rejectedCount})</option>
-            </select>
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              Rejected
+              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                filterStatus === 'rejected'
+                  ? 'bg-red-200 text-red-800'
+                  : 'bg-red-100 text-red-700'
+              }`}>
+                {rejectedCount}
+              </span>
+            </button>
+          )}
+        </div>
+        
+        {/* Advanced Filters Panel (Collapsible) */}
+        {showFilters && (
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-4 animate-fadeIn">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                <svg className="h-4 w-4 text-[#7A0010]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                </svg>
+                Advanced Filters
+              </h3>
+              <button
+                onClick={() => {
+                  setDateFrom("");
+                  setDateTo("");
+                  setFilterDepartment("all");
+                  setFilterRequestType("all");
+                  setFilterStatus("all");
+                  setSortBy("newest");
+                }}
+                className="text-xs text-slate-500 hover:text-[#7A0010] font-medium"
+              >
+                Clear All
+              </button>
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {/* Date From */}
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">Travel Date From</label>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#7A0010] focus:border-transparent bg-white"
+                />
+              </div>
+              
+              {/* Date To */}
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">Travel Date To</label>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#7A0010] focus:border-transparent bg-white"
+                />
+              </div>
+              
+              {/* Department Filter */}
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">Department</label>
+                <select
+                  value={filterDepartment}
+                  onChange={(e) => setFilterDepartment(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#7A0010] focus:border-transparent bg-white"
+                >
+                  <option value="all">All Departments</option>
+                  {departments.map(dept => (
+                    <option key={dept} value={dept}>{dept}</option>
+                  ))}
+                </select>
+              </div>
+              
+              {/* Request Type Filter */}
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">Request Type</label>
+                <select
+                  value={filterRequestType}
+                  onChange={(e) => setFilterRequestType(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#7A0010] focus:border-transparent bg-white"
+                >
+                  <option value="all">All Types</option>
+                  <option value="travel_order">Travel Order</option>
+                  <option value="seminar">Seminar</option>
+                </select>
+              </div>
+            </div>
+            
+            {/* Sort and Status Row */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200">
+              {/* Sort By */}
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">Sort By</label>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#7A0010] focus:border-transparent bg-white"
+                >
+                  <option value="newest">Newest First (Submitted)</option>
+                  <option value="oldest">Oldest First (Submitted)</option>
+                  <option value="travel-soon">Travel Date (Soonest)</option>
+                  <option value="travel-later">Travel Date (Latest)</option>
+                </select>
+              </div>
+              
+              {/* Status Filter (only for history) */}
+              {activeTab === 'history' && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1.5">Status</label>
+                  <select
+                    value={filterStatus}
+                    onChange={(e) => setFilterStatus(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#7A0010] focus:border-transparent bg-white"
+                  >
+                    <option value="all">All Status</option>
+                    <option value="approved_head">Approved</option>
+                    <option value="pending_comptroller">With Comptroller</option>
+                    <option value="pending_hr">With HR</option>
+                    <option value="rejected">Rejected ({rejectedCount})</option>
+                  </select>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -275,6 +486,12 @@ export default function HeadInboxPage() {
             const requestNumber = item.request_number || "—";
             const travelDate = item.travel_start_date ? new Date(item.travel_start_date).toLocaleDateString() : "—";
             
+            // Check if request is new (within last 24 hours AND not viewed yet)
+            const createdAt = item.created_at ? new Date(item.created_at) : null;
+            const now = new Date();
+            const hoursSinceCreation = createdAt ? (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60) : 999;
+            const isNew = hoursSinceCreation < 24 && !viewedRequests.has(item.id); // New if submitted in last 24 hours AND not viewed
+            
             // Status badge config
             const getStatusBadge = (status: string) => {
               switch (status) {
@@ -298,7 +515,10 @@ export default function HeadInboxPage() {
             return (
               <button
                 key={item.id}
-                onClick={() => setSelected(item)}
+                onClick={() => {
+                  setSelected(item);
+                  markAsViewed(item.id);
+                }}
                 className="group flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-5 py-4 text-left shadow-sm transition-all hover:border-[#7A0010]/30 hover:shadow-lg hover:scale-[1.01]"
               >
                 <div className="flex-1 min-w-0">
@@ -306,21 +526,30 @@ export default function HeadInboxPage() {
                     <span className="rounded-md bg-[#7A0010] px-2.5 py-0.5 text-xs font-bold text-white">
                       {requestNumber}
                     </span>
+                    {isNew && activeTab === 'pending' && (
+                      <span className="flex items-center gap-1 rounded-md bg-green-500 px-2 py-0.5 text-xs font-bold text-white animate-pulse">
+                        <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        </svg>
+                        NEW
+                      </span>
+                    )}
                     <span className="text-xs text-slate-400">•</span>
                     <span className="text-xs font-medium text-slate-500">{travelDate}</span>
                   </div>
-                  <p className="font-semibold text-slate-900 mb-1.5">
-                    {requester}
-                  </p>
-                  <p className="text-sm text-slate-600 line-clamp-1 mb-1">
+                  
+                  {/* Use PersonDisplay component */}
+                  <PersonDisplay
+                    name={requester}
+                    position={item.requester?.position_title}
+                    department={department}
+                    profilePicture={item.requester?.profile_picture}
+                    size="sm"
+                  />
+                  
+                  <p className="text-sm text-slate-600 line-clamp-1 mt-2 mb-1">
                     {purpose}
                   </p>
-                  <div className="flex items-center gap-2 text-xs mb-2">
-                    <svg className="h-3.5 w-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                    </svg>
-                    <span className="text-slate-500 font-medium">{department}</span>
-                  </div>
                   
                   {/* History timestamps */}
                   {activeTab === 'history' && (
@@ -353,9 +582,7 @@ export default function HeadInboxPage() {
                   )}
                 </div>
                 <div className="flex flex-col items-end gap-2 ml-4">
-                  <span className={`rounded-lg border px-3 py-1.5 text-xs font-semibold whitespace-nowrap ${statusBadge.color}`}>
-                    {statusBadge.text}
-                  </span>
+                  <StatusBadge status={item.status} size="md" showIcon={true} />
                   <svg className="h-5 w-5 text-slate-300 group-hover:text-[#7A0010] transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>

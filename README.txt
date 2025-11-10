@@ -37,21 +37,51 @@ cd TraviLink
 git switch travilink-admin
 
 ===========================================================
-3. INSTALL DEPENDENCIES (ONE-TIME, ONE COMMAND)
+3. INSTALL DEPENDENCIES (ONE-TIME, COMPLETE LIST)
 ===========================================================
-Run this to install **all required packages**:
+Run these commands to install **ALL required packages**:
 
-pnpm add next react react-dom typescript tailwindcss postcss autoprefixer \
-@supabase/supabase-js \
-react-leaflet leaflet \
-lucide-react \
-@headlessui/react \
-clsx
+# Core Framework & React
+pnpm add next@latest react react-dom
+
+# TypeScript & Types
+pnpm add -D typescript @types/react @types/node @types/react-dom
+
+# Styling
+pnpm add tailwindcss postcss autoprefixer
+pnpm add clsx
+
+# Database & Authentication
+pnpm add @supabase/supabase-js @supabase/ssr
+
+# UI Components & Icons
+pnpm add lucide-react
+pnpm add @headlessui/react
+
+# Maps
+pnpm add react-leaflet leaflet
+pnpm add -D @types/leaflet
+
+# Animations
 pnpm add framer-motion
+
+# State Management
 pnpm add zustand
-pnpm add jspdf jspdf-autotable
-pnpm add pdf-lib
+
+# Data Fetching
 pnpm add swr
+
+# PDF Generation
+pnpm add pdf-lib
+pnpm add jspdf jspdf-autotable
+
+# Utilities
+pnpm add date-fns
+
+===========================================================
+ALTERNATIVE: Install all at once (copy-paste this)
+===========================================================
+pnpm add next@latest react react-dom @supabase/supabase-js @supabase/ssr tailwindcss postcss autoprefixer clsx lucide-react @headlessui/react react-leaflet leaflet framer-motion zustand swr pdf-lib jspdf jspdf-autotable date-fns && pnpm add -D typescript @types/react @types/node @types/react-dom @types/leaflet
 
 
 

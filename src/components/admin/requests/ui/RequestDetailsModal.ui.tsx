@@ -9,6 +9,7 @@ import type { AdminRequest } from "@/lib/admin/requests/store";
 import { AdminRequestsRepo } from "@/lib/admin/requests/store";
 import { generateRequestPDF } from "@/lib/admin/requests/pdfWithTemplate";
 import { generateSeminarPDF } from "@/lib/admin/requests/pdfSeminar";
+import { useToast } from "@/components/common/ui/ToastProvider.ui";
 
 // 🔹 Detailed Seminar block (keeps this modal tidy)
 import SeminarDetails from "@/components/admin/requests/parts/SeminarDetails.ui";
@@ -67,6 +68,7 @@ export default function RequestDetailsModalUI({
   onApprove,
   onReject,
 }: Props) {
+  const toast = useToast();
   const [driver, setDriver] = React.useState("");
   const [vehicle, setVehicle] = React.useState("");
   
@@ -85,6 +87,7 @@ export default function RequestDetailsModalUI({
   // signature modal (for Approve)
   const [signOpen, setSignOpen] = React.useState(false);
   const [sigDataUrl, setSigDataUrl] = React.useState<string | null>(null);
+  const [isApproving, setIsApproving] = React.useState(false);
 
   // Hydrate local assignment state from the selected row (robust over many shapes)
   React.useEffect(() => {
@@ -270,6 +273,16 @@ export default function RequestDetailsModalUI({
     if (!row) return [];
     const entries = [];
     
+    console.log("🔍 Building history entries for request:", (row as any).id);
+    console.log("🔍 Head signature:", (row as any).head_signature ? "EXISTS" : "NULL");
+    console.log("🔍 Admin signature:", (row as any).admin_signature ? "EXISTS" : "NULL");
+    console.log("🔍 Row admin data:", {
+      admin_approved_at: (row as any).admin_approved_at,
+      admin_approved_by: (row as any).admin_approved_by,
+      admin_signature: (row as any).admin_signature,
+      admin_approver: (row as any).admin_approver,
+    });
+    
     // Submitted
     if (row.createdAt) {
       entries.push({
@@ -282,22 +295,28 @@ export default function RequestDetailsModalUI({
     
     // Head Approved
     if ((row as any).head_approved_at) {
+      const headSig = (row as any).head_signature || null;
+      console.log("✅ Adding Head Approved entry with signature:", headSig ? "YES" : "NO");
       entries.push({
         action: "Head Approved",
         by: row.travelOrder?.endorsedByHeadName || "Department Head",
         timestamp: (row as any).head_approved_at,
         icon: "approved" as const,
+        signature: headSig,
       });
     }
     
     // Admin Approved
     if ((row as any).admin_approved_at) {
       const adminName = (row as any).admin_approver?.name || (row as any).admin_approver?.email || "Trizzia Maree Casino";
+      const adminSig = (row as any).admin_signature || null;
+      console.log("✅ Adding Admin Approved entry with signature:", adminSig ? "YES" : "NO");
       entries.push({
         action: "Admin Approved",
         by: adminName,
         timestamp: (row as any).admin_approved_at,
         icon: "approved" as const,
+        signature: adminSig,
       });
     }
     
@@ -317,7 +336,9 @@ export default function RequestDetailsModalUI({
   }
 
   async function confirmSignature() {
-    if (!row?.id || !sigDataUrl) return;
+    if (!row?.id || !sigDataUrl || isApproving) return;
+
+    setIsApproving(true); // Disable button to prevent double-click
 
     try {
       // Call API to approve in database
@@ -339,10 +360,20 @@ export default function RequestDetailsModalUI({
       if (!result.ok) {
         console.error('[Admin Approve] Error:', result.error);
         alert(`Error: ${result.error}`);
+        setIsApproving(false); // Re-enable button on error
         return;
       }
 
       console.log('[Admin Approve] Success:', result.message);
+
+      // Show success toast
+      toast({
+        kind: "success",
+        message: requiresComptroller 
+          ? 'Request approved and sent to Comptroller!' 
+          : 'Request approved and sent to HR!',
+        timeoutMs: 4000
+      });
 
       // Also update localStorage for offline support
       const nowIso = new Date().toISOString();
@@ -371,11 +402,12 @@ export default function RequestDetailsModalUI({
         onClose();
         // Refresh page to show updated data
         window.location.reload();
-      }, 500);
+      }, 1500); // Longer delay to show toast
       
     } catch (error) {
       console.error('[Admin Approve] Network error:', error);
       alert('Network error. Please try again.');
+      setIsApproving(false); // Re-enable button on error
     }
   }
 
@@ -408,12 +440,27 @@ export default function RequestDetailsModalUI({
             }}
           >
             {/* Header */}
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Request Details</h2>
+            <div className="mb-4 flex items-center justify-between border-b border-neutral-200 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-[#7A0010] to-[#9c2a3a] flex items-center justify-center shadow-lg">
+                  <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                    Travel Request Overview
+                    <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-semibold">
+                      Approved
+                    </span>
+                  </h2>
+                  <p className="text-xs text-gray-500 mt-0.5">Complete request details and approval history</p>
+                </div>
+              </div>
 
               <button
                 onClick={onClose}
-                className="ml-auto rounded-md p-2 text-neutral-500 hover:bg-neutral-100"
+                className="ml-auto rounded-xl p-2.5 text-neutral-500 hover:bg-red-50 hover:text-red-600 transition-colors"
                 aria-label="Close"
               >
                 <X className="h-5 w-5" />
@@ -631,7 +678,54 @@ export default function RequestDetailsModalUI({
                   Vehicle & Driver Assignment
                 </h3>
 
-                {/* Service Preferences - Requester's Choice */}
+                {/* Transportation Mode Badge - Always show if we have the data */}
+                {((row as any).vehicle_mode || row.travelOrder?.vehicleMode) ? (
+                  <div className="mb-4 p-4 rounded-lg border-2 bg-white shadow-sm" style={{
+                    borderColor: (row as any).vehicle_mode === 'owned' || row.travelOrder?.vehicleMode === 'owned' ? '#10b981' : (row as any).vehicle_mode === 'rent' || row.travelOrder?.vehicleMode === 'rent' ? '#f59e0b' : '#3b82f6'
+                  }}>
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-full flex items-center justify-center" style={{
+                        backgroundColor: (row as any).vehicle_mode === 'owned' || row.travelOrder?.vehicleMode === 'owned' ? '#d1fae5' : (row as any).vehicle_mode === 'rent' || row.travelOrder?.vehicleMode === 'rent' ? '#fef3c7' : '#dbeafe'
+                      }}>
+                        <Car className="h-5 w-5" style={{
+                          color: (row as any).vehicle_mode === 'owned' || row.travelOrder?.vehicleMode === 'owned' ? '#059669' : (row as any).vehicle_mode === 'rent' || row.travelOrder?.vehicleMode === 'rent' ? '#d97706' : '#2563eb'
+                        }} />
+                      </div>
+                      <div className="flex-1">
+                        <div className="text-xs font-semibold uppercase tracking-wide" style={{
+                          color: (row as any).vehicle_mode === 'owned' || row.travelOrder?.vehicleMode === 'owned' ? '#059669' : (row as any).vehicle_mode === 'rent' || row.travelOrder?.vehicleMode === 'rent' ? '#d97706' : '#2563eb'
+                        }}>
+                          Transportation Mode
+                        </div>
+                        <div className="text-base font-bold text-gray-900 mt-0.5">
+                          {((row as any).vehicle_mode === 'owned' || row.travelOrder?.vehicleMode === 'owned') && 'Personal Vehicle (Owned)'}
+                          {((row as any).vehicle_mode === 'institutional' || row.travelOrder?.vehicleMode === 'institutional') && 'University Vehicle (School Service)'}
+                          {((row as any).vehicle_mode === 'rent' || row.travelOrder?.vehicleMode === 'rent') && 'Rental Vehicle'}
+                        </div>
+                        {((row as any).vehicle_mode === 'owned' || row.travelOrder?.vehicleMode === 'owned') && (
+                          <p className="text-xs text-gray-600 mt-1 italic">Requester will use their own vehicle - no assignment needed</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mb-4 p-4 rounded-lg border-2 border-orange-200 bg-orange-50">
+                    <div className="flex items-center gap-3">
+                      <svg className="h-5 w-5 text-orange-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                      <div>
+                        <p className="text-sm font-semibold text-orange-900">Vehicle Mode Not Set</p>
+                        <p className="text-xs text-orange-700 mt-0.5">
+                          This request was submitted before vehicle mode tracking was enabled. Please run the database migration to populate vehicle mode data.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Service Preferences - Requester's Choice (only for institutional/rent AND when we have vehicle_mode data) */}
+                {((row as any).vehicle_mode || row.travelOrder?.vehicleMode) && ((row as any).vehicle_mode !== 'owned' && row.travelOrder?.vehicleMode !== 'owned') && (
                 <div className="mb-6 rounded-lg bg-blue-50 border-2 border-blue-300 p-4">
                   <div className="flex items-center gap-2 mb-3">
                     <svg className="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -675,7 +769,11 @@ export default function RequestDetailsModalUI({
                     </div>
                   )}
                 </div>
+                )}
 
+                {/* Driver/Vehicle Assignment */}
+                {/* Show dropdowns if: no vehicle_mode data (backwards compat) OR vehicle_mode is institutional/rent */}
+                {(!((row as any).vehicle_mode || row.travelOrder?.vehicleMode) || ((row as any).vehicle_mode !== 'owned' && row.travelOrder?.vehicleMode !== 'owned')) ? (
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-medium mb-1">Assigned Driver</label>
@@ -721,9 +819,26 @@ export default function RequestDetailsModalUI({
                       )}
                     </select>
                   </div>
+                </div>
+                ) : (
+                  /* Only show this green box if vehicle_mode is explicitly 'owned' */
+                  ((row as any).vehicle_mode === 'owned' || row.travelOrder?.vehicleMode === 'owned') && (
+                    <div className="text-center py-6 bg-green-50 rounded-lg border-2 border-green-200">
+                      <div className="flex flex-col items-center gap-2">
+                        <div className="h-12 w-12 rounded-full bg-green-100 flex items-center justify-center">
+                          <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        </div>
+                        <p className="text-sm font-semibold text-green-900">No Assignment Required</p>
+                        <p className="text-xs text-green-700">Requester will use their personal vehicle</p>
+                      </div>
+                    </div>
+                  )
+                )}
 
-                  {/* Admin Notes Textarea */}
-                  <div className="col-span-2">
+                {/* Admin Notes Textarea */}
+                <div className="mt-4">
                     <label className="block text-xs font-medium mb-1">
                       Admin Notes <span className="text-red-600">*</span>
                       <span className="text-xs font-normal text-neutral-500 ml-2">(Required)</span>
@@ -750,25 +865,32 @@ export default function RequestDetailsModalUI({
                         Admin notes are required before approval
                       </p>
                     )}
-                    <div className="mt-2 flex gap-2">
+                    <div className="mt-2 flex flex-wrap gap-2">
                       <button
                         type="button"
-                        onClick={() => setAdminNotes("Owned vehicle")}
+                        onClick={() => setAdminNotes("Requester will use their own personal vehicle. No university vehicle or driver assignment needed.")}
                         disabled={isApproved}
-                        className="text-xs px-2 py-1 rounded border border-slate-300 hover:bg-slate-50 disabled:opacity-50"
+                        className="text-xs px-2 py-1 rounded border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 disabled:opacity-50"
                       >
-                        + Owned
+                        Personal Vehicle
                       </button>
                       <button
                         type="button"
-                        onClick={() => setAdminNotes("For rent")}
+                        onClick={() => setAdminNotes("University vehicle and driver assigned as shown above.")}
                         disabled={isApproved}
-                        className="text-xs px-2 py-1 rounded border border-slate-300 hover:bg-slate-50 disabled:opacity-50"
+                        className="text-xs px-2 py-1 rounded border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50"
                       >
-                        + For Rent
+                        School Service
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAdminNotes("Rental vehicle required. Approved for rental service.")}
+                        disabled={isApproved}
+                        className="text-xs px-2 py-1 rounded border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-50"
+                      >
+                        Rental Approved
                       </button>
                     </div>
-                  </div>
                 </div>
               </section>
 
@@ -807,15 +929,15 @@ export default function RequestDetailsModalUI({
                 <div className="flex items-center gap-2">
                   <button
                     onClick={requestApproval}
-                    disabled={!canAdminApprove || adminNotes.trim() === ""}
-                    title={adminNotes.trim() === "" ? "Admin notes are required" : ""}
+                    disabled={!canAdminApprove || adminNotes.trim() === "" || isApproving}
+                    title={adminNotes.trim() === "" ? "Admin notes are required" : isApproving ? "Processing..." : ""}
                     className={`rounded-md px-4 py-2 text-sm text-white transition ${
-                      canAdminApprove && adminNotes.trim() !== ""
+                      canAdminApprove && adminNotes.trim() !== "" && !isApproving
                         ? "bg-green-600 hover:bg-green-700"
                         : "bg-neutral-400 cursor-not-allowed"
                     }`}
                   >
-                    Approve
+                    {isApproving ? "Processing..." : "Approve"}
                   </button>
                   {onReject && (
                     <button
@@ -867,12 +989,16 @@ export default function RequestDetailsModalUI({
             </button>
             <button
               onClick={confirmSignature}
-              disabled={!sigDataUrl}
+              disabled={!sigDataUrl || isApproving}
               className={`rounded-md px-4 py-2 text-sm text-white transition ${
-                sigDataUrl ? "bg-green-600 hover:bg-green-700" : "bg-neutral-400 cursor-not-allowed"
+                sigDataUrl && !isApproving ? "bg-green-600 hover:bg-green-700" : "bg-neutral-400 cursor-not-allowed"
               }`}
             >
-              {sigDataUrl ? (requiresComptroller ? "Approve & Send to Comptroller" : "Approve & Send to HR") : "Approve"}
+              {isApproving 
+                ? "Processing..." 
+                : sigDataUrl 
+                  ? (requiresComptroller ? "Approve & Send to Comptroller" : "Approve & Send to HR") 
+                  : "Approve"}
             </button>
           </div>
         </div>

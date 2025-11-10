@@ -16,10 +16,11 @@ export default function HeadTopBar() {
 
     const fetchCount = async () => {
       try {
-        const res = await fetch("/api/head", { cache: "no-store" });
+        // Use lightweight count endpoint instead of fetching full data
+        const res = await fetch("/api/head/inbox/count", { cache: "no-store" });
         const json = await res.json();
         if (mounted && json.ok) {
-          setPendingCount(json.data?.length || 0);
+          setPendingCount(json.pending_count || 0);
         }
       } catch (err) {
         console.error("Failed to fetch pending count:", err);

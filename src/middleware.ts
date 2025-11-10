@@ -10,6 +10,8 @@ type Me = {
   is_head?: boolean;
   is_hr?: boolean;
   is_exec?: boolean;
+  is_vp?: boolean;
+  is_president?: boolean;
   department?: string | null;
 };
 
@@ -35,7 +37,12 @@ function isPublicPath(path: string) {
 
 function resolveHomeBase(me: Me): string {
   const adminEmails = ["admin@mseuf.edu.ph", "admin.cleofe@mseuf.edu.ph"];
+  const comptrollerEmails = ["comptroller@mseuf.edu.ph"];
+  
   if (me.role === "admin" || adminEmails.includes((me as any).email)) return "/admin";
+  if (comptrollerEmails.includes((me as any).email)) return "/comptroller/inbox";
+  if (me.is_president) return "/president/dashboard";
+  if (me.is_vp) return "/vp/dashboard";
   if (me.is_head) return "/head/dashboard";
   if (me.is_hr) return "/hr/dashboard";
   if (me.is_exec) return "/exec/dashboard";
@@ -45,16 +52,20 @@ function resolveHomeBase(me: Me): string {
 
 function isAllowed(me: Me, path: string): boolean {
   const adminEmails = ["admin@mseuf.edu.ph", "admin.cleofe@mseuf.edu.ph"];
+  const comptrollerEmails = ["comptroller@mseuf.edu.ph"];
   const isAdmin = me.role === "admin" || adminEmails.includes((me as any).email);
+  const isComptroller = comptrollerEmails.includes((me as any).email);
   
   // Strict role-based access - each role can ONLY access their designated pages
   if (path.startsWith("/admin")) return isAdmin;
+  if (path.startsWith("/president")) return !!me.is_president && !isAdmin;
+  if (path.startsWith("/vp")) return !!me.is_vp && !isAdmin;
   if (path.startsWith("/head")) return !!me.is_head && !isAdmin;
   if (path.startsWith("/hr")) return !!me.is_hr && !isAdmin;
   if (path.startsWith("/exec")) return !!me.is_exec && !isAdmin;
-  if (path.startsWith("/comptroller")) return false; // Reserved
+  if (path.startsWith("/comptroller")) return isComptroller; // Allow comptroller email
   if (path.startsWith("/driver")) return me.role === "driver" && !isAdmin;
-  if (path.startsWith("/user")) return !isAdmin && !me.is_head && !me.is_hr && !me.is_exec && me.role !== "driver";
+  if (path.startsWith("/user")) return !isAdmin && !me.is_head && !me.is_hr && !me.is_exec && !me.is_vp && !me.is_president && me.role !== "driver" && !isComptroller;
   
   return true;
 }

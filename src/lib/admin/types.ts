@@ -34,6 +34,9 @@ export type RequestRow = {
   requester?: string;
   vehicle?: string;
   driver?: string;
+  
+  // Vehicle mode
+  vehicle_mode?: 'owned' | 'institutional' | 'rent';
 
   // When the request was submitted/received (optional)
   receivedAt?: string;          // e.g., "2025-09-04 10:15 AM"

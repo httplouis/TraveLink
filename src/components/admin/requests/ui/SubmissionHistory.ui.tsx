@@ -8,6 +8,7 @@ type HistoryEntry = {
   by: string;
   timestamp: string;
   icon: "submitted" | "approved" | "rejected";
+  signature?: string | null;
 };
 
 type Props = {
@@ -16,6 +17,11 @@ type Props = {
 
 export default function SubmissionHistoryUI({ entries }: Props) {
   if (entries.length === 0) return null;
+
+  console.log("📜 SubmissionHistory received entries:", entries.length);
+  entries.forEach((entry, idx) => {
+    console.log(`  ${idx + 1}. ${entry.action} - Signature: ${entry.signature ? "EXISTS" : "NULL"}`);
+  });
 
   return (
     <div className="mt-6 bg-slate-50 rounded-lg border border-slate-200 p-6">
@@ -74,6 +80,16 @@ export default function SubmissionHistoryUI({ entries }: Props) {
                     minute: "2-digit",
                   })}
                 </div>
+                {entry.signature && (
+                  <div className="mt-3 pt-3 border-t border-slate-200">
+                    <div className="text-xs text-slate-500 mb-2">Digital Signature</div>
+                    <img 
+                      src={entry.signature} 
+                      alt="Signature" 
+                      className="h-16 border border-slate-300 rounded bg-white p-1"
+                    />
+                  </div>
+                )}
               </div>
             </div>
           );

@@ -24,44 +24,44 @@ export const ACADEMIC_DEPARTMENTS = [
  *  (We keep this as the “authoritative” order.)
  *  ----------------------------- */
 const OFFICES_LONG = [
-  "Accounting Department",
-  "Admission Office",
-  "Audting Department", // original spelling kept from your source list
-  "Community Relations Department",
-  "Corporate Planning and Development Office",
-  "Data Protection Office",
-  "Dr. Cesar A. Villariba Research & Knowledgement Management Institute",
-  "General Services Department",
-  "Global Engagement Office",
-  "Health, Safety and Auxiliary Services Department",
-  "Human Resource Department",
-  "Information & Communications Technology Department",
-  "Institutional Marketing and Promotions",
-  "Learning Development Center",
-  "Legal Office",
-  "Medical and Dental Services",
-  "MSEUF International Student Hub", // <- corrected per your note
-  "Office of Quality Improvement",
-  "Office of Scholarship & Endowmen, Job Placement, and Alumni Relations",
-  "Office of Sports & Cultural Relations",
-  "Office of Student Affairs & Services",
-  "Office of the Chairman/CEO",
-  "Office of the Comptroller", // <- corrected from “OOffice…”
-  "Office of the President/COO", // <- corrected from “Offfice…”
-  "Office of the Vice President for Academics and Research",
-  "Office of the Vice President for Administration", // <- corrected wording
-  "Office of the Vice President for External Relations",
-  "Office of the Vice President for Finance",
-  "Pollution Control Office",
-  "Procurement Office",
-  "Property Office",
-  "Registrar's Office",
-  "Research Publication, Incubation, and Utilization Center",
-  "Treasury Department",
-  "University Collegiate Student Council",
-  "University Laboratories",
-  "University Libraries",
-  "Web Content and Digital Engagement Office",
+  "Accounting Department (AD)",
+  "Admission Office (AO)",
+  "Audting Department (AuD)", // original spelling kept from your source list
+  "Community Relations Department (CRD)",
+  "Corporate Planning and Development Office (CPDO)",
+  "Data Protection Office (DPO)",
+  "Dr. Cesar A. Villariba Research & Knowledgement Management Institute (DCAVRKMI)",
+  "General Services Department (GSD)",
+  "Global Engagement Office (GEO)",
+  "Health, Safety and Auxiliary Services Department (HSASD)",
+  "Human Resource Department (HRD)",
+  "Information & Communications Technology Department (ICTD)",
+  "Institutional Marketing and Promotions (IMP)",
+  "Learning Development Center (LDC)",
+  "Legal Office (LO)",
+  "Medical and Dental Services (MDS)",
+  "MSEUF International Student Hub (MISH)", // <- corrected per your note
+  "Office of Quality Improvement (OQI)",
+  "Office of Scholarship & Endowmen, Job Placement, and Alumni Relations (OSEJPAR)",
+  "Office of Sports & Cultural Relations (OSCR)",
+  "Office of Student Affairs & Services (OSAS)",
+  "Office of the Chairman/CEO (OCEO)",
+  "Office of the Comptroller (OC)", // <- corrected from “OOffice…”
+  "Office of the President/COO (OPCOO)", // <- corrected from “Offfice…”
+  "Office of the Vice President for Academics and Research (OVPAR)",
+  "Office of the Vice President for Administration (OVPA)", // <- corrected wording
+  "Office of the Vice President for External Relations (OVPER)",
+  "Office of the Vice President for Finance (OVPF)",
+  "Pollution Control Office (PCO)",
+  "Procurement Office (PO)",
+  "Property Office (PropO)",
+  "Registrar's Office (RO)",
+  "Research Publication, Incubation, and Utilization Center (RPIUC)",
+  "Treasury Department (TD)",
+  "University Collegiate Student Council (UCSC)",
+  "University Laboratories (UL)",
+  "University Libraries (ULib)",
+  "Web Content and Digital Engagement Office (WCDEO)",
 ] as const;
 
 /** -----------------------------

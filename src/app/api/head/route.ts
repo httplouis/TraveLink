@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { WorkflowEngine } from "@/lib/workflow/engine";
+import { getPhilippineTimestamp } from "@/lib/datetime";
 
 // GET /api/head  → list all pending_head for THIS head's departments
 export async function GET() {
@@ -51,7 +52,8 @@ export async function GET() {
       `)
       .in("status", ["pending_head", "pending_parent_head"])
       .eq("department_id", profile.department_id)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .limit(50); // Limit to 50 most recent requests
 
     if (error) {
       console.error("[GET /api/head] Query error:", error);
@@ -129,7 +131,7 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ ok: false, error: "Not authorized for this department" }, { status: 403 });
     }
 
-    const now = new Date().toISOString();
+    const now = getPhilippineTimestamp();
 
     if (action === "approve") {
       // Determine next status using workflow engine
@@ -205,7 +207,7 @@ export async function PATCH(req: Request) {
       // Reject
       console.log(`[PATCH /api/head] Rejecting request ${id}`);
 
-      const now = new Date().toISOString();
+      const now = getPhilippineTimestamp();
       const { error: updateError } = await supabase
         .from("requests")
         .update({

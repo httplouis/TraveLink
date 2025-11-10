@@ -27,7 +27,9 @@ export async function GET(
         *,
         requester:users!requester_id(id, name, email),
         department:departments!department_id(id, code, name),
-        submitted_by:users!submitted_by_user_id(id, name, email)
+        submitted_by:users!submitted_by_user_id(id, name, email),
+        head_approver:users!head_approved_by(id, name, email),
+        admin_approver:users!admin_approved_by(id, name, email)
       `)
       .eq("id", requestId)
       .single();

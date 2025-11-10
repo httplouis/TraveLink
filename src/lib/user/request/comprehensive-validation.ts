@@ -97,22 +97,13 @@ export function validateDestination(destination: string): string | null {
 
 /**
  * Validate budget justification
+ * NOTE: Justification is now optional, so this always returns null (no validation)
  */
 export function validateBudgetJustification(
   costs: any,
   justification: string
 ): string | null {
-  if (!costs) return null;
-  
-  const hasCosts = Object.keys(costs).some(key => {
-    const val = costs[key];
-    return val && parseFloat(val) > 0;
-  });
-
-  if (hasCosts && (!justification || justification.trim() === "")) {
-    return "Budget justification is required when requesting funds";
-  }
-
+  // Justification is now optional for all requests
   return null;
 }
 

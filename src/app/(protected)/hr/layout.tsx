@@ -5,13 +5,15 @@ import React from "react";
 import HRTopBar from "@/components/hr/nav/HRTopBar";
 import HRLeftNav from "@/components/hr/nav/HRLeftNav";
 import PageTitle from "@/components/common/PageTitle";
+import ChatbotWidget from "@/components/ai/ChatbotWidget";
+import ToastProvider from "@/components/common/ui/ToastProvider.ui";
 import "leaflet/dist/leaflet.css";
 
 export default function HRLayout({ children }: { children: React.ReactNode }) {
   const topbarH = "56px";
 
   return (
-    <>
+    <ToastProvider>
       <PageTitle title="TraviLink | HR" />
       <div
         className="bg-[var(--background)] text-[var(--foreground)]"
@@ -34,7 +36,10 @@ export default function HRLayout({ children }: { children: React.ReactNode }) {
           <div className="mx-auto max-w-7xl py-6">{children}</div>
         </main>
       </div>
+
+      {/* AI Chatbot Widget */}
+      <ChatbotWidget />
     </div>
-    </>
+    </ToastProvider>
   );
 }

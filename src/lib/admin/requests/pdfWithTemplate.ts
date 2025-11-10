@@ -491,16 +491,9 @@ export async function generateRequestPDF(req: AdminRequest) {
 
     /* 6) Save */
     const bytes = await pdfDoc.save();
-    const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-    const blob = new Blob([ab], { type: "application/pdf" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${(req as any)?.id ?? "TravelOrder"}_TravelOrder.pdf`;
-    a.click();
-    URL.revokeObjectURL(url);
+    return bytes;
   } catch (err) {
     console.error("PDF generation failed:", err);
-    alert("Failed to generate Travel Order PDF.");
+    throw new Error("Failed to generate Travel Order PDF.");
   }
 }

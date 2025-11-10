@@ -21,11 +21,12 @@ import {
   X,
 } from "lucide-react";
 import { useRequestsNavBadge } from "@/components/admin/requests/hooks/useRequestsBadge";
+import { motion } from "framer-motion";
 
-/* Brand tokens - Premium gradient */
-const BRAND = "#7a1f2a";
-const BRAND_DARK = "#4a0d15";
-const BRAND_ACCENT = "#c41e3a";
+/* Solid maroon theme */
+const PRIMARY_MAROON = "#7a0010"; // Unified maroon
+const DARKER_MAROON = "#5c000c"; // Darker shade
+const HOVER_MAROON = "#8b0012"; // Lighter maroon for hover
 const NAV_W_OPEN = 280;
 const NAV_W_COLLAPSED = 72;
 
@@ -56,9 +57,10 @@ function CollapseToggle({ collapsed, onClick }: { collapsed: boolean; onClick: (
       type="button"
       aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
       title={collapsed ? "Expand (Ctrl+B)" : "Collapse (Ctrl+B)"}
-      className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-white border border-white/20 hover:bg-white/20 hover:border-white/30 transition-all duration-200 shadow-lg backdrop-blur-sm"
+      className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-white hover:bg-opacity-80 transition-all duration-200"
+      style={{backgroundColor: DARKER_MAROON}}
     >
-      <ChevronLeft className={["h-4 w-4 transition-transform duration-300", collapsed ? "rotate-180" : ""].join(" ")} strokeWidth={2.5} />
+      <ChevronLeft className={["h-4 w-4 transition-transform duration-300", collapsed ? "rotate-180" : ""].join(" ")} strokeWidth={2} />
     </button>
   );
 }
@@ -69,6 +71,9 @@ export default function AdminLeftNav() {
   const [searchQuery, setSearchQuery] = React.useState("");
   const searchInputRef = React.useRef<HTMLInputElement>(null);
   const requestsBadge = useRequestsNavBadge();
+  const [hoveredItem, setHoveredItem] = React.useState<string | null>(null);
+  const navRefs = React.useRef<Record<string, HTMLElement | null>>({});
+  const menuContainerRef = React.useRef<HTMLDivElement>(null);
 
   // Debug: Log badge value
   React.useEffect(() => {
@@ -93,11 +98,11 @@ export default function AdminLeftNav() {
   function applyVars() {
     if (typeof document === "undefined") return;
     const root = document.documentElement;
-    // Premium gradient with depth
-    root.style.setProperty("--tl-nav-bg", `linear-gradient(135deg, ${BRAND} 0%, ${BRAND_DARK} 50%, #2d0810 100%)`);
+    // Solid maroon theme
+    root.style.setProperty("--tl-nav-bg", PRIMARY_MAROON);
     root.style.setProperty("--tl-nav-fg", "#ffffff");
-    root.style.setProperty("--tl-nav-border", "rgba(255, 255, 255, 0.1)");
-    root.style.setProperty("--brand", BRAND);
+    root.style.setProperty("--tl-nav-border", DARKER_MAROON);
+    root.style.setProperty("--brand", PRIMARY_MAROON);
   }
 
   function setRootNavWidth(px: number) {
@@ -150,25 +155,24 @@ export default function AdminLeftNav() {
       onClick={onRootClick}
       className="h-full select-none overflow-hidden text-white"
       style={{
-        background: "var(--tl-nav-bg)",
-        borderRight: "1px solid var(--tl-nav-border)",
-        borderRadius: 24,
+        backgroundColor: PRIMARY_MAROON,
+        borderRadius: 20,
         width: collapsed ? NAV_W_COLLAPSED : NAV_W_OPEN,
       }}
     >
       <div className="flex h-full w-full flex-col">
         {/* Header row: search + button aligned */}
-        <div className="sticky top-0 z-20 bg-gradient-to-b from-black/20 to-transparent px-3 pt-4 pb-3 backdrop-blur-sm">
+        <div className="sticky top-0 z-20 px-3 pt-3 pb-2.5" style={{backgroundColor: DARKER_MAROON}}>
           <div className="flex items-center gap-2">
             {!collapsed && (
               <div className="flex-1">
-                {/* ===== Premium Search Bar ===== */}
+                {/* ===== Clean Search Bar ===== */}
                 <div className="relative group">
                   <div className="pointer-events-none absolute inset-y-0 left-3 z-10 flex items-center">
                     <Search
                       aria-hidden
-                      className="h-4 w-4 text-white/60 group-focus-within:text-white/90 transition-colors duration-200"
-                      strokeWidth={2.5}
+                      className="h-4 w-4 text-white transition-colors duration-200"
+                      strokeWidth={2}
                     />
                   </div>
 
@@ -179,13 +183,12 @@ export default function AdminLeftNav() {
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="
                       relative z-0
-                      h-11 w-full rounded-xl border border-white/10 bg-white/5
-                      pl-10 pr-9 text-sm text-white placeholder-white/50
-                      outline-none backdrop-blur-md
+                      h-10 w-full rounded-lg
+                      pl-10 pr-9 text-sm text-white placeholder-white
+                      outline-none
                       transition-all duration-200
-                      hover:bg-white/10 hover:border-white/20
-                      focus:bg-white/15 focus:border-white/30 focus:ring-2 focus:ring-white/20
                     "
+                    style={{backgroundColor: DARKER_MAROON, fontFamily: 'Inter, system-ui, -apple-system, sans-serif'}}
                     autoComplete="off"
                   />
 
@@ -195,11 +198,11 @@ export default function AdminLeftNav() {
                         setSearchQuery("");
                         searchInputRef.current?.focus();
                       }}
-                      className="absolute inset-y-0 right-2 my-auto inline-flex h-7 w-7 items-center justify-center rounded-lg text-white/70 hover:bg-white/10 hover:text-white transition-all duration-200"
+                      className="absolute inset-y-0 right-2 my-auto inline-flex h-6 w-6 items-center justify-center rounded-md text-white transition-all duration-200"
                       aria-label="Clear search"
                       type="button"
                     >
-                      <X className="h-4 w-4" />
+                      <X className="h-3.5 w-3.5" />
                     </button>
                   )}
                 </div>
@@ -210,49 +213,117 @@ export default function AdminLeftNav() {
           </div>
 
           {!collapsed && (
-            <div className="mt-4 flex items-center gap-2 px-1">
-              <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-white/20 to-white/5 flex items-center justify-center font-bold text-white text-sm backdrop-blur-sm">
+            <div className="mt-3 flex items-center gap-2.5 px-1">
+              <div className="h-8 w-8 rounded-md flex items-center justify-center font-bold text-white text-[11px]" style={{backgroundColor: DARKER_MAROON, fontFamily: 'Inter, system-ui, -apple-system, sans-serif'}}>
                 TL
               </div>
               <div>
-                <div className="text-xs font-bold text-white tracking-wide">TRAVILINK</div>
-                <div className="text-[10px] text-white/60 font-medium">Admin Portal</div>
+                <div className="text-[11px] font-bold text-white tracking-wide" style={{fontFamily: 'Inter, system-ui, -apple-system, sans-serif', letterSpacing: '0.03em'}}>TRAVILINK</div>
+                <div className="text-[9px] text-white font-medium opacity-80" style={{fontFamily: 'Inter, system-ui, -apple-system, sans-serif'}}>Admin Portal</div>
               </div>
             </div>
           )}
         </div>
 
         {/* Menu */}
-        <div className="flex-1 overflow-y-auto no-scrollbar px-2 py-4">
+        <div 
+          ref={menuContainerRef}
+          className="flex-1 overflow-y-auto no-scrollbar px-3 py-3 relative"
+          onMouseLeave={() => setHoveredItem(null)}
+        >
+          {/* Sliding active background */}
+          {(() => {
+            const activeHref = NAV.find(item => 
+              pathname === item.href || (item.href !== "/admin" && (pathname ?? "").startsWith(item.href))
+            )?.href;
+            
+            if (!activeHref || !navRefs.current[activeHref] || !menuContainerRef.current) return null;
+            
+            const activeItem = navRefs.current[activeHref];
+            const container = menuContainerRef.current;
+            const itemRect = activeItem.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
+            const top = itemRect.top - containerRect.top + container.scrollTop;
+            const left = itemRect.left - containerRect.left;
+            
+            return (
+              <motion.div
+                className="absolute pointer-events-none rounded-lg bg-white shadow-sm"
+                initial={false}
+                animate={{
+                  top: `${top}px`,
+                  left: `${left}px`,
+                  width: `${itemRect.width}px`,
+                  height: `${itemRect.height}px`,
+                }}
+                transition={{ 
+                  type: 'spring', 
+                  stiffness: 180, 
+                  damping: 25,
+                  mass: 1.2
+                }}
+              />
+            );
+          })()}
+
+          {/* Floating hover background with smooth fade for active items */}
+          {hoveredItem && navRefs.current[hoveredItem] && menuContainerRef.current && (() => {
+            // Check if hovered item is active page
+            const isHoveredActive = pathname === hoveredItem || (hoveredItem !== "/admin" && (pathname ?? "").startsWith(hoveredItem));
+            
+            const item = navRefs.current[hoveredItem];
+            const container = menuContainerRef.current;
+            if (!item || !container) return null;
+            
+            const itemRect = item.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
+            const top = itemRect.top - containerRect.top + container.scrollTop;
+            const left = itemRect.left - containerRect.left;
+            
+            return (
+              <div
+                className="absolute pointer-events-none transition-all duration-300 ease-out rounded-lg"
+                style={{
+                  backgroundColor: '#ffffff',
+                  opacity: isHoveredActive ? 0 : 0.95,
+                  top: `${top}px`,
+                  left: `${left}px`,
+                  width: `${itemRect.width}px`,
+                  height: `${itemRect.height}px`,
+                }}
+              />
+            );
+          })()}
+          
           {Object.entries(grouped).map(([section, items]) => (
-            <div key={section} className={collapsed ? "mb-0" : "mb-6"}>
+            <div key={section} className={collapsed ? "mb-0" : "mb-4"}>
               {!collapsed && (
-                <div className="mb-3 px-4 flex items-center gap-2">
-                  <div className="h-[1px] w-8 bg-gradient-to-r from-white/40 to-transparent" />
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-white/50">
+                <div className="mb-1.5 px-2">
+                  <div className="text-[9px] font-bold uppercase tracking-widest text-white opacity-60" style={{fontFamily: 'Inter, system-ui, -apple-system, sans-serif', letterSpacing: '0.1em'}}>
                     {section}
                   </div>
-                  <div className="h-[1px] flex-1 bg-gradient-to-r from-white/20 to-transparent" />
                 </div>
               )}
 
-              <ul className="space-y-1.5">
+              <ul className="space-y-0.5">
                 {items.map(({ href, label, Icon }) => {
                   const active =
                     pathname === href || (href !== "/admin" && (pathname ?? "").startsWith(href));
                   const showBadge = href === "/admin/requests" && (requestsBadge ?? 0) > 0;
 
                   const base = collapsed
-                    ? "relative flex h-12 w-full items-center justify-center rounded-xl px-0"
-                    : "relative flex items-center gap-3 rounded-xl px-4 py-3";
+                    ? "relative flex h-10 w-full items-center justify-center rounded-lg px-0"
+                    : "relative flex items-center gap-2.5 rounded-lg px-3 py-2";
 
-                  const hoverBg = active 
-                    ? "bg-gradient-to-r from-white/20 to-white/10 shadow-lg shadow-black/20" 
-                    : "hover:bg-white/10 hover:shadow-md hover:shadow-black/10";
+                  const isHovered = hoveredItem === href;
+                  // Remove bg-white class - sliding background handles it
+                  
+                  const textColor = active || isHovered ? PRIMARY_MAROON : '#ffffff';
 
                   return (
                     <li key={href}>
                       <Link
+                        ref={(el) => { navRefs.current[href] = el; }}
                         href={href}
                         data-nav-link="true"
                         aria-current={active ? "page" : undefined}
@@ -260,40 +331,57 @@ export default function AdminLeftNav() {
                         onClick={(e) => {
                           if (collapsed) e.stopPropagation();
                         }}
-                        className={["group text-sm font-medium", base, hoverBg].join(" ")}
+                        className={["group text-sm transition-colors duration-300", base].join(" ")}
+                        style={{
+                          color: textColor,
+                          fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
+                          zIndex: active || isHovered ? 2 : 1,
+                          position: 'relative'
+                        }}
+                        onMouseEnter={() => {
+                          if (!collapsed) setHoveredItem(href);
+                        }}
                       >
-                        {!collapsed && (
+                        {!collapsed && (active || isHovered) && (
                           <span
-                            className={[
-                              "pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 h-8 w-1 rounded-r-full transition-all duration-300",
-                              active ? "bg-gradient-to-b from-white to-white/80 shadow-lg shadow-white/50" : "bg-transparent group-hover:bg-white/40",
-                            ].join(" ")}
+                            className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r transition-all duration-300 ease-out"
+                            style={{backgroundColor: active ? '#ffffff' : PRIMARY_MAROON}}
                           />
                         )}
 
-                        <div className={[
-                          "h-9 w-9 rounded-lg flex items-center justify-center transition-all duration-200",
-                          active ? "bg-white/15 shadow-inner" : "group-hover:bg-white/10"
-                        ].join(" ")}>
-                          <Icon className="h-5 w-5 shrink-0 text-white" strokeWidth={active ? 2.5 : 2} />
+                        <div className="h-7 w-7 rounded-md flex items-center justify-center transition-all duration-200">
+                          <Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={active ? 2.5 : 2} />
                         </div>
 
                         {!collapsed && (
                           <span
-                            className={["truncate", active ? "font-semibold text-white" : "text-white/90"].join(" ")}
+                            className={["truncate text-[13.5px] tracking-tight", active ? "font-semibold" : "font-medium"].join(" ")}
+                            style={{letterSpacing: active ? '-0.01em' : '0'}}
                           >
                             {label}
                           </span>
                         )}
 
                         {showBadge && !collapsed && (
-                          <span className="ml-auto inline-flex h-6 min-w-[24px] shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-rose-500 px-2 text-xs font-bold leading-none text-white shadow-lg ring-2 ring-white/20">
+                          <span 
+                            className="ml-auto inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full px-1.5 text-[10px] font-bold leading-none transition-all duration-300" 
+                            style={{
+                              backgroundColor: (active || isHovered) ? PRIMARY_MAROON : '#ffffff',
+                              color: (active || isHovered) ? '#ffffff' : PRIMARY_MAROON
+                            }}
+                          >
                             {requestsBadge > 99 ? "99+" : requestsBadge}
                           </span>
                         )}
                         {showBadge && collapsed && (
-                          <span className="pointer-events-none absolute -right-1 -top-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-rose-500 px-1.5 text-[11px] font-bold leading-none text-white shadow-lg ring-2 ring-white/20">
-                            {requestsBadge > 99 ? "99+" : requestsBadge}
+                          <span 
+                            className="pointer-events-none absolute -right-1 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] font-semibold leading-none transition-all duration-300" 
+                            style={{
+                              backgroundColor: (active || isHovered) ? PRIMARY_MAROON : '#ffffff',
+                              color: (active || isHovered) ? '#ffffff' : PRIMARY_MAROON
+                            }}
+                          >
+                            {requestsBadge > 99 ? "9+" : requestsBadge}
                           </span>
                         )}
                       </Link>

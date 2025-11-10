@@ -5,6 +5,7 @@ import React, { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createSupabaseClient } from "@/lib/supabase/client";
 import LoginView from "./LoginView";
+import LoadingModal from "@/components/common/LoadingModal";
 
 function LoginPageContent() {
   const router = useRouter();
@@ -15,6 +16,7 @@ function LoginPageContent() {
   const [password, setPassword] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState("Logging in to TraviLink");
   const [remember, setRemember] = useState(false);
 
   // Check if user already logged in via Supabase session
@@ -35,6 +37,7 @@ function LoginPageContent() {
     e.preventDefault();
     setLoading(true);
     setErr("");
+    setLoadingMessage("Logging in to TraviLink");
 
     try {
       // Call server-side login API
@@ -54,6 +57,12 @@ function LoginPageContent() {
         return;
       }
 
+      // Show success message
+      setLoadingMessage("Login successful! Redirecting");
+
+      // Small delay for better UX
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       // Redirect to the path determined by the server
       const redirectPath = nextUrl || data.redirectPath || '/user';
       window.location.href = redirectPath;
@@ -65,17 +74,20 @@ function LoginPageContent() {
   }
 
   return (
-    <LoginView
-      email={email}
-      password={password}
-      setEmail={setEmail}
-      setPassword={setPassword}
-      loading={loading}
-      err={err}
-      onSubmit={onSubmit}
-      remember={remember}
-      setRemember={setRemember}
-    />
+    <>
+      <LoginView
+        email={email}
+        password={password}
+        setEmail={setEmail}
+        setPassword={setPassword}
+        loading={loading}
+        err={err}
+        onSubmit={onSubmit}
+        remember={remember}
+        setRemember={setRemember}
+      />
+      <LoadingModal isOpen={loading} message={loadingMessage} />
+    </>
   );
 }
 

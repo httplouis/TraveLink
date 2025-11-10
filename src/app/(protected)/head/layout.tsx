@@ -5,6 +5,7 @@ import React from "react";
 import HeadTopBar from "@/components/head/nav/HeadTopBar";
 import HeadLeftNav from "@/components/head/nav/HeadLeftNav";
 import PageTitle from "@/components/common/PageTitle";
+import ChatbotWidget from "@/components/ai/ChatbotWidget";
 import "leaflet/dist/leaflet.css";
 
 export default function HeadLayout({ children }: { children: React.ReactNode }) {
@@ -34,6 +35,9 @@ export default function HeadLayout({ children }: { children: React.ReactNode }) 
           <div className="mx-auto max-w-7xl px-6 py-6">{children}</div>
         </main>
       </div>
+
+      {/* AI Chatbot Widget */}
+      <ChatbotWidget />
     </div>
     </>
   );

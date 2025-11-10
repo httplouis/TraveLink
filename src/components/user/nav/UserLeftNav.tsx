@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import * as React from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { motion } from "framer-motion";
 
 type Item =
   | {
@@ -61,6 +62,9 @@ const NAV: Item[] = [
 export default function UserLeftNav() {
   const pathname = usePathname() ?? "";
   const [submissionsCount, setSubmissionsCount] = React.useState(0);
+  const [hoveredItem, setHoveredItem] = React.useState<string | null>(null);
+  const navRefs = React.useRef<Record<string, HTMLElement | null>>({});
+  const containerRef = React.useRef<HTMLDivElement>(null);
 
   const isActive = (href: string, exact?: boolean) =>
     exact ? pathname === href : pathname === href || pathname.startsWith(href + "/");
@@ -71,14 +75,11 @@ export default function UserLeftNav() {
 
     const fetchCount = async () => {
       try {
-        const res = await fetch("/api/requests/my-submissions", { cache: "no-store" });
+        // Use lightweight count endpoint instead of fetching full submissions
+        const res = await fetch("/api/requests/my-submissions/count", { cache: "no-store" });
         const json = await res.json();
-        if (mounted && json.ok && json.data) {
-          // Count pending submissions
-          const pending = json.data.filter((s: any) => 
-            s.status?.startsWith("pending") || s.status === "submitted"
-          );
-          setSubmissionsCount(pending.length);
+        if (mounted && json.ok) {
+          setSubmissionsCount(json.pending_count || 0);
         }
       } catch (err) {
         console.error("Failed to fetch submissions count:", err);
@@ -95,23 +96,178 @@ export default function UserLeftNav() {
   }, []);
 
   return (
-    <nav aria-label="User menu" className="space-y-1.5">
+    <nav 
+      ref={containerRef}
+      aria-label="User menu" 
+      className="space-y-1.5 relative"
+      onMouseLeave={() => setHoveredItem(null)}
+    >
+      {/* Main nav sliding active background (for Dashboard, Schedule, Request parent) */}
+      {(() => {
+        // Find active main nav item or group parent
+        let activeHref: string | undefined;
+        
+        for (const item of NAV) {
+          if (item.type === "link" && isActive(item.href, item.exact)) {
+            activeHref = item.href;
+            break;
+          } else if (item.type === "group") {
+            const anyChildActive = item.children.some(c => isActive(c.href, c.exact));
+            if (anyChildActive) {
+              // Use group key for the parent "Request" link
+              activeHref = `group-${item.label.toLowerCase()}`;
+              break;
+            }
+          }
+        }
+        
+        if (!activeHref) return null;
+        
+        const activeItem = navRefs.current[activeHref];
+        const container = containerRef.current;
+        if (!activeItem || !container) return null;
+        
+        const itemRect = activeItem.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        const top = itemRect.top - containerRect.top + container.scrollTop;
+        const left = itemRect.left - containerRect.left;
+        
+        return (
+          <motion.div
+            className="absolute pointer-events-none rounded-xl shadow-md"
+            initial={false}
+            animate={{
+              top: `${top}px`,
+              left: `${left}px`,
+              width: `${itemRect.width}px`,
+              height: `${itemRect.height}px`,
+            }}
+            transition={{ 
+              type: 'spring', 
+              stiffness: 200, 
+              damping: 25,
+              mass: 0.8
+            }}
+            style={{ background: '#7a0019' }}
+          />
+        );
+      })()}
+
+      {/* Sub-nav sliding active background (for New request, Drafts, Submissions) */}
+      {(() => {
+        // Find active sub-nav item
+        let activeSubHref: string | undefined;
+        
+        for (const item of NAV) {
+          if (item.type === "group") {
+            for (const child of item.children) {
+              if (isActive(child.href, child.exact)) {
+                activeSubHref = child.href;
+                break;
+              }
+            }
+            if (activeSubHref) break;
+          }
+        }
+        
+        if (!activeSubHref) return null;
+        
+        const activeItem = navRefs.current[activeSubHref];
+        const container = containerRef.current;
+        if (!activeItem || !container) return null;
+        
+        const itemRect = activeItem.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        const top = itemRect.top - containerRect.top + container.scrollTop;
+        const left = itemRect.left - containerRect.left;
+        
+        return (
+          <motion.div
+            className="absolute pointer-events-none rounded-lg"
+            initial={false}
+            animate={{
+              top: `${top}px`,
+              left: `${left}px`,
+              width: `${itemRect.width}px`,
+              height: `${itemRect.height}px`,
+            }}
+            transition={{ 
+              type: 'spring', 
+              stiffness: 200, 
+              damping: 30,
+              mass: 0.8
+            }}
+            style={{ background: 'rgba(122, 0, 25, 0.15)' }}
+          />
+        );
+      })()}
+
+      {/* Floating hover background for all items */}
+      {hoveredItem && navRefs.current[hoveredItem] && containerRef.current && (() => {
+        // Check if hovering over active item to fade it out
+        const isGroupKey = hoveredItem.startsWith('group-');
+        const hoveredIsActive = isGroupKey 
+          ? NAV.some(item => item.type === "group" && `group-${item.label.toLowerCase()}` === hoveredItem && 
+                            item.children.some(c => isActive(c.href, c.exact)))
+          : NAV.some(item => {
+              if (item.type === "link") {
+                return isActive(item.href, item.exact) && item.href === hoveredItem;
+              } else {
+                return item.children.some(c => isActive(c.href, c.exact) && c.href === hoveredItem);
+              }
+            });
+        
+        const item = navRefs.current[hoveredItem];
+        const container = containerRef.current;
+        if (!item || !container) return null;
+        
+        const itemRect = item.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        const top = itemRect.top - containerRect.top + container.scrollTop;
+        const left = itemRect.left - containerRect.left;
+        
+        // Check if it's a sub-nav item by checking if it's in any group's children
+        // Group parent keys start with "group-", so they're main nav items
+        const isGroupParent = hoveredItem.startsWith('group-');
+        const isSubNav = !isGroupParent && NAV.some(navItem => 
+          navItem.type === "group" && navItem.children.some(c => c.href === hoveredItem)
+        );
+        
+        return (
+          <div
+            className="absolute pointer-events-none transition-all duration-300 ease-out"
+            style={{
+              background: isSubNav ? 'rgba(122, 0, 25, 0.12)' : '#7a0019',
+              borderRadius: isSubNav ? '0.5rem' : '0.75rem',
+              opacity: hoveredIsActive ? 0 : 1,
+              top: `${top}px`,
+              left: `${left}px`,
+              width: `${itemRect.width}px`,
+              height: `${itemRect.height}px`,
+            }}
+          />
+        );
+      })()}
       {NAV.map((item, idx) => {
         if (item.type === "link") {
           const active = isActive(item.href, item.exact);
+          const isHovered = hoveredItem === item.href;
+          
           return (
             <Link
               key={`${idx}-${item.href}`}
+              ref={(el) => { navRefs.current[item.href] = el; }}
               href={item.href}
+              onMouseEnter={() => setHoveredItem(item.href)}
               className={[
                 "group relative flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200",
                 active
-                  ? "bg-gradient-to-r from-[#7a0019] to-[#5a0010] text-white shadow-md shadow-[#7a0019]/20"
-                  : "text-neutral-700 hover:bg-neutral-100 hover:text-[#7a0019] active:scale-[0.98]",
+                  ? "text-white"
+                  : "text-neutral-700 hover:text-white active:scale-[0.98]",
               ].join(" ")}
             >
-              <item.Icon className={`h-5 w-5 transition-transform ${active ? "" : "group-hover:scale-110"}`} />
-              <span className="flex-1">{item.label}</span>
+              <item.Icon className={`h-5 w-5 transition-transform ${active ? "" : "group-hover:scale-110 group-hover:text-white"}`} />
+              <span className="flex-1 group-hover:text-white">{item.label}</span>
               {active && (
                 <div className="h-2 w-2 rounded-full bg-white/80"></div>
               )}
@@ -122,47 +278,59 @@ export default function UserLeftNav() {
         // --- Clickable group header → first child (/user/request) ---
         const anyActive = item.children.some((c) => isActive(c.href, c.exact));
         const firstChild = item.children[0]; // /user/request
+        const groupKey = `group-${item.label.toLowerCase()}`; // unique key for parent
         return (
           <div key={`group-${idx}`} className="space-y-1.5">
             <Link
+              ref={(el) => { navRefs.current[groupKey] = el; }}
               href={firstChild.href}
+              onMouseEnter={() => setHoveredItem(groupKey)}
               className={[
                 "group relative flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200",
                 anyActive 
-                  ? "bg-gradient-to-r from-[#7a0019] to-[#5a0010] text-white shadow-md shadow-[#7a0019]/20" 
-                  : "text-neutral-700 hover:bg-neutral-100 hover:text-[#7a0019] active:scale-[0.98]",
+                  ? "text-white" 
+                  : "text-neutral-700 hover:text-white active:scale-[0.98]",
               ].join(" ")}
               title="New request"
             >
-              <item.Icon className={`h-5 w-5 transition-transform ${anyActive ? "" : "group-hover:scale-110"}`} />
-              <span className="flex-1">Request</span>
+              <item.Icon className={`h-5 w-5 transition-transform ${anyActive ? "" : "group-hover:scale-110 group-hover:text-white"}`} />
+              <span className="flex-1 group-hover:text-white">Request</span>
               {anyActive && (
                 <div className="h-2 w-2 rounded-full bg-white/80"></div>
               )}
             </Link>
 
             {/* Children shown by default */}
-            <div className="space-y-1 pl-6">
+            <div className="space-y-1 pl-6 relative">
               {item.children.map((c) => {
                 const active = isActive(c.href, c.exact);
                 const isSubmissions = c.href === "/user/submissions";
                 const showBadge = isSubmissions && submissionsCount > 0;
+                const isHovered = hoveredItem === c.href;
                 
                 return (
                   <Link
                     key={c.href}
+                    ref={(el) => { navRefs.current[c.href] = el; }}
                     href={c.href}
+                    onMouseEnter={() => setHoveredItem(c.href)}
                     className={[
                       "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150",
                       active
-                        ? "bg-[#7a0019]/10 text-[#7a0019] border-l-2 border-[#7a0019]"
-                        : "text-neutral-600 hover:bg-neutral-50 hover:text-[#7a0019] border-l-2 border-transparent",
+                        ? "text-[#7a0019] border-l-2 border-[#7a0019]"
+                        : "text-neutral-600 hover:text-[#7a0019] border-l-2 border-transparent",
                     ].join(" ")}
                   >
-                    <c.Icon className={`h-4 w-4 transition-transform ${active ? "" : "group-hover:scale-110"}`} />
-                    <span className="flex-1">{c.label}</span>
+                    <c.Icon className={`h-4 w-4 transition-transform ${active ? "" : "group-hover:scale-110 group-hover:text-[#7a0019]"}`} />
+                    <span className="flex-1 group-hover:text-[#7a0019]">{c.label}</span>
                     {showBadge && (
-                      <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white">
+                      <span 
+                        className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-bold transition-all duration-300"
+                        style={{
+                          backgroundColor: (active || isHovered) ? '#ffffff' : '#7a0019',
+                          color: (active || isHovered) ? '#7a0019' : '#ffffff'
+                        }}
+                      >
                         {submissionsCount > 9 ? "9+" : submissionsCount}
                       </span>
                     )}
