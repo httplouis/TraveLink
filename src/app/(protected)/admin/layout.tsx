@@ -11,6 +11,7 @@ import NotificationBell from "@/components/admin/nav/NotificationBell";
 import PageTitle from "@/components/common/PageTitle";
 import { Search } from "lucide-react";
 import ProfileContainer from "@/components/admin/profile/containers/ProfileContainer";
+import ChatbotWidget from "@/components/ai/ChatbotWidget";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -48,27 +49,25 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div
           className="
             sticky top-4 z-30 relative flex h-16 items-center
-            rounded-2xl border border-white/10 
-            bg-gradient-to-r from-[#7a1f2a] via-[#5a1520] to-[#4a0d15]
+            rounded-2xl
             text-white
-            shadow-[0_8px_32px_rgba(0,0,0,0.12)]
-            backdrop-blur-xl
             px-4 sm:px-6
             overflow-hidden
           "
+          style={{
+            backgroundColor: '#7a0010'
+          }}
           suppressHydrationWarning
         >
-          {/* Subtle gradient overlay */}
-          <div className="absolute inset-0 bg-gradient-to-r from-white/[0.05] via-transparent to-white/[0.02] pointer-events-none" />
           
           {/* Left brand chip */}
           <div className="absolute left-6 hidden items-center gap-3 md:flex z-10">
-            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-white/20 to-white/5 backdrop-blur-sm flex items-center justify-center font-bold text-sm shadow-lg">
+            <div className="h-9 w-9 rounded-xl flex items-center justify-center font-bold text-sm" style={{backgroundColor: '#5c000c'}}>
               TL
             </div>
             <div>
               <div className="text-sm font-bold tracking-wide">TraviLink</div>
-              <div className="text-[10px] text-white/60 font-medium">Admin Portal</div>
+              <div className="text-[10px] text-white font-medium opacity-80">Admin Portal</div>
             </div>
           </div>
 
@@ -80,14 +79,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 placeholder="Search schedules, vehicles, drivers…  (Ctrl/⌘+K)"
                 className="
                   h-12 w-full rounded-xl 
-                  border border-white/20 
-                  bg-white/95 backdrop-blur-sm
+                  bg-white
                   pl-11 pr-4
                   text-sm text-neutral-900 placeholder-neutral-400 
                   outline-none
                   transition-all duration-200
-                  hover:bg-white hover:border-white/40
-                  focus:bg-white focus:border-white focus:ring-2 focus:ring-white/50 focus:shadow-lg
                 "
                 suppressHydrationWarning
                 autoComplete="off"
@@ -98,7 +94,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           {/* Right actions */}
           <div className="absolute right-6 flex items-center gap-3 z-10" suppressHydrationWarning>
             <NotificationBell />
-            <div className="h-8 w-[1px] bg-white/20" />
             <ProfileMenu />
           </div>
         </div>
@@ -116,6 +111,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       {/* Mount the profile slide-over once at the root */}
       <ProfileContainer />
+
+      {/* AI Chatbot Widget */}
+      <ChatbotWidget />
     </div>
     </>
   );

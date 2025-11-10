@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
     // Get user profile
     const { data: profile, error: profileError } = await supabase
       .from("users")
-      .select("id, email, department, role, is_head, is_hr, is_exec")
+      .select("id, email, department, role, is_head, is_hr, is_exec, is_vp, is_president")
       .eq("auth_user_id", user.id)
       .single();
 
@@ -73,6 +73,8 @@ export async function GET(request: NextRequest) {
   const isHead = userRole === 'head' || profile.is_head === true;
   const isHr = userRole === 'hr' || profile.is_hr === true;
   const isExec = userRole === 'exec' || profile.is_exec === true;
+  const isVp = profile.is_vp === true;
+  const isPresident = profile.is_president === true;
   const isDriver = userRole === 'driver';
 
   return NextResponse.json({
@@ -83,6 +85,8 @@ export async function GET(request: NextRequest) {
     is_head: isHead,
     is_hr: isHr,
     is_exec: isExec,
+    is_vp: isVp,
+    is_president: isPresident,
     is_driver: isDriver,
   });
   } catch (error) {

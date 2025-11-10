@@ -54,7 +54,10 @@ export async function POST(request: NextRequest) {
     const userEmail = data.user.email?.toLowerCase() || "";
     
     const adminEmails = ["admin@mseuf.edu.ph", "admin.cleofe@mseuf.edu.ph", "casinotrizzia@mseuf.edu.ph"];
+    const comptrollerEmails = ["comptroller@mseuf.edu.ph"];
+    
     const isAdmin = userRole === "admin" || adminEmails.includes(userEmail);
+    const isComptroller = comptrollerEmails.includes(userEmail);
     const isHead = userRole === "head" || profile.is_head === true;
     const isHR = userRole === "hr" || profile.is_hr === true;
     const isExec = userRole === "exec" || profile.is_exec === true;
@@ -63,6 +66,8 @@ export async function POST(request: NextRequest) {
     let redirectPath = "/user";
     if (isAdmin) {
       redirectPath = "/admin";
+    } else if (isComptroller) {
+      redirectPath = "/comptroller/inbox";
     } else if (isHead) {
       redirectPath = "/head/dashboard";
     } else if (isHR) {

@@ -16,7 +16,7 @@ export async function PATCH(req: Request) {
     .from("requests")
     .update({
       head_signature,
-      updated_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(), // Signature only, no approval timestamp
     })
     .eq("id", id)
     .select("*")

@@ -285,9 +285,11 @@ export async function POST(req: Request) {
       has_budget: hasBudget,
       total_budget: totalBudget,
       expense_breakdown: expenseBreakdown,
+      cost_justification: costs.justification || null,
       
+      vehicle_mode: vehicleMode, // "owned", "institutional", or "rent"
       needs_vehicle: needsVehicle,
-      vehicle_type: vehicleMode === "rent" ? "Rental" : vehicleMode === "institutional" ? "University Vehicle" : null,
+      vehicle_type: vehicleMode === "rent" ? "Rental" : vehicleMode === "institutional" ? "University Vehicle" : vehicleMode === "owned" ? "Personal Vehicle" : null,
       needs_rental: vehicleMode === "rent",
       
       // Preferred suggestions (faculty can suggest, admin decides)

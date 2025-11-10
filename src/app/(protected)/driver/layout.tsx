@@ -6,6 +6,7 @@ import Topbar from "@/components/driver/Topbar";
 import ProfilePanel from "@/components/driver/ProfilePanel";
 import MiniCalendar from "@/components/driver/MiniCalendar";
 import PageTitle from "@/components/common/PageTitle";
+import ChatbotWidget from "@/components/ai/ChatbotWidget";
 import "@/app/styles/driver/driver.css";
 
 const TOPBAR_H = 64; // adjust if your Topbar is not h-16
@@ -72,6 +73,9 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
           </div>
         </aside>
       </div>
+
+      {/* AI Chatbot Widget */}
+      <ChatbotWidget />
     </div>
     </>
   );

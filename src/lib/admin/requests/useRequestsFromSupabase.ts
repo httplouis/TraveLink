@@ -40,6 +40,9 @@ type SupabaseRequestRecord = {
   assigned_driver_id?: string;
   assigned_vehicle_id?: string;
   
+  // Vehicle mode
+  vehicle_mode?: 'owned' | 'institutional' | 'rent';
+  
   // Expenses
   expense_breakdown?: any;
   
@@ -85,12 +88,14 @@ export function useRequestsFromSupabase() {
     "/api/requests/list",
     fetcher,
     {
-      refreshInterval: 10000, // Auto-refresh every 10 seconds for backup
+      refreshInterval: 5000, // Auto-refresh every 5 seconds for backup
       revalidateOnFocus: true, // Re-fetch when window gains focus
       revalidateOnReconnect: true, // Refresh when internet reconnects
-      dedupingInterval: 2000, // Prevent duplicate requests within 2 seconds
+      dedupingInterval: 1000, // Prevent duplicate requests within 1 second
       errorRetryCount: 2, // Only retry twice on error
       errorRetryInterval: 3000, // Wait 3 seconds between retries
+      revalidateIfStale: true, // Always revalidate if data is stale
+      revalidateOnMount: true, // Revalidate when component mounts
     }
   );
 
@@ -117,14 +122,14 @@ export function useRequestsFromSupabase() {
           table: "requests",
         },
         (payload) => {
-          console.log("[useRequestsFromSupabase] Real-time change detected:", payload);
+          console.log("[useRequestsFromSupabase] 🔄 Real-time change detected:", payload.eventType, (payload.new as any)?.id || 'unknown');
           
-          // Debounce: only trigger refetch after 500ms of no changes for faster updates
+          // Debounce: only trigger refetch after 200ms of no changes for faster updates
           if (mutateTimeout) clearTimeout(mutateTimeout);
           mutateTimeout = setTimeout(() => {
-            console.log("[useRequestsFromSupabase] Triggering refetch after debounce");
+            console.log("[useRequestsFromSupabase] ⚡ Triggering refetch after debounce");
             mutate();
-          }, 500);
+          }, 200);
         }
       )
       .subscribe((status) => {

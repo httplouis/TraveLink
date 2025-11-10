@@ -74,14 +74,19 @@ export async function POST(request: Request) {
       status: nextStatus,
       current_approver_role: requiresComptroller ? "comptroller" : "hr",
       admin_approved_at: now,
+      admin_processed_at: now, // For tracking timeline
       admin_approved_by: userId,
+      admin_processed_by: userId, // For tracking timeline
       admin_signature: signature,
       admin_notes: adminNotes || null,
+      admin_comments: adminNotes || null, // For tracking timeline
       assigned_driver_id: driver || null,
       assigned_vehicle_id: vehicle || null,
     };
 
     console.log(`[POST /api/admin/approve] Approving request ${requestId}: ${req.status} → ${nextStatus}`);
+    console.log(`[POST /api/admin/approve] 🖊️ Signature length:`, signature?.length || 0);
+    console.log(`[POST /api/admin/approve] 📝 Update data:`, JSON.stringify(updateData, null, 2));
 
     const { error: updateError } = await supabase
       .from("requests")

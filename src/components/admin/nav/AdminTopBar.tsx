@@ -21,12 +21,12 @@ export default function AdminTopBar() {
   };
 
   return (
-    <header className="fixed inset-x-0 top-0 z-50 h-14 bg-[#7a0019] text-white">
+    <header className="fixed inset-x-0 top-0 z-50 h-14 bg-[#7a0010] text-white">
       <div className="flex h-full items-center justify-between px-4 md:px-6">
         {/* Logo + App Name */}
         <div className="flex items-center gap-3">
           <Link href="/admin" className="inline-flex items-center gap-2">
-            <span className="grid h-8 w-8 place-items-center rounded-md bg-white text-[#7a0019] text-sm font-semibold">
+            <span className="grid h-8 w-8 place-items-center rounded-md bg-white text-[#7a0010] text-sm font-semibold">
               TL
             </span>
             <span className="font-medium">TraviLink</span>
@@ -43,7 +43,7 @@ export default function AdminTopBar() {
             aria-label="Notifications"
           >
             <Bell className="h-5 w-5" />
-            <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-white px-[3px] text-[10px] leading-4 text-[#7a0019]">
+            <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-white px-[3px] text-[10px] leading-4 text-[#7a0010]">
               2
             </span>
           </Link>

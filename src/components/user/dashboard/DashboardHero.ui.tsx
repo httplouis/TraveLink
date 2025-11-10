@@ -98,18 +98,20 @@ export default function DashboardHero({
           transition={{ delay: 0.4 }}
           className="flex flex-wrap items-center gap-2"
         >
-          <button
-            onClick={onNewRequest}
-            className="group relative overflow-hidden rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[#7A0010] shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105"
-          >
-            <span className="relative z-10 flex items-center gap-2">
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              New request
-            </span>
-            <div className="absolute inset-0 bg-gradient-to-r from-white to-gray-50 opacity-0 group-hover:opacity-100 transition-opacity" />
-          </button>
+          {onNewRequest && (
+            <button
+              onClick={onNewRequest}
+              className="group relative overflow-hidden rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[#7A0010] shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105"
+            >
+              <span className="relative z-10 flex items-center gap-2">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                New request
+              </span>
+              <div className="absolute inset-0 bg-gradient-to-r from-white to-gray-50 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </button>
+          )}
           <button
             onClick={onOpenSchedule}
             className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold backdrop-blur hover:bg-white/20 transition-all duration-200 hover:scale-105"

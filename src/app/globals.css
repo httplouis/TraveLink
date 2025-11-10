@@ -129,3 +129,19 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     background-position: -200% 0;
   }
 }
+
+/* Fade in animation for filter panel */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.2s ease-out;
+}

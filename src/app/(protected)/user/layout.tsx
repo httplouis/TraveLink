@@ -5,6 +5,7 @@ import React from "react";
 import TopBar from "@/components/user/nav/TopBar";
 import UserLeftNav from "@/components/user/nav/UserLeftNav";
 import PageTitle from "@/components/common/PageTitle";
+import ChatbotWidget from "@/components/ai/ChatbotWidget";
 import "leaflet/dist/leaflet.css";
 
 // Keep Toasts at this level
@@ -37,6 +38,9 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
             <div className="mx-auto max-w-6xl py-6">{children}</div>
           </main>
         </div>
+
+        {/* AI Chatbot Widget */}
+        <ChatbotWidget />
       </div>
     </ToastProvider>
   );

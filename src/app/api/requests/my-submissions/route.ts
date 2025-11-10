@@ -30,7 +30,8 @@ export async function GET() {
         department:departments!department_id(id, code, name)
       `)
       .eq("requester_id", profile.id)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .limit(100); // Limit to 100 most recent submissions
 
     if (error) {
       console.error("[GET /api/requests/my-submissions] Error:", error);

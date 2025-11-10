@@ -57,7 +57,7 @@ export default function HRDashboardContainer() {
         trips={trips}
         userName={userName}
         onOpenSchedule={() => router.push("/hr/schedule")}
-        onNewRequest={() => router.push("/hr/request")}
+        onNewRequest={() => router.push("/hr/request")}  // HR can also submit requests
       />
     </>
   );

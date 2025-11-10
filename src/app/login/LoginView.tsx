@@ -32,7 +32,7 @@ export default function LoginView({
   return (
     <div className="fixed inset-0 font-sans h-dvh overflow-hidden">
       {/* page background */}
-      <div className="absolute inset-0 -z-10">
+      <div className="absolute inset-0 -z-10 bg-gray-100">
         <Image
           src="/pattern-light.jpg"
           alt="Campus background"
@@ -40,6 +40,7 @@ export default function LoginView({
           priority
           className="object-cover"
           sizes="100vw"
+          quality={75}
         />
         <div className="absolute inset-0 bg-black/30" />
       </div>
@@ -52,14 +53,14 @@ export default function LoginView({
   suppressHydrationWarning
 >
   {/* LEFT: image panel */}
-  <div className="relative hidden md:block overflow-hidden rounded-l-3xl group">
+  <div className="relative hidden md:block overflow-hidden rounded-l-3xl group bg-[#7A0010]">
     <Image
       src="/pattern-light.jpg"
       alt="Campus"
       fill
-      priority
       className="object-cover transition-transform duration-500 group-hover:scale-105"
-      sizes="50vw"
+      sizes="(max-width: 768px) 0vw, 50vw"
+      quality={75}
     />
     <div className="absolute inset-0 bg-[#7A0010]/70" />
 
@@ -70,7 +71,8 @@ export default function LoginView({
         alt="EU Logo"
         width={40}
         height={40}
-        className="object-contain drop-shadow-lg"
+        className="drop-shadow-lg"
+        style={{ width: '40px', height: '40px', objectFit: 'contain' }}
         priority
       />
     </div>

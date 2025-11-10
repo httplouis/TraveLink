@@ -44,7 +44,7 @@ export async function GET(
         actor:users!actor_id(id, name, email)
       `)
       .eq("request_id", requestId)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: true });
 
     if (historyError) {
       console.error("[GET /api/requests/[id]/history] History error:", historyError);

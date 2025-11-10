@@ -42,7 +42,7 @@ export async function GET() {
         status,
         assigned_vehicle_id,
         assigned_driver_id,
-        department:departments(name),
+        department:departments!requests_department_id_fkey(name),
         vehicle:vehicles(vehicle_name, plate_number, type),
         driver:users!assigned_driver_id(name)
       `)

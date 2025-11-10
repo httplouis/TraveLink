@@ -24,14 +24,16 @@ export default function QuickActions({ onNewRequest, onOpenSchedule }: Props) {
 
       {/* Grid layout instead of segmented control */}
       <div className="grid grid-cols-2 gap-2">
-        <Segment
-          label="New request"
-          Icon={FilePlus2}
-          onClick={onNewRequest}
-          title="New request (N)"
-          color="from-blue-50 to-blue-100"
-          hoverColor="hover:from-blue-100 hover:to-blue-200"
-        />
+        {onNewRequest && (
+          <Segment
+            label="New request"
+            Icon={FilePlus2}
+            onClick={onNewRequest}
+            title="New request (N)"
+            color="from-blue-50 to-blue-100"
+            hoverColor="hover:from-blue-100 hover:to-blue-200"
+          />
+        )}
         <Segment
           label="Schedule"
           Icon={CalendarDays}

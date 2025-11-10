@@ -9,11 +9,15 @@ import RequestsSummaryUI from "@/components/admin/requests/ui/RequestsSummary.ui
 import RequestsReceiverViewUI from "@/components/admin/requests/ui/RequestsReceiverView.ui";
 import RequestDetailsModalUI from "@/components/admin/requests/ui/RequestDetailsModal.ui";
 import RequestsToolbarUI from "@/components/admin/requests/toolbar/RequestsToolbar.ui";
+import KPICards from "@/components/admin/requests/ui/KPICards.ui";
+import UnifiedFilterBar from "@/components/admin/requests/ui/UnifiedFilterBar.ui";
 
 import { useDebouncedValue } from "@/lib/common/useDebouncedValue";
 import { AdminRequestsRepo, type AdminRequest } from "@/lib/admin/requests/store";
 import type { RequestRow, Pagination as Pg, FilterState } from "@/lib/admin/types";
 import * as TrashRepo from "@/lib/admin/requests/trashRepo";
+import { DEPARTMENTS } from "@/lib/org/departments";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   markVisitedNow,
   getReadIds,
@@ -82,9 +86,20 @@ export default function PageInner() {
   const [allRows, setAllRows] = useState<RequestRow[]>([]);
   const [filteredRows, setFilteredRows] = useState<RequestRow[]>([]);
   const [historyRows, setHistoryRows] = useState<RequestRow[]>([]);
+  const [filteredHistoryRows, setFilteredHistoryRows] = useState<RequestRow[]>([]);
   const [unreadIds, setUnreadIds] = useState<Set<string>>(new Set());
 
   const [tableSearch, setTableSearch] = useState("");
+  const [pendingStatusFilter, setPendingStatusFilter] = useState<string>("All");
+  const [pendingDeptFilter, setPendingDeptFilter] = useState<string>("All");
+  const [pendingDateFrom, setPendingDateFrom] = useState<string>("");
+  const [pendingDateTo, setPendingDateTo] = useState<string>("");
+  
+  const [historySearch, setHistorySearch] = useState("");
+  const [historyStatusFilter, setHistoryStatusFilter] = useState<string>("All");
+  const [historyDeptFilter, setHistoryDeptFilter] = useState<string>("All");
+  const [historyDateFrom, setHistoryDateFrom] = useState<string>("");
+  const [historyDateTo, setHistoryDateTo] = useState<string>("");
   const debouncedQ = useDebouncedValue(tableSearch, 300);
   const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
   const [pagination, setPagination] = useState<Pg>({
@@ -143,7 +158,9 @@ export default function PageInner() {
   useEffect(() => {
     if (loadingRemote) return;
     if (remoteError) return;
-    if (!remoteRequests || remoteRequests.length === 0) return;
+    
+    // Process even if empty array - this allows clearing the list
+    if (!remoteRequests) return;
 
     // Split requests into pending and history (using actual enum values)
     const pendingRequests = remoteRequests.filter((r: any) => 
@@ -167,12 +184,24 @@ export default function PageInner() {
     const pendingList = pendingRequests.map((r: any) => toRequestRowRemote(r));
     const historyList = historyRequests.map((r: any) => toRequestRowRemote(r));
 
-    console.log("[PageInner] 📊 Pending requests for admin:", pendingList.length);
-    console.log("[PageInner] 📚 History requests (admin acted):", historyList.length);
+    console.log("[PageInner] 📊 Real-time update: Pending requests for admin:", pendingList.length);
+    console.log("[PageInner] 📚 Real-time update: History requests (admin acted):", historyList.length);
+    console.log("[PageInner] 🔄 Total remote requests received:", remoteRequests.length);
 
     setAllRows(pendingList);
     setFilteredRows(pendingList);
-    setHistoryRows(historyList);
+    
+    // Sort history by most recent first (admin_approved_at or created_at)
+    const sortedHistory = historyList.sort((a, b) => {
+      const aReq = remoteRequests.find((r: any) => r.id === a.id);
+      const bReq = remoteRequests.find((r: any) => r.id === b.id);
+      const aDate = new Date(aReq?.admin_approved_at || a.date).getTime();
+      const bDate = new Date(bReq?.admin_approved_at || b.date).getTime();
+      return bDate - aDate; // Descending (most recent first)
+    });
+    
+    setHistoryRows(sortedHistory);
+    setFilteredHistoryRows(sortedHistory);
 
     const read = getReadIds();
     const unread = new Set<string>(pendingList.filter((r) => !read.has(r.id)).map((r) => r.id));
@@ -206,7 +235,7 @@ export default function PageInner() {
     };
 
     loadLocal();
-    const id = setInterval(loadLocal, 3000); // Poll every 3 seconds for faster updates
+    const id = setInterval(loadLocal, 2000); // Poll every 2 seconds for faster updates
     return () => clearInterval(id);
   }, [remoteSettled, remoteRequests, remoteError]);
 
@@ -239,6 +268,54 @@ export default function PageInner() {
     setPagination((p) => ({ ...p, page: 1 }));
   };
 
+  // Filter pending rows based on status, department, and date range
+  useEffect(() => {
+    const filtered = allRows.filter((r) => {
+      // Status filter
+      const statusMatch = pendingStatusFilter === "All" || r.status === pendingStatusFilter;
+      
+      // Department filter
+      const deptMatch = pendingDeptFilter === "All" || r.dept === pendingDeptFilter;
+      
+      // Date range filter
+      const requestDate = new Date(r.date);
+      const fromMatch = !pendingDateFrom || requestDate >= new Date(pendingDateFrom);
+      const toMatch = !pendingDateTo || requestDate <= new Date(pendingDateTo + "T23:59:59");
+      
+      return statusMatch && deptMatch && fromMatch && toMatch;
+    });
+    
+    setFilteredRows(filtered);
+  }, [allRows, pendingStatusFilter, pendingDeptFilter, pendingDateFrom, pendingDateTo]);
+
+  // Filter history rows based on search, status, department, and date range
+  useEffect(() => {
+    const searchLower = historySearch.trim().toLowerCase();
+    
+    const filtered = historyRows.filter((r) => {
+      // Status filter
+      const statusMatch = historyStatusFilter === "All" || r.status === historyStatusFilter;
+      
+      // Search filter
+      const searchMatch = !searchLower || 
+        r.requester?.toLowerCase().includes(searchLower) ||
+        r.dept?.toLowerCase().includes(searchLower) ||
+        r.purpose?.toLowerCase().includes(searchLower);
+      
+      // Department filter
+      const deptMatch = historyDeptFilter === "All" || r.dept === historyDeptFilter;
+      
+      // Date range filter
+      const requestDate = new Date(r.date);
+      const fromMatch = !historyDateFrom || requestDate >= new Date(historyDateFrom);
+      const toMatch = !historyDateTo || requestDate <= new Date(historyDateTo + "T23:59:59");
+      
+      return statusMatch && searchMatch && deptMatch && fromMatch && toMatch;
+    });
+    
+    setFilteredHistoryRows(filtered);
+  }, [historyRows, historySearch, historyStatusFilter, historyDeptFilter, historyDateFrom, historyDateTo]);
+
   // ✅ ito yung kailangan ng toolbar
   const handleDraftChange = (patch: Partial<FilterState>) => {
     setDraft((d) => {
@@ -247,6 +324,11 @@ export default function PageInner() {
       return next;
     });
   };
+
+  // Use full department list from library instead of extracting from history
+  const uniqueHistoryDepts = useMemo(() => {
+    return DEPARTMENTS;
+  }, []);
 
   const postFilterRows = useMemo(() => {
     const q = debouncedQ.trim().toLowerCase();
@@ -318,6 +400,7 @@ export default function PageInner() {
         preferred_driver: (remoteReq as any).preferred_driver,  // Joined driver data
         preferred_vehicle: (remoteReq as any).preferred_vehicle,  // Joined vehicle data
         requester: remoteReq.requester,  // Joined requester data (submitter)
+        vehicle_mode: (remoteReq as any).vehicle_mode,  // Transportation mode (owned/institutional/rent)
         
         // Transform request data to travelOrder format
         travelOrder: {
@@ -389,10 +472,13 @@ export default function PageInner() {
         
         tmNote: remoteReq.admin_notes || null,
         
-        // Preserve approval timestamps for submission history
+        // Preserve approval timestamps and signatures for submission history
         head_approved_at: remoteReq.head_approved_at,
+        head_signature: remoteReq.head_signature,
         admin_approved_at: remoteReq.admin_approved_at,
         admin_approved_by: remoteReq.admin_approved_by,
+        admin_signature: remoteReq.admin_signature,
+        admin_approver: remoteReq.admin_approver,
       };
       
       setActiveRow(transformed);
@@ -484,49 +570,84 @@ export default function PageInner() {
     [filteredRows],
   );
 
+  // History KPI stats
+  const historySummary = useMemo(
+    () => ({
+      pending: filteredHistoryRows.filter((r) => r.status === "Pending").length,
+      approved: filteredHistoryRows.filter((r) => r.status === "Approved").length,
+      completed: filteredHistoryRows.filter((r) => r.status === "Completed").length,
+      rejected: filteredHistoryRows.filter((r) => r.status === "Rejected").length,
+    }),
+    [filteredHistoryRows],
+  );
+
   if (!mounted) return <div />;
 
   return (
     <div className="space-y-6">
-      {/* Tab Navigation */}
-      <div className="flex items-center gap-2 border-b border-neutral-200">
+      {/* Enhanced Tab Navigation with spacing and sliding indicator */}
+      <div className="mx-6 relative rounded-full p-1.5 flex gap-1 shadow-md" style={{ backgroundColor: '#7A0010' }}>
+        {/* Sliding background indicator */}
+        <motion.div
+          className="absolute top-1.5 bottom-1.5 rounded-full bg-white shadow-lg"
+          initial={false}
+          animate={{
+            left: activeTab === 'pending' ? '6px' : 'calc(50% + 2px)',
+            width: 'calc(50% - 8px)',
+          }}
+          transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+        />
+        
         <button
           onClick={() => setActiveTab('pending')}
-          className={`relative px-6 py-3 text-sm font-semibold transition-all ${
+          className={`relative z-10 flex-1 px-6 py-3 text-sm font-bold rounded-full transition-all duration-300 ${
             activeTab === 'pending'
               ? 'text-[#7A0010]'
-              : 'text-neutral-600 hover:text-neutral-900'
+              : 'text-white/70 hover:text-white'
           }`}
         >
-          <span className="flex items-center gap-2">
+          <div className="flex items-center justify-center gap-2">
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
             Pending Requests
-            {summary.pending > 0 && (
-              <span className="inline-flex items-center justify-center min-w-[24px] h-6 px-2 text-xs font-bold text-white bg-[#7A0010] rounded-full">
-                {summary.pending}
+            {allRows.length > 0 && (
+              <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                activeTab === 'pending' ? 'bg-[#7A0010] text-white' : 'bg-white/20 text-white'
+              }`}>
+                {allRows.length}
               </span>
             )}
-          </span>
-          {activeTab === 'pending' && (
-            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#7A0010]"></div>
-          )}
+          </div>
         </button>
+        
         <button
           onClick={() => setActiveTab('history')}
-          className={`relative px-6 py-3 text-sm font-semibold transition-all ${
+          className={`relative z-10 flex-1 px-6 py-3 text-sm font-bold rounded-full transition-all duration-300 ${
             activeTab === 'history'
               ? 'text-[#7A0010]'
-              : 'text-neutral-600 hover:text-neutral-900'
+              : 'text-white/70 hover:text-white'
           }`}
         >
-          History
-          {activeTab === 'history' && (
-            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#7A0010]"></div>
-          )}
+          <div className="flex items-center justify-center gap-2">
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            History
+          </div>
         </button>
       </div>
 
-      {activeTab === 'pending' ? (
-        <div className="space-y-6">
+      <AnimatePresence mode="wait">
+        {activeTab === 'pending' ? (
+          <motion.div
+            key="pending"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+            className="mx-6 space-y-6"
+          >
           {/* Error Message */}
           {remoteSettled && remoteError && (
             <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-900 flex items-center gap-2">
@@ -587,23 +708,37 @@ export default function PageInner() {
             </div>
           ) : (
             <>
-              {/* Summary Cards */}
-              <RequestsSummaryUI summary={summary} />
+              {/* KPI Cards */}
+              <KPICards summary={summary} />
 
-              {/* Toolbar */}
-              <RequestsToolbarUI
-                tableSearch={tableSearch}
-                onTableSearch={setTableSearch}
-                sortDir={sortDir}
-                onSortDirChange={setSortDir}
-                onAddNew={() => toast({ message: "Add New clicked!", kind: "success" })}
-                draft={draft}
-                onDraftChange={handleDraftChange} 
-                onApply={applyFilters}
-                onClearAll={clearFilters}
-                selectedCount={selected.size}
-                onDeleteSelected={deleteSelected}
-                onMarkSelectedRead={markSelectedRead}
+              {/* Unified Filter Bar */}
+              <UnifiedFilterBar
+                searchValue={tableSearch}
+                onSearchChange={setTableSearch}
+                searchPlaceholder="Search by requester, department, or purpose..."
+                statusValue={pendingStatusFilter}
+                onStatusChange={setPendingStatusFilter}
+                deptValue={pendingDeptFilter}
+                onDeptChange={setPendingDeptFilter}
+                departments={DEPARTMENTS}
+                dateFrom={pendingDateFrom}
+                onDateFromChange={setPendingDateFrom}
+                dateTo={pendingDateTo}
+                onDateToChange={setPendingDateTo}
+                onClear={() => {
+                  setPendingStatusFilter("All");
+                  setPendingDeptFilter("All");
+                  setPendingDateFrom("");
+                  setPendingDateTo("");
+                }}
+                hasActiveFilters={
+                  pendingStatusFilter !== "All" ||
+                  pendingDeptFilter !== "All" ||
+                  !!pendingDateFrom ||
+                  !!pendingDateTo
+                }
+                resultsCount={postFilterRows.length}
+                totalCount={filteredRows.length}
               />
 
               {/* Requests List */}
@@ -620,18 +755,60 @@ export default function PageInner() {
               />
             </>
           )}
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {historyRows.length === 0 ? (
+          </motion.div>
+        ) : (
+          <motion.div
+            key="history"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+            className="mx-6 space-y-6"
+          >
+          {/* History KPI Cards */}
+          <KPICards summary={historySummary} />
+
+          {/* History Unified Filter Bar */}
+          <UnifiedFilterBar
+            searchValue={historySearch}
+            onSearchChange={setHistorySearch}
+            searchPlaceholder="Search history by requester, department, or purpose..."
+            statusValue={historyStatusFilter}
+            onStatusChange={setHistoryStatusFilter}
+            deptValue={historyDeptFilter}
+            onDeptChange={setHistoryDeptFilter}
+            departments={uniqueHistoryDepts}
+            dateFrom={historyDateFrom}
+            onDateFromChange={setHistoryDateFrom}
+            dateTo={historyDateTo}
+            onDateToChange={setHistoryDateTo}
+            onClear={() => {
+              setHistorySearch("");
+              setHistoryStatusFilter("All");
+              setHistoryDeptFilter("All");
+              setHistoryDateFrom("");
+              setHistoryDateTo("");
+            }}
+            hasActiveFilters={
+              !!historySearch ||
+              historyStatusFilter !== "All" ||
+              historyDeptFilter !== "All" ||
+              !!historyDateFrom ||
+              !!historyDateTo
+            }
+            resultsCount={filteredHistoryRows.length}
+            totalCount={historyRows.length}
+          />
+          
+          {filteredHistoryRows.length === 0 ? (
             <div className="text-center py-12 text-neutral-500">
               <svg className="mx-auto h-12 w-12 text-neutral-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <p className="text-sm">No history yet</p>
+              <p className="text-sm">{(historySearch || historyStatusFilter !== "All" || historyDeptFilter !== "All" || historyDateFrom || historyDateTo) ? "No matching history found" : "No history yet"}</p>
             </div>
           ) : (
-            historyRows.map((item) => {
+            filteredHistoryRows.map((item) => {
               // Get the original request to check admin action
               const originalReq = remoteRequests?.find((r: any) => r.id === item.id);
               const adminApproved = originalReq?.admin_approved_at;
@@ -712,8 +889,9 @@ export default function PageInner() {
               );
             })
           )}
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <RequestDetailsModalUI
         open={openDetails}

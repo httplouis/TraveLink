@@ -2,9 +2,11 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Clock, Eye, CheckCircle, XCircle, AlertCircle, MapPin, Calendar, FileText, User, Building2 } from "lucide-react";
+import { Clock, Eye, CheckCircle, XCircle, AlertCircle, MapPin, Calendar, FileText, User, Building2, Car } from "lucide-react";
 import { WorkflowEngine } from "@/lib/workflow/engine";
 import { SkeletonRequestCard } from "@/components/common/ui/Skeleton";
+import TrackingModal from "@/components/common/TrackingModal";
+import RequestStatusTracker from "@/components/common/RequestStatusTracker";
 
 type Request = {
   id: string;
@@ -47,18 +49,27 @@ export default function SubmissionsView() {
   const [showDetailsModal, setShowDetailsModal] = React.useState(false);
   const [loadingHistory, setLoadingHistory] = React.useState(false);
   const [loadingDetails, setLoadingDetails] = React.useState(false);
+  const [lastUpdate, setLastUpdate] = React.useState<Date>(new Date());
 
   React.useEffect(() => {
     fetchRequests();
+    
+    // Auto-refresh every 5 seconds to get latest status updates
+    const interval = setInterval(() => {
+      fetchRequests();
+    }, 5000);
+    
+    return () => clearInterval(interval);
   }, []);
 
   async function fetchRequests() {
     try {
-      const res = await fetch("/api/requests/my-submissions");
+      const res = await fetch("/api/requests/my-submissions", { cache: "no-store" });
       const json = await res.json();
       
       if (json.ok) {
         setRequests(json.data);
+        setLastUpdate(new Date());
       }
     } catch (err) {
       console.error("Failed to fetch submissions:", err);
@@ -67,25 +78,9 @@ export default function SubmissionsView() {
     }
   }
 
-  async function viewTracking(request: Request) {
+  function viewTracking(request: Request) {
     setSelectedRequest(request);
     setShowTrackingModal(true);
-    setLoadingHistory(true);
-    
-    // Fetch history
-    try {
-      const res = await fetch(`/api/requests/${request.id}/history`);
-      const json = await res.json();
-      
-      if (json.ok) {
-        setHistory(json.data.history || []);
-      }
-    } catch (err) {
-      console.error("Failed to fetch history:", err);
-      setHistory([]);
-    } finally {
-      setLoadingHistory(false);
-    }
   }
 
   async function viewDetails(request: Request) {
@@ -155,6 +150,17 @@ export default function SubmissionsView() {
 
   return (
     <>
+      {/* Auto-refresh indicator */}
+      <div className="mb-4 flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg">
+        <div className="flex items-center gap-2 text-sm text-green-700">
+          <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div>
+          <span className="font-medium">Auto-refresh enabled</span>
+        </div>
+        <div className="text-xs text-green-600">
+          Last updated: {lastUpdate.toLocaleTimeString()}
+        </div>
+      </div>
+      
       <div className="space-y-4">
         {requests.map((req) => (
           <motion.div
@@ -189,6 +195,20 @@ export default function SubmissionsView() {
               </div>
             </div>
 
+            {/* Compact Approval Progress Tracker */}
+            <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+              <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+                Approval Progress
+              </div>
+              <RequestStatusTracker
+                status={req.status as any}
+                requesterIsHead={(req as any).requester_is_head}
+                hasBudget={req.has_budget}
+                hasParentHead={(req as any).has_parent_head}
+                compact={true}
+              />
+            </div>
+
             <div className="flex items-center justify-between pt-3 border-t">
               <div className="text-xs text-gray-500">
                 Submitted: {new Date(req.created_at).toLocaleString()}
@@ -221,138 +241,13 @@ export default function SubmissionsView() {
       </div>
 
       {/* Tracking Modal */}
-      <AnimatePresence>
-        {showTrackingModal && selectedRequest && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden"
-            >
-              {/* Header */}
-              <div className="bg-gradient-to-r from-[#7A0010] to-[#9c2a3a] p-6 text-white">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="text-2xl font-bold">{selectedRequest.request_number}</div>
-                    <div className="text-white/90 mt-1">{selectedRequest.title || selectedRequest.purpose}</div>
-                  </div>
-                  <button
-                    onClick={() => setShowTrackingModal(false)}
-                    className="rounded-lg bg-white/20 p-2 hover:bg-white/30 transition-colors"
-                  >
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-
-              {/* Timeline */}
-              <div className="p-6 overflow-y-auto max-h-[calc(80vh-200px)]">
-                <div className="text-sm font-semibold text-gray-900 mb-4">Request Timeline</div>
-                
-                {loadingHistory ? (
-                  <div className="text-center py-8">
-                    <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-[#7A0010] border-r-transparent"></div>
-                    <div className="text-gray-500 mt-2">Loading timeline...</div>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {/* Always show creation event */}
-                    <motion.div
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      className="flex gap-4"
-                    >
-                      <div className="flex flex-col items-center">
-                        <div className="h-10 w-10 rounded-full flex items-center justify-center bg-blue-100 text-blue-600">
-                          <Clock className="h-5 w-5" />
-                        </div>
-                        {history.length > 0 && (
-                          <div className="w-0.5 flex-1 bg-gray-200 mt-2 min-h-[20px]" />
-                        )}
-                      </div>
-                      <div className="flex-1 pb-8">
-                        <div className="font-medium text-gray-900">Created</div>
-                        <div className="text-sm text-gray-600 mt-1">Request created and submitted</div>
-                        <div className="text-sm text-gray-500 mt-1">
-                          Draft → {WorkflowEngine.getStatusLabel(selectedRequest.status as any)}
-                        </div>
-                        <div className="text-xs text-gray-400 mt-2">
-                          {new Date(selectedRequest.created_at).toLocaleString()}
-                        </div>
-                      </div>
-                    </motion.div>
-
-                    {/* History events - filter out "created" action to avoid duplicates */}
-                    {history.length === 0 ? (
-                      <div className="text-center py-4 text-gray-500 text-sm">
-                        Waiting for approval...
-                      </div>
-                    ) : (
-                      history.filter(item => item.action !== 'created').map((item, index) => (
-                      <motion.div
-                        key={item.id}
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: (index + 1) * 0.1 }}
-                        className="flex gap-4"
-                      >
-                        {/* Timeline line */}
-                        <div className="flex flex-col items-center">
-                          <div className={`h-10 w-10 rounded-full flex items-center justify-center ${
-                            item.action === "approved" ? "bg-green-100 text-green-600" :
-                            item.action === "rejected" ? "bg-red-100 text-red-600" :
-                            "bg-blue-100 text-blue-600"
-                          }`}>
-                            {getStatusIcon(item.new_status)}
-                          </div>
-                          {index < history.length - 1 && (
-                            <div className="w-0.5 flex-1 bg-gray-200 mt-2 min-h-[20px]" />
-                          )}
-                        </div>
-
-                        {/* Content */}
-                        <div className="flex-1 pb-8">
-                          <div className="font-medium text-gray-900">
-                            {item.action.charAt(0).toUpperCase() + item.action.slice(1)}
-                          </div>
-                          <div className="text-sm text-gray-600 mt-1">
-                            {item.actor.name || item.actor.email}
-                          </div>
-                          <div className="text-sm text-gray-500 mt-1">
-                            {WorkflowEngine.getStatusLabel(item.previous_status as any)} → {WorkflowEngine.getStatusLabel(item.new_status as any)}
-                          </div>
-                          {item.comments && (
-                            <div className="mt-2 text-sm bg-gray-50 rounded-lg p-3 border border-gray-200">
-                              {item.comments}
-                            </div>
-                          )}
-                          <div className="text-xs text-gray-400 mt-2">
-                            {new Date(item.created_at).toLocaleString()}
-                          </div>
-                        </div>
-                      </motion.div>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Footer */}
-              <div className="border-t p-4 bg-gray-50 flex justify-end">
-                <button
-                  onClick={() => setShowTrackingModal(false)}
-                  className="rounded-lg bg-[#7A0010] px-4 py-2 text-white hover:bg-[#5A0010] transition-colors"
-                >
-                  Close
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      {selectedRequest && (
+        <TrackingModal
+          isOpen={showTrackingModal}
+          onClose={() => setShowTrackingModal(false)}
+          requestId={selectedRequest.id}
+        />
+      )}
 
       {/* Details Modal */}
       <AnimatePresence>
@@ -448,6 +343,44 @@ export default function SubmissionsView() {
                       <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total Budget</label>
                       <div className="mt-1 p-3 bg-green-50 rounded-lg text-lg font-semibold text-green-900">
                         ₱{selectedRequest.total_budget.toLocaleString()}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Cost Justification */}
+                  {(selectedRequest as any).cost_justification && (
+                    <div>
+                      <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Cost Justification</label>
+                      <div className="mt-1 p-4 bg-gradient-to-br from-amber-50 to-orange-50 rounded-lg border-2 border-amber-200 text-sm text-gray-800 leading-relaxed">
+                        {(selectedRequest as any).cost_justification}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Transportation Mode */}
+                  {(selectedRequest as any).vehicle_mode && (
+                    <div>
+                      <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Transportation Mode</label>
+                      <div className="mt-1 p-4 rounded-lg border-2 shadow-sm" style={{
+                        backgroundColor: (selectedRequest as any).vehicle_mode === 'owned' ? '#f0fdf4' : (selectedRequest as any).vehicle_mode === 'rent' ? '#fefce8' : '#eff6ff',
+                        borderColor: (selectedRequest as any).vehicle_mode === 'owned' ? '#86efac' : (selectedRequest as any).vehicle_mode === 'rent' ? '#fde047' : '#93c5fd'
+                      }}>
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-full flex items-center justify-center" style={{
+                            backgroundColor: (selectedRequest as any).vehicle_mode === 'owned' ? '#d1fae5' : (selectedRequest as any).vehicle_mode === 'rent' ? '#fef3c7' : '#dbeafe'
+                          }}>
+                            <Car className="h-5 w-5" style={{
+                              color: (selectedRequest as any).vehicle_mode === 'owned' ? '#059669' : (selectedRequest as any).vehicle_mode === 'rent' ? '#d97706' : '#2563eb'
+                            }} />
+                          </div>
+                          <div className="flex-1">
+                            <div className="text-sm font-bold text-gray-900">
+                              {(selectedRequest as any).vehicle_mode === 'owned' && 'Personal Vehicle (Owned)'}
+                              {(selectedRequest as any).vehicle_mode === 'institutional' && 'University Vehicle'}
+                              {(selectedRequest as any).vehicle_mode === 'rent' && 'Rental Vehicle'}
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}

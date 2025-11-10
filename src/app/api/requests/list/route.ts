@@ -20,6 +20,8 @@ export async function GET(request: NextRequest) {
       .from("requests")
       .select(`
         *,
+        head_signature,
+        admin_signature,
         requester:users!requester_id(id, name, email),
         department:departments!department_id(id, name, code),
         head_approver:users!head_approved_by(id, name, email),

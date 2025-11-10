@@ -4,6 +4,7 @@
 import React from "react";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import { Users, UserCircle, User, Car, UserCog } from "lucide-react";
+import { useToast } from "@/components/common/ui/Toast";
 
 type Props = {
   request: any;
@@ -27,6 +28,7 @@ export default function HeadRequestModal({
 }: Props) {
   // New schema: data is directly on request object, not in payload
   const t = request;
+  const toast = useToast();
   
   // Comments/rejection reason
   const [comments, setComments] = React.useState("");
@@ -155,13 +157,17 @@ export default function HeadRequestModal({
       });
       const j = await res.json();
       if (j.ok) {
+        toast.success(
+          "Approved Successfully!",
+          "Request has been sent to Admin for processing"
+        );
         onApproved(request.id);
       } else {
-        alert("Approve failed: " + (j.error ?? "unknown error"));
+        toast.error("Approval Failed", j.error ?? "Unknown error occurred");
       }
     } catch (err) {
       console.error(err);
-      alert("Approve failed.");
+      toast.error("Approval Failed", "Network error. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -170,7 +176,7 @@ export default function HeadRequestModal({
   async function doReject() {
     if (submitting) return;
     if (!comments.trim()) {
-      alert("Please provide a reason for rejection.");
+      toast.warning("Reason Required", "Please provide a reason for rejection.");
       return;
     }
     
@@ -185,16 +191,19 @@ export default function HeadRequestModal({
           comments: comments.trim()
         }),
       });
-      const json = await res.json();
-      if (json.ok) {
-        onRejected(t.id);
-        onClose();
+      const j = await res.json();
+      if (j.ok) {
+        toast.success(
+          "Request Rejected",
+          "Requester has been notified"
+        );
+        onRejected(request.id);
       } else {
-        alert("Reject failed: " + (json.error || "unknown"));
+        toast.error("Rejection Failed", j.error ?? "Unknown error occurred");
       }
     } catch (err) {
       console.error(err);
-      alert("Reject failed.");
+      toast.error("Rejection Failed", "Network error. Please try again.");
     } finally {
       setSubmitting(false);
       setShowRejectDialog(false);
@@ -409,16 +418,33 @@ export default function HeadRequestModal({
                     : "—"}
                 </p>
               </section>
-              <section className="rounded-lg bg-purple-50/50 border border-purple-100 p-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-purple-600 flex items-center gap-1.5 mb-2">
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                  </svg>
-                  Vehicle mode
-                </p>
-                <p className="text-sm text-slate-800 font-medium">
-                  {t.vehicle_type || (t.needs_vehicle ? "University Vehicle" : "Not specified")}
-                </p>
+              {/* Transportation Mode Badge */}
+              <section className="rounded-lg p-4 border-2 shadow-sm" style={{
+                backgroundColor: (t as any).vehicle_mode === 'owned' ? '#f0fdf4' : (t as any).vehicle_mode === 'rent' ? '#fefce8' : '#eff6ff',
+                borderColor: (t as any).vehicle_mode === 'owned' ? '#86efac' : (t as any).vehicle_mode === 'rent' ? '#fde047' : '#93c5fd'
+              }}>
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-full flex items-center justify-center" style={{
+                    backgroundColor: (t as any).vehicle_mode === 'owned' ? '#d1fae5' : (t as any).vehicle_mode === 'rent' ? '#fef3c7' : '#dbeafe'
+                  }}>
+                    <Car className="h-5 w-5" style={{
+                      color: (t as any).vehicle_mode === 'owned' ? '#059669' : (t as any).vehicle_mode === 'rent' ? '#d97706' : '#2563eb'
+                    }} />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{
+                      color: (t as any).vehicle_mode === 'owned' ? '#059669' : (t as any).vehicle_mode === 'rent' ? '#d97706' : '#2563eb'
+                    }}>
+                      Transportation Mode
+                    </div>
+                    <div className="text-sm font-bold text-gray-900">
+                      {(t as any).vehicle_mode === 'owned' && 'Personal Vehicle (Owned)'}
+                      {(t as any).vehicle_mode === 'institutional' && 'University Vehicle'}
+                      {(t as any).vehicle_mode === 'rent' && 'Rental Vehicle'}
+                      {!(t as any).vehicle_mode && (t.vehicle_type || 'Not specified')}
+                    </div>
+                  </div>
+                </div>
               </section>
             </div>
 
@@ -535,6 +561,21 @@ export default function HeadRequestModal({
                 </div>
               )}
             </section>
+
+            {/* Cost Justification */}
+            {t.cost_justification && (
+              <section className="rounded-lg bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 p-4">
+                <h3 className="text-sm font-bold text-amber-900 flex items-center gap-2 mb-3">
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Cost Justification
+                </h3>
+                <div className="bg-white rounded-md border border-amber-200 p-3 text-sm text-gray-800 leading-relaxed shadow-sm">
+                  {t.cost_justification}
+                </div>
+              </section>
+            )}
           </div>
 
           {/* RIGHT */}

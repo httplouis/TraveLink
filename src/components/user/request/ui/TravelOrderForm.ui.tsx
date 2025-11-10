@@ -24,11 +24,8 @@ export default function TravelOrderForm({
   isHeadRequester,
   currentUserName,
 }: Props) {
-  const c = data?.costs || {};
-  const needsJustif =
-    vehicleMode === "rent" ||
-    Number(c.rentVehicles || 0) > 0 ||
-    Number(c.hiredDrivers || 0) > 0;
+  // Always show justification field (but it's optional)
+  const needsJustif = true;
 
   const headEditedRef = React.useRef(false);
 
