@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabaseClient";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET(
   req: NextRequest,
@@ -7,13 +7,19 @@ export async function GET(
 ) {
   try {
     const requestId = params.id;
+    const supabase = await createSupabaseServerClient(true);
 
-    // Get full request details with all approval information
+    // Get full request details with all approval information AND department
     const { data: request, error } = await supabase
       .from("requests")
-      .select("*")
+      .select(`
+        *,
+        departments:department_id(id, name, code)
+      `)
       .eq("id", requestId)
       .single();
+    
+    console.log('[Tracking API] Raw request data:', request);
 
     if (error) {
       console.error("[GET /api/requests/[id]/tracking] Error:", error);
@@ -30,8 +36,11 @@ export async function GET(
       );
     }
 
-    // Debug: Log approval timestamps
-    console.log("[Tracking Debug] Request approval timestamps:", {
+    // Debug: Log approval timestamps and request info
+    console.log("[Tracking Debug] Request info:", {
+      request_number: request.request_number,
+      requester_id: request.requester_id,
+      department_id: request.department_id,
       hr_approved_at: request.hr_approved_at,
       vp_approved_at: request.vp_approved_at,
       president_approved_at: request.president_approved_at,
@@ -50,12 +59,21 @@ export async function GET(
     };
 
     const fetchDepartment = async (deptId: string | null) => {
-      if (!deptId) return null;
-      const { data } = await supabase
+      if (!deptId) {
+        console.log('[Tracking API] No department ID provided');
+        return null;
+      }
+      console.log('[Tracking API] Fetching department:', deptId);
+      const { data, error } = await supabase
         .from("departments")
         .select("name, code")
         .eq("id", deptId)
         .single();
+      
+      if (error) {
+        console.error('[Tracking API] Error fetching department:', error);
+      }
+      console.log('[Tracking API] Department data:', data);
       return data || null;
     };
 
@@ -69,9 +87,21 @@ export async function GET(
       return data || null;
     };
 
+    // Fetch requester's user data to get department as fallback
+    const fetchRequesterData = async (userId: string | null) => {
+      if (!userId) return null;
+      const { data } = await supabase
+        .from("users")
+        .select("full_name, department_id, departments:department_id(id, name, code)")
+        .eq("id", userId)
+        .single();
+      console.log('[Tracking API] Requester data:', data);
+      return data || null;
+    };
+
     // Fetch all related data in parallel
     const [
-      requesterName,
+      requesterData,
       department,
       headApproverName,
       parentHeadApproverName,
@@ -85,7 +115,7 @@ export async function GET(
       assignedVehicle,
       assignedDriverName,
     ] = await Promise.all([
-      fetchUserName(request.requester_id),
+      fetchRequesterData(request.requester_id),
       fetchDepartment(request.department_id),
       fetchUserName(request.head_approved_by),
       fetchUserName(request.parent_head_approved_by),
@@ -99,6 +129,25 @@ export async function GET(
       fetchVehicle(request.assigned_vehicle_id),
       fetchUserName(request.assigned_driver_id),
     ]);
+
+    // Use department from request join, or separate fetch, or requester's department
+    let finalDepartment = request.departments || department;
+    
+    if (!finalDepartment && requesterData?.departments) {
+      // If departments is an array, take the first one; otherwise use it directly
+      finalDepartment = Array.isArray(requesterData.departments) 
+        ? requesterData.departments[0] 
+        : requesterData.departments;
+    }
+    
+    const requesterName = requesterData?.full_name || null;
+    
+    console.log('[Tracking API] Department sources:', {
+      from_request_join: request.departments,
+      from_separate_fetch: department,
+      from_requester: requesterData?.departments,
+      final: finalDepartment
+    });
 
     // Get history timeline
     const { data: history } = await supabase
@@ -114,9 +163,26 @@ export async function GET(
       status: request.status,
       created_at: request.created_at,
       
+      // Request details
+      purpose: request.purpose,
+      destination: request.destination,
+      travel_start_date: request.travel_start_date,
+      travel_end_date: request.travel_end_date,
+      
       requester: { full_name: requesterName },
       requester_name: requesterName || request.requester_name,
-      department: department,
+      department: finalDepartment,
+      department_name: finalDepartment?.name || null,
+      department_code: finalDepartment?.code || null,
+      
+      // DEBUG INFO (remove later)
+      _debug: {
+        request_dept_id: request.department_id,
+        dept_from_join: request.departments,
+        dept_from_fetch: department,
+        dept_from_requester: requesterData?.departments,
+        final_dept: finalDepartment
+      },
       requester_is_head: request.requester_is_head,
       has_budget: request.has_budget,
       total_budget: request.total_budget,

@@ -75,17 +75,19 @@ export async function POST(request: Request) {
 
       // Create notification for REQUESTER
       if (requestData?.requester_id) {
-        await supabase.from("notifications").insert({
+        const notificationData = {
           user_id: requestData.requester_id,
           notification_type: "request_approved",
-          title: "🎉 Request Approved!",
+          title: "Request Approved",
           message: `Your travel order request ${requestData.request_number} has been fully approved by the President. You can now download the approval form.`,
           related_type: "request",
           related_id: requestId,
-          action_url: `/user/request/${requestId}`,
-          action_label: "View Request",
+          action_url: `/user/submissions?view=${requestId}`,
+          action_label: "View Details",
           priority: "high",
-        });
+        };
+        console.log('[President Approve] Creating notification:', notificationData);
+        await supabase.from("notifications").insert(notificationData);
       }
 
       // Create notifications for ALL ADMINS
@@ -98,12 +100,12 @@ export async function POST(request: Request) {
         const adminNotifications = admins.map(admin => ({
           user_id: admin.id,
           notification_type: "request_approved",
-          title: "✅ New Approved Request",
+          title: "New Approved Request",
           message: `Travel order ${requestData?.request_number} has been fully approved and is ready for processing.`,
           related_type: "request",
           related_id: requestId,
-          action_url: `/admin/requests/${requestId}`,
-          action_label: "View Request",
+          action_url: `/admin/requests`,
+          action_label: "View Requests",
           priority: "high",
         }));
 
@@ -152,12 +154,12 @@ export async function POST(request: Request) {
         await supabase.from("notifications").insert({
           user_id: requestData.requester_id,
           notification_type: "request_rejected",
-          title: "❌ Request Rejected",
+          title: "Request Rejected",
           message: `Your travel order request ${requestData.request_number} has been rejected by the President. Reason: ${notes || "No reason provided"}`,
           related_type: "request",
           related_id: requestId,
-          action_url: `/user/request/${requestId}`,
-          action_label: "View Request",
+          action_url: `/user/submissions?view=${requestId}`,
+          action_label: "View Details",
           priority: "high",
         });
       }

@@ -14,34 +14,29 @@ export async function GET(request: Request) {
     const supabase = await createSupabaseServerClient(true);
     const { searchParams } = new URL(request.url);
     
-    const userId = searchParams.get("user_id");
     const unreadOnly = searchParams.get("unread") === "true";
     const limit = parseInt(searchParams.get("limit") || "20");
     
-    if (!userId) {
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-      }
-      
-      const { data: profile } = await supabase
-        .from("users")
-        .select("id")
-        .eq("auth_user_id", user.id)
-        .single();
-      
-      if (!profile) {
-        return NextResponse.json({ ok: false, error: "Profile not found" }, { status: 404 });
-      }
-      
-      // Use profile.id as userId
+    // Get current user
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
+    
+    const { data: profile } = await supabase
+      .from("users")
+      .select("id")
+      .eq("auth_user_id", user.id)
+      .single();
+    
+    if (!profile) {
+      return NextResponse.json({ ok: false, error: "Profile not found" }, { status: 404 });
     }
     
     let query = supabase
       .from("notifications")
       .select("*")
-      .eq("user_id", userId)
+      .eq("user_id", profile.id)
       .order("created_at", { ascending: false })
       .limit(limit);
     
