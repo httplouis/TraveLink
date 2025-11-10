@@ -3,9 +3,10 @@
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Clock, Eye, CheckCircle, XCircle, AlertCircle, MapPin, Calendar, FileText, User, Building2, Car } from "lucide-react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { WorkflowEngine } from "@/lib/workflow/engine";
 import { SkeletonRequestCard } from "@/components/common/ui/Skeleton";
-import TrackingModal from "@/components/common/TrackingModal";
+import ComprehensiveRequestModal from "@/components/user/ComprehensiveRequestModal";
 import RequestStatusTracker from "@/components/common/RequestStatusTracker";
 
 type Request = {
@@ -40,6 +41,8 @@ type HistoryItem = {
 };
 
 export default function SubmissionsView() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [requests, setRequests] = React.useState<Request[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [selectedRequest, setSelectedRequest] = React.useState<Request | null>(null);
@@ -61,6 +64,33 @@ export default function SubmissionsView() {
     
     return () => clearInterval(interval);
   }, []);
+
+  // Auto-open tracking modal if 'view' query parameter is present
+  React.useEffect(() => {
+    if (!searchParams) return;
+    
+    const viewRequestId = searchParams.get('view');
+    console.log('[Submissions] View param:', viewRequestId);
+    console.log('[Submissions] Requests loaded:', requests.length);
+    
+    if (viewRequestId && requests.length > 0) {
+      const request = requests.find(r => r.id === viewRequestId);
+      console.log('[Submissions] Found request:', request?.request_number);
+      
+      if (request) {
+        console.log('[Submissions] Opening tracking modal for:', request.request_number);
+        setSelectedRequest(request);
+        setShowTrackingModal(true);
+        
+        // Remove query parameter after a short delay to ensure modal opens
+        setTimeout(() => {
+          router.replace('/user/submissions', { scroll: false });
+        }, 100);
+      } else {
+        console.log('[Submissions] Request not found in list');
+      }
+    }
+  }, [searchParams, requests, router]);
 
   async function fetchRequests() {
     try {
@@ -240,9 +270,9 @@ export default function SubmissionsView() {
         ))}
       </div>
 
-      {/* Tracking Modal */}
+      {/* Comprehensive Request Modal */}
       {selectedRequest && (
-        <TrackingModal
+        <ComprehensiveRequestModal
           isOpen={showTrackingModal}
           onClose={() => setShowTrackingModal(false)}
           requestId={selectedRequest.id}

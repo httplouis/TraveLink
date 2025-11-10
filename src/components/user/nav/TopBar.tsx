@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { Bell, CircleUserRound, LogOut } from "lucide-react";
+import { CircleUserRound, LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import NotificationDropdown from "./NotificationDropdown";
 
 export default function TopBar() {
   const router = useRouter();
@@ -37,16 +38,7 @@ export default function TopBar() {
 
         {/* Actions */}
         <div className="flex items-center gap-1">
-          <Link
-            href="/user/notifications"
-            className="relative rounded-full p-2 hover:bg-white/10"
-            aria-label="Notifications"
-          >
-            <Bell className="h-5 w-5" />
-            <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-white px-[3px] text-[10px] leading-4 text-[#7a0019]">
-              2
-            </span>
-          </Link>
+          <NotificationDropdown />
           <Link
             href="/user/profile"
             className="rounded-full p-2 hover:bg-white/10"
