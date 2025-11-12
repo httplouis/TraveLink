@@ -2,7 +2,7 @@
 
 import { Suspense } from "react";
 import { PageHeader, PageBody } from "@/components/common/Page";
-import SubmissionsView from "@/components/user/submissions/SubmissionsView";
+import SubmissionsView from "@/components/user/submissions/SubmissionsViewClean";
 import BackToRequestButton from "@/components/common/buttons/BackToRequestButton.ui";
 
 export default function SubmissionsPage() {
