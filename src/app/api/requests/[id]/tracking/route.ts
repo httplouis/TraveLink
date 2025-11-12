@@ -171,6 +171,7 @@ export async function GET(
       
       requester: { full_name: requesterName },
       requester_name: requesterName || request.requester_name,
+      requester_signature: request.requester_signature,
       department: finalDepartment,
       department_name: finalDepartment?.name || null,
       department_code: finalDepartment?.code || null,
@@ -186,6 +187,7 @@ export async function GET(
       requester_is_head: request.requester_is_head,
       has_budget: request.has_budget,
       total_budget: request.total_budget,
+      expense_breakdown: request.expense_breakdown,
       has_parent_head: request.has_parent_head || false,
       
       // Approval chain tracking
@@ -201,12 +203,14 @@ export async function GET(
       
       admin_processed_at: request.admin_processed_at,
       admin_processed_by: adminProcessorName,
+      admin_signature: request.admin_signature,
       admin_comments: request.admin_comments,
       assigned_vehicle: assignedVehicle,
       assigned_driver: assignedDriverName ? { full_name: assignedDriverName } : null,
       
       comptroller_approved_at: request.comptroller_approved_at,
       comptroller_approved_by: comptrollerApproverName,
+      comptroller_signature: request.comptroller_signature,
       comptroller_comments: request.comptroller_comments,
       comptroller_edited_budget: request.comptroller_edited_budget,
       
