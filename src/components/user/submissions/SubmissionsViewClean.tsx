@@ -269,6 +269,7 @@ export default function SubmissionsView() {
                   requesterIsHead={(req as any).requester_is_head || false}
                   hasBudget={req.has_budget}
                   hasParentHead={(req as any).has_parent_head || false}
+                  requiresPresidentApproval={req.total_budget > 50000} // Example: President approval required for budget > 50k
                   compact={true}
                 />
               </div>
@@ -373,10 +374,16 @@ export default function SubmissionsView() {
               travel_start_date: selectedRequest.travel_start_date,
               travel_end_date: selectedRequest.travel_end_date,
               total_budget: selectedRequest.total_budget || 0,
+              created_at: selectedRequest.created_at,
               expense_breakdown: fullRequestData.expense_breakdown || [],
               transportation_type: fullRequestData.transportation_type,
               pickup_location: fullRequestData.pickup_location,
               pickup_time: fullRequestData.pickup_time,
+              cost_justification: fullRequestData.cost_justification,
+              preferred_vehicle: fullRequestData.preferred_vehicle_id, // This might need to be resolved to vehicle name
+              preferred_driver: fullRequestData.preferred_driver_id, // This might need to be resolved to driver name
+              preferred_vehicle_note: fullRequestData.preferred_vehicle_note,
+              preferred_driver_note: fullRequestData.preferred_driver_note,
               status: selectedRequest.status,
               
               requester: {
