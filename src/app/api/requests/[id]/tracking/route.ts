@@ -188,6 +188,11 @@ export async function GET(
       has_budget: request.has_budget,
       total_budget: request.total_budget,
       expense_breakdown: request.expense_breakdown,
+      cost_justification: request.cost_justification,
+      preferred_vehicle_id: request.preferred_vehicle_id,
+      preferred_driver_id: request.preferred_driver_id,
+      preferred_vehicle_note: request.preferred_vehicle_note,
+      preferred_driver_note: request.preferred_driver_note,
       has_parent_head: request.has_parent_head || false,
       
       // Approval chain tracking

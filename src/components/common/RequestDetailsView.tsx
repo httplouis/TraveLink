@@ -7,6 +7,7 @@ import {
   Calendar, 
   Banknote, 
   Users, 
+  User,
   Car, 
   FileText, 
   Printer, 
@@ -30,6 +31,7 @@ interface RequestData {
   travel_start_date: string;
   travel_end_date: string;
   total_budget: number;
+  created_at?: string;
   expense_breakdown?: Array<{
     category: string;
     amount: number;
@@ -38,6 +40,11 @@ interface RequestData {
   transportation_type?: 'pickup' | 'self';
   pickup_location?: string;
   pickup_time?: string;
+  cost_justification?: string;
+  preferred_vehicle?: string;
+  preferred_driver?: string;
+  preferred_vehicle_note?: string;
+  preferred_driver_note?: string;
   status: string;
   
   requester: {
@@ -248,24 +255,30 @@ export default function RequestDetailsView({
                   {/* Travel Details Grid */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-4">
-                      <div className="flex items-center gap-3">
-                        <MapPin className="w-5 h-5 text-[#7a0019]" />
+                      <div className="flex items-start gap-3">
+                        <div className="w-5 h-5 flex items-center justify-center mt-0.5">
+                          <MapPin className="w-5 h-5 text-[#7a0019]" />
+                        </div>
                         <div>
                           <p className="text-sm font-medium text-gray-500">Destination</p>
                           <p className="text-gray-900">{request.destination}</p>
                         </div>
                       </div>
                       
-                      <div className="flex items-center gap-3">
-                        <Building2 className="w-5 h-5 text-[#7a0019]" />
+                      <div className="flex items-start gap-3">
+                        <div className="w-5 h-5 flex items-center justify-center mt-0.5">
+                          <Building2 className="w-5 h-5 text-[#7a0019]" />
+                        </div>
                         <div>
                           <p className="text-sm font-medium text-gray-500">Department</p>
                           <p className="text-gray-900">{request.department.name}</p>
                         </div>
                       </div>
                       
-                      <div className="flex items-center gap-3">
-                        <Clock className="w-5 h-5 text-[#7a0019]" />
+                      <div className="flex items-start gap-3">
+                        <div className="w-5 h-5 flex items-center justify-center mt-0.5">
+                          <Clock className="w-5 h-5 text-[#7a0019]" />
+                        </div>
                         <div>
                           <p className="text-sm font-medium text-gray-500">Date Requested</p>
                           <p className="text-gray-900">{formatDate(request.created_at || request.travel_start_date)}</p>
@@ -274,8 +287,10 @@ export default function RequestDetailsView({
                     </div>
 
                     <div className="space-y-4">
-                      <div className="flex items-center gap-3">
-                        <Calendar className="w-5 h-5 text-[#7a0019]" />
+                      <div className="flex items-start gap-3">
+                        <div className="w-5 h-5 flex items-center justify-center mt-0.5">
+                          <Calendar className="w-5 h-5 text-[#7a0019]" />
+                        </div>
                         <div>
                           <p className="text-sm font-medium text-gray-500">Travel Dates</p>
                           <p className="text-gray-900">
@@ -289,8 +304,10 @@ export default function RequestDetailsView({
 
                       {request.total_budget > 0 && (
                         <div>
-                          <div className="flex items-center gap-3 mb-3">
-                            <Banknote className="w-5 h-5 text-[#7a0019]" />
+                          <div className="flex items-start gap-3 mb-3">
+                            <div className="w-5 h-5 flex items-center justify-center mt-0.5">
+                              <Banknote className="w-5 h-5 text-[#7a0019]" />
+                            </div>
                             <div>
                               <p className="text-sm font-medium text-gray-500">Budget</p>
                               <p className="text-gray-900 font-semibold">
@@ -334,6 +351,25 @@ export default function RequestDetailsView({
                     </div>
                   </div>
 
+                  {/* Budget Justification */}
+                  {request.cost_justification && (
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Budget Justification</h3>
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <div className="flex items-start gap-3">
+                          <div className="w-5 h-5 flex items-center justify-center mt-0.5">
+                            <FileText className="w-5 h-5 text-[#7a0019]" />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">
+                              {request.cost_justification}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Transportation */}
                   {request.transportation_type && (
                     <div>
@@ -354,6 +390,44 @@ export default function RequestDetailsView({
                             </p>
                           )}
                         </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Preferred Vehicle and Driver */}
+                  {request.transportation_type === 'pickup' && (request.preferred_vehicle || request.preferred_driver) && (
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Vehicle Preferences</h3>
+                      <div className="bg-gray-50 rounded-lg p-4 space-y-4">
+                        {request.preferred_vehicle && (
+                          <div className="flex items-start gap-3">
+                            <div className="w-5 h-5 flex items-center justify-center mt-0.5">
+                              <Car className="w-5 h-5 text-[#7a0019]" />
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-gray-500">Preferred Vehicle</p>
+                              <p className="text-gray-900">{request.preferred_vehicle}</p>
+                              {request.preferred_vehicle_note && (
+                                <p className="text-sm text-gray-600 mt-1">{request.preferred_vehicle_note}</p>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {request.preferred_driver && (
+                          <div className="flex items-start gap-3">
+                            <div className="w-5 h-5 flex items-center justify-center mt-0.5">
+                              <User className="w-5 h-5 text-[#7a0019]" />
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-gray-500">Preferred Driver</p>
+                              <p className="text-gray-900">{request.preferred_driver}</p>
+                              {request.preferred_driver_note && (
+                                <p className="text-sm text-gray-600 mt-1">{request.preferred_driver_note}</p>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -489,8 +563,6 @@ export default function RequestDetailsView({
         transition={{ delay: 0.3 }}
       >
         <WowCard className="mt-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-6">Approval Signatures</h3>
-          
           {/* Use the actual SignatureStageRail component with proper data */}
           <SignatureStageRail stages={request.signatures} />
         </WowCard>

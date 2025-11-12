@@ -40,6 +40,7 @@ interface RequestStatusTrackerProps {
   requesterIsHead?: boolean;
   hasBudget?: boolean;
   hasParentHead?: boolean;
+  requiresPresidentApproval?: boolean;
   
   // Approval timestamps and names
   headApprovedAt?: string | null | undefined;
@@ -81,6 +82,7 @@ export default function RequestStatusTracker({
   requesterIsHead = false,
   hasBudget = false,
   hasParentHead = false,
+  requiresPresidentApproval = false,
   headApprovedAt,
   headApprovedBy,
   parentHeadApprovedAt,
@@ -123,6 +125,7 @@ export default function RequestStatusTracker({
     if (stage.key === "head" && requesterIsHead) return false;
     if (stage.key === "parent_head" && !hasParentHead) return false;
     if (stage.key === "comptroller" && !hasBudget) return false;
+    if (stage.key === "president" && !requiresPresidentApproval) return false;
     return true;
   });
 
@@ -130,51 +133,50 @@ export default function RequestStatusTracker({
     if (status === "rejected" && rejectionStage === stageKey) return "rejected";
     if (status === "cancelled") return "rejected";
     
-    // If request is approved, all stages are completed
-    if (status === "approved") return "completed";
-    
     switch (stageKey) {
       case "head":
         if (headApprovedAt) return "completed";
         if (status === "pending_head") return "current";
-        // If we're past this stage, mark as completed
-        if (status === "pending_admin" || status === "pending_comptroller" || status === "pending_hr" || status === "pending_exec") return "completed";
+        // If we're past this stage or request is approved, mark as completed
+        if (status === "pending_admin" || status === "pending_comptroller" || status === "pending_hr" || status === "pending_exec" || status === "approved") return "completed";
         return "pending";
       
       case "parent_head":
         if (parentHeadApprovedAt) return "completed";
         if (status === "pending_parent_head") return "current";
-        if (status === "pending_admin" || status === "pending_comptroller" || status === "pending_hr" || status === "pending_exec") return "completed";
+        if (status === "pending_admin" || status === "pending_comptroller" || status === "pending_hr" || status === "pending_exec" || status === "approved") return "completed";
         return "pending";
       
       case "admin":
         if (adminProcessedAt) return "completed";
         if (status === "pending_admin") return "current";
-        // If we're past admin stage, mark as completed
-        if (status === "pending_comptroller" || status === "pending_hr" || status === "pending_exec") return "completed";
+        // If we're past admin stage or request is approved, mark as completed
+        if (status === "pending_comptroller" || status === "pending_hr" || status === "pending_exec" || status === "approved") return "completed";
         return "pending";
       
       case "comptroller":
         if (comptrollerApprovedAt) return "completed";
         if (status === "pending_comptroller") return "current";
-        if (status === "pending_hr" || status === "pending_exec") return "completed";
+        if (status === "pending_hr" || status === "pending_exec" || status === "approved") return "completed";
         return "pending";
       
       case "hr":
         if (hrApprovedAt) return "completed";
         if (status === "pending_hr") return "current";
-        if (status === "pending_vp" || status === "pending_president" || status === "pending_exec") return "completed";
+        if (status === "pending_vp" || status === "pending_president" || status === "pending_exec" || status === "approved") return "completed";
         return "pending";
       
       case "vp":
         if (vpApprovedAt) return "completed";
         if (status === "pending_vp") return "current";
-        if (status === "pending_president") return "completed";
+        if (status === "pending_president" || status === "approved") return "completed";
         return "pending";
       
       case "president":
         if (presidentApprovedAt) return "completed";
         if (status === "pending_president") return "current";
+        // Only mark as completed if actually approved by president
+        if (status === "approved" && presidentApprovedAt) return "completed";
         return "pending";
       
       case "exec":
