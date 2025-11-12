@@ -107,6 +107,15 @@ export default function RequestDetailsView({
 }: RequestDetailsViewProps) {
   const [activeTab, setActiveTab] = useState<'details' | 'timeline' | 'attachments'>('details');
 
+  // Debug vehicle/driver data
+  console.log('RequestDetailsView DEBUG:', {
+    transportation_type: request.transportation_type,
+    preferred_vehicle: request.preferred_vehicle,
+    preferred_driver: request.preferred_driver,
+    preferred_vehicle_note: request.preferred_vehicle_note,
+    preferred_driver_note: request.preferred_driver_note
+  });
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', {
@@ -395,7 +404,7 @@ export default function RequestDetailsView({
                   )}
 
                   {/* Preferred Vehicle and Driver */}
-                  {request.transportation_type === 'pickup' && (request.preferred_vehicle || request.preferred_driver) && (
+                  {(request.preferred_vehicle || request.preferred_driver) && (
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900 mb-3">Vehicle Preferences</h3>
                       <div className="bg-gray-50 rounded-lg p-4 space-y-4">
