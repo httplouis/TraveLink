@@ -141,6 +141,16 @@ export default function SubmissionsView() {
       console.log('EXPENSE BREAKDOWN:', json.data.expense_breakdown);
       console.log('EXPENSE BREAKDOWN TYPE:', typeof json.data.expense_breakdown);
       console.log('EXPENSE BREAKDOWN LENGTH:', json.data.expense_breakdown?.length);
+      console.log('=== VEHICLE/DRIVER DEBUG ===');
+      console.log('transportation_type:', json.data.transportation_type);
+      console.log('cost_justification:', json.data.cost_justification);
+      console.log('preferred_vehicle_id:', json.data.preferred_vehicle_id);
+      console.log('preferred_driver_id:', json.data.preferred_driver_id);
+      console.log('preferred_vehicle_note:', json.data.preferred_vehicle_note);
+      console.log('preferred_driver_note:', json.data.preferred_driver_note);
+      console.log('=== RESOLVED NAMES ===');
+      console.log('preferred_vehicle (resolved):', json.data.preferred_vehicle);
+      console.log('preferred_driver (resolved):', json.data.preferred_driver);
       console.log('=== END DEBUG ===');
       // DETAILED VP/President field check
       console.log('=== VP/PRESIDENT FIELD DEBUG ===');
@@ -380,8 +390,8 @@ export default function SubmissionsView() {
               pickup_location: fullRequestData.pickup_location,
               pickup_time: fullRequestData.pickup_time,
               cost_justification: fullRequestData.cost_justification,
-              preferred_vehicle: fullRequestData.preferred_vehicle_id, // This might need to be resolved to vehicle name
-              preferred_driver: fullRequestData.preferred_driver_id, // This might need to be resolved to driver name
+              preferred_vehicle: fullRequestData.preferred_vehicle, // Now resolved to vehicle name from API
+              preferred_driver: fullRequestData.preferred_driver, // Now resolved to driver name from API
               preferred_vehicle_note: fullRequestData.preferred_vehicle_note,
               preferred_driver_note: fullRequestData.preferred_driver_note,
               status: selectedRequest.status,

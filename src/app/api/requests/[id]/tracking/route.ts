@@ -79,12 +79,35 @@ export async function GET(
 
     const fetchVehicle = async (vehicleId: string | null) => {
       if (!vehicleId) return null;
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("vehicles")
-        .select("plate_number, model")
+        .select("plate_number, model, vehicle_name")
         .eq("id", vehicleId)
         .single();
+      
+      if (error) {
+        console.log('[fetchVehicle] Error:', error);
+        return null;
+      }
+      
       return data || null;
+    };
+
+    const fetchDriver = async (driverId: string | null) => {
+      if (!driverId) return null;
+      // Driver data is in users table, not drivers table
+      const { data, error } = await supabase
+        .from("users")
+        .select("name, id")
+        .eq("id", driverId)
+        .single();
+      
+      if (error) {
+        console.log('[fetchDriver] Error:', error);
+        return null;
+      }
+      
+      return data ? { full_name: data.name } : null;
     };
 
     // Fetch requester's user data to get department as fallback
@@ -114,6 +137,8 @@ export async function GET(
       rejectedByName,
       assignedVehicle,
       assignedDriverName,
+      preferredVehicle,
+      preferredDriver,
     ] = await Promise.all([
       fetchRequesterData(request.requester_id),
       fetchDepartment(request.department_id),
@@ -128,7 +153,18 @@ export async function GET(
       fetchUserName(request.rejected_by),
       fetchVehicle(request.assigned_vehicle_id),
       fetchUserName(request.assigned_driver_id),
+      fetchVehicle(request.preferred_vehicle_id),
+      fetchDriver(request.preferred_driver_id),
     ]);
+
+    // Debug vehicle/driver resolution
+    console.log('[Tracking API] Vehicle/Driver Resolution:', {
+      preferred_vehicle_id: request.preferred_vehicle_id,
+      preferred_driver_id: request.preferred_driver_id,
+      preferredVehicle,
+      preferredDriver,
+      transportation_type: request.transportation_type
+    });
 
     // Use department from request join, or separate fetch, or requester's department
     let finalDepartment = request.departments || department;
@@ -188,9 +224,15 @@ export async function GET(
       has_budget: request.has_budget,
       total_budget: request.total_budget,
       expense_breakdown: request.expense_breakdown,
+      transportation_type: request.transportation_type,
+      pickup_location: request.pickup_location,
+      pickup_time: request.pickup_time,
       cost_justification: request.cost_justification,
       preferred_vehicle_id: request.preferred_vehicle_id,
       preferred_driver_id: request.preferred_driver_id,
+      preferred_vehicle: preferredVehicle ? 
+        `${preferredVehicle.model || preferredVehicle.vehicle_name || 'Vehicle'} (${preferredVehicle.plate_number})` : null,
+      preferred_driver: preferredDriver ? preferredDriver.full_name : null,
       preferred_vehicle_note: request.preferred_vehicle_note,
       preferred_driver_note: request.preferred_driver_note,
       has_parent_head: request.has_parent_head || false,
