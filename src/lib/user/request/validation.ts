@@ -54,6 +54,15 @@ export function canSubmit(data: RequestFormData) {
     if (!req(s.title)) errors["seminar.title"] = "Required";
     if (!req(s.dateFrom)) errors["seminar.dateFrom"] = "Required";
     if (!req(s.dateTo)) errors["seminar.dateTo"] = "Required";
+    
+    // ✅ REQUIRED: Requester signature must be saved (and not blank)
+    if (!hasSignature(s.requesterSignature)) {
+      errors["seminar.requesterSignature"] = "Requester signature is required.";
+    }
+    
+    // Note: Participant confirmation is NOT required for submission
+    // Invitations can be sent before or after submission
+    // Participants can confirm later and it will be tracked
   }
 
   return { ok: Object.keys(errors).length === 0, errors };

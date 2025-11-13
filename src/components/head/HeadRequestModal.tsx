@@ -5,6 +5,7 @@ import React from "react";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import { Users, UserCircle, User, Car, UserCog } from "lucide-react";
 import { useToast } from "@/components/common/ui/Toast";
+import ApproverSelectionModal from "@/components/common/ApproverSelectionModal";
 
 type Props = {
   request: any;
@@ -46,6 +47,8 @@ export default function HeadRequestModal({
   );
   const [preferredDriverName, setPreferredDriverName] = React.useState<string>("");
   const [preferredVehicleName, setPreferredVehicleName] = React.useState<string>("");
+  const [showApproverSelection, setShowApproverSelection] = React.useState(false);
+  const [approverOptions, setApproverOptions] = React.useState<any[]>([]);
 
   // Auto-load saved signature and head info
   React.useEffect(() => {
@@ -141,6 +144,70 @@ export default function HeadRequestModal({
 
   async function doApprove() {
     if (submitting) return;
+    
+    // Validate comments
+    if (!comments.trim() || comments.trim().length < 10) {
+      toast.warning("Comments Required", "Please provide comments (minimum 10 characters)");
+      return;
+    }
+
+    // Check if we need to show approver selection
+    // Head can send to: Admin (default) or return to requester
+    // If there's a parent department, can also send to parent head
+    const needsApproverSelection = true; // Always show selection for flexibility
+    
+    if (needsApproverSelection) {
+      // Fetch available approvers
+      try {
+        const approversRes = await fetch(`/api/approvers?role=admin&department_id=${request.department_id || ''}`);
+        const approversData = await approversRes.json();
+        
+        console.log("[HeadRequestModal] Approvers response:", approversData);
+        
+        if (approversData.ok) {
+          const options = (approversData.data || []).map((a: any) => ({
+            ...a,
+            roleLabel: "Administrator"
+          }));
+          
+          console.log("[HeadRequestModal] Approver options count:", options.length);
+          console.log("[HeadRequestModal] Approver options:", options);
+          
+          // Set options (even if empty, so modal can show "no approvers" message)
+          setApproverOptions(options);
+          setShowApproverSelection(true);
+          return;
+        } else {
+          console.error("[HeadRequestModal] Approvers API error:", approversData.error);
+          
+          // Try debug endpoint to see what's in database
+          try {
+            const debugRes = await fetch('/api/approvers/debug');
+            const debugData = await debugRes.json();
+            console.log("[HeadRequestModal] Debug info:", debugData);
+          } catch (debugErr) {
+            console.error("[HeadRequestModal] Debug endpoint error:", debugErr);
+          }
+          
+          // Still show modal even if API fails, so user can return to requester
+          setApproverOptions([]);
+          setShowApproverSelection(true);
+          return;
+        }
+      } catch (err) {
+        console.error("Error fetching approvers:", err);
+        // Still show modal even if fetch fails, so user can return to requester
+        setApproverOptions([]);
+        setShowApproverSelection(true);
+        return;
+      }
+    }
+
+    // If no selection needed, proceed with default (Admin)
+    proceedWithApproval(null, "admin");
+  }
+
+  async function proceedWithApproval(selectedApproverId: string | null, selectedRole: string, returnReason?: string) {
     setSubmitting(true);
     try {
       const approvalDate = new Date().toISOString();
@@ -151,16 +218,22 @@ export default function HeadRequestModal({
           id: request.id,
           action: "approve",
           signature: headSignature,
-          comments: "",
+          comments: comments.trim(),
           approved_at: approvalDate,
+          next_approver_id: selectedApproverId, // Send to specific approver if selected
+          next_approver_role: selectedRole,
+          return_reason: returnReason || null
         }),
       });
       const j = await res.json();
       if (j.ok) {
+        const roleLabel = selectedRole === "requester" ? "Requester" : 
+                         selectedRole === "admin" ? "Admin" : "Next Approver";
         toast.success(
           "Approved Successfully!",
-          "Request has been sent to Admin for processing"
+          `Request has been sent to ${roleLabel}`
         );
+        setShowApproverSelection(false);
         onApproved(request.id);
       } else {
         toast.error("Approval Failed", j.error ?? "Unknown error occurred");
@@ -656,6 +729,32 @@ export default function HeadRequestModal({
                 </div>
               </div>
             )}
+
+            {/* Comments field for approval */}
+            {!viewOnly && (
+              <div>
+                <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
+                  Comments <span className="text-red-500">*</span>
+                  <span className="text-xs font-normal text-gray-500 ml-2">(Required, minimum 10 characters)</span>
+                </label>
+                <textarea
+                  value={comments}
+                  onChange={(e) => setComments(e.target.value)}
+                  placeholder="Add your comments or notes for this approval..."
+                  rows={3}
+                  className={`w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#7A0010] focus:border-transparent resize-none ${
+                    comments.trim().length > 0 && comments.trim().length < 10
+                      ? 'border-red-300 bg-red-50'
+                      : 'border-gray-300'
+                  }`}
+                />
+                {comments.trim().length > 0 && comments.trim().length < 10 && (
+                  <p className="mt-1 text-xs text-red-600">
+                    Comments must be at least 10 characters long
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -703,6 +802,24 @@ export default function HeadRequestModal({
           </div>
         )}
       </div>
+
+      {/* Approver Selection Modal */}
+      {showApproverSelection && (
+        <ApproverSelectionModal
+          isOpen={showApproverSelection}
+          onClose={() => setShowApproverSelection(false)}
+          onSelect={(approverId, approverRole, returnReason) => {
+            proceedWithApproval(approverId, approverRole, returnReason);
+          }}
+          title="Select Next Approver"
+          description={`Request ${request.request_number || request.id} - Choose where to send this request after approval`}
+          options={approverOptions}
+          currentRole="head"
+          allowReturnToRequester={true}
+          requesterId={request.requester_id}
+          requesterName={request.requester?.name || "Requester"}
+        />
+      )}
 
       {/* Rejection Dialog */}
       {showRejectDialog && (

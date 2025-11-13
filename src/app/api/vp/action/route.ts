@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { requestId, action, signature, notes } = body;
+    const { requestId, action, signature, notes, is_head_request } = body;
 
     if (!requestId || !action) {
       return NextResponse.json(
@@ -32,25 +32,41 @@ export async function POST(request: Request) {
       );
     }
 
+    // MANDATORY: Notes are required (minimum 10 characters)
+    if (action === "approve" && (!notes || notes.trim().length < 10)) {
+      return NextResponse.json({ 
+        ok: false, 
+        error: "Notes are mandatory and must be at least 10 characters long" 
+      }, { status: 400 });
+    }
+
     console.log(`[VP Action] ${action} by ${vpUser.name} on request ${requestId}`);
 
     if (action === "approve") {
-      // Routing logic: ALL VP-approved requests go to President
-      // President is the final approver for all requests
+      // Routing logic: 
+      // - If requester is a Head (Dean/Director), MUST go to President
+      // - Otherwise, also goes to President (final approver)
       const newStatus = "pending_president";
+
+      const updateData: any = {
+        status: newStatus,
+        current_approver_role: "president",
+        exec_level: "president",
+        vp_approved_at: getPhilippineTimestamp(),
+        vp_approved_by: vpUser.id,
+        vp_signature: signature || null,
+        vp_comments: notes || null,
+        updated_at: getPhilippineTimestamp(),
+      };
+
+      // If this is a head request, ensure it goes to President
+      if (is_head_request) {
+        updateData.requires_president_approval = true;
+      }
 
       const { error: updateError } = await supabase
         .from("requests")
-        .update({
-          status: newStatus,
-          current_approver_role: "president",
-          exec_level: "president",
-          vp_approved_at: getPhilippineTimestamp(),
-          vp_approved_by: vpUser.id,
-          vp_signature: signature || null,
-          vp_comments: notes || null,
-          updated_at: getPhilippineTimestamp(),
-        })
+        .update(updateData)
         .eq("id", requestId);
 
       if (updateError) {

@@ -1,6 +1,8 @@
 "use client";
 
+import * as React from "react";
 import { Send, AlertTriangle, Lightbulb } from "lucide-react";
+import ErrorSummaryModal from "./ErrorSummaryModal.ui";
 
 export default function SubmitBar({
   invalid,
@@ -12,6 +14,8 @@ export default function SubmitBar({
   department,
   isHeadRequester,
   vehicleMode,
+  errors,
+  onGoToField,
 }: {
   invalid: boolean;
   saving: boolean;
@@ -22,7 +26,23 @@ export default function SubmitBar({
   department?: string;
   isHeadRequester?: boolean;
   vehicleMode?: "owned" | "institutional" | "rent";
+  errors?: Record<string, string>;
+  onGoToField?: (fieldKey: string) => void;
 }) {
+  const [showErrorModal, setShowErrorModal] = React.useState(false);
+
+  const handleReviewFields = () => {
+    if (errors && Object.keys(errors).length > 0) {
+      setShowErrorModal(true);
+    } else {
+      // Fallback: scroll to first error
+      const firstError = document.querySelector('[data-error="true"]');
+      if (firstError) {
+        firstError.scrollIntoView({ behavior: "smooth", block: "center" });
+        (firstError as HTMLElement).focus();
+      }
+    }
+  };
   // Determine button text based on role
   const submitButtonText = isHeadRequester 
     ? (vehicleMode === "institutional" ? "Send to Transport Manager" : "Send to Comptroller")
@@ -56,10 +76,13 @@ export default function SubmitBar({
           )}
         </div>
         {invalid && (
-          <span className="flex items-center gap-1.5 rounded-md bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
+          <button
+            onClick={handleReviewFields}
+            className="flex items-center gap-1.5 rounded-lg border-2 border-amber-300 bg-gradient-to-r from-amber-50 to-amber-100 px-3 py-1.5 text-xs font-bold text-amber-800 shadow-sm transition-all hover:border-amber-400 hover:from-amber-100 hover:to-amber-200 hover:shadow-md"
+          >
             <AlertTriangle className="h-3.5 w-3.5" />
-            Review fields
-          </span>
+            Review fields ({errors ? Object.keys(errors).length : "?"})
+          </button>
         )}
       </div>
       
@@ -109,6 +132,16 @@ export default function SubmitBar({
         <Lightbulb className="h-3.5 w-3.5" />
         Tip: Save as draft if you need to continue later
       </p>
+
+      {/* Error Summary Modal */}
+      {errors && onGoToField && (
+        <ErrorSummaryModal
+          errors={errors}
+          isOpen={showErrorModal}
+          onClose={() => setShowErrorModal(false)}
+          onGoToField={onGoToField}
+        />
+      )}
     </div>
   );
 }

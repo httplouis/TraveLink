@@ -31,17 +31,21 @@ function FieldWrap({
   required?: boolean;
 }>) {
   return (
-    <label className="grid gap-1">
-      <span className="text-[13px] font-medium text-neutral-700">
-        {label} {required && <span className="text-rose-600">*</span>}
-      </span>
-      {children}
+    <div className="grid gap-1.5 w-full">
+      <label className="text-[13px] font-semibold text-gray-800 leading-tight">
+        {label} {required && <span className="text-red-500">*</span>}
+      </label>
+      <div className="w-full">
+        {children}
+      </div>
       {error ? (
-        <span className="text-xs text-rose-600">{error}</span>
+        <div className="mt-0.5 flex items-center gap-1.5 rounded-lg border-2 border-red-200 bg-red-50 px-2.5 py-1.5">
+          <span className="text-xs font-medium text-red-700">{error}</span>
+        </div>
       ) : helper ? (
-        <span className="text-xs text-neutral-500">{helper}</span>
+        <span className="mt-0.5 text-xs text-gray-500 leading-tight">{helper}</span>
       ) : null}
-    </label>
+    </div>
   );
 }
 
@@ -61,13 +65,14 @@ export function TextInput({
     <FieldWrap label={label} error={error} helper={helper} required={required}>
       <input
         id={id}
+        data-error={error ? "true" : undefined}
         className={clsx(
-          "h-10 w-full rounded-xl border bg-white px-3 text-sm outline-none",
-          "placeholder:text-neutral-400",
+          "h-11 w-full rounded-xl border-2 bg-white px-4 text-sm font-medium outline-none transition-all shadow-sm",
+          "placeholder:text-gray-400",
           error
-            ? "border-rose-500 ring-2 ring-rose-100"
-            : "border-neutral-300 focus:border-neutral-400 focus:ring-2 focus:ring-neutral-200",
-          disabled && "bg-neutral-100 text-neutral-500",
+            ? "border-red-500 ring-2 ring-red-100 bg-red-50/30"
+            : "border-gray-300 focus:border-[#7A0010] focus:ring-2 focus:ring-[#7A0010]/20 hover:border-gray-400",
+          disabled && "bg-gray-100 text-gray-500",
           className
         )}
         placeholder={placeholder}
@@ -117,12 +122,13 @@ export function DateInput({
         id={id}
         type="date"
         data-empty={isEmpty ? "true" : "false"}
+        data-error={error ? "true" : undefined}
         className={clsx(
-          "h-10 w-full rounded-xl border bg-white px-3 text-sm outline-none",
+          "h-11 w-full rounded-xl border-2 bg-white px-4 text-sm font-medium outline-none transition-all shadow-sm",
           error
-            ? "border-rose-500 ring-2 ring-rose-100"
-            : "border-neutral-300 focus:border-neutral-400 focus:ring-2 focus:ring-neutral-200",
-          disabled && "bg-neutral-100 text-neutral-500",
+            ? "border-red-500 ring-2 ring-red-100 bg-red-50/30"
+            : "border-gray-300 focus:border-[#7A0010] focus:ring-2 focus:ring-[#7A0010]/20 hover:border-gray-400",
+          disabled && "bg-gray-100 text-gray-500",
           className
         )}
         placeholder={placeholder}
@@ -154,13 +160,14 @@ export function TextArea({
       <textarea
         id={id}
         rows={rows}
+        data-error={error ? "true" : undefined}
         className={clsx(
-          "w-full resize-y rounded-xl border bg-white px-3 py-2 text-sm outline-none",
-          "placeholder:text-neutral-400",
+          "w-full resize-y rounded-xl border-2 bg-white px-4 py-3 text-sm font-medium outline-none transition-all shadow-sm",
+          "placeholder:text-gray-400",
           error
-            ? "border-rose-500 ring-2 ring-rose-100"
-            : "border-neutral-300 focus:border-neutral-400 focus:ring-2 focus:ring-neutral-200",
-          disabled && "bg-neutral-100 text-neutral-500",
+            ? "border-red-500 ring-2 ring-red-100 bg-red-50/30"
+            : "border-gray-300 focus:border-[#7A0010] focus:ring-2 focus:ring-[#7A0010]/20 hover:border-gray-400",
+          disabled && "bg-gray-100 text-gray-500",
           className
         )}
         placeholder={placeholder}
@@ -188,19 +195,20 @@ export function CurrencyInput({
     <FieldWrap label={label} error={error} helper={helper} required={required}>
       <div
         className={clsx(
-          "flex h-10 items-center rounded-xl border bg-white text-sm",
+          "flex h-11 items-center rounded-xl border-2 bg-white text-sm transition-all shadow-sm",
           error
-            ? "border-rose-500 ring-2 ring-rose-100"
-            : "border-neutral-300 focus-within:border-neutral-400 focus-within:ring-2 focus-within:ring-neutral-200",
-          disabled && "bg-neutral-100 text-neutral-500",
+            ? "border-red-500 ring-2 ring-red-100 bg-red-50/30"
+            : "border-gray-300 focus-within:border-[#7A0010] focus-within:ring-2 focus-within:ring-[#7A0010]/20 hover:border-gray-400",
+          disabled && "bg-gray-100 text-gray-500",
           className
         )}
+        data-error={error ? "true" : undefined}
       >
-        <span className="px-3 text-neutral-500">₱</span>
+        <span className="px-4 text-gray-600 font-semibold">₱</span>
         <input
           id={id}
           inputMode="decimal"
-          className="h-full w-full bg-transparent pr-3 outline-none placeholder:text-neutral-400"
+          className="h-full w-full bg-transparent pr-4 outline-none placeholder:text-gray-400 font-medium"
           placeholder={placeholder}
           value={value ?? ""}
           onChange={onChange as any}
@@ -233,13 +241,15 @@ export function SelectInput({
     <FieldWrap label={label} error={error} helper={helper} required={required}>
       <select
         id={id}
+        data-error={error ? "true" : undefined}
         className={clsx(
-          "h-10 w-full rounded-xl border bg-white px-3 text-sm outline-none",
+          "h-11 w-full rounded-xl border-2 bg-white px-4 text-sm font-medium outline-none transition-all shadow-sm",
+          "placeholder:text-gray-400",
           error
-            ? "border-rose-500 ring-2 ring-rose-100"
-            : "border-neutral-300 focus:border-neutral-400 focus:ring-2 focus:ring-neutral-200",
-          disabled && "bg-neutral-100 text-neutral-500",
-          !value && "text-neutral-400",
+            ? "border-red-500 ring-2 ring-red-100 bg-red-50/30"
+            : "border-gray-300 focus:border-[#7A0010] focus:ring-2 focus:ring-[#7A0010]/20 hover:border-gray-400",
+          disabled && "bg-gray-100 text-gray-500",
+          !value && "text-gray-400",
           className
         )}
         value={value ?? ""}

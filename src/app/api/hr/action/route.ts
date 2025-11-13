@@ -27,13 +27,21 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { requestId, action, signature, notes } = body;
+    const { requestId, action, signature, notes, next_vp_id } = body;
 
     if (!requestId || !action) {
       return NextResponse.json(
         { ok: false, error: "Missing required fields" },
         { status: 400 }
       );
+    }
+
+    // MANDATORY: Notes are required (minimum 10 characters)
+    if (action === "approve" && (!notes || notes.trim().length < 10)) {
+      return NextResponse.json({ 
+        ok: false, 
+        error: "Notes are mandatory and must be at least 10 characters long" 
+      }, { status: 400 });
     }
 
     console.log(`[HR Action] ${action} by ${hrUser.name} on request ${requestId}`);
@@ -46,19 +54,26 @@ export async function POST(request: Request) {
       const approverRole = "vp";
       const message = "Request approved and sent to VP";
 
+      const updateData: any = {
+        status: newStatus,
+        exec_level: execLevel,
+        current_approver_role: approverRole,
+        hr_approved_at: getPhilippineTimestamp(),
+        hr_approved_by: hrUser.id,
+        hr_signature: signature || null,
+        hr_comments: notes || null,
+        updated_at: getPhilippineTimestamp(),
+      };
+
+      // Set specific VP if selected
+      if (next_vp_id) {
+        updateData.vp_approved_by = next_vp_id; // Pre-assign VP
+      }
+
       // Approve and route to VP
       const { error: updateError } = await supabase
         .from("requests")
-        .update({
-          status: newStatus,
-          exec_level: execLevel,
-          current_approver_role: approverRole,
-          hr_approved_at: getPhilippineTimestamp(),
-          hr_approved_by: hrUser.id,
-          hr_signature: signature || null,
-          hr_comments: notes || null,
-          updated_at: getPhilippineTimestamp(),
-        })
+        .update(updateData)
         .eq("id", requestId);
 
       if (updateError) {

@@ -1,33 +1,67 @@
--- Option 2: Create an admin user record in the users table
--- This ensures the foreign key constraint is satisfied
+-- ============================================
+-- CREATE ADMIN USER FOR TRAVILINK
+-- ============================================
+-- This script helps you create an admin user or check existing users
+-- Run this in Supabase SQL Editor
 
--- First, get your current auth user ID
--- Run this to see your user ID:
+-- 1. Check all existing users and their roles
 SELECT 
-    auth.users.id,
-    auth.users.email
-FROM auth.users
-WHERE auth.users.email = 'admin@travilink.com'  -- Change to your admin email
-LIMIT 1;
+  id, 
+  name, 
+  email, 
+  role, 
+  is_head, 
+  is_vp, 
+  is_president, 
+  is_hr,
+  is_admin,
+  status
+FROM users
+ORDER BY role, name;
 
--- Then insert into users table (REPLACE the UUID with your actual ID from above)
--- Example:
+-- 2. Check if there are any users that could be admins
+SELECT 
+  id, 
+  name, 
+  email, 
+  role,
+  status
+FROM users
+WHERE role IN ('admin', 'faculty', 'staff')
+ORDER BY role;
+
+-- 3. OPTION A: Update an existing user to be admin
+-- Replace 'user@example.com' with the email of the user you want to make admin
+-- UPDATE users 
+-- SET role = 'admin'
+-- WHERE email = 'user@example.com';
+
+-- 4. OPTION B: Create a new admin user (if you have auth.users entry)
+-- First, check if auth user exists:
+-- SELECT id, email FROM auth.users WHERE email = 'admin@mseuf.edu.ph';
+
+-- Then create the public.users entry (replace the auth_user_id with actual ID from above):
 -- INSERT INTO public.users (
 --   id,
+--   auth_user_id,
 --   email,
 --   name,
 --   role,
---   department_id
+--   status,
+--   created_at,
+--   updated_at
 -- ) VALUES (
---   '<YOUR_AUTH_USER_ID_HERE>',  -- Replace with actual UUID from query above
---   'admin@travilink.com',        -- Your email
---   'Admin User',                 -- Your name
---   'admin',                      -- Role
---   NULL                          -- Department (optional for admin)
--- )
--- ON CONFLICT (id) DO NOTHING;
+--   gen_random_uuid(),
+--   'AUTH_USER_ID_FROM_ABOVE',  -- Replace with actual auth.users.id
+--   'admin@mseuf.edu.ph',
+--   'System Administrator',
+--   'admin',
+--   'active',
+--   NOW(),
+--   NOW()
+-- );
 
--- Verify user exists
-SELECT id, email, name, role 
-FROM public.users 
-WHERE email LIKE '%admin%';
+-- 5. Verify admin was created/updated
+-- SELECT id, name, email, role, status 
+-- FROM users 
+-- WHERE role = 'admin';

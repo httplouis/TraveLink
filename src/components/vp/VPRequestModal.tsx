@@ -86,9 +86,19 @@ export default function VPRequestModal({
       return;
     }
 
+    // Validate notes
+    if (!notes.trim() || notes.trim().length < 10) {
+      toast({ message: "Notes are required and must be at least 10 characters long", kind: "error" });
+      return;
+    }
+
     setSubmitting(true);
     try {
       const signature = getSignatureData();
+      
+      // Check if requester is a head (Dean/Director) - if so, must go to President
+      const isHeadRequest = request.requester_is_head || false;
+      
       const res = await fetch("/api/vp/action", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -96,7 +106,8 @@ export default function VPRequestModal({
           requestId: request.id,
           action: "approve",
           signature,
-          notes,
+          notes: notes.trim(),
+          is_head_request: isHeadRequest, // Flag to indicate if this is from a head
         }),
       });
 

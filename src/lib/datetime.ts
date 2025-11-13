@@ -40,3 +40,46 @@ export function formatPhilippineDate(dateStr: string): string {
   console.log('Final formatted result:', result);
   return result;
 }
+
+/**
+ * Format date to long format: "November 13, 2025"
+ */
+export function formatLongDate(dateStr: string): string {
+  if (!dateStr) return '';
+  
+  let adjustedDateStr = dateStr;
+  if (!dateStr.includes('Z') && !dateStr.includes('+') && !dateStr.includes('-', 10)) {
+    adjustedDateStr = dateStr + '+08:00';
+  }
+  
+  const date = new Date(adjustedDateStr);
+  return date.toLocaleDateString('en-US', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+}
+
+/**
+ * Format date and time: "November 13, 2025, 2:41 PM"
+ */
+export function formatLongDateTime(dateStr: string): string {
+  if (!dateStr) return '';
+  
+  let adjustedDateStr = dateStr;
+  if (!dateStr.includes('Z') && !dateStr.includes('+') && !dateStr.includes('-', 10)) {
+    adjustedDateStr = dateStr + '+08:00';
+  }
+  
+  const date = new Date(adjustedDateStr);
+  return date.toLocaleDateString('en-US', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  });
+}

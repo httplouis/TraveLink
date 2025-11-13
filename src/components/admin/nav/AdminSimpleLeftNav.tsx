@@ -14,6 +14,7 @@ import {
   FileBarChart,
   Settings,
   MessageSquare,
+  UserCog,
 } from "lucide-react";
 
 type NavItem = {
@@ -31,6 +32,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/admin/drivers", label: "Drivers", Icon: Users, section: "MANAGEMENT" },
   { href: "/admin/vehicles", label: "Vehicles", Icon: Truck, section: "MANAGEMENT" },
   { href: "/admin/maintenance", label: "Maintenance", Icon: Wrench, section: "MANAGEMENT" },
+  { href: "/admin/users", label: "User Management", Icon: UserCog, section: "MANAGEMENT" },
   
   { href: "/admin/track", label: "Track / Live", Icon: MapPin, section: "MONITORING" },
   { href: "/admin/history", label: "History / Logs", Icon: History, section: "MONITORING" },

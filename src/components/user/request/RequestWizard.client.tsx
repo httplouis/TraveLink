@@ -15,6 +15,7 @@ import SubmitBar from "@/components/user/request/ui/SubmitBar.ui";
 import { useRequestStore } from "@/store/user/requestStore";
 import { canSubmit } from "@/lib/user/request/validation";
 import { firstReceiver, fullApprovalPath } from "@/lib/user/request/routing";
+import { computeTotalBudget } from "@/lib/user/request/status";
 import { saveDraft, getDraft, getSubmission } from "@/lib/user/request/mockApi";
 import type { RequesterRole } from "@/lib/user/request/types";
 
@@ -224,6 +225,36 @@ function RequestWizardContent() {
   async function handleSaveDraft() {
     setSaving(true);
     try {
+      // First, save to database to get a real request ID (for invitations)
+      // This allows sending invitations even for drafts
+      const response = await fetch("/api/requests/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          travelOrder: data.travelOrder,
+          reason: data.reason,
+          vehicleMode: data.vehicleMode,
+          schoolService: data.schoolService,
+          seminar: data.seminar,
+          status: "draft", // Save as draft
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!result.ok) {
+        throw new Error(result.error || "Failed to save draft");
+      }
+
+      // Store the request ID in the form data (for invitations)
+      if (result.data?.id) {
+        if (data.reason === "seminar") {
+          patchSeminar({ requestId: result.data.id });
+        }
+        setCurrentSubmissionId(result.data.id);
+      }
+
+      // Also save to localStorage for draft management
       const res = await saveDraft(data, currentDraftId || undefined);
       if (!currentDraftId) setCurrentDraftId(res.id);
       toast({
@@ -242,6 +273,15 @@ function RequestWizardContent() {
     const firstKey = Object.keys(errs)[0];
     if (!firstKey) return;
 
+    // Try to find element with data-error attribute first (most reliable)
+    const errorElement = document.querySelector('[data-error="true"]');
+    if (errorElement) {
+      errorElement.scrollIntoView({ behavior: "smooth", block: "center" });
+      (errorElement as HTMLInputElement | HTMLTextAreaElement).focus?.();
+      return;
+    }
+
+    // Fallback to ID mapping
     const idMap: Record<string, string> = {
       "travelOrder.date": "to-date",
       "travelOrder.requestingPerson": "to-requester",
@@ -257,9 +297,7 @@ function RequestWizardContent() {
       "seminar.title": "sem-title",
       "seminar.dateFrom": "sem-dateFrom",
       "seminar.dateTo": "sem-dateTo",
-      // Optional: if you later require requester signature, this lets us scroll near the top grid
-      "travelOrder.requesterSignature": "to-requester",
-      // Endorser signature has no direct input ID; keep as-is
+      "travelOrder.requesterSignature": "to-signature",
       "travelOrder.endorsedByHeadSignature": "",
     };
 
@@ -325,7 +363,29 @@ function RequestWizardContent() {
       // Show success modal
       setSubmittedData(result.data);
       setShowSuccessModal(true);
-      afterSuccessfulSubmitReset();
+      
+      // Store request ID for participant invitations (if seminar)
+      // This allows sending invitations even after submission
+      if (data.reason === "seminar" && result.data?.id) {
+        // Update seminar data with request ID so invitations can be sent
+        patchSeminar({ requestId: result.data.id, isSubmitted: true });
+        // Don't reset immediately if there are pending invitations
+        const hasPendingInvitations = Array.isArray(data.seminar?.participantInvitations) && 
+          data.seminar.participantInvitations.some((inv: any) => !inv.invitationId);
+        
+        if (!hasPendingInvitations) {
+          afterSuccessfulSubmitReset();
+        } else {
+          // Keep form open so they can send invitations
+          toast({
+            kind: "info",
+            title: "Request submitted",
+            message: "You can now send participant invitations. The form will remain open for you to send invitations.",
+          });
+        }
+      } else {
+        afterSuccessfulSubmitReset();
+      }
     } catch (err: any) {
       toast({
         kind: "error",
@@ -337,10 +397,14 @@ function RequestWizardContent() {
     }
   }
 
+  const hasBudget = computeTotalBudget(data.travelOrder?.costs) > 0;
+  const needsVehicle = data.vehicleMode === "institutional" || data.vehicleMode === "rent";
+  
   const firstHop = firstReceiver({
     requesterRole: data.requesterRole,
     vehicleMode: data.vehicleMode,
     reason: data.reason,
+    hasBudget,
   });
   const validation = canSubmit(data);
 
@@ -353,29 +417,46 @@ function RequestWizardContent() {
         />
       )}
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">
-              {currentSubmissionId ? "Edit Submission" : "Request Form"}
-            </h2>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleClear}
-                type="button"
-                className="rounded-xl border border-neutral-300 bg-white px-3 py-1.5 text-sm shadow-sm transition hover:bg-neutral-50 active:scale-[0.99]"
-                title="Clear all fields"
-              >
-                Clear
-              </button>
-              <QuickFillCurrentButton />
-              <QuickFillMenu />
-              <Link href="/user/drafts" className="text-sm text-neutral-600 underline">
-                View drafts
-              </Link>
-              <Link href="/user/submissions" className="text-sm text-neutral-600 underline">
-                View submissions
-              </Link>
+      <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+        {/* Main Form Area */}
+        <div className="space-y-6">
+          {/* Header Section - Enhanced */}
+          <div className="rounded-xl border-2 border-gray-200 bg-gradient-to-br from-white to-gray-50/50 p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">
+                  {currentSubmissionId ? "Edit Submission" : "Request Form"}
+                </h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  {currentSubmissionId 
+                    ? "Update your submission details" 
+                    : "Fill out the form below to submit a new travel request"}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleClear}
+                  type="button"
+                  className="rounded-lg border-2 border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-all hover:border-gray-400 hover:bg-gray-50 active:scale-[0.98]"
+                  title="Clear all fields"
+                >
+                  Clear
+                </button>
+                <QuickFillCurrentButton />
+                <QuickFillMenu />
+                <Link 
+                  href="/user/drafts" 
+                  className="rounded-lg border-2 border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 transition-all hover:border-blue-300 hover:bg-blue-100"
+                >
+                  View drafts
+                </Link>
+                <Link 
+                  href="/user/submissions" 
+                  className="rounded-lg border-2 border-green-200 bg-green-50 px-4 py-2 text-sm font-medium text-green-700 transition-all hover:border-green-300 hover:bg-green-100"
+                >
+                  View submissions
+                </Link>
+              </div>
             </div>
           </div>
 
@@ -391,17 +472,21 @@ function RequestWizardContent() {
             onRequester={(r: RequesterRole) => setRequesterRole(r)}
           />
 
-          <TravelOrderForm
-            data={data.travelOrder}
-            onChange={onChangeTravelOrder}
-            onChangeCosts={onChangeCosts}
-            errors={errors}
-            vehicleMode={data.vehicleMode}
-            isHeadRequester={currentUser?.role === "head"}
-            currentUserName={currentUser?.name}
-          />
+          {/* Show Travel Order form only if NOT seminar */}
+          {!showSeminar && (
+            <TravelOrderForm
+              data={data.travelOrder}
+              onChange={onChangeTravelOrder}
+              onChangeCosts={onChangeCosts}
+              errors={errors}
+              vehicleMode={data.vehicleMode}
+              isHeadRequester={currentUser?.role === "head"}
+              currentUserName={currentUser?.name}
+            />
+          )}
 
-          {showSchoolService && (
+          {/* Show School Service only for institutional vehicles AND not seminar */}
+          {showSchoolService && !showSeminar && (
             <SchoolServiceSection
               data={data.schoolService}
               onChange={onChangeSchoolService}
@@ -409,6 +494,7 @@ function RequestWizardContent() {
             />
           )}
 
+          {/* Show Seminar form only when seminar is selected */}
           {showSeminar && (
             <SeminarApplicationForm
               data={data.seminar}
@@ -427,6 +513,42 @@ function RequestWizardContent() {
             department={data.travelOrder?.department}
             isHeadRequester={currentUser?.role === "head"}
             vehicleMode={data.vehicleMode}
+            errors={validation.errors}
+            onGoToField={(fieldKey) => {
+              // Map field key to element and scroll
+              const idMap: Record<string, string> = {
+                "travelOrder.date": "to-date",
+                "travelOrder.requestingPerson": "to-requester",
+                "travelOrder.department": "to-department",
+                "travelOrder.destination": "to-destination",
+                "travelOrder.departureDate": "to-departure",
+                "travelOrder.returnDate": "to-return",
+                "travelOrder.purposeOfTravel": "to-purpose",
+                "travelOrder.costs.justification": "to-justification",
+                "travelOrder.requesterSignature": "to-signature",
+                "seminar.applicationDate": "sem-applicationDate",
+                "seminar.title": "sem-title",
+                "seminar.dateFrom": "sem-dateFrom",
+                "seminar.dateTo": "sem-dateTo",
+                "seminar.requesterSignature": "sem-signature",
+              };
+              
+              const elementId = idMap[fieldKey];
+              if (elementId) {
+                const el = document.getElementById(elementId) || document.querySelector(`[data-error="true"]`);
+                if (el) {
+                  el.scrollIntoView({ behavior: "smooth", block: "center" });
+                  (el as HTMLElement).focus?.();
+                }
+              } else {
+                // Try to find by data-error attribute
+                const errorEl = document.querySelector('[data-error="true"]');
+                if (errorEl) {
+                  errorEl.scrollIntoView({ behavior: "smooth", block: "center" });
+                  (errorEl as HTMLElement).focus?.();
+                }
+              }
+            }}
           />
         </div>
 
@@ -436,6 +558,8 @@ function RequestWizardContent() {
           path={fullApprovalPath({
             requesterRole: data.requesterRole,
             vehicleMode: data.vehicleMode,
+            hasBudget,
+            needsVehicle,
           })}
         />
       </div>

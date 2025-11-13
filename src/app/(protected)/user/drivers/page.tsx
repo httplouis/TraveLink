@@ -2,129 +2,179 @@
 "use client";
 
 import * as React from "react";
-import { DriversRepo } from "@/lib/admin/drivers/store";
+import { Search, Filter, User, Phone, Mail, Star } from "lucide-react";
+import ProfilePicture from "@/components/common/ProfilePicture";
 
-// If you have exported types, you can import them instead of re-declaring:
-// import type { DriverStatus, LicenseClass } from "@/lib/admin/drivers/types";
 type DriverStatus = "active" | "on_trip" | "off_duty" | "suspended";
-type LicenseClass = "A" | "B" | "C" | "D" | "E";
+
+interface Driver {
+  id: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  licenseNumber?: string;
+  licenseExpiry?: string;
+  rating?: number;
+  isAvailable?: boolean;
+  profile_picture?: string;
+}
 
 export default function UserDriversPage() {
   const [q, setQ] = React.useState("");
   const [status, setStatus] = React.useState<"" | DriverStatus>("");
-  const [license, setLicense] = React.useState<"" | LicenseClass>("");
+  const [drivers, setDrivers] = React.useState<Driver[]>([]);
+  const [loading, setLoading] = React.useState(true);
 
-  const [rows, setRows] = React.useState(() => DriversRepo.listLocal({}));
-
-  // initial load
   React.useEffect(() => {
-    DriversRepo.hydrateFromStorage();
-    setRows(DriversRepo.listLocal({}));
+    fetchDrivers();
   }, []);
 
-  // apply filters — map "" -> undefined so types match the repo input
-  React.useEffect(() => {
-    setRows(
-      DriversRepo.listLocal({
-        search: q || undefined,
-        status: (status || undefined) as DriverStatus | undefined,
-        licenseClass: (license || undefined) as LicenseClass | undefined,
-      }),
+  const fetchDrivers = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/drivers');
+      const data = await response.json();
+      
+      if (data.ok) {
+        setDrivers(data.data || []);
+      }
+    } catch (error) {
+      console.error('Error fetching drivers:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredDrivers = React.useMemo(() => {
+    return drivers.filter(driver => {
+      const query = q.toLowerCase();
+      const matchesSearch = 
+        driver.name?.toLowerCase().includes(query) ||
+        driver.email?.toLowerCase().includes(query) ||
+        driver.phone?.includes(query) ||
+        driver.licenseNumber?.toLowerCase().includes(query);
+      
+      const matchesStatus = !status || 
+        (status === 'active' && driver.isAvailable) ||
+        (status === 'off_duty' && !driver.isAvailable);
+      
+      return matchesSearch && matchesStatus;
+    });
+  }, [drivers, q, status]);
+
+  if (loading) {
+    return (
+      <div className="p-6 flex items-center justify-center min-h-screen">
+        <div className="animate-spin h-8 w-8 border-4 border-[#7a0019] border-t-transparent rounded-full"></div>
+      </div>
     );
-  }, [q, status, license]);
+  }
 
   return (
-    <section className="space-y-4">
-      <header className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold">Drivers</h1>
-        <div className="flex gap-2">
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search name, code, license no…"
-            className="h-9 w-64 rounded-lg border border-neutral-300 px-3 text-sm outline-none"
-          />
+    <div className="p-6 space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900">Drivers</h1>
+        <p className="text-gray-600 mt-1">View available drivers and their information</p>
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <div className="flex flex-col md:flex-row gap-4">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+            <input
+              type="text"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search by name, email, phone, or license number..."
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#7a0019] focus:border-transparent"
+            />
+          </div>
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value as "" | DriverStatus)}
-            className="h-9 rounded-lg border border-neutral-300 px-2 text-sm"
+            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#7a0019] focus:border-transparent"
           >
-            <option value="">All status</option>
-            <option value="active">Active</option>
-            <option value="on_trip">On trip</option>
-            <option value="off_duty">Off duty</option>
-            <option value="suspended">Suspended</option>
-          </select>
-          <select
-            value={license}
-            onChange={(e) => setLicense(e.target.value as "" | LicenseClass)}
-            className="h-9 rounded-lg border border-neutral-300 px-2 text-sm"
-          >
-            <option value="">All license</option>
-            <option>A</option>
-            <option>B</option>
-            <option>C</option>
-            <option>D</option>
-            <option>E</option>
+            <option value="">All Status</option>
+            <option value="active">Available</option>
+            <option value="off_duty">Off Duty</option>
           </select>
         </div>
-      </header>
-
-      <div className="overflow-hidden rounded-xl border">
-        <table className="w-full text-sm">
-          <thead className="bg-neutral-50 text-neutral-700">
-            <tr>
-              <th className="px-3 py-2 text-left">Name</th>
-              <th className="px-3 py-2 text-left">Code</th>
-              <th className="px-3 py-2 text-left">License</th>
-              <th className="px-3 py-2 text-left">Status</th>
-              <th className="px-3 py-2 text-left">Phone</th>
-              <th className="px-3 py-2 text-left">Email</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((d) => (
-              <tr key={d.id} className="border-t">
-                <td className="px-3 py-2">
-                  {d.firstName} {d.lastName}
-                </td>
-                <td className="px-3 py-2">{d.code}</td>
-                <td className="px-3 py-2">
-                  {d.licenseClass} — {d.licenseNo}
-                </td>
-                <td className="px-3 py-2">
-                  <span
-                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs
-                      ${
-                        d.status === "active"
-                          ? "bg-green-100 text-green-700"
-                          : d.status === "on_trip"
-                          ? "bg-amber-100 text-amber-700"
-                          : d.status === "off_duty"
-                          ? "bg-neutral-200 text-neutral-700"
-                          : "bg-rose-100 text-rose-700"
-                      }`}
-                  >
-                    {d.status}
-                  </span>
-                </td>
-                <td className="px-3 py-2">{d.phone ?? "—"}</td>
-                <td className="px-3 py-2">{d.email ?? "—"}</td>
-              </tr>
-            ))}
-            {!rows.length && (
-              <tr>
-                <td
-                  colSpan={6}
-                  className="px-3 py-6 text-center text-neutral-500"
-                >
-                  No drivers found
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
       </div>
-    </section>
+
+      {/* Drivers Grid */}
+      {filteredDrivers.length === 0 ? (
+        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+          <User className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+          <p className="text-gray-600 text-lg">No drivers found</p>
+          <p className="text-gray-500 text-sm mt-2">
+            {q ? 'Try adjusting your search' : 'No drivers available'}
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredDrivers.map((driver) => (
+            <div
+              key={driver.id}
+              className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-lg transition-shadow"
+            >
+              <div className="flex items-start gap-4 mb-4">
+                <ProfilePicture
+                  src={driver.profile_picture}
+                  name={driver.name}
+                  size="lg"
+                />
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-gray-900 truncate">{driver.name}</h3>
+                  {driver.rating && (
+                    <div className="flex items-center gap-1 mt-1">
+                      <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                      <span className="text-sm text-gray-600">{driver.rating.toFixed(1)}</span>
+                    </div>
+                  )}
+                </div>
+                <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                  driver.isAvailable
+                    ? 'bg-green-100 text-green-800'
+                    : 'bg-gray-100 text-gray-800'
+                }`}>
+                  {driver.isAvailable ? 'Available' : 'Off Duty'}
+                </span>
+              </div>
+
+              <div className="space-y-2 text-sm">
+                {driver.licenseNumber && (
+                  <div className="flex items-center gap-2 text-gray-600">
+                    <span className="font-medium">License:</span>
+                    <span>{driver.licenseNumber}</span>
+                  </div>
+                )}
+                {driver.phone && (
+                  <div className="flex items-center gap-2 text-gray-600">
+                    <Phone className="w-4 h-4" />
+                    <span>{driver.phone}</span>
+                  </div>
+                )}
+                {driver.email && (
+                  <div className="flex items-center gap-2 text-gray-600">
+                    <Mail className="w-4 h-4" />
+                    <span className="truncate">{driver.email}</span>
+                  </div>
+                )}
+                {driver.licenseExpiry && (
+                  <div className="text-xs text-gray-500 mt-2">
+                    License expires: {new Date(driver.licenseExpiry).toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric'
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

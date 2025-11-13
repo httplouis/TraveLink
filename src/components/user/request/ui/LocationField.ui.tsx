@@ -46,36 +46,21 @@ export default function LocationField({
   }
 
   return (
-    <label className="grid w-full gap-1">
-      <span className="text-[13px] font-medium text-neutral-700">{label}</span>
-
-      {/* Use explicit tailwind styles so we always get a visible border */}
+    <div className="grid gap-1.5 w-full">
+      <label className="text-[13px] font-semibold text-gray-800 leading-tight">{label}</label>
       <div className="relative">
         <input
           id={inputId}
           value={value}
           onChange={(e) => onChange({ address: e.target.value, geo })}
           placeholder={placeholder}
-          className="
-            h-10 w-full rounded-xl
-            border border-neutral-300 bg-white
-            px-3 pr-12 text-sm
-            outline-none transition
-            focus:border-neutral-400 focus:ring-2 focus:ring-neutral-200
-          "
+          className="h-11 w-full rounded-xl border-2 border-gray-300 bg-white px-4 pr-12 text-sm font-medium outline-none transition shadow-sm focus:border-[#7A0010] focus:ring-2 focus:ring-[#7A0010]/20 hover:border-gray-400"
         />
-        {/* icon button INSIDE the input; maroon color */}
         <button
           type="button"
           onClick={() => setOpen(true)}
           aria-label="Pick on map"
-          className="
-            absolute inset-y-0 right-0 px-2
-            rounded-r-xl
-            text-[#7A0010]
-            hover:bg-neutral-50/70
-            focus:outline-none focus:ring-2 focus:ring-[#7A0010]/30
-          "
+          className="absolute inset-y-0 right-0 px-2 rounded-r-xl text-[#7A0010] hover:bg-neutral-50/70 focus:outline-none focus:ring-2 focus:ring-[#7A0010]/30"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -92,9 +77,8 @@ export default function LocationField({
           </svg>
         </button>
       </div>
-
       {geo?.lat != null && geo?.lng != null && (
-        <span className="text-xs text-neutral-500">
+        <span className="mt-0.5 text-xs text-gray-500">
           Selected: {geo.lat.toFixed(5)}, {geo.lng.toFixed(5)}
         </span>
       )}
@@ -116,6 +100,6 @@ export default function LocationField({
           </div>
         </Modal>
       ) : null}
-    </label>
+    </div>
   );
 }

@@ -95,15 +95,29 @@ export async function PATCH(req: Request) {
       action = "approve",
       signature = "",
       comments = "",
+      next_approver_id = null,
+      next_approver_role = null,
+      return_reason = null,
     } = body as {
       id: string;
       action?: "approve" | "reject";
       signature?: string;
       comments?: string;
+      next_approver_id?: string | null;
+      next_approver_role?: string | null;
+      return_reason?: string | null;
     };
 
     if (!id) {
       return NextResponse.json({ ok: false, error: "Missing request id" }, { status: 400 });
+    }
+
+    // MANDATORY: Notes/comments are required (minimum 10 characters)
+    if (action === "approve" && (!comments || comments.trim().length < 10)) {
+      return NextResponse.json({ 
+        ok: false, 
+        error: "Comments are mandatory and must be at least 10 characters long" 
+      }, { status: 400 });
     }
 
     // Get request
@@ -134,22 +148,67 @@ export async function PATCH(req: Request) {
     const now = getPhilippineTimestamp();
 
     if (action === "approve") {
-      // Determine next status using workflow engine
-      const hasParentDepartment = !!(request.department as any)?.parent_department_id;
-      const nextStatus = WorkflowEngine.getNextStatus(
-        request.status,
-        request.requester_is_head || false,
-        request.has_budget || false,
-        hasParentDepartment
-      );
+      // Handle approver selection logic
+      let nextStatus: string;
+      let nextApproverRole: string;
+      let returnInfo: any = {}; // Store return info separately
+      
+      if (next_approver_role === "requester") {
+        // Return to requester - set back to draft so they can edit and resubmit
+        nextStatus = "draft";
+        nextApproverRole = "requester";
+        
+        // Store return information
+        const returnNote = return_reason 
+          ? `Returned to requester: ${return_reason}. ${comments}`
+          : `Returned to requester for revision. ${comments}`;
+        returnInfo.head_comments = returnNote;
+        returnInfo.returned_to_requester_at = now;
+        returnInfo.returned_by = profile.id;
+        returnInfo.return_reason = return_reason;
+      } else if (next_approver_id && next_approver_role) {
+        // Send to specific approver
+        if (next_approver_role === "admin") {
+          nextStatus = "pending_admin";
+          nextApproverRole = "admin";
+        } else {
+          // Default workflow
+          const hasParentDepartment = !!(request.department as any)?.parent_department_id;
+          nextStatus = WorkflowEngine.getNextStatus(
+            request.status,
+            request.requester_is_head || false,
+            request.has_budget || false,
+            hasParentDepartment
+          );
+          nextApproverRole = WorkflowEngine.getApproverRole(nextStatus) || "admin";
+        }
+      } else {
+        // Default workflow
+        const hasParentDepartment = !!(request.department as any)?.parent_department_id;
+        nextStatus = WorkflowEngine.getNextStatus(
+          request.status,
+          request.requester_is_head || false,
+          request.has_budget || false,
+          hasParentDepartment
+        );
+        nextApproverRole = WorkflowEngine.getApproverRole(nextStatus) || "admin";
+      }
 
       console.log(`[PATCH /api/head] Approving request ${id}: ${request.status} → ${nextStatus}`);
 
       // Update request with approval
       const updateData: any = {
         status: nextStatus,
-        current_approver_role: WorkflowEngine.getApproverRole(nextStatus),
+        current_approver_role: nextApproverRole,
+        ...returnInfo, // Include return info if returning to requester
       };
+      
+      // Set next approver if specified (not returning to requester)
+      if (next_approver_id && next_approver_role && next_approver_role !== "requester") {
+        if (next_approver_role === "admin") {
+          updateData.next_admin_id = next_approver_id;
+        }
+      }
 
       // Set appropriate approval fields based on current status
       if (request.status === "pending_head") {

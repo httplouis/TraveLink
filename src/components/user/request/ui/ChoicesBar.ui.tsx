@@ -7,6 +7,7 @@ import {
   type RequesterRole,
   REASON_OPTIONS,
 } from "@/lib/user/request/types";
+import { CheckCircle2, Lock } from "lucide-react";
 
 const VEHICLES: { label: string; value: VehicleMode }[] = [
   { label: "Institutional vehicle", value: "institutional" },
@@ -36,7 +37,12 @@ export default function ChoicesBar({
   onRequester,
 }: Props) {
   return (
-    <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+    <section className="rounded-2xl border-2 border-gray-200 bg-gradient-to-br from-white via-gray-50/30 to-white p-6 shadow-lg">
+      <div className="mb-4 border-b border-gray-200 pb-3">
+        <h3 className="text-lg font-bold text-gray-900">Request Configuration</h3>
+        <p className="mt-1 text-xs text-gray-600">Select your request type and preferences</p>
+      </div>
+      
       <div className="grid gap-6 md:grid-cols-3">
         <ChoiceGroup<Reason>
           label="Reason of trip"
@@ -68,9 +74,12 @@ export default function ChoicesBar({
       </div>
 
       {lockedVehicle && (
-        <p className="mt-2 text-xs text-neutral-500">
-          Vehicle locked to <b className="text-[#7A0010]">{lockedVehicle}</b> based on reason.
-        </p>
+        <div className="mt-4 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/50 px-3 py-2">
+          <Lock className="h-4 w-4 text-amber-600" />
+          <p className="text-xs text-amber-800">
+            Vehicle locked to <span className="font-semibold">{lockedVehicle}</span> based on reason of trip.
+          </p>
+        </div>
       )}
     </section>
   );
@@ -95,11 +104,11 @@ function ChoiceGroup<T extends string>({
 
   return (
     <fieldset className="min-w-0">
-      <legend className="mb-2 text-sm font-medium text-neutral-700">{label}</legend>
+      <legend className="mb-3 text-sm font-semibold text-gray-800">{label}</legend>
 
       <div
         className={[
-          "grid gap-2",
+          "grid gap-2.5",
           columns === 1 ? "grid-cols-1" : "",
           columns === 2 ? "grid-cols-2" : "",
           columns === 3 ? "grid-cols-3" : "",
@@ -109,34 +118,65 @@ function ChoiceGroup<T extends string>({
       >
         {options.map((opt) => {
           const selected = value === opt.value;
-          const base =
-            "inline-flex items-center justify-start gap-2 rounded-xl border px-3 py-2 text-sm transition";
-          const state = selected
-            ? "border-[#7A0010] bg-[#7A0010]/5 text-[#7A0010] ring-1 ring-[#7A0010]/20"
-            : "border-neutral-300 hover:bg-neutral-50";
-          const disabledCls = opt.disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer";
+          const disabled = opt.disabled;
 
           return (
-            <label key={String(opt.value)} className={`${base} ${state} ${disabledCls}`} title={opt.title}>
+            <label
+              key={String(opt.value)}
+              className={`
+                group relative flex items-center gap-3 rounded-xl border-2 px-4 py-3 text-sm font-medium transition-all
+                ${selected
+                  ? "border-[#7A0010] bg-gradient-to-br from-[#7A0010]/5 to-[#7A0010]/10 shadow-md ring-2 ring-[#7A0010]/20"
+                  : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 hover:shadow-sm"
+                }
+                ${disabled
+                  ? "opacity-50 cursor-not-allowed"
+                  : "cursor-pointer"
+                }
+              `}
+              title={opt.title}
+            >
               <input
                 type="radio"
                 className="sr-only"
                 name={groupName}
                 checked={selected}
-                disabled={opt.disabled}
-                onChange={() => onChange(opt.value)}
+                disabled={disabled}
+                onChange={() => !disabled && onChange(opt.value)}
                 aria-checked={selected}
               />
-              <span
-                aria-hidden
-                className={[
-                  "grid h-4 w-4 place-items-center rounded-full border",
-                  selected ? "border-[#7A0010]" : "border-neutral-400",
-                ].join(" ")}
+              
+              {/* Custom Radio Indicator */}
+              <div
+                className={`
+                  flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-all
+                  ${selected
+                    ? "border-[#7A0010] bg-[#7A0010]"
+                    : "border-gray-300 bg-white group-hover:border-gray-400"
+                  }
+                  ${disabled ? "opacity-50" : ""}
+                `}
               >
-                <span className={["h-2.5 w-2.5 rounded-full", selected ? "bg-[#7A0010]" : "bg-transparent"].join(" ")} />
+                {selected && (
+                  <CheckCircle2 className="h-3 w-3 text-white" strokeWidth={3} />
+                )}
+              </div>
+
+              {/* Label Text */}
+              <span
+                className={`
+                  flex-1 truncate
+                  ${selected ? "text-[#7A0010]" : "text-gray-700"}
+                  ${disabled ? "opacity-50" : ""}
+                `}
+              >
+                {opt.label}
               </span>
-              <span className="truncate">{opt.label}</span>
+
+              {/* Selected Indicator Badge */}
+              {selected && (
+                <div className="absolute right-2 top-2 h-2 w-2 rounded-full bg-[#7A0010] opacity-60" />
+              )}
             </label>
           );
         })}

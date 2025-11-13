@@ -161,9 +161,32 @@ export default function CostsSection({
     setOtherItems(otherItems.map((row, idx) => (idx === i ? { ...row, ...patch } : row)));
   const removeOther = (i: number) => setOtherItems(otherItems.filter((_, idx) => idx !== i));
 
+  // Calculate total
+  const totalCost = React.useMemo(() => {
+    const base = (costs?.food || 0) + 
+                 (costs?.driversAllowance || 0) + 
+                 (costs?.rentVehicles || 0) + 
+                 (costs?.hiredDrivers || 0) + 
+                 (costs?.accommodation || 0);
+    const otherTotal = otherItems.reduce((sum, item) => sum + (item.amount || 0), 0);
+    return base + otherTotal;
+  }, [costs, otherItems]);
+
   return (
-    <div className="mt-6 rounded-xl border border-neutral-200 p-4">
-      <div className="mb-3 text-sm font-semibold">{TXT.title}</div>
+    <div className="mt-8 rounded-xl border-2 border-gray-200 bg-gradient-to-br from-white via-gray-50/30 to-white p-6 shadow-lg">
+      <div className="mb-5 flex items-center justify-between border-b-2 border-gray-200 pb-4">
+        <div>
+          <h4 className="text-lg font-bold text-gray-900 tracking-tight">{TXT.title}</h4>
+          <p className="mt-1 text-xs text-gray-600">Estimate your travel expenses</p>
+        </div>
+        {totalCost > 0 && (
+          <div className="rounded-lg border border-blue-200 bg-gradient-to-br from-blue-50 to-blue-100/50 px-5 py-2.5 shadow-sm">
+            <span className="text-sm font-bold text-blue-800">
+              Total: ₱{totalCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          </div>
+        )}
+      </div>
 
       <div className="grid gap-4 md:grid-cols-2">
         <CurrencyInput
@@ -217,60 +240,57 @@ export default function CostsSection({
           }}
         />
 
-        {/* Dynamic Other expenses */}
+        {/* Dynamic Other expenses - Enhanced */}
         <div className="md:col-span-2">
-          <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="text-sm font-semibold text-gray-700">{TXT.otherGroup}</div>
+          <div className="rounded-xl border-2 border-gray-200 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex items-center justify-between">
+              <h5 className="text-sm font-bold text-gray-900">{TXT.otherGroup}</h5>
               <button
                 type="button"
                 onClick={addOther}
-                className="flex items-center gap-1.5 rounded-lg bg-[#7a0010] px-3 py-2 text-sm font-medium text-white hover:bg-[#5c000c] transition-colors"
+                className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-maroon-600 to-maroon-700 px-4 py-2 text-sm font-semibold text-white shadow-md transition-all hover:from-maroon-700 hover:to-maroon-800 hover:shadow-lg"
               >
-                <Plus className="h-4 w-4" strokeWidth={2} />
-                Add
+                <Plus className="h-4 w-4" strokeWidth={2.5} />
+                Add Expense
               </button>
             </div>
 
             <div className="space-y-3">
               {otherItems.length === 0 && (
-                <div className="text-center py-6 text-sm text-gray-500 bg-white rounded-lg border border-dashed border-gray-300">
-                  No other expenses yet. Click "Add" to insert one.
+                <div className="text-center py-8 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50">
+                  <p className="text-sm font-medium text-gray-500">No other expenses added yet</p>
+                  <p className="mt-1 text-xs text-gray-400">Click "Add Expense" to add additional cost items</p>
                 </div>
               )}
 
               {otherItems.map((row, idx) => (
-                <div key={idx} className="bg-white rounded-lg p-3 border border-gray-200 shadow-sm">
-                  <div className="grid grid-cols-3 gap-3">
+                <div key={idx} className="rounded-lg border-2 border-gray-200 bg-gradient-to-br from-gray-50 to-white p-4 shadow-sm transition-all hover:border-gray-300">
+                  <div className="grid grid-cols-[1fr_180px_50px] gap-3 items-end">
                     <TextInput
                       label={idx === 0 ? TXT.otherLabel : ""}         
                       placeholder={TXT.otherLabelPh}
                       value={row.label}
                       onChange={(e) => updateOther(idx, { label: e.target.value })}
-                      className="col-span-2"
                     />
-                    <div className="flex items-end gap-2">
-                      <CurrencyInput
-                        label={idx === 0 ? TXT.otherAmount : ""}       
-                        placeholder={TXT.amountPh}
-                        value={row.amount ?? ""}
-                        onChange={(e) => {
-                          handleValidation(e.target.value, row.label || "Other Expense", (validated) => {
-                            updateOther(idx, { amount: validated });
-                          });
-                        }}
-                        className="flex-1"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removeOther(idx)}
-                        className="h-[38px] w-[38px] flex items-center justify-center rounded-lg bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 transition-colors border border-red-200"
-                        aria-label="Remove"
-                        title="Remove"
-                      >
-                        <Trash2 className="h-4 w-4" strokeWidth={2} />
-                      </button>
-                    </div>
+                    <CurrencyInput
+                      label={idx === 0 ? TXT.otherAmount : ""}       
+                      placeholder={TXT.amountPh}
+                      value={row.amount ?? ""}
+                      onChange={(e) => {
+                        handleValidation(e.target.value, row.label || "Other Expense", (validated) => {
+                          updateOther(idx, { amount: validated });
+                        });
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeOther(idx)}
+                      className="mb-0.5 flex h-10 w-10 items-center justify-center rounded-lg border-2 border-red-200 bg-red-50 text-red-600 transition-all hover:border-red-300 hover:bg-red-100"
+                      aria-label="Remove"
+                      title="Remove"
+                    >
+                      <Trash2 className="h-4 w-4" strokeWidth={2.5} />
+                    </button>
                   </div>
                 </div>
               ))}

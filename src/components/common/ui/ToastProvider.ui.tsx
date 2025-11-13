@@ -3,10 +3,12 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
+import { motion, AnimatePresence } from "framer-motion";
+import { CheckCircle2, XCircle, AlertCircle, Info, X, RotateCcw } from "lucide-react";
 
 type Toast = {
   id: string;
-  kind?: "success" | "error" | "info";
+  kind?: "success" | "error" | "info" | "warning";
   title?: string;
   message: string;
   timeoutMs?: number;
@@ -27,7 +29,7 @@ export default function ToastProvider({ children }: { children: React.ReactNode 
 
   const push: Ctx = React.useCallback((t) => {
     const id = crypto.randomUUID();
-    const toast: Toast = { id, timeoutMs: 3500, kind: "info", ...t };
+    const toast: Toast = { id, timeoutMs: 4000, kind: "info", ...t };
     setToasts((list) => [...list, toast]);
     const ms = toast.timeoutMs!;
     const timer = setTimeout(() => {
@@ -38,7 +40,7 @@ export default function ToastProvider({ children }: { children: React.ReactNode 
 
   const clearOne = (id: string) => setToasts((l) => l.filter((x) => x.id !== id));
 
-  // Don’t render anything on the server — avoids hydration mismatch.
+  // Don't render anything on the server — avoids hydration mismatch.
   if (!mounted) return <>{children}</>;
 
   return (
@@ -46,44 +48,138 @@ export default function ToastProvider({ children }: { children: React.ReactNode 
       {children}
       {createPortal(
         <div
-          // sits ABOVE your z-50 TopBar and also clears it vertically
-          className="
-            fixed right-3 z-[1000]
-            flex w-[min(480px,95vw)] flex-col gap-2
-            pointer-events-none
-          "
-          // if --topbar-h is available we respect it; otherwise default to 56px
-          style={{ top: `calc(var(--topbar-h, 56px) + 12px)` }}
+          className="fixed right-4 z-[1000] flex w-[min(420px,90vw)] flex-col gap-3 pointer-events-none"
+          style={{ top: `calc(var(--topbar-h, 64px) + 16px)` }}
         >
-          {toasts.map((t) => (
-            <article
-              key={t.id}
-              className={[
-                "pointer-events-auto rounded-xl border px-4 py-3 shadow-lg",
-                t.kind === "success" && "border-green-200 bg-green-50 text-green-900",
-                t.kind === "error" && "border-red-200 bg-red-50 text-red-900",
-                t.kind === "info" && "border-neutral-200 bg-white text-neutral-900",
-              ].join(" ")}
-              role="status"
-            >
-              <div className="flex items-start gap-3">
-                <div className="min-w-0 flex-1">
-                  {t.title && <div className="font-medium">{t.title}</div>}
-                  <div className="text-sm">{t.message}</div>
-                </div>
-                <button
-                  onClick={() => clearOne(t.id)}
-                  className="ml-2 rounded-md p-1 text-neutral-500 hover:bg-neutral-100"
-                  aria-label="Dismiss"
-                >
-                  ✕
-                </button>
-              </div>
-            </article>
-          ))}
+          <AnimatePresence mode="popLayout">
+            {toasts.map((t) => (
+              <ToastItem key={t.id} toast={t} onRemove={clearOne} />
+            ))}
+          </AnimatePresence>
         </div>,
         document.body
       )}
     </ToastCtx.Provider>
   );
+}
+
+function ToastItem({
+  toast,
+  onRemove,
+}: {
+  toast: Toast;
+  onRemove: (id: string) => void;
+}) {
+  const config = getToastConfig(toast.kind || "info");
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: 100, scale: 0.8 }}
+      animate={{ opacity: 1, x: 0, scale: 1 }}
+      exit={{ opacity: 0, x: 100, scale: 0.8 }}
+      transition={{ 
+        type: "spring", 
+        stiffness: 400, 
+        damping: 25,
+        mass: 0.8
+      }}
+      className="pointer-events-auto"
+    >
+      <div
+        className={`
+          relative flex items-start gap-4 rounded-xl border-2 px-5 py-4 shadow-xl
+          backdrop-blur-sm transition-all hover:shadow-2xl
+          ${config.containerClass}
+        `}
+        role="status"
+        aria-live="polite"
+      >
+        {/* Icon Circle */}
+        <div className={`flex-shrink-0 h-11 w-11 rounded-full flex items-center justify-center ${config.iconBgClass} shadow-sm`}>
+          {config.icon}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0 pt-0.5">
+          {toast.title && (
+            <h4 className={`font-bold text-sm mb-1 ${config.titleClass}`}>
+              {toast.title}
+            </h4>
+          )}
+          <p className={`text-sm leading-relaxed ${config.messageClass}`}>
+            {toast.message}
+          </p>
+        </div>
+
+        {/* Close Button */}
+        <button
+          onClick={() => onRemove(toast.id)}
+          className={`
+            flex-shrink-0 -mr-1 -mt-1 p-1.5 rounded-lg 
+            transition-all hover:scale-110 active:scale-95
+            ${config.closeButtonClass}
+          `}
+          aria-label="Dismiss notification"
+        >
+          <X className="h-4 w-4" strokeWidth={2.5} />
+        </button>
+
+        {/* Progress Bar (optional - shows time remaining) */}
+        <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/5 rounded-b-xl overflow-hidden">
+          <motion.div
+            className={`h-full ${config.progressBarClass}`}
+            initial={{ width: "100%" }}
+            animate={{ width: "0%" }}
+            transition={{ duration: (toast.timeoutMs || 4000) / 1000, ease: "linear" }}
+          />
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function getToastConfig(kind: "success" | "error" | "info" | "warning") {
+  switch (kind) {
+    case "success":
+      return {
+        containerClass: "border-green-300/50 bg-gradient-to-br from-green-50 to-green-100/50",
+        iconBgClass: "bg-gradient-to-br from-green-500 to-green-600",
+        icon: <CheckCircle2 className="h-5 w-5 text-white" strokeWidth={2.5} />,
+        titleClass: "text-green-900",
+        messageClass: "text-green-800",
+        closeButtonClass: "text-green-600 hover:bg-green-100",
+        progressBarClass: "bg-green-500",
+      };
+    case "error":
+      return {
+        containerClass: "border-red-300/50 bg-gradient-to-br from-red-50 to-red-100/50",
+        iconBgClass: "bg-gradient-to-br from-red-500 to-red-600",
+        icon: <XCircle className="h-5 w-5 text-white" strokeWidth={2.5} />,
+        titleClass: "text-red-900",
+        messageClass: "text-red-800",
+        closeButtonClass: "text-red-600 hover:bg-red-100",
+        progressBarClass: "bg-red-500",
+      };
+    case "warning":
+      return {
+        containerClass: "border-amber-300/50 bg-gradient-to-br from-amber-50 to-amber-100/50",
+        iconBgClass: "bg-gradient-to-br from-amber-500 to-amber-600",
+        icon: <AlertCircle className="h-5 w-5 text-white" strokeWidth={2.5} />,
+        titleClass: "text-amber-900",
+        messageClass: "text-amber-800",
+        closeButtonClass: "text-amber-600 hover:bg-amber-100",
+        progressBarClass: "bg-amber-500",
+      };
+    case "info":
+    default:
+      return {
+        containerClass: "border-blue-300/50 bg-gradient-to-br from-blue-50 to-blue-100/50",
+        iconBgClass: "bg-gradient-to-br from-blue-500 to-blue-600",
+        icon: <Info className="h-5 w-5 text-white" strokeWidth={2.5} />,
+        titleClass: "text-blue-900",
+        messageClass: "text-blue-800",
+        closeButtonClass: "text-blue-600 hover:bg-blue-100",
+        progressBarClass: "bg-blue-500",
+      };
+  }
 }
