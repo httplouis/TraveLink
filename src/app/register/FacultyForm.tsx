@@ -111,7 +111,7 @@ export default function FacultyForm(props: FacultyFormProps) {
         />
         <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2">
           <p className="text-xs text-blue-800 leading-tight">
-            <strong>Department Head Access:</strong> If you are a department head, your role will be automatically granted when you log in (if your email is in the official roster). No need to request it here.
+            <strong>Role Assignment:</strong> All institutional emails are registered as Faculty/Staff by default. If you need a different role (Department Head, Admin, etc.), please contact your system administrator after registration.
           </p>
         </div>
       </div>

@@ -2,7 +2,7 @@
 
 import { motion } from 'framer-motion';
 import { Check, Clock, X, Zap, AlertCircle } from 'lucide-react';
-import { formatPhilippineDate } from '@/lib/datetime';
+import { formatPhilippineDate, formatLongDateTime } from '@/lib/datetime';
 import ProfilePicture from './ProfilePicture';
 import { NameWithProfile } from './ProfileHoverCard';
 
@@ -68,33 +68,7 @@ export default function SignatureStageRail({
 
   const formatDateTime = (dateString?: string) => {
     if (!dateString) return '';
-    console.log('formatDateTime input:', dateString);
-    
-    // FORCE TIMEZONE FIX - treat timestamp without timezone as Philippine time
-    let adjustedDateStr = dateString;
-    if (!dateString.includes('Z') && !dateString.includes('+') && !dateString.includes('-', 10)) {
-      // Timestamp without timezone - treat as Philippine time by creating Date object directly
-      // and then manually format to Philippine time
-      const date = new Date(dateString);
-      // Add 8 hours to convert from what JS thinks is UTC to Philippine time
-      date.setHours(date.getHours() + 8);
-      adjustedDateStr = date.toISOString();
-      console.log('FORCE ADJUSTED (Philippine):', adjustedDateStr);
-    }
-    
-    const date = new Date(adjustedDateStr);
-    const result = date.toLocaleString('en-PH', {
-      timeZone: 'Asia/Manila',
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true
-    });
-    
-    console.log('formatDateTime result:', result);
-    return result;
+    return formatLongDateTime(dateString);
   };
 
   return (

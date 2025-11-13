@@ -74,10 +74,10 @@ export default function DepartmentSelect({
   const showClear = !!q;
 
   return (
-    <label className={`grid w-full gap-1 ${className}`}>
-      <span className="text-[13px] font-medium text-neutral-700">
+    <div className={`grid w-full gap-1.5 ${className}`}>
+      <label className="text-[13px] font-semibold text-gray-800">
         {label} {required ? <span className="text-red-500">*</span> : null}
-      </span>
+      </label>
 
       <div className="relative">
         <input
@@ -94,7 +94,7 @@ export default function DepartmentSelect({
           onFocus={() => setOpen(true)}
           onBlur={closeSoon}
           onKeyDown={onKeyDown}
-          className="h-10 w-full rounded-xl border border-neutral-300 bg-white px-3 pr-10 text-sm outline-none transition focus:border-neutral-400 focus:ring-2 focus:ring-neutral-200"
+          className="h-11 w-full rounded-xl border-2 border-gray-300 bg-white px-4 pr-10 text-sm font-medium outline-none transition shadow-sm focus:border-[#7A0010] focus:ring-2 focus:ring-[#7A0010]/20 hover:border-gray-400"
         />
 
         {/* Clear (×) — borderless, centered, clear hover affordance */}
@@ -153,6 +153,6 @@ export default function DepartmentSelect({
           </div>
         )}
       </div>
-    </label>
+    </div>
   );
 }

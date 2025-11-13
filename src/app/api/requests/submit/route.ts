@@ -2,6 +2,8 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { WorkflowEngine } from "@/lib/workflow/engine";
+import { sendEmail, generateParticipantInvitationEmail } from "@/lib/email";
+import crypto from "crypto";
 
 export async function POST(req: Request) {
   try {
@@ -239,8 +241,16 @@ export async function POST(req: Request) {
     const requesterIsHead = profile.is_head === true;
 
     // Determine initial status using workflow engine
-    const initialStatus = WorkflowEngine.getInitialStatus(requesterIsHead);
+    // Allow override for draft saves
+    const requestedStatus = body.status;
+    const initialStatus = requestedStatus === "draft" 
+      ? "draft" 
+      : WorkflowEngine.getInitialStatus(requesterIsHead);
 
+    // Determine if this is a seminar request
+    const isSeminar = reason === "seminar";
+    const seminar = body.seminar || {};
+    
     // Parse travel dates
     const travelStartDate = travelOrder.date || travelOrder.dateFrom || new Date().toISOString();
     const travelEndDate = travelOrder.dateTo || travelOrder.date || travelStartDate;
@@ -249,24 +259,51 @@ export async function POST(req: Request) {
     const participants = travelOrder.participants || [];
     
     // Determine if this is a representative submission
-    const requestingPersonName = travelOrder.requestingPerson || profile.name || profile.email || "Unknown";
+    // For seminars, use profile name; for travel orders, use form field
+    const requestingPersonName = isSeminar
+      ? (profile.name || profile.email || "Unknown")
+      : (travelOrder.requestingPerson || profile.name || profile.email || "Unknown");
     const submitterName = profile.name || profile.email || "Unknown";
     const isRepresentative = requestingPersonName.trim().toLowerCase() !== submitterName.trim().toLowerCase();
 
     // Build request object
+    // For seminar requests, use seminar data; for travel orders, use travelOrder data
+    
     const requestData = {
       request_type: requestType,
-      title: travelOrder.purposeOfTravel || travelOrder.purpose || "Travel Request",
-      purpose: travelOrder.purposeOfTravel || travelOrder.purpose || "",
-      destination: travelOrder.destination || "",
+      // Title: use seminar_title for seminars, purposeOfTravel for travel orders
+      title: isSeminar 
+        ? (seminar.title || "Seminar Application")
+        : (travelOrder.purposeOfTravel || travelOrder.purpose || "Travel Request"),
+      // For seminars, also save seminar_title separately
+      ...(isSeminar ? { seminar_title: seminar.title || "" } : {}),
+      purpose: isSeminar 
+        ? (seminar.title || "")
+        : (travelOrder.purposeOfTravel || travelOrder.purpose || ""),
+      destination: isSeminar 
+        ? (seminar.venue || "")
+        : (travelOrder.destination || ""),
+      // For seminars, also save seminar_venue separately
+      ...(isSeminar ? { seminar_venue: seminar.venue || "" } : {}),
       
-      travel_start_date: travelOrder.departureDate || travelOrder.date || new Date().toISOString(),
-      travel_end_date: travelOrder.returnDate || travelOrder.dateTo || travelOrder.date || new Date().toISOString(),
+      // Dates: use date_from/date_to for seminars, travel_start_date/travel_end_date for travel orders
+      ...(isSeminar ? {
+        date_from: seminar.dateFrom || new Date().toISOString(),
+        date_to: seminar.dateTo || new Date().toISOString(),
+        // Also set travel dates for compatibility
+        travel_start_date: seminar.dateFrom || new Date().toISOString(),
+        travel_end_date: seminar.dateTo || new Date().toISOString(),
+      } : {
+        travel_start_date: travelOrder.departureDate || travelOrder.date || new Date().toISOString(),
+        travel_end_date: travelOrder.returnDate || travelOrder.dateTo || travelOrder.date || new Date().toISOString(),
+      }),
       
       // Requester = person who needs the travel (from form)
       requester_id: profile.id,
       requester_name: requestingPersonName,
-      requester_signature: travelOrder.requesterSignature || null,
+      requester_signature: isSeminar 
+        ? (seminar.requesterSignature || null)
+        : (travelOrder.requesterSignature || null),
       requester_is_head: requesterIsHead,
       department_id: departmentId,
       
@@ -395,6 +432,97 @@ export async function POST(req: Request) {
     });
 
     console.log("[/api/requests/submit] Request created:", data.id, "Status:", initialStatus);
+
+    // Auto-send participant invitations for seminar requests
+    // This runs asynchronously and won't block the response
+    if (reason === "seminar" && body.seminar?.participantInvitations) {
+      const participantInvitations = Array.isArray(body.seminar.participantInvitations) 
+        ? body.seminar.participantInvitations 
+        : [];
+      
+      if (participantInvitations.length > 0) {
+        console.log(`[/api/requests/submit] Auto-sending ${participantInvitations.length} participant invitations...`);
+        
+        // Process invitations asynchronously (fire and forget - don't block response)
+        // Use Promise.resolve().then() to run after response is sent
+        Promise.resolve().then(async () => {
+          try {
+            const invitationPromises = participantInvitations
+              .filter((inv: any) => inv.email && !inv.invitationId) // Only send if email exists and not already sent
+              .map(async (inv: any) => {
+                try {
+                  const token = crypto.randomBytes(32).toString('hex');
+                  const expiresAt = new Date();
+                  expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiration
+                  
+                  const { data: invitation, error: inviteError } = await supabase
+                    .from("participant_invitations")
+                    .insert({
+                      request_id: data.id,
+                      email: inv.email.toLowerCase(),
+                      invited_by: profile.id,
+                      token,
+                      expires_at: expiresAt.toISOString(),
+                      status: 'pending',
+                    })
+                    .select()
+                    .single();
+                  
+                  if (!inviteError && invitation) {
+                    // Send email notification
+                    // Fix: Properly handle baseUrl with fallback
+                    let baseUrl = process.env.NEXT_PUBLIC_APP_URL;
+                    if (!baseUrl && process.env.VERCEL_URL) {
+                      baseUrl = `https://${process.env.VERCEL_URL}`;
+                    }
+                    if (!baseUrl) {
+                      baseUrl = "http://localhost:3000";
+                    }
+                    const confirmationLink = `${baseUrl}/participants/confirm/${token}`;
+
+                    const seminarTitle = body.seminar?.title || "Seminar/Training";
+                    const requesterName = profile.name || "Requester";
+                    const requesterProfilePicture = profile.profile_picture || null;
+                    const dateFrom = body.seminar?.dateFrom || "";
+                    const dateTo = body.seminar?.dateTo || "";
+
+                    const emailHtml = generateParticipantInvitationEmail({
+                      participantName: undefined,
+                      requesterName,
+                      requesterProfilePicture,
+                      seminarTitle,
+                      dateFrom,
+                      dateTo,
+                      confirmationLink,
+                    });
+
+                    const emailResult = await sendEmail({
+                      to: inv.email.toLowerCase(),
+                      subject: `Seminar Participation Invitation: ${seminarTitle}`,
+                      html: emailHtml,
+                    });
+
+                    if (emailResult.success) {
+                      console.log(`[/api/requests/submit] ✅ Invitation created and email sent to ${inv.email}`);
+                    } else {
+                      console.warn(`[/api/requests/submit] ⚠️ Invitation created but email failed for ${inv.email}:`, emailResult.error);
+                    }
+                  } else {
+                    console.warn(`[/api/requests/submit] ⚠️ Failed to create invitation for ${inv.email}:`, inviteError?.message);
+                  }
+                } catch (err: any) {
+                  console.error(`[/api/requests/submit] Error creating invitation for ${inv.email}:`, err.message);
+                }
+              });
+            
+            await Promise.allSettled(invitationPromises);
+            console.log(`[/api/requests/submit] ✅ All participant invitations processed`);
+          } catch (err: any) {
+            console.error(`[/api/requests/submit] Error processing invitations:`, err.message);
+          }
+        });
+      }
+    }
 
     return NextResponse.json({ ok: true, data });
 

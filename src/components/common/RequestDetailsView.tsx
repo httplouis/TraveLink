@@ -21,6 +21,7 @@ import ProfilePicture, { PersonDisplay } from './ProfilePicture';
 import { NameWithProfile } from './ProfileHoverCard';
 import SignatureStageRail from './SignatureStageRail';
 import TrackingTimeline from './TrackingTimeline';
+import { formatLongDate, formatLongDateTime } from '@/lib/datetime';
 
 interface RequestData {
   id: string;
@@ -117,12 +118,8 @@ export default function RequestDetailsView({
   });
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
+    if (!dateString) return '';
+    return formatLongDate(dateString);
   };
 
   const formatCurrency = (amount: number) => {

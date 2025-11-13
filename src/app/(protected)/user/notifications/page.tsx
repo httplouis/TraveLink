@@ -1,20 +1,61 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import NotificationsView, {
   NotificationItem,
   NotificationsTab,
 } from "@/components/user/notification/NotificationsView";
+import { formatLongDateTime } from "@/lib/datetime";
 
 export default function UserNotificationsPage() {
-  // demo local state (replace with real fetch later)
-  const [items, setItems] = useState<NotificationItem[]>([
-    // sample structure
-    // { id: "1", text: "Your request REQ-24013 was approved.", time: "2h ago", read: false },
-    // { id: "2", text: "Schedule update: Bus departs 30 mins earlier.", time: "1d ago", read: true },
-  ]);
-
+  const [items, setItems] = useState<NotificationItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<NotificationsTab>("unread");
+
+  useEffect(() => {
+    fetchNotifications();
+  }, []);
+
+  const fetchNotifications = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/notifications?limit=50');
+      const data = await response.json();
+      
+      if (data.ok) {
+        // Transform API data to NotificationItem format
+        const transformed: NotificationItem[] = (data.data || []).map((notif: any) => ({
+          id: notif.id,
+          text: notif.message || notif.title,
+          time: formatTimeAgo(notif.created_at),
+          read: notif.is_read || false,
+          type: notif.notification_type,
+          actionUrl: notif.action_url,
+          actionLabel: notif.action_label
+        }));
+        setItems(transformed);
+      }
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatTimeAgo = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return formatLongDateTime(dateString);
+  };
 
   const unreadCount = useMemo(
     () => items.filter((n) => !n.read).length,
@@ -22,14 +63,30 @@ export default function UserNotificationsPage() {
   );
   const allCount = items.length;
 
-  function onMarkAllRead() {
+  async function onMarkAllRead() {
     if (unreadCount === 0) return;
-    setItems((prev) => prev.map((n) => ({ ...n, read: true })));
+    
+    const unreadIds = items.filter(n => !n.read).map(n => n.id);
+    if (unreadIds.length === 0) return;
+
+    try {
+      const response = await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: unreadIds, is_read: true })
+      });
+
+      const data = await response.json();
+      if (data.ok) {
+        setItems((prev) => prev.map((n) => ({ ...n, read: true })));
+      }
+    } catch (error) {
+      console.error('Error marking notifications as read:', error);
+    }
   }
 
   function onRefresh() {
-    // placeholder — fetch new data here later
-    // e.g., revalidate or call your API
+    fetchNotifications();
   }
 
   return (

@@ -139,7 +139,15 @@ export default function RegisterPage() {
     try {
       setLoading(true);
 
-      // 1) supabase sign up (RBAC Ground Truth: role assigned via roster/admin only)
+      // Check if email is institutional
+      const isInstitutional = fEmail.trim().toLowerCase().endsWith("@mseuf.edu.ph") || 
+                              fEmail.trim().toLowerCase().endsWith("@student.mseuf.edu.ph");
+      
+      // ALL institutional emails default to "faculty" role
+      // Only super admins can change roles later (head, admin, etc.)
+      const defaultRole = isInstitutional ? "faculty" : "faculty";
+
+      // 1) supabase sign up (RBAC Ground Truth: role assigned via admin only)
       const { error } = await supabase.auth.signUp({
         email: fEmail.trim(),
         password: fPw,
@@ -147,8 +155,8 @@ export default function RegisterPage() {
           data: {
             full_name: fullName,
             department: fDept,
-            role: "faculty",  // Everyone starts as faculty
-            // NO wants_head - violates Ground Truth RBAC (no self-declaration)
+            role: defaultRole,  // Everyone starts as faculty/staff
+            // NO role selection - roles are assigned by administrators only
           },
         },
       });
@@ -170,13 +178,13 @@ export default function RegisterPage() {
           department: fDept,
           birthdate: fBirthdate || null,
           address: fAddress || null,
-          role: "faculty",
-          // NO wants_head - Ground Truth RBAC: roles assigned via roster/admin
+          role: defaultRole, // Always faculty/staff by default
+          // NO role selection - Ground Truth RBAC: roles assigned via admin only
         }),
       }).catch(() => {});
 
       setMsg(
-        "Account created successfully! Please check your email to confirm. If you are a department head, your role will be automatically assigned when you first log in."
+        "Account created successfully! Please check your email to confirm. Your role is set to Faculty/Staff by default. If you need a different role (e.g., Department Head, Admin), please contact your administrator."
       );
     } catch (e: any) {
       setErr(e?.message ?? "Registration failed.");

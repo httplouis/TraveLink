@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { X, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/components/common/ui/ToastProvider.ui";
+import ApproverSelectionModal from "@/components/common/ApproverSelectionModal";
 
 interface HRRequestModalProps {
   request: any;
@@ -25,6 +26,8 @@ export default function HRRequestModal({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasSignature, setHasSignature] = useState(false);
+  const [showVPSelection, setShowVPSelection] = useState(false);
+  const [vpOptions, setVPOptions] = useState<any[]>([]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -98,6 +101,31 @@ export default function HRRequestModal({
       return;
     }
 
+    // Validate notes
+    if (!notes.trim() || notes.trim().length < 10) {
+      toast({ message: "Notes are required and must be at least 10 characters long", kind: "error" });
+      return;
+    }
+
+    // Fetch VPs for selection
+    try {
+      const vpsRes = await fetch("/api/approvers?role=vp");
+      const vpsData = await vpsRes.json();
+      
+      if (vpsData.ok && vpsData.data.length > 0) {
+        setVPOptions(vpsData.data);
+        setShowVPSelection(true);
+        return;
+      }
+    } catch (err) {
+      console.error("Error fetching VPs:", err);
+    }
+
+    // If no VPs found or error, proceed with default
+    proceedWithApproval(null);
+  };
+
+  const proceedWithApproval = async (selectedVPId: string | null) => {
     setSubmitting(true);
     try {
       const signatureData = getSignatureData();
@@ -108,18 +136,16 @@ export default function HRRequestModal({
           requestId: request.id,
           action: "approve",
           signature: signatureData,
-          notes: notes.trim() || "Approved by HR",
+          notes: notes.trim(),
+          next_vp_id: selectedVPId,
         }),
       });
 
       const data = await res.json();
       if (data.ok) {
-        console.log("[HR Approve] Showing success toast...");
-        toast({ message: "✅ Request approved and sent to Executive for final approval", kind: "success" });
-        // Delay to show toast before closing
-        console.log("[HR Approve] Closing modal in 1500ms...");
+        toast({ message: "✅ Request approved and sent to VP for approval", kind: "success" });
+        setShowVPSelection(false);
         setTimeout(() => {
-          console.log("[HR Approve] Closing modal now");
           onApproved(request.id);
         }, 1500);
       } else {
@@ -736,6 +762,22 @@ export default function HRRequestModal({
           </div>
         )}
       </div>
+
+      {/* VP Selection Modal */}
+      {showVPSelection && (
+        <ApproverSelectionModal
+          isOpen={showVPSelection}
+          onClose={() => setShowVPSelection(false)}
+          onSelect={(vpId, role) => {
+            proceedWithApproval(vpId);
+          }}
+          title="Select Vice President"
+          description={`Request ${request.request_number || request.id} - Choose which VP should approve this request`}
+          options={vpOptions}
+          currentRole="hr"
+          allowReturnToRequester={false}
+        />
+      )}
     </div>
   );
 }

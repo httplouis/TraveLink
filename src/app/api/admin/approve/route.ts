@@ -43,6 +43,14 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
+    // MANDATORY: Admin notes are required (minimum 20 characters)
+    if (!adminNotes || adminNotes.trim().length < 20) {
+      return NextResponse.json({ 
+        ok: false, 
+        error: "Admin notes are mandatory and must be at least 20 characters long" 
+      }, { status: 400 });
+    }
+
     // Get request
     const { data: req, error: fetchError } = await supabase
       .from("requests")

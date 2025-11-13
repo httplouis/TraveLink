@@ -20,16 +20,43 @@ export async function GET(
       return NextResponse.json({ ok: false, error: "Missing request ID" }, { status: 400 });
     }
 
-    // Fetch full request details
+    // Fetch full request details with all approver information
     const { data: request, error } = await supabase
       .from("requests")
       .select(`
         *,
-        requester:users!requester_id(id, name, email),
+        requester:users!requester_id(
+          id, name, email, profile_picture, phone_number, 
+          position_title, department_id,
+          department:departments!users_department_id_fkey(id, name, code)
+        ),
         department:departments!department_id(id, code, name),
-        submitted_by:users!submitted_by_user_id(id, name, email),
-        head_approver:users!head_approved_by(id, name, email),
-        admin_approver:users!admin_approved_by(id, name, email)
+        submitted_by:users!submitted_by_user_id(
+          id, name, email, profile_picture, phone_number, position_title
+        ),
+        head_approver:users!head_approved_by(
+          id, name, email, profile_picture, phone_number, position_title,
+          department_id,
+          department:departments!users_department_id_fkey(id, name, code)
+        ),
+        admin_approver:users!admin_approved_by(
+          id, name, email, profile_picture, phone_number, position_title
+        ),
+        comptroller_approver:users!comptroller_approved_by(
+          id, name, email, profile_picture, phone_number, position_title
+        ),
+        hr_approver:users!hr_approved_by(
+          id, name, email, profile_picture, phone_number, position_title
+        ),
+        vp_approver:users!vp_approved_by(
+          id, name, email, profile_picture, phone_number, position_title
+        ),
+        president_approver:users!president_approved_by(
+          id, name, email, profile_picture, phone_number, position_title
+        ),
+        exec_approver:users!exec_approved_by(
+          id, name, email, profile_picture, phone_number, position_title
+        )
       `)
       .eq("id", requestId)
       .single();

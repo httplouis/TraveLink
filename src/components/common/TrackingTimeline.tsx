@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import ProfilePicture from './ProfilePicture';
 import { NameWithProfile } from './ProfileHoverCard';
+import { formatLongDateTime } from '@/lib/datetime';
 
 interface TimelineEvent {
   id: string;
@@ -108,15 +109,7 @@ export default function TrackingTimeline({
   };
 
   const formatDateTime = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
-    });
+    return formatLongDateTime(dateString);
   };
 
   const formatFileSize = (bytes?: number) => {

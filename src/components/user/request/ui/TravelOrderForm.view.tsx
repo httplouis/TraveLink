@@ -37,10 +37,15 @@ export default function TravelOrderFormView({
   const c = data?.costs || {};
 
   return (
-    <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-      <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-lg font-semibold">{UI_TEXT.title}</h3>
-        <span className="text-xs text-neutral-500">{UI_TEXT.requiredHint}</span>
+    <section className="rounded-2xl border-2 border-gray-200 bg-gradient-to-br from-white via-gray-50/30 to-white p-7 shadow-xl">
+      <div className="mb-7 flex items-center justify-between border-b-2 border-gray-200 pb-5">
+        <div>
+          <h3 className="text-2xl font-bold text-gray-900 tracking-tight">{UI_TEXT.title}</h3>
+          <p className="mt-2 text-sm text-gray-600">Complete all required fields to submit your travel request</p>
+        </div>
+        <div className="rounded-lg border border-[#7A0010]/20 bg-gradient-to-br from-[#7A0010]/5 to-[#7A0010]/10 px-4 py-2 shadow-sm">
+          <span className="text-xs font-semibold text-[#7A0010]">{UI_TEXT.requiredHint}</span>
+        </div>
       </div>
 
       {/* Top half: date, requester, dept, destination, purpose */}

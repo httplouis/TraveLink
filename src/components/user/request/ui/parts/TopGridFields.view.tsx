@@ -135,13 +135,26 @@ export default function TopGridFields({
 
       {/* Row 5: Requesting person's signature - HIDE if head is requester (only need one signature) */}
       {!isHeadRequester && (
-        <div className={`rounded-xl border p-4 ${errors["travelOrder.requesterSignature"] ? "border-red-300 bg-red-50/30" : "border-neutral-200 bg-neutral-50/60"}`}>
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-sm font-medium">
-              {UI_TEXT.requesterSignature?.title ?? "Requesting person's signature"} <span className="text-red-500">*</span>
-            </span>
+        <div 
+          id="to-signature"
+          data-error={errors["travelOrder.requesterSignature"] ? "true" : undefined}
+          className={`rounded-xl border-2 p-5 shadow-sm transition-all ${
+            errors["travelOrder.requesterSignature"] 
+              ? "border-red-300 bg-gradient-to-br from-red-50 to-red-100/50" 
+              : "border-gray-200 bg-gradient-to-br from-gray-50 to-white"
+          }`}
+        >
+          <div className="mb-3 flex items-center justify-between border-b border-gray-200 pb-2">
+            <div>
+              <span className="text-sm font-bold text-gray-900">
+                {UI_TEXT.requesterSignature?.title ?? "Requesting person's signature"} <span className="text-red-500">*</span>
+              </span>
+              <p className="mt-1 text-xs text-gray-500">
+                Sign with mouse / touch - or upload your pre-saved signature image file
+              </p>
+            </div>
             {errors["travelOrder.requesterSignature"] && (
-              <span className="text-xs font-semibold text-red-600">
+              <span className="rounded-lg border-2 border-red-300 bg-red-50 px-2.5 py-1 text-xs font-bold text-red-700">
                 {errors["travelOrder.requesterSignature"]}
               </span>
             )}
