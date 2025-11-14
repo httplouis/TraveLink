@@ -83,12 +83,62 @@ export default function UserRequestModal({
         const res = await fetch(`/api/requests/${request.id}/history`);
         const data = await res.json();
         
+        console.log("[UserRequestModal] History API response:", data);
+        
         if (data.ok) {
           setFullRequestData(data.data.request);
-          setHistory(data.data.history || []);
+          const fetchedHistory = data.data.history || [];
+          console.log("[UserRequestModal] Fetched history entries:", fetchedHistory.length);
+          
+          // Always add a "created" entry if history is empty and we have request data
+          if (fetchedHistory.length === 0 && (data.data.request || request)) {
+            const reqData = data.data.request || request;
+            const createdEntry: HistoryEntry = {
+              id: `created-${reqData.id}`,
+              action: "created",
+              actor_role: reqData.is_representative ? "submitter" : "requester",
+              comments: reqData.is_representative 
+                ? `Request submitted on behalf of ${reqData.requester?.name || reqData.requester_name || "requester"} by ${reqData.submitted_by?.name || reqData.submitted_by_name || "submitter"}`
+                : "Request created and submitted",
+              created_at: reqData.created_at || new Date().toISOString(),
+              actor: reqData.is_representative 
+                ? (reqData.submitted_by || { id: reqData.submitted_by_user_id, name: reqData.submitted_by_name })
+                : (reqData.requester || { id: reqData.requester_id, name: reqData.requester_name }),
+            };
+            setHistory([createdEntry]);
+            console.log("[UserRequestModal] Added fallback created entry");
+          } else {
+            setHistory(fetchedHistory);
+          }
+        } else {
+          console.error("[UserRequestModal] History API error:", data.error);
+          // Fallback: create entry from request data
+          const createdEntry: HistoryEntry = {
+            id: `created-${request.id}`,
+            action: "created",
+            actor_role: request.is_representative ? "submitter" : "requester",
+            comments: request.is_representative 
+              ? `Request submitted on behalf of you by ${request.submitted_by_name || "submitter"}`
+              : "Request created and submitted",
+            created_at: request.created_at || new Date().toISOString(),
+            actor: request.submitted_by || request.requester,
+          };
+          setHistory([createdEntry]);
         }
       } catch (err) {
-        console.error("Failed to load full details:", err);
+        console.error("[UserRequestModal] Failed to load full details:", err);
+        // Fallback: create entry from request data
+        const createdEntry: HistoryEntry = {
+          id: `created-${request.id}`,
+          action: "created",
+          actor_role: request.is_representative ? "submitter" : "requester",
+          comments: request.is_representative 
+            ? `Request submitted on behalf of you by ${request.submitted_by_name || "submitter"}`
+            : "Request created and submitted",
+          created_at: request.created_at || new Date().toISOString(),
+          actor: request.submitted_by || request.requester,
+        };
+        setHistory([createdEntry]);
       } finally {
         setLoadingDetails(false);
       }
@@ -332,53 +382,94 @@ export default function UserRequestModal({
                 </div>
               )}
 
-              {/* Request History */}
-              {history.length > 0 && (
-                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <History className="h-4 w-4 text-gray-600" />
-                    <h3 className="text-sm font-bold text-gray-900">Request History</h3>
-                  </div>
+              {/* Request History - Always show */}
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <History className="h-4 w-4 text-gray-600" />
+                  <h3 className="text-sm font-bold text-gray-900">Request History</h3>
+                  {loadingDetails && (
+                    <span className="text-xs text-gray-500 ml-auto">Loading...</span>
+                  )}
+                </div>
                   <div className="space-y-3">
-                    {history.map((entry, idx) => (
-                      <div key={entry.id || idx} className="flex items-start gap-3 bg-white rounded p-3 border border-gray-200">
+                    {history.length > 0 ? (
+                      history.map((entry, idx) => (
+                        <div key={entry.id || idx} className="flex items-start gap-3 bg-white rounded p-3 border border-gray-200">
+                          <div className="mt-0.5">
+                            {entry.action === "requester_signed" || entry.action === "approved" ? (
+                              <CheckCircle className="h-4 w-4 text-green-600" />
+                            ) : entry.action === "rejected" ? (
+                              <X className="h-4 w-4 text-red-600" />
+                            ) : entry.action === "created" ? (
+                              <FileText className="h-4 w-4 text-blue-600" />
+                            ) : (
+                              <Clock className="h-4 w-4 text-blue-600" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1">
+                                <p className="text-sm font-semibold text-gray-900 capitalize">
+                                  {entry.action.replace(/_/g, " ")}
+                                </p>
+                                {entry.actor && (
+                                  <p className="text-xs text-gray-600 mt-0.5">
+                                    by {entry.actor.name || entry.actor.email}
+                                    {entry.actor_role && (
+                                      <span className="text-gray-500 ml-1">({entry.actor_role})</span>
+                                    )}
+                                  </p>
+                                )}
+                                {!entry.actor && requestData.submitted_by_name && entry.action === "created" && (
+                                  <p className="text-xs text-gray-600 mt-0.5">
+                                    by {requestData.submitted_by_name}
+                                    {requestData.is_representative && (
+                                      <span className="text-purple-600 ml-1">(on your behalf)</span>
+                                    )}
+                                  </p>
+                                )}
+                                {entry.comments && (
+                                  <p className="text-xs text-gray-700 mt-1 italic">"{entry.comments}"</p>
+                                )}
+                              </div>
+                              <div className="text-xs text-gray-500 whitespace-nowrap">
+                                {formatDateTime(entry.created_at)}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      // Fallback: Show at least the creation info
+                      <div className="flex items-start gap-3 bg-white rounded p-3 border border-gray-200">
                         <div className="mt-0.5">
-                          {entry.action === "requester_signed" || entry.action === "approved" ? (
-                            <CheckCircle className="h-4 w-4 text-green-600" />
-                          ) : entry.action === "rejected" ? (
-                            <X className="h-4 w-4 text-red-600" />
-                          ) : (
-                            <Clock className="h-4 w-4 text-blue-600" />
-                          )}
+                          <FileText className="h-4 w-4 text-blue-600" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1">
-                              <p className="text-sm font-semibold text-gray-900 capitalize">
-                                {entry.action.replace(/_/g, " ")}
-                              </p>
-                              {entry.actor && (
+                              <p className="text-sm font-semibold text-gray-900">Request Created</p>
+                              {requestData.submitted_by_name && (
                                 <p className="text-xs text-gray-600 mt-0.5">
-                                  by {entry.actor.name || entry.actor.email}
-                                  {entry.actor_role && (
-                                    <span className="text-gray-500 ml-1">({entry.actor_role})</span>
+                                  Submitted by {requestData.submitted_by_name}
+                                  {requestData.is_representative && (
+                                    <span className="text-purple-600 ml-1">(on your behalf)</span>
                                   )}
                                 </p>
                               )}
-                              {entry.comments && (
-                                <p className="text-xs text-gray-700 mt-1 italic">"{entry.comments}"</p>
-                              )}
+                              <p className="text-xs text-gray-700 mt-1 italic">
+                                "Request created and submitted"
+                              </p>
                             </div>
                             <div className="text-xs text-gray-500 whitespace-nowrap">
-                              {formatDateTime(entry.created_at)}
+                              {formatDateTime(requestData.created_at)}
                             </div>
                           </div>
                         </div>
                       </div>
-                    ))}
+                    )}
                   </div>
-                </div>
-              )}
+              </div>
 
               {/* Signature Section */}
               {!requestData.requester_signature && (

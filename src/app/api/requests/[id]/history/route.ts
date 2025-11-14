@@ -41,14 +41,57 @@ export async function GET(
       .from("request_history")
       .select(`
         *,
-        actor:users!actor_id(id, name, email)
+        actor:users!request_history_actor_id_fkey(id, name, email)
       `)
       .eq("request_id", requestId)
       .order("created_at", { ascending: true });
 
     if (historyError) {
       console.error("[GET /api/requests/[id]/history] History error:", historyError);
-      // Don't fail if history is missing, just return empty array
+      // Try without join if FK join fails
+      const { data: historyNoJoin, error: historyErrorNoJoin } = await supabase
+        .from("request_history")
+        .select("*")
+        .eq("request_id", requestId)
+        .order("created_at", { ascending: true });
+      
+      if (!historyErrorNoJoin && historyNoJoin) {
+        // Fetch actor names separately
+        const actorIds = [...new Set(historyNoJoin.map((h: any) => h.actor_id).filter(Boolean))];
+        const actorsMap: Record<string, any> = {};
+        
+        if (actorIds.length > 0) {
+          const { data: actors } = await supabase
+            .from("users")
+            .select("id, name, email")
+            .in("id", actorIds);
+          
+          if (actors) {
+            actors.forEach((a: any) => {
+              actorsMap[a.id] = a;
+            });
+          }
+        }
+        
+        const historyWithActors = historyNoJoin.map((h: any) => ({
+          ...h,
+          actor: h.actor_id ? actorsMap[h.actor_id] : null
+        }));
+        
+        console.log("[GET /api/requests/[id]/history] History loaded without join:", historyWithActors.length, "entries");
+        return NextResponse.json({ 
+          ok: true, 
+          data: {
+            request,
+            history: historyWithActors
+          }
+        });
+      }
+    }
+
+    console.log("[GET /api/requests/[id]/history] History loaded:", history?.length || 0, "entries");
+    if (history && history.length > 0) {
+      console.log("[GET /api/requests/[id]/history] First entry:", history[0].action, "by", history[0].actor?.name || history[0].actor_id);
     }
 
     return NextResponse.json({ 
