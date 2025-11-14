@@ -809,14 +809,33 @@ export async function POST(req: Request) {
     }
 
     // Log creation in history
+    // For representative submissions, log with submitter info but mention it's for the requester
+    const historyComments = mightBeRepresentative && requestingPersonUser
+      ? `Request submitted on behalf of ${requestingPersonName} by ${submitterName}`
+      : "Request created and submitted";
+    
     await supabase.from("request_history").insert({
       request_id: data.id,
       action: "created",
-      actor_id: profile.id,
-      actor_role: requesterIsHead ? "head" : "faculty",
-      previous_status: "draft",
+      actor_id: profile.id, // Submitter's ID (the one who clicked submit)
+      actor_role: mightBeRepresentative ? "submitter" : (requesterIsHead ? "head" : "faculty"),
+      previous_status: null,
       new_status: initialStatus,
-      comments: "Request created and submitted",
+      comments: historyComments,
+      metadata: {
+        is_representative: mightBeRepresentative || false,
+        requester_id: mightBeRepresentative && requestingPersonUser ? requestingPersonUser.id : profile.id,
+        requester_name: requestingPersonName,
+        submitter_id: profile.id,
+        submitter_name: submitterName
+      }
+    });
+    
+    console.log("[/api/requests/submit] History logged:", {
+      action: "created",
+      actor_id: profile.id,
+      actor_role: mightBeRepresentative ? "submitter" : (requesterIsHead ? "head" : "faculty"),
+      comments: historyComments
     });
 
     console.log("[/api/requests/submit] Request created:", data.id, "Status:", initialStatus);
