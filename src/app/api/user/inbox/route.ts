@@ -54,9 +54,13 @@ export async function GET() {
       .limit(50);
 
     // If no results, also try matching by requester_name (case-insensitive)
+    // This handles cases where there are multiple users with the same name
     if (!data || data.length === 0) {
       console.log(`[User Inbox] No requests found by requester_id, trying by name...`);
-      const { data: nameData, error: nameError } = await supabase
+      console.log(`[User Inbox] Searching for requester_name matching: ${profile.name}`);
+      
+      // Try exact match first (case-insensitive)
+      let { data: nameData, error: nameError } = await supabase
         .from("requests")
         .select(`
           *,
@@ -66,11 +70,43 @@ export async function GET() {
           preferred_driver:users!preferred_driver_id(id, name, email),
           preferred_vehicle:vehicles!preferred_vehicle_id(id, vehicle_name, plate_number, type)
         `)
-        .ilike("requester_name", `%${profile.name}%`)
+        .ilike("requester_name", profile.name.trim())
         .eq("status", "pending_requester_signature")
         .eq("is_representative", true)
         .order("created_at", { ascending: false })
         .limit(50);
+      
+      // If still no results, try partial match
+      if ((!nameData || nameData.length === 0) && profile.name.includes(' ')) {
+        console.log(`[User Inbox] No exact match, trying partial match...`);
+        const nameParts = profile.name.trim().split(/\s+/);
+        if (nameParts.length >= 2) {
+          // Try matching with last name or first+last
+          const lastName = nameParts[nameParts.length - 1];
+          const firstName = nameParts[0];
+          
+          const { data: partialData } = await supabase
+            .from("requests")
+            .select(`
+              *,
+              requester:users!requests_requester_id_fkey(id, email, name, department_id),
+              submitted_by:users!requests_submitted_by_user_id_fkey(id, email, name),
+              department:departments!requests_department_id_fkey(id, name, code),
+              preferred_driver:users!preferred_driver_id(id, name, email),
+              preferred_vehicle:vehicles!preferred_vehicle_id(id, vehicle_name, plate_number, type)
+            `)
+            .or(`requester_name.ilike.%${lastName}%,requester_name.ilike.%${firstName}%${lastName}%`)
+            .eq("status", "pending_requester_signature")
+            .eq("is_representative", true)
+            .order("created_at", { ascending: false })
+            .limit(50);
+          
+          if (partialData && partialData.length > 0) {
+            nameData = partialData;
+            console.log(`[User Inbox] Found ${partialData.length} requests by partial name matching`);
+          }
+        }
+      }
       
       if (nameData && nameData.length > 0) {
         console.log(`[User Inbox] Found ${nameData.length} requests by name matching`);
