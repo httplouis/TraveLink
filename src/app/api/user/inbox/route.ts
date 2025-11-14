@@ -37,9 +37,11 @@ export async function GET() {
       .from("requests")
       .select(`
         *,
-        requester:users!requests_requester_id_fkey(id, email, name),
+        requester:users!requests_requester_id_fkey(id, email, name, department_id),
         submitted_by:users!requests_submitted_by_user_id_fkey(id, email, name),
-        department:departments!requests_department_id_fkey(id, name, code)
+        department:departments!requests_department_id_fkey(id, name, code),
+        preferred_driver:users!preferred_driver_id(id, name, email),
+        preferred_vehicle:vehicles!preferred_vehicle_id(id, vehicle_name, plate_number, type)
       `)
       .eq("requester_id", profile.id)
       .eq("status", "pending_requester_signature")
