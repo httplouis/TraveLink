@@ -3,11 +3,22 @@
 
 import * as React from "react";
 import { Search, Filter, User, Phone, Mail, Star } from "lucide-react";
+import DriverDetailsModal from "@/components/user/drivers/DriverDetailsModal";
 
 type DriverStatus = "active" | "on_trip" | "off_duty" | "suspended";
 
+interface Assignment {
+  id: string;
+  startDate: string;
+  endDate: string;
+  destination: string;
+  purpose: string;
+  status: string;
+}
+
 interface Driver {
   id: string;
+  number: number;
   name: string;
   email?: string;
   phone?: string;
@@ -16,6 +27,10 @@ interface Driver {
   rating?: number;
   isAvailable?: boolean;
   profile_picture?: string;
+  hasFirstAidCert?: boolean;
+  firstAidCertIssuer?: string;
+  firstAidCertExpiresOn?: string;
+  assignments?: Assignment[];
 }
 
 export default function UserDriversPage() {
@@ -23,6 +38,8 @@ export default function UserDriversPage() {
   const [status, setStatus] = React.useState<"" | DriverStatus>("");
   const [drivers, setDrivers] = React.useState<Driver[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [selectedDriver, setSelectedDriver] = React.useState<Driver | null>(null);
+  const [isModalOpen, setIsModalOpen] = React.useState(false);
 
   React.useEffect(() => {
     fetchDrivers();
@@ -123,12 +140,21 @@ export default function UserDriversPage() {
           {filteredDrivers.map((driver) => (
             <div
               key={driver.id}
-              className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-lg transition-shadow"
+              onClick={() => {
+                setSelectedDriver(driver);
+                setIsModalOpen(true);
+              }}
+              className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-lg transition-all cursor-pointer hover:border-[#7a0019]"
             >
               <div className="flex items-start gap-4 mb-4">
-                {/* Privacy: No driver avatars, use initials only */}
-                <div className="h-12 w-12 rounded-full bg-gradient-to-br from-[#7a0019] to-[#5a0010] flex items-center justify-center text-white font-semibold text-lg shadow-md">
-                  {driver.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'D'}
+                {/* Driver Number Badge */}
+                <div className="flex flex-col items-center gap-2">
+                  <div className="h-12 w-12 rounded-full bg-gradient-to-br from-[#7a0019] to-[#5a0010] flex items-center justify-center text-white font-semibold text-lg shadow-md">
+                    {driver.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'D'}
+                  </div>
+                  <span className="text-xs font-bold text-[#7a0019] bg-[#7a0019]/10 px-2 py-0.5 rounded-full">
+                    #{driver.number}
+                  </span>
                 </div>
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-gray-900 truncate">{driver.name}</h3>
@@ -155,18 +181,10 @@ export default function UserDriversPage() {
                     <span>{driver.licenseNumber}</span>
                   </div>
                 )}
-                {driver.phone && (
-                  <div className="flex items-center gap-2 text-gray-600">
-                    <Phone className="w-4 h-4" />
-                    <span>{driver.phone}</span>
-                  </div>
-                )}
-                {driver.email && (
-                  <div className="flex items-center gap-2 text-gray-600">
-                    <Mail className="w-4 h-4" />
-                    <span className="truncate">{driver.email}</span>
-                  </div>
-                )}
+                <div className="flex items-center gap-2 text-gray-600">
+                  <Phone className="w-4 h-4" />
+                  <span>{driver.phone || "Not available"}</span>
+                </div>
                 {driver.licenseExpiry && (
                   <div className="text-xs text-gray-500 mt-2">
                     License expires: {new Date(driver.licenseExpiry).toLocaleDateString('en-US', {
@@ -181,6 +199,16 @@ export default function UserDriversPage() {
           ))}
         </div>
       )}
+
+      {/* Driver Details Modal */}
+      <DriverDetailsModal
+        driver={selectedDriver}
+        isOpen={isModalOpen}
+        onClose={() => {
+          setIsModalOpen(false);
+          setSelectedDriver(null);
+        }}
+      />
     </div>
   );
 }

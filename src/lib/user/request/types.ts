@@ -33,13 +33,18 @@ export const reasonLabel: Record<Reason, string> = REASON_OPTIONS
 
 export type TravelCosts = {
   food?: number | null;
+  foodDescription?: string; // Description/justification for food expense
   driversAllowance?: number | null;
+  driversAllowanceDescription?: string; // Description/justification for driver's allowance
   rentVehicles?: number | null;
+  rentVehiclesDescription?: string; // Description/justification for vehicle rental
   hiredDrivers?: number | null;
+  hiredDriversDescription?: string; // Description/justification for hired drivers
   accommodation?: number | null;
+  accommodationDescription?: string; // Description/justification for accommodation
   otherLabel?: string;
   otherAmount?: number | null;
-  justification?: string;
+  justification?: string; // Overall justification (for rent/hired drivers requirement)
 };
 
 export interface TravelOrder {

@@ -1,6 +1,6 @@
 // src/app/api/drivers/route.ts
 import { NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 
 /**
  * GET /api/drivers
@@ -9,20 +9,52 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
  */
 export async function GET(request: Request) {
   try {
-    const supabase = await createSupabaseServerClient(true); // Use service role to bypass RLS
+    // Use direct Supabase client with service role for maximum reliability
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error("[API /drivers] Missing Supabase credentials");
+      return NextResponse.json(
+        { ok: false, error: "Server configuration error" },
+        { status: 500 }
+      );
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    });
+
     const { searchParams } = new URL(request.url);
     const available = searchParams.get("available"); // Optional filter
 
     // Fetch users and drivers separately, then join manually (most reliable)
+    console.log("[API /drivers] Starting queries with direct client...");
     const { data: usersData, error: usersError } = await supabase
       .from("users")
       .select("id, name, email, phone_number, status, role")
       .eq("role", "driver")
       .order("name", { ascending: true });
 
+    console.log("[API /drivers] Users query result:", { 
+      dataLength: usersData?.length, 
+      error: usersError?.message,
+      hasData: !!usersData,
+      firstUser: usersData?.[0]
+    });
+
     const { data: driversData, error: driversError } = await supabase
       .from("drivers")
-      .select("user_id, license_no, license_expiry, driver_rating, phone");
+      .select("user_id, license_no, license_expiry, driver_rating, phone, first_aid_cert_issuer, first_aid_cert_issued_on, first_aid_cert_expires_on");
+
+    console.log("[API /drivers] Drivers query result:", { 
+      dataLength: driversData?.length, 
+      error: driversError?.message,
+      hasData: !!driversData 
+    });
 
     if (usersError || driversError) {
       console.error("[API /drivers] Error:", usersError || driversError);
@@ -33,24 +65,58 @@ export async function GET(request: Request) {
     }
 
     console.log("[API /drivers] Users found:", usersData?.length || 0);
-    console.log("[API /drivers] Sample user:", usersData?.[0]);
+    console.log("[API /drivers] Users data:", JSON.stringify(usersData?.slice(0, 3), null, 2));
     console.log("[API /drivers] Driver records found:", driversData?.length || 0);
-    console.log("[API /drivers] Sample driver record:", driversData?.[0]);
+    console.log("[API /drivers] Driver records:", JSON.stringify(driversData?.slice(0, 3), null, 2));
+
+    if (!usersData || usersData.length === 0) {
+      console.warn("[API /drivers] No users found with role='driver'");
+      return NextResponse.json({ ok: true, data: [] });
+    }
+
+    // Fetch driver assignments/appointments (all statuses where driver is assigned)
+    const { data: assignmentsData } = await supabase
+      .from("requests")
+      .select("id, assigned_driver_id, travel_start_date, travel_end_date, destination, purpose, status")
+      .not("assigned_driver_id", "is", null)
+      .in("status", ["approved", "pending", "pending_comptroller", "pending_hr", "pending_exec"]);
+
+    console.log("[API /drivers] Assignments found:", assignmentsData?.length || 0);
 
     // Manual join: Map users to drivers
     const driversMap = new Map((driversData || []).map((d: any) => [d.user_id, d]));
+    
+    // Map assignments by driver
+    const assignmentsByDriver = new Map<string, any[]>();
+    (assignmentsData || []).forEach((assignment: any) => {
+      if (assignment.assigned_driver_id) {
+        if (!assignmentsByDriver.has(assignment.assigned_driver_id)) {
+          assignmentsByDriver.set(assignment.assigned_driver_id, []);
+        }
+        assignmentsByDriver.get(assignment.assigned_driver_id)!.push(assignment);
+      }
+    });
+
+    console.log("[API /drivers] Drivers map size:", driversMap.size);
 
     // Transform data to match expected format
-    let drivers = (usersData || []).map((user: any) => {
+    let drivers = (usersData || []).map((user: any, index: number) => {
       const driverInfo = driversMap.get(user.id);
+      const assignments = assignmentsByDriver.get(user.id) || [];
       
       // Clean status - remove quotes if present
       const cleanStatus = typeof user.status === 'string' 
-        ? user.status.replace(/^'|'$/g, '') 
+        ? user.status.replace(/^'|'$/g, '').trim() 
         : user.status;
+      
+      // Check if driver has valid first aid certification
+      const hasFirstAidCert = driverInfo?.first_aid_cert_issuer && 
+        driverInfo?.first_aid_cert_expires_on &&
+        new Date(driverInfo.first_aid_cert_expires_on) > new Date();
       
       const driver = {
         id: user.id,
+        number: index + 1, // Driver number
         name: user.name || 'Unknown',
         email: user.email || '',
         phone: driverInfo?.phone || user.phone_number || '',
@@ -58,8 +124,20 @@ export async function GET(request: Request) {
         licenseExpiry: driverInfo?.license_expiry || null,
         rating: driverInfo?.driver_rating ? parseFloat(driverInfo.driver_rating) : null,
         isAvailable: cleanStatus === 'active',
+        hasFirstAidCert: hasFirstAidCert,
+        firstAidCertIssuer: driverInfo?.first_aid_cert_issuer || null,
+        firstAidCertExpiresOn: driverInfo?.first_aid_cert_expires_on || null,
+        assignments: assignments.map((a: any) => ({
+          id: a.id,
+          startDate: a.travel_start_date,
+          endDate: a.travel_end_date,
+          destination: a.destination,
+          purpose: a.purpose,
+          status: a.status,
+        })),
       };
       
+      console.log(`[API /drivers] Transformed driver: ${driver.name} (status: ${user.status} -> ${cleanStatus} -> ${driver.isAvailable}, assignments: ${assignments.length})`);
       return driver;
     });
 
@@ -87,7 +165,22 @@ export async function GET(request: Request) {
  */
 export async function POST(request: Request) {
   try {
-    const supabase = await createSupabaseServerClient(true); // Use service role
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return NextResponse.json(
+        { ok: false, error: "Server configuration error" },
+        { status: 500 }
+      );
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    });
     const body = await request.json();
 
     // First, create or find user
@@ -157,7 +250,22 @@ export async function POST(request: Request) {
  */
 export async function PATCH(request: Request) {
   try {
-    const supabase = await createSupabaseServerClient(true);
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return NextResponse.json(
+        { ok: false, error: "Server configuration error" },
+        { status: 500 }
+      );
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    });
     const body = await request.json();
     const { id, ...updates } = body;
 
@@ -218,7 +326,22 @@ export async function PATCH(request: Request) {
  */
 export async function DELETE(request: Request) {
   try {
-    const supabase = await createSupabaseServerClient(true);
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return NextResponse.json(
+        { ok: false, error: "Server configuration error" },
+        { status: 500 }
+      );
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    });
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
 

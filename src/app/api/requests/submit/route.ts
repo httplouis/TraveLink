@@ -172,11 +172,48 @@ export async function POST(req: Request) {
     console.log("[/api/requests/submit] Costs data:", costs);
     console.log("[/api/requests/submit] Has budget:", hasBudget);
     const expenseBreakdown = hasBudget ? [
-      { item: "Food", amount: parseFloat(costs.food || 0), description: "Meals" },
-      { item: "Accommodation", amount: parseFloat(costs.accommodation || 0), description: "Lodging" },
-      { item: "Transportation", amount: parseFloat(costs.rentVehicles || 0), description: "Vehicle rental" },
-      { item: "Driver Allowance", amount: parseFloat(costs.driversAllowance || 0), description: "Driver costs" },
-      { item: "Other", amount: parseFloat(costs.otherAmount || 0), description: costs.otherLabel || "Miscellaneous" },
+      { 
+        item: "Food", 
+        amount: parseFloat(costs.food || 0), 
+        description: costs.foodDescription || "Meals" 
+      },
+      { 
+        item: "Accommodation", 
+        amount: parseFloat(costs.accommodation || 0), 
+        description: costs.accommodationDescription || "Lodging" 
+      },
+      { 
+        item: "Transportation", 
+        amount: parseFloat(costs.rentVehicles || 0), 
+        description: costs.rentVehiclesDescription || "Vehicle rental" 
+      },
+      { 
+        item: "Driver Allowance", 
+        amount: parseFloat(costs.driversAllowance || 0), 
+        description: costs.driversAllowanceDescription || "Driver costs" 
+      },
+      { 
+        item: "Hired Drivers", 
+        amount: parseFloat(costs.hiredDrivers || 0), 
+        description: costs.hiredDriversDescription || "Hired driver services" 
+      },
+      // Handle other expenses (from otherItems array)
+      ...(Array.isArray(costs.otherItems) 
+        ? costs.otherItems
+            .filter((item: any) => item.amount && item.amount > 0)
+            .map((item: any) => ({
+              item: item.label || "Other",
+              amount: parseFloat(item.amount || 0),
+              description: item.description || item.label || "Miscellaneous"
+            }))
+        : costs.otherAmount && costs.otherAmount > 0
+        ? [{
+            item: "Other",
+            amount: parseFloat(costs.otherAmount || 0),
+            description: costs.otherLabel || "Miscellaneous"
+          }]
+        : []
+      ),
     ].filter(item => item.amount > 0) : [];
     
     const totalBudget = expenseBreakdown.reduce((sum, item) => sum + item.amount, 0);
@@ -237,18 +274,65 @@ export async function POST(req: Request) {
       console.log(`[/api/requests/submit] ℹ️ No vehicle preference provided by client`);
     }
 
-    // Check if requester is a head
-    const requesterIsHead = profile.is_head === true;
-
-    // Determine initial status using workflow engine
-    // Allow override for draft saves
-    const requestedStatus = body.status;
-    const initialStatus = requestedStatus === "draft" 
-      ? "draft" 
-      : WorkflowEngine.getInitialStatus(requesterIsHead);
-
     // Determine if this is a seminar request
     const isSeminar = reason === "seminar";
+    
+    // Check if requester (logged in user) is a head
+    const requesterIsHead = profile.is_head === true;
+
+    // Check if REQUESTING PERSON (from form) is a head
+    // This is different from the submitter - the requesting person is who needs the travel
+    let requestingPersonIsHead = false;
+    let requestingPersonUser: any = null;
+    if (!isSeminar && travelOrder.requestingPerson) {
+      try {
+        // Find requesting person in database
+        const { data: userData } = await supabase
+          .from("users")
+          .select("id, name, is_head, role, department_id")
+          .ilike("name", `%${travelOrder.requestingPerson}%`)
+          .eq("status", "active")
+          .limit(1)
+          .single();
+        
+        if (userData) {
+          requestingPersonUser = userData;
+          requestingPersonIsHead = userData.is_head === true || userData.role === "head";
+        }
+      } catch (error) {
+        console.warn("[/api/requests/submit] Could not check if requesting person is head:", error);
+        // Default to false if check fails
+        requestingPersonIsHead = false;
+      }
+    } else if (isSeminar) {
+      // For seminars, requesting person is the logged-in user
+      requestingPersonIsHead = requesterIsHead;
+      requestingPersonUser = profile;
+    }
+
+    // Determine initial status using workflow engine
+    // If representative submission (requesting person ≠ submitter), send to requesting person first
+    // If requesting person is NOT a head, send to their department head first
+    // If requesting person IS a head, can go directly to admin
+    const requestedStatus = body.status;
+    let initialStatus: string;
+    if (requestedStatus === "draft") {
+      initialStatus = "draft";
+    } else if (isRepresentative && !isSeminar && travelOrder.requestingPerson) {
+      // Representative submission: send to requesting person first for signature
+      // Status: "pending_requester_signature" or "pending_head" (if requesting person is head)
+      if (requestingPersonIsHead) {
+        initialStatus = "pending_head"; // Requesting person is head, they can approve directly
+      } else {
+        initialStatus = "pending_requester_signature"; // Need requesting person's signature first
+      }
+    } else if (requestingPersonIsHead) {
+      // Requesting person is a head, can go directly to admin
+      initialStatus = "pending_admin";
+    } else {
+      // Requesting person is NOT a head, send to their department head first
+      initialStatus = "pending_head";
+    }
     const seminar = body.seminar || {};
     
     // Parse travel dates
@@ -299,13 +383,18 @@ export async function POST(req: Request) {
       }),
       
       // Requester = person who needs the travel (from form)
-      requester_id: profile.id,
+      // If representative submission, use requesting person's ID; otherwise use submitter's ID
+      requester_id: isRepresentative && !isSeminar && requestingPersonUser?.id 
+        ? requestingPersonUser.id 
+        : profile.id,
       requester_name: requestingPersonName,
       requester_signature: isSeminar 
         ? (seminar.requesterSignature || null)
-        : (travelOrder.requesterSignature || null),
-      requester_is_head: requesterIsHead,
-      department_id: departmentId,
+        : (isRepresentative ? null : travelOrder.requesterSignature || null), // No signature if representative (requester signs later)
+      requester_is_head: requestingPersonIsHead, // Use requesting person's head status, not submitter's
+      department_id: isRepresentative && !isSeminar && requestingPersonUser?.department_id
+        ? requestingPersonUser.department_id
+        : departmentId, // Use requesting person's department if representative submission
       
       // Submitter = account that clicked submit (logged in user)
       submitted_by_user_id: profile.id,

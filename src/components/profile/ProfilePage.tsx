@@ -2,9 +2,164 @@
 
 import React, { useState, useRef } from "react";
 import { motion } from "framer-motion";
-import { Camera, Mail, Phone, Building, Hash, FileText, Save, X } from "lucide-react";
+import { Camera, Mail, Phone, Building, Hash, FileText, Save, X, Search, ChevronDown } from "lucide-react";
 import { pageVariants } from "@/lib/animations";
 import StatusBadge from "../common/StatusBadge";
+
+// Searchable Department Select Component
+function DepartmentSearchableSelect({
+  departments,
+  value,
+  onChange,
+  placeholder = "Type to search department...",
+}: {
+  departments: Array<{id: string; name: string; code?: string}>;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Get display value (show name with code if available)
+  const getDisplayValue = (deptName: string) => {
+    const dept = departments.find(d => d.name === deptName);
+    if (!dept) return deptName;
+    return dept.code ? `${dept.name} (${dept.code})` : dept.name;
+  };
+
+  // Filter departments based on search query
+  const filteredDepartments = React.useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return departments;
+    
+    return departments.filter((dept) => {
+      const nameMatch = dept.name.toLowerCase().includes(query);
+      const codeMatch = dept.code?.toLowerCase().includes(query);
+      return nameMatch || codeMatch;
+    });
+  }, [departments, searchQuery]);
+
+  const handleSelect = (deptName: string) => {
+    onChange(deptName);
+    setSearchQuery("");
+    setIsOpen(false);
+    setActiveIndex(0);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!isOpen && (e.key === "ArrowDown" || e.key === "Enter")) {
+      setIsOpen(true);
+      return;
+    }
+    if (!filteredDepartments.length) return;
+    
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIndex((i) => Math.min(i + 1, filteredDepartments.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (filteredDepartments[activeIndex]) {
+        handleSelect(filteredDepartments[activeIndex].name);
+      }
+    } else if (e.key === "Escape") {
+      setIsOpen(false);
+      setSearchQuery("");
+    }
+  };
+
+  // Close dropdown when clicking outside
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+        setSearchQuery("");
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+        <input
+          ref={inputRef}
+          type="text"
+          value={isOpen ? searchQuery : getDisplayValue(value)}
+          onChange={(e) => {
+            setSearchQuery(e.target.value);
+            setIsOpen(true);
+            setActiveIndex(0);
+          }}
+          onFocus={() => {
+            setIsOpen(true);
+            setSearchQuery("");
+          }}
+          onBlur={() => {
+            // Delay to allow click on option
+            setTimeout(() => setIsOpen(false), 200);
+          }}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          className="w-full pl-10 pr-10 py-3 rounded-xl border-2 border-gray-300 bg-white text-sm font-medium outline-none transition-all shadow-sm focus:border-[#7A0010] focus:ring-4 focus:ring-[#7A0010]/10 focus:shadow-lg hover:border-gray-400"
+        />
+        <button
+          type="button"
+          onClick={() => {
+            setIsOpen(!isOpen);
+            if (!isOpen) {
+              inputRef.current?.focus();
+            }
+          }}
+          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-gray-500 hover:bg-gray-100 transition-colors"
+        >
+          <ChevronDown className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        </button>
+      </div>
+
+      {/* Dropdown */}
+      {isOpen && (
+        <div className="absolute z-50 mt-1 w-full max-h-60 overflow-auto rounded-xl border border-gray-200 bg-white shadow-lg">
+          {filteredDepartments.length === 0 ? (
+            <div className="px-4 py-3 text-sm text-gray-500">No departments found</div>
+          ) : (
+            filteredDepartments.map((dept, idx) => (
+              <button
+                key={dept.id}
+                type="button"
+                onClick={() => handleSelect(dept.name)}
+                onMouseEnter={() => setActiveIndex(idx)}
+                className={`w-full px-4 py-2.5 text-left text-sm transition-colors ${
+                  idx === activeIndex
+                    ? "bg-[#7A0010]/10 text-[#7A0010] font-medium"
+                    : "text-gray-700 hover:bg-gray-50"
+                } ${value === dept.name ? "bg-[#7A0010]/5" : ""}`}
+              >
+                <div className="flex items-center justify-between">
+                  <span>{dept.name}</span>
+                  {dept.code && (
+                    <span className="text-xs text-gray-500 ml-2">({dept.code})</span>
+                  )}
+                  {value === dept.name && (
+                    <span className="text-[#7A0010] ml-2">✓</span>
+                  )}
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface ProfileData {
   name: string;
@@ -38,11 +193,100 @@ export default function ProfilePage({
   onUploadImage,
   isEditable = true,
 }: ProfilePageProps) {
-  const [profileData, setProfileData] = useState<ProfileData>(initialData);
+  // Format phone number on initial load if it starts with +63
+  const formatInitialPhone = (phone?: string): string => {
+    if (!phone) return "";
+    const cleaned = phone.replace(/[\s\-\(\)]/g, '');
+    if (cleaned.startsWith('+63')) {
+      const digits = cleaned.substring(3);
+      if (digits.length <= 3) {
+        return `+63 ${digits}`;
+      } else if (digits.length <= 6) {
+        return `+63 ${digits.substring(0, 3)} ${digits.substring(3)}`;
+      } else if (digits.length <= 10) {
+        return `+63 ${digits.substring(0, 3)} ${digits.substring(3, 6)} ${digits.substring(6)}`;
+      } else {
+        return `+63 ${digits.substring(0, 3)} ${digits.substring(3, 6)} ${digits.substring(6, 10)}`;
+      }
+    }
+    return phone;
+  };
+
+  const [profileData, setProfileData] = useState<ProfileData>({
+    ...initialData,
+    phone_number: formatInitialPhone(initialData.phone_number)
+  });
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [phoneError, setPhoneError] = useState<string>("");
+  const [departments, setDepartments] = useState<Array<{id: string; name: string; code?: string}>>([]);
+  const [loadingDepartments, setLoadingDepartments] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch departments from database
+  React.useEffect(() => {
+    const fetchDepartments = async () => {
+      setLoadingDepartments(true);
+      try {
+        const response = await fetch('/api/departments');
+        const data = await response.json();
+        if (data.ok && data.departments) {
+          setDepartments(data.departments);
+        }
+      } catch (error) {
+        console.error('Failed to fetch departments:', error);
+      } finally {
+        setLoadingDepartments(false);
+      }
+    };
+    fetchDepartments();
+  }, []);
+
+  // Format phone number with spaces for +63 format
+  const formatPhoneNumber = (phone: string): string => {
+    // Remove all spaces first
+    const cleaned = phone.replace(/[\s\-\(\)]/g, '');
+    
+    // If starts with +63, format with spaces: +63 912 345 6789
+    if (cleaned.startsWith('+63')) {
+      const digits = cleaned.substring(3); // Get digits after +63
+      if (digits.length <= 3) {
+        return `+63 ${digits}`;
+      } else if (digits.length <= 6) {
+        return `+63 ${digits.substring(0, 3)} ${digits.substring(3)}`;
+      } else if (digits.length <= 10) {
+        return `+63 ${digits.substring(0, 3)} ${digits.substring(3, 6)} ${digits.substring(6)}`;
+      } else {
+        return `+63 ${digits.substring(0, 3)} ${digits.substring(3, 6)} ${digits.substring(6, 10)}`;
+      }
+    }
+    
+    // Otherwise, return as is (for 09 format, no spaces)
+    return cleaned;
+  };
+
+  // Mobile number validation (Philippines format: +63XXXXXXXXXX or 09XXXXXXXXX)
+  const validatePhoneNumber = (phone: string): boolean => {
+    if (!phone) return true; // Optional field
+    
+    // Remove spaces, dashes, and parentheses for validation
+    const cleaned = phone.replace(/[\s\-\(\)]/g, '');
+    
+    // Check for Philippines mobile number formats:
+    // +63XXXXXXXXXX (11 digits after +63)
+    // 09XXXXXXXXX (11 digits starting with 09)
+    // 9XXXXXXXXX (10 digits starting with 9)
+    const phMobileRegex = /^(\+63|0)?9\d{9}$/;
+    
+    if (!phMobileRegex.test(cleaned)) {
+      setPhoneError("Please enter a valid Philippines mobile number (e.g., +639123456789 or 09123456789)");
+      return false;
+    }
+    
+    setPhoneError("");
+    return true;
+  };
 
   const handleImageSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -78,10 +322,21 @@ export default function ProfilePage({
   };
 
   const handleSave = async () => {
+    // Validate phone number before saving
+    if (!validatePhoneNumber(profileData.phone_number || "")) {
+      return;
+    }
+
     setIsSaving(true);
     try {
-      await onSave(profileData);
+      // Save cleaned phone number (without spaces) to database
+      const dataToSave = {
+        ...profileData,
+        phone_number: profileData.phone_number?.replace(/[\s\-\(\)]/g, '') || profileData.phone_number
+      };
+      await onSave(dataToSave);
       setIsEditing(false);
+      setPhoneError("");
     } catch (error) {
       console.error("Failed to save profile:", error);
       alert("Failed to save profile. Please try again.");
@@ -352,28 +607,56 @@ export default function ProfilePage({
               <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
                 <Phone className="w-4 h-4 text-gray-600" />
               </div>
-              Phone Number
+              Mobile Number
             </label>
             <input
               type="tel"
               value={profileData.phone_number || ""}
-              onChange={(e) =>
-                setProfileData({ ...profileData, phone_number: e.target.value })
-              }
-              disabled={!isEditing}
-              placeholder="+63 XXX XXX XXXX"
+              onChange={(e) => {
+                // Get raw input and format it
+                const rawValue = e.target.value.replace(/[\s\-\(\)]/g, '');
+                const formatted = formatPhoneNumber(rawValue);
+                setProfileData({ ...profileData, phone_number: formatted });
+                // Clear error on change
+                if (phoneError) {
+                  validatePhoneNumber(formatted);
+                }
+              }}
+              onBlur={(e) => {
+                // Format on blur as well
+                const rawValue = e.target.value.replace(/[\s\-\(\)]/g, '');
+                const formatted = formatPhoneNumber(rawValue);
+                setProfileData({ ...profileData, phone_number: formatted });
+                validatePhoneNumber(formatted);
+              }}
+              placeholder="+63 912 345 6789 or 09123456789"
               className={`
                 w-full px-4 py-3 rounded-xl border-2 font-medium
-                transition-all duration-200 outline-none
                 ${isEditing 
-                  ? "border-gray-300 bg-white shadow-sm focus:border-[#7A0010] focus:ring-4 focus:ring-[#7A0010]/10 focus:shadow-lg" 
-                  : "border-gray-200 bg-gradient-to-br from-gray-50 to-gray-100/50 text-gray-600"
+                  ? phoneError
+                    ? "border-red-300 bg-red-50/50 focus:border-red-500 focus:ring-4 focus:ring-red-500/10"
+                    : "border-gray-200 bg-white focus:border-[#7A0010] focus:ring-4 focus:ring-[#7A0010]/10 focus:shadow-lg"
+                  : "border-gray-200 bg-gradient-to-br from-gray-50 to-gray-100/50 text-gray-700 cursor-not-allowed"
                 }
+                shadow-inner transition-all
               `}
+              disabled={!isEditing}
             />
+            {phoneError && (
+              <p className="text-xs text-red-600 flex items-center gap-1 mt-1">
+                <span className="w-1 h-1 rounded-full bg-red-500" />
+                {phoneError}
+              </p>
+            )}
+            {!phoneError && isEditing && (
+              <p className="text-xs text-gray-500 flex items-center gap-1">
+                <span className="w-1 h-1 rounded-full bg-gray-400" />
+                Philippines mobile format: +639123456789 or 09123456789
+              </p>
+            )}
           </div>
 
-          {/* Department - Enhanced */}
+          {/* Department - Enhanced with Search */}
           <div className="space-y-2">
             <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
               <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
@@ -381,22 +664,33 @@ export default function ProfilePage({
               </div>
               Department/Office
             </label>
-            <input
-              type="text"
-              value={profileData.department || ""}
-              onChange={(e) =>
-                setProfileData({ ...profileData, department: e.target.value })
-              }
-              disabled={!isEditing}
-              className={`
-                w-full px-4 py-3 rounded-xl border-2 font-medium
-                transition-all duration-200 outline-none
-                ${isEditing 
-                  ? "border-gray-300 bg-white shadow-sm focus:border-[#7A0010] focus:ring-4 focus:ring-[#7A0010]/10 focus:shadow-lg" 
-                  : "border-gray-200 bg-gradient-to-br from-gray-50 to-gray-100/50 text-gray-600"
+            {loadingDepartments ? (
+              <div className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 bg-gray-50 text-gray-500 text-sm">
+                Loading departments...
+              </div>
+            ) : !isEditing ? (
+              <input
+                type="text"
+                value={profileData.department || ""}
+                disabled
+                className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 bg-gradient-to-br from-gray-50 to-gray-100/50 text-gray-600 cursor-not-allowed"
+              />
+            ) : (
+              <DepartmentSearchableSelect
+                departments={departments}
+                value={profileData.department || ""}
+                onChange={(value) =>
+                  setProfileData({ ...profileData, department: value })
                 }
-              `}
-            />
+                placeholder="Type to search department (e.g., CNA, CCMS)..."
+              />
+            )}
+            {!isEditing && (
+              <p className="text-xs text-gray-500 flex items-center gap-1">
+                <span className="w-1 h-1 rounded-full bg-gray-400" />
+                Department can be updated when editing profile
+              </p>
+            )}
           </div>
 
           {/* Employee ID - Read Only */}

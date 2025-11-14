@@ -10,6 +10,7 @@ import {
 import LocationField from "@/components/user/request/ui/LocationField.ui";
 import DepartmentSelect from "@/components/common/inputs/DepartmentSelect.ui";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
+import UserSearchableSelect from "@/components/user/request/ui/UserSearchableSelect";
 import { UI_TEXT } from "@/lib/user/request/uiText";
 
 type Props = {
@@ -18,6 +19,7 @@ type Props = {
   onChange: (patch: any) => void;
   onDepartmentChange: (dept: string) => void;
   isHeadRequester?: boolean;
+  isRepresentativeSubmission?: boolean; // True if requesting person is different from logged-in user
 };
 
 export default function TopGridFields({
@@ -26,7 +28,19 @@ export default function TopGridFields({
   onChange,
   onDepartmentChange,
   isHeadRequester,
+  isRepresentativeSubmission = false,
 }: Props) {
+  // Calculate if signature pad should be shown
+  const shouldShowSignaturePad = !isHeadRequester && !isRepresentativeSubmission;
+  
+  // Debug: Log the values to see what's happening
+  React.useEffect(() => {
+    console.log('[TopGridFields] 🔍 Signature pad check:');
+    console.log('  - isHeadRequester:', isHeadRequester);
+    console.log('  - isRepresentativeSubmission:', isRepresentativeSubmission);
+    console.log('  - shouldShowSignaturePad:', shouldShowSignaturePad);
+  }, [isRepresentativeSubmission, isHeadRequester, shouldShowSignaturePad]);
+
   return (
     <div className="space-y-6">
       {/* Row 1: Date and Requester */}
@@ -42,18 +56,17 @@ export default function TopGridFields({
         />
 
         <div>
-          <TextInput
-            id="to-requester"
+          <UserSearchableSelect
+            value={data?.requestingPerson || ""}
+            onChange={(userName) => onChange({ requestingPerson: userName })}
+            placeholder="Type to search user (e.g., name, email)..."
             label={UI_TEXT.requester.label}
             required
-            placeholder={UI_TEXT.requester.placeholder}
-            value={data?.requestingPerson || ""}
-            onChange={(e) => onChange({ requestingPerson: e.target.value })}
             error={errors["travelOrder.requestingPerson"]}
           />
           <div className="mt-1 flex items-start gap-1.5 text-xs text-slate-600">
             <Info className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
-            <span>You can edit this if you're filling out the form for someone else</span>
+            <span>Search and select a user. You can edit this if you're filling out the form for someone else</span>
           </div>
         </div>
       </div>
@@ -133,8 +146,11 @@ export default function TopGridFields({
         error={errors["travelOrder.purposeOfTravel"]}
       />
 
-      {/* Row 5: Requesting person's signature - HIDE if head is requester (only need one signature) */}
-      {!isHeadRequester && (
+      {/* Row 5: Requesting person's signature - 
+          HIDE if: 
+          1. Head is requester (only need one signature), OR
+          2. Representative submission (requesting person needs to sign first) */}
+      {shouldShowSignaturePad && (
         <div 
           id="to-signature"
           data-error={errors["travelOrder.requesterSignature"] ? "true" : undefined}

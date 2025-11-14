@@ -12,6 +12,8 @@ type Props = {
   errors: Record<string, string>;
   vehicleMode: VehicleMode;
   isHeadRequester?: boolean;
+  isRepresentativeSubmission?: boolean;
+  requestingPersonHeadName?: string;
   currentUserName?: string;
 };
 
@@ -22,6 +24,8 @@ export default function TravelOrderForm({
   errors,
   vehicleMode,
   isHeadRequester,
+  isRepresentativeSubmission,
+  requestingPersonHeadName,
   currentUserName,
 }: Props) {
   // Always show justification field (but it's optional)
@@ -55,6 +59,8 @@ export default function TravelOrderForm({
         headEditedRef.current = true;
       }}
       isHeadRequester={isHeadRequester}
+      isRepresentativeSubmission={isRepresentativeSubmission}
+      requestingPersonHeadName={requestingPersonHeadName}
       currentUserName={currentUserName}
       // No footerRight - submission handled by SubmitBar at bottom
     />

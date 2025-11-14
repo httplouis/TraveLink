@@ -8,17 +8,19 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 export async function GET() {
   const supabase = await createSupabaseServerClient(true);
 
+  // Check if is_active column exists, if not just get all departments
   const { data, error } = await supabase
     .from("departments")
-    .select("id, code, name, is_active")
-    .eq("is_active", true)
+    .select("id, code, name")
     .order("name");
 
   if (error) {
+    console.error("[API /departments] Error:", error);
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, departments: data });
+  console.log("[API /departments] Returning", data?.length || 0, "departments");
+  return NextResponse.json({ ok: true, departments: data || [] });
 }
 
 /**
