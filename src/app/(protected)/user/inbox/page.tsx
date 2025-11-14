@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { Inbox, Search, FileText, Calendar, MapPin, CheckCircle } from "lucide-react";
+import { Inbox, Search, FileText, Calendar, MapPin, CheckCircle, History, Clock } from "lucide-react";
 import UserRequestModal from "@/components/user/UserRequestModal";
 import { useToast } from "@/components/common/ui/Toast";
+import { createSupabaseClient } from "@/lib/supabase/client";
 
 type Request = {
   id: string;
@@ -22,10 +23,13 @@ type Request = {
 
 export default function UserInboxPage() {
   const [requests, setRequests] = React.useState<Request[]>([]);
+  const [historyRequests, setHistoryRequests] = React.useState<Request[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [historyLoading, setHistoryLoading] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [selectedRequest, setSelectedRequest] = React.useState<Request | null>(null);
   const [showModal, setShowModal] = React.useState(false);
+  const [activeTab, setActiveTab] = React.useState<"pending" | "history">("pending");
   const toast = useToast();
 
   React.useEffect(() => {
@@ -33,14 +37,107 @@ export default function UserInboxPage() {
   }, []);
 
   React.useEffect(() => {
+    let isMounted = true;
+    
+    // Initial load
     loadRequests();
-    // Only auto-refresh when modal is NOT open to avoid interrupting signature
-    const interval = setInterval(() => {
-      if (!showModal) {
-        loadRequests();
+    
+    // Set up real-time subscription instead of polling
+    const supabase = createSupabaseClient();
+    console.log("[UserInbox] Setting up real-time subscription...");
+    
+    let mutateTimeout: NodeJS.Timeout | null = null;
+    
+    // Get current user profile for matching
+    let currentUserId: string | null = null;
+    let currentUserName: string | null = null;
+    
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        supabase
+          .from("users")
+          .select("id, name")
+          .eq("auth_user_id", user.id)
+          .single()
+          .then(({ data: profile }) => {
+            if (profile) {
+              currentUserId = profile.id;
+              currentUserName = profile.name;
+            }
+          });
       }
-    }, 10000); // Auto-refresh every 10 seconds
-    return () => clearInterval(interval);
+    });
+    
+    const channel = supabase
+      .channel("user-inbox-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "requests",
+        },
+        (payload: any) => {
+          if (!isMounted || showModal) return; // Don't update if modal is open
+          
+          const newStatus = payload.new?.status;
+          const oldStatus = payload.old?.status;
+          const newRequesterId = payload.new?.requester_id;
+          const newRequesterName = payload.new?.requester_name;
+          const isRepresentative = payload.new?.is_representative;
+          
+          // Check if this request is for the current user
+          const isForCurrentUser = 
+            (newRequesterId && currentUserId && newRequesterId === currentUserId) ||
+            (newRequesterName && currentUserName && 
+             newRequesterName.toLowerCase().includes(currentUserName.toLowerCase()));
+          
+          // Only react to changes that affect user inbox
+          // For INSERT events with pending_requester_signature, always refresh
+          // For UPDATE events, check if it's for current user
+          const shouldRefresh = 
+            payload.eventType === "INSERT" && 
+            newStatus === "pending_requester_signature" && 
+            isRepresentative;
+          
+          const shouldRefreshUpdate = 
+            payload.eventType === "UPDATE" &&
+            (newStatus === "pending_requester_signature" || oldStatus === "pending_requester_signature") &&
+            isRepresentative &&
+            isForCurrentUser;
+          
+          if (shouldRefresh || shouldRefreshUpdate) {
+            console.log("[UserInbox] 🔄 Real-time change detected:", {
+              eventType: payload.eventType,
+              status: newStatus,
+              requester_id: newRequesterId,
+              requester_name: newRequesterName,
+              is_representative: isRepresentative,
+              current_user_id: currentUserId,
+              current_user_name: currentUserName
+            });
+            
+            // Debounce: only trigger refetch after 500ms
+            if (mutateTimeout) clearTimeout(mutateTimeout);
+            mutateTimeout = setTimeout(() => {
+              if (isMounted && !showModal) {
+                console.log("[UserInbox] ⚡ Refreshing inbox");
+                loadRequests();
+              }
+            }, 500);
+          }
+        }
+      )
+      .subscribe((status: string) => {
+        console.log("[UserInbox] Subscription status:", status);
+      });
+
+    // Cleanup
+    return () => {
+      isMounted = false;
+      if (mutateTimeout) clearTimeout(mutateTimeout);
+      supabase.removeChannel(channel);
+    };
   }, [showModal]);
 
   const loadRequests = async () => {
@@ -71,14 +168,6 @@ export default function UserInboxPage() {
     }
   };
 
-  const filteredRequests = React.useMemo(() => {
-    const query = searchQuery.toLowerCase();
-    return requests.filter(req => 
-      req.request_number?.toLowerCase().includes(query) ||
-      req.purpose?.toLowerCase().includes(query) ||
-      req.destination?.toLowerCase().includes(query)
-    );
-  }, [requests, searchQuery]);
 
   const handleReviewClick = (req: Request) => {
     setSelectedRequest(req);
@@ -91,8 +180,27 @@ export default function UserInboxPage() {
     loadRequests(); // Refresh list
   };
 
+  const loadHistory = async () => {
+    try {
+      setHistoryLoading(true);
+      const res = await fetch("/api/user/inbox/history", { cache: "no-store" });
+      const data = await res.json();
+      
+      if (data.ok && Array.isArray(data.data)) {
+        setHistoryRequests(data.data);
+      }
+    } catch (err) {
+      console.error("Failed to load history:", err);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
   const handleSigned = () => {
     loadRequests(); // Refresh list after signing
+    if (activeTab === "history") {
+      loadHistory(); // Also refresh history
+    }
   };
 
   function formatDate(dateStr?: string | null) {
@@ -109,7 +217,56 @@ export default function UserInboxPage() {
     }
   }
 
-  if (loading) {
+  // Load history when switching to history tab and set up real-time
+  React.useEffect(() => {
+    if (activeTab === "history") {
+      if (historyRequests.length === 0) {
+        loadHistory();
+      }
+      
+      // Set up real-time subscription for history
+      let isMounted = true;
+      const supabase = createSupabaseClient();
+      let mutateTimeout: NodeJS.Timeout | null = null;
+      
+      const channel = supabase
+        .channel("user-inbox-history-changes")
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "requests",
+          },
+          (payload: any) => {
+            if (!isMounted || activeTab !== "history") return;
+            
+            // If requester_signature was just added, refresh history
+            if (payload.new?.requester_signature && !payload.old?.requester_signature) {
+              console.log("[UserInbox History] 🔄 New signature detected, refreshing history");
+              if (mutateTimeout) clearTimeout(mutateTimeout);
+              mutateTimeout = setTimeout(() => {
+                if (isMounted && activeTab === "history") {
+                  loadHistory();
+                }
+              }, 500);
+            }
+          }
+        )
+        .subscribe();
+
+      return () => {
+        isMounted = false;
+        if (mutateTimeout) clearTimeout(mutateTimeout);
+        supabase.removeChannel(channel);
+      };
+    }
+  }, [activeTab]);
+
+  const displayRequests = activeTab === "pending" ? requests : historyRequests;
+  const isLoading = activeTab === "pending" ? loading : historyLoading;
+
+  if (isLoading) {
     return (
       <div className="p-6">
         <div className="animate-pulse space-y-4">
@@ -131,9 +288,41 @@ export default function UserInboxPage() {
               My Inbox
             </h1>
             <p className="text-sm text-gray-600 mt-1">
-              Requests pending your signature
+              {activeTab === "pending" 
+                ? "Requests pending your signature"
+                : "Signed requests history"}
             </p>
           </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-2 border-b border-gray-200">
+          <button
+            onClick={() => setActiveTab("pending")}
+            className={`
+              px-4 py-2 font-medium text-sm transition-colors border-b-2
+              ${activeTab === "pending"
+                ? "border-[#7A0010] text-[#7A0010]"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+              }
+            `}
+          >
+            <Clock className="h-4 w-4 inline mr-2" />
+            Pending ({requests.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("history")}
+            className={`
+              px-4 py-2 font-medium text-sm transition-colors border-b-2
+              ${activeTab === "history"
+                ? "border-[#7A0010] text-[#7A0010]"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+              }
+            `}
+          >
+            <History className="h-4 w-4 inline mr-2" />
+            History ({historyRequests.length})
+          </button>
         </div>
 
         {/* Search */}
@@ -150,21 +339,35 @@ export default function UserInboxPage() {
 
         {/* Requests List */}
         <div className="bg-white rounded-xl border-2 border-gray-200 shadow-sm overflow-hidden">
-          {filteredRequests.length === 0 ? (
+          {displayRequests.length === 0 ? (
             <div className="text-center py-12">
               <Inbox className="h-12 w-12 text-gray-300 mx-auto mb-4" />
               <p className="text-gray-500 font-medium">
-                {searchQuery ? "No requests match your search" : "No pending requests"}
+                {searchQuery 
+                  ? "No requests match your search" 
+                  : activeTab === "pending"
+                    ? "No pending requests"
+                    : "No signed requests yet"}
               </p>
               <p className="text-sm text-gray-400 mt-1">
                 {searchQuery 
                   ? "Try a different search term" 
-                  : "Requests submitted on your behalf will appear here"}
+                  : activeTab === "pending"
+                    ? "Requests submitted on your behalf will appear here"
+                    : "Requests you've signed will appear here"}
               </p>
             </div>
           ) : (
             <div className="divide-y divide-gray-200">
-              {filteredRequests.map((req) => (
+              {displayRequests
+                .filter(req => {
+                  const query = searchQuery.toLowerCase();
+                  return req.request_number?.toLowerCase().includes(query) ||
+                         req.purpose?.toLowerCase().includes(query) ||
+                         req.destination?.toLowerCase().includes(query) ||
+                         req.submitted_by_name?.toLowerCase().includes(query);
+                })
+                .map((req) => (
                 <div
                   key={req.id}
                   className="p-4 hover:bg-gray-50 transition-colors cursor-pointer"
@@ -202,16 +405,29 @@ export default function UserInboxPage() {
                       </div>
                     </div>
                     <div className="ml-4">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleReviewClick(req);
-                        }}
-                        className="px-4 py-2 rounded-lg bg-gradient-to-r from-[#7A0010] to-[#5A0010] text-white text-sm font-semibold hover:shadow-md transition-all flex items-center gap-2"
-                      >
-                        <CheckCircle className="h-4 w-4" />
-                        Review & Sign
-                      </button>
+                      {activeTab === "pending" ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleReviewClick(req);
+                          }}
+                          className="px-4 py-2 rounded-lg bg-gradient-to-r from-[#7A0010] to-[#5A0010] text-white text-sm font-semibold hover:shadow-md transition-all flex items-center gap-2"
+                        >
+                          <CheckCircle className="h-4 w-4" />
+                          Review & Sign
+                        </button>
+                      ) : (
+                        <div className="text-xs text-gray-500">
+                          {req.requester_signature && (
+                            <div className="text-green-600 font-medium">✓ Signed</div>
+                          )}
+                          <div className="mt-1">
+                            {req.requester_signed_at 
+                              ? new Date(req.requester_signed_at).toLocaleDateString()
+                              : "—"}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

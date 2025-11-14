@@ -6,6 +6,7 @@ import ExecRequestModal from "@/components/exec/ExecRequestModal";
 import FilterBar from "@/components/common/FilterBar";
 import StatusBadge from "@/components/common/StatusBadge";
 import PersonDisplay from "@/components/common/PersonDisplay";
+import { createSupabaseClient } from "@/lib/supabase/client";
 
 export default function ExecHistoryContainer() {
   const [items, setItems] = React.useState<any[]>([]);
@@ -30,7 +31,58 @@ export default function ExecHistoryContainer() {
   }
 
   React.useEffect(() => {
+    let isMounted = true;
+    
+    // Initial load
     load();
+    
+    // Set up real-time subscription for history updates
+    const supabase = createSupabaseClient();
+    console.log("[ExecHistoryContainer] Setting up real-time subscription...");
+    
+    let mutateTimeout: NodeJS.Timeout | null = null;
+    
+    const channel = supabase
+      .channel("exec-history-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "requests",
+        },
+        (payload: any) => {
+          if (!isMounted) return;
+          
+          const newStatus = payload.new?.status;
+          const oldStatus = payload.old?.status;
+          
+          // Only react to approvals/rejections
+          if (newStatus === "approved" || newStatus === "rejected" || 
+              (oldStatus && (oldStatus === "pending_vp" || oldStatus === "pending_president" || oldStatus === "pending_exec"))) {
+            console.log("[ExecHistoryContainer] 🔄 Real-time history change detected:", newStatus);
+            
+            // Debounce: only trigger refetch after 500ms
+            if (mutateTimeout) clearTimeout(mutateTimeout);
+            mutateTimeout = setTimeout(() => {
+              if (isMounted) {
+                console.log("[ExecHistoryContainer] ⚡ Refreshing history");
+                load();
+              }
+            }, 500);
+          }
+        }
+      )
+      .subscribe((status: string) => {
+        console.log("[ExecHistoryContainer] Subscription status:", status);
+      });
+
+    // Cleanup
+    return () => {
+      isMounted = false;
+      if (mutateTimeout) clearTimeout(mutateTimeout);
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handleClose = () => {
@@ -107,7 +159,7 @@ export default function ExecHistoryContainer() {
               : "—";
             const isApproved = item.status === "approved" || item.status === "completed";
             const isRejected = item.status === "rejected";
-            const actionDate = item.exec_approved_at || item.rejected_at;
+            const actionDate = item.exec_approved_at || item.vp_approved_at || item.president_approved_at || item.rejected_at;
 
             return (
               <button

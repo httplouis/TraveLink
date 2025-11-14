@@ -4,18 +4,22 @@ import React from "react";
 import { Clock, History } from "lucide-react";
 import ExecInboxContainer from "@/components/exec/inbox/InboxContainer";
 import ExecHistoryContainer from "@/components/exec/inbox/HistoryContainer";
+import { createSupabaseClient } from "@/lib/supabase/client";
 
 export default function ExecInboxPage() {
   const [activeTab, setActiveTab] = React.useState<"pending" | "history">("pending");
   const [pendingCount, setPendingCount] = React.useState(0);
 
-  // Fetch pending count
+  // Fetch pending count with real-time updates
   React.useEffect(() => {
+    let isMounted = true;
+    
     const fetchCount = async () => {
+      if (!isMounted) return;
       try {
         const res = await fetch("/api/exec/inbox/count", { cache: "no-store" });
         const data = await res.json();
-        if (data.ok) {
+        if (data.ok && isMounted) {
           setPendingCount(data.pending_count || 0);
         }
       } catch (err) {
@@ -24,9 +28,55 @@ export default function ExecInboxPage() {
     };
     
     fetchCount();
-    const interval = setInterval(fetchCount, 10000); // Refresh every 10s
-    return () => clearInterval(interval);
-  }, []);
+    
+    // Set up real-time subscription for count
+    const supabase = createSupabaseClient();
+    console.log("[ExecInboxPage] Setting up real-time count subscription...");
+    
+    let mutateTimeout: NodeJS.Timeout | null = null;
+    
+    const channel = supabase
+      .channel("exec-inbox-count-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "requests",
+        },
+        (payload) => {
+          if (!isMounted) return;
+          
+          const newStatus = (payload.new as any)?.status;
+          const oldStatus = (payload.old as any)?.status;
+          
+          // Only react to changes that affect exec inbox statuses
+          const execStatuses = ['pending_vp', 'pending_president', 'pending_exec', 'approved', 'rejected'];
+          if (execStatuses.includes(newStatus) || execStatuses.includes(oldStatus)) {
+            console.log("[ExecInboxPage] 🔄 Real-time count change detected:", newStatus);
+            
+            // Debounce: only trigger refetch after 500ms
+            if (mutateTimeout) clearTimeout(mutateTimeout);
+            mutateTimeout = setTimeout(() => {
+              if (isMounted) {
+                console.log("[ExecInboxPage] ⚡ Refetching count");
+                fetchCount();
+              }
+            }, 500);
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log("[ExecInboxPage] Count subscription status:", status);
+      });
+
+    // Cleanup
+    return () => {
+      isMounted = false;
+      if (mutateTimeout) clearTimeout(mutateTimeout);
+      supabase.removeChannel(channel);
+    };
+  }, []); // Empty deps - only run once on mount
 
   return (
     <div className="space-y-6">

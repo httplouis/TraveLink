@@ -12,10 +12,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    // Get executive user
+    // Get executive user and check their role
     const { data: execUser, error: execError } = await supabase
       .from("users")
-      .select("id, name, email")
+      .select("id, name, email, is_vp, is_president, is_exec")
       .eq("auth_user_id", user.id)
       .single();
 
@@ -30,17 +30,51 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: "Missing required fields" }, { status: 400 });
     }
 
+    // Get current request status to determine which approval to set
+    const { data: currentRequest } = await supabase
+      .from("requests")
+      .select("status")
+      .eq("id", requestId)
+      .single();
+
+    if (!currentRequest) {
+      return NextResponse.json({ ok: false, error: "Request not found" }, { status: 404 });
+    }
+
     if (action === "approve") {
-      // Approve request - set status to 'approved' (final approval)
+      // Determine update based on current status and user role
+      const updateData: any = {
+        status: "approved",
+        exec_comments: notes || null,
+        final_approved_at: getPhilippineTimestamp(),
+      };
+
+      // Set appropriate approval based on status and role
+      if (currentRequest.status === "pending_vp" && execUser.is_vp) {
+        updateData.vp_approved_at = getPhilippineTimestamp();
+        updateData.vp_approved_by = execUser.id;
+        updateData.vp_signature = signature;
+        updateData.status = "pending_president"; // VP approves, goes to President
+      } else if (currentRequest.status === "pending_president" && execUser.is_president) {
+        updateData.president_approved_at = getPhilippineTimestamp();
+        updateData.president_approved_by = execUser.id;
+        updateData.president_signature = signature;
+        updateData.status = "approved"; // President is final
+      } else if (currentRequest.status === "pending_exec" && execUser.is_exec) {
+        updateData.exec_approved_at = getPhilippineTimestamp();
+        updateData.exec_approved_by = execUser.id;
+        updateData.exec_signature = signature;
+        updateData.status = "approved"; // Exec is final (old workflow)
+      } else {
+        return NextResponse.json({ 
+          ok: false, 
+          error: `Cannot approve request in ${currentRequest.status} status with your role` 
+        }, { status: 400 });
+      }
+
       const { error: updateError } = await supabase
         .from("requests")
-        .update({
-          status: "approved",
-          exec_approved_at: getPhilippineTimestamp(),
-          exec_approved_by: execUser.id,
-          exec_signature: signature,
-          exec_comments: notes || null,
-        })
+        .update(updateData)
         .eq("id", requestId);
 
       if (updateError) {
@@ -49,13 +83,16 @@ export async function POST(request: Request) {
       }
 
       // Log history
+      const previousStatus = currentRequest.status;
+      const newStatus = updateData.status;
       await supabase.from("request_history").insert({
         request_id: requestId,
         action: "approved",
         actor_id: execUser.id,
-        previous_status: "pending_exec",
-        new_status: "approved",
-        comments: notes || "Approved by Executive",
+        actor_role: execUser.is_president ? "president" : execUser.is_vp ? "vp" : "exec",
+        previous_status: previousStatus,
+        new_status: newStatus,
+        comments: notes || `Approved by ${execUser.is_president ? "President" : execUser.is_vp ? "VP" : "Executive"}`,
       });
 
       return NextResponse.json({ ok: true, message: "Request approved successfully" });
@@ -83,9 +120,10 @@ export async function POST(request: Request) {
         request_id: requestId,
         action: "rejected",
         actor_id: execUser.id,
-        previous_status: "pending_exec",
+        actor_role: execUser.is_president ? "president" : execUser.is_vp ? "vp" : "exec",
+        previous_status: currentRequest.status,
         new_status: "rejected",
-        comments: notes || "Rejected by Executive",
+        comments: notes || `Rejected by ${execUser.is_president ? "President" : execUser.is_vp ? "VP" : "Executive"}`,
       });
 
       return NextResponse.json({ ok: true, message: "Request rejected successfully" });
