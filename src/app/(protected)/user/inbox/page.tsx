@@ -34,9 +34,14 @@ export default function UserInboxPage() {
 
   React.useEffect(() => {
     loadRequests();
-    const interval = setInterval(loadRequests, 10000); // Auto-refresh every 10 seconds
+    // Only auto-refresh when modal is NOT open to avoid interrupting signature
+    const interval = setInterval(() => {
+      if (!showModal) {
+        loadRequests();
+      }
+    }, 10000); // Auto-refresh every 10 seconds
     return () => clearInterval(interval);
-  }, []);
+  }, [showModal]);
 
   const loadRequests = async () => {
     try {
