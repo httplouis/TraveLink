@@ -163,11 +163,15 @@ export default function SubmissionsView() {
       console.log('exec_approved_by:', json.data.exec_approved_by);
       console.log('=== END FIELD DEBUG ===');
       
-      if (json.ok) {
+      if (json.ok && json.data) {
         setFullRequestData(json.data);
+      } else {
+        console.error("Failed to fetch request details:", json.error || "Unknown error");
+        alert(`Error loading request details: ${json.error || "Unknown error"}`);
       }
     } catch (err) {
       console.error("Failed to fetch request details:", err);
+      alert(`Error loading request details: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setLoadingDetails(false);
     }
@@ -385,15 +389,15 @@ export default function SubmissionsView() {
               travel_end_date: selectedRequest.travel_end_date,
               total_budget: selectedRequest.total_budget || 0,
               created_at: selectedRequest.created_at,
-              expense_breakdown: fullRequestData.expense_breakdown || [],
-              transportation_type: fullRequestData.transportation_type,
-              pickup_location: fullRequestData.pickup_location,
-              pickup_time: fullRequestData.pickup_time,
-              cost_justification: fullRequestData.cost_justification,
-              preferred_vehicle: fullRequestData.preferred_vehicle, // Now resolved to vehicle name from API
-              preferred_driver: fullRequestData.preferred_driver, // Now resolved to driver name from API
-              preferred_vehicle_note: fullRequestData.preferred_vehicle_note,
-              preferred_driver_note: fullRequestData.preferred_driver_note,
+              expense_breakdown: fullRequestData?.expense_breakdown || [],
+              transportation_type: fullRequestData?.transportation_type || null,
+              pickup_location: fullRequestData?.pickup_location || null,
+              pickup_time: fullRequestData?.pickup_time || null,
+              cost_justification: fullRequestData?.cost_justification || null,
+              preferred_vehicle: fullRequestData?.preferred_vehicle || null, // Now resolved to vehicle name from API
+              preferred_driver: fullRequestData?.preferred_driver || null, // Now resolved to driver name from API
+              preferred_vehicle_note: fullRequestData?.preferred_vehicle_note || null,
+              preferred_driver_note: fullRequestData?.preferred_driver_note || null,
               status: selectedRequest.status,
               
               requester: {
@@ -412,7 +416,7 @@ export default function SubmissionsView() {
                 code: selectedRequest.department.code
               },
               
-              participants: fullRequestData.participants || [],
+              participants: fullRequestData?.participants || [],
               
               // Complete signature workflow chain
               signatures: [
@@ -428,92 +432,92 @@ export default function SubmissionsView() {
                     department: selectedRequest.department.name,
                     position: 'Faculty/Staff'
                   },
-                  signature: fullRequestData.requester_signature,
+                  signature: fullRequestData?.requester_signature || null,
                   approved_at: selectedRequest.created_at
                 },
                 {
                   id: 'head',
                   label: 'Department Head',
                   role: 'Head',
-                  status: fullRequestData.head_signature ? 'approved' : 'pending',
-                  approver: fullRequestData.head_signature ? {
+                  status: fullRequestData?.head_signature ? 'approved' : 'pending',
+                  approver: fullRequestData?.head_signature ? {
                     id: 'dept-head',
-                    name: fullRequestData.head_approved_by || 'Department Head',
+                    name: fullRequestData?.head_approved_by || 'Department Head',
                     position: 'Department Head',
                     department: selectedRequest.department.name
                   } : undefined,
-                  signature: fullRequestData.head_signature,
-                  approved_at: fullRequestData.head_approved_at
+                  signature: fullRequestData?.head_signature || null,
+                  approved_at: fullRequestData?.head_approved_at || null
                 },
                 {
                   id: 'admin',
                   label: 'Administrator',
                   role: 'Admin',
-                  status: fullRequestData.admin_processed_at ? 'approved' : 'pending',
-                  approver: fullRequestData.admin_processed_at ? {
+                  status: fullRequestData?.admin_processed_at ? 'approved' : 'pending',
+                  approver: fullRequestData?.admin_processed_at ? {
                     id: 'admin',
-                    name: fullRequestData.admin_processed_by || 'Administrator',
+                    name: fullRequestData?.admin_processed_by || 'Administrator',
                     position: 'Administrative Officer',
                     department: 'Administration'
                   } : undefined,
-                  signature: fullRequestData.admin_signature,
-                  approved_at: fullRequestData.admin_processed_at
+                  signature: fullRequestData?.admin_signature || null,
+                  approved_at: fullRequestData?.admin_processed_at || null
                 },
                 {
                   id: 'comptroller',
                   label: 'Comptroller',
                   role: 'Comptroller',
-                  status: fullRequestData.comptroller_approved_at ? 'approved' : 'pending',
-                  approver: fullRequestData.comptroller_approved_at ? {
+                  status: fullRequestData?.comptroller_approved_at ? 'approved' : 'pending',
+                  approver: fullRequestData?.comptroller_approved_at ? {
                     id: 'comptroller',
-                    name: fullRequestData.comptroller_approved_by || 'Comptroller',
+                    name: fullRequestData?.comptroller_approved_by || 'Comptroller',
                     position: 'University Comptroller',
                     department: 'Finance'
                   } : undefined,
-                  signature: fullRequestData.comptroller_signature,
-                  approved_at: fullRequestData.comptroller_approved_at
+                  signature: fullRequestData?.comptroller_signature || null,
+                  approved_at: fullRequestData?.comptroller_approved_at || null
                 },
                 {
                   id: 'hr',
                   label: 'Human Resources',
                   role: 'HR',
-                  status: fullRequestData.hr_signature ? 'approved' : 'pending',
-                  approver: fullRequestData.hr_signature ? {
+                  status: fullRequestData?.hr_signature ? 'approved' : 'pending',
+                  approver: fullRequestData?.hr_signature ? {
                     id: 'hr',
-                    name: fullRequestData.hr_approved_by || 'HR Manager',
+                    name: fullRequestData?.hr_approved_by || 'HR Manager',
                     position: 'HR Manager',
                     department: 'Human Resources'
                   } : undefined,
-                  signature: fullRequestData.hr_signature,
-                  approved_at: fullRequestData.hr_approved_at
+                  signature: fullRequestData?.hr_signature || null,
+                  approved_at: fullRequestData?.hr_approved_at || null
                 },
                 {
                   id: 'vp',
                   label: 'Vice President',
                   role: 'VP',
-                  status: fullRequestData.vp_signature ? 'approved' : 'pending',
-                  approver: fullRequestData.vp_signature ? {
+                  status: fullRequestData?.vp_signature ? 'approved' : 'pending',
+                  approver: fullRequestData?.vp_signature ? {
                     id: 'vp',
-                    name: fullRequestData.vp_approved_by || 'Vice President',
+                    name: fullRequestData?.vp_approved_by || 'Vice President',
                     position: 'Vice President for Academic Affairs',
                     department: 'Executive'
                   } : undefined,
-                  signature: fullRequestData.vp_signature,
-                  approved_at: fullRequestData.vp_approved_at
+                  signature: fullRequestData?.vp_signature || null,
+                  approved_at: fullRequestData?.vp_approved_at || null
                 },
                 {
                   id: 'president',
                   label: 'University President',
                   role: 'President',
-                  status: fullRequestData.president_signature ? 'approved' : 'pending',
-                  approver: fullRequestData.president_signature ? {
+                  status: fullRequestData?.president_signature ? 'approved' : 'pending',
+                  approver: fullRequestData?.president_signature ? {
                     id: 'president',
-                    name: fullRequestData.president_approved_by || 'University President',
+                    name: fullRequestData?.president_approved_by || 'University President',
                     position: 'University President',
                     department: 'Executive'
                   } : undefined,
-                  signature: fullRequestData.president_signature,
-                  approved_at: fullRequestData.president_approved_at
+                  signature: fullRequestData?.president_signature || null,
+                  approved_at: fullRequestData?.president_approved_at || null
                 }
               ],
               
