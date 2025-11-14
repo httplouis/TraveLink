@@ -4,7 +4,7 @@
 import * as React from "react";
 import { Mail, CheckCircle2, XCircle, Clock, Send, UserPlus, AlertCircle } from "lucide-react";
 import { TextInput } from "./controls";
-import { useToast } from "@/components/common/ui/ToastProvider.ui";
+import { useToast } from "@/components/common/ui/Toast";
 
 interface ParticipantInvitation {
   email: string;

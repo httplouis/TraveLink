@@ -3,7 +3,6 @@
 
 import dynamic from "next/dynamic";
 import * as React from "react";
-import { MapHeader } from "./parts/MapHeader.ui";
 import { FiltersBar } from "./parts/FiltersBar.ui";
 // Calendar is client-only to avoid hydration mismatch from extensions/locale attrs
 const MonthCalendar = dynamic(() => import("./parts/MonthCalendar.ui"), {
@@ -31,6 +30,7 @@ export default function UserSchedulePage() {
   const [selectedISO, setSelectedISO] = React.useState<string | null>(null);
   const [bookings, setBookings] = React.useState<Booking[]>([]);
   const [modalOpen, setModalOpen] = React.useState(false);
+  const [pendingRequests, setPendingRequests] = React.useState<Array<{id: string; dates: string[]; title: string; status: string}>>([]);
 
   // fetch availability for visible month
   const refresh = React.useCallback(() => {
@@ -47,6 +47,18 @@ export default function UserSchedulePage() {
   React.useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Fetch pending requests
+  React.useEffect(() => {
+    fetch('/api/schedule/user-pending')
+      .then(res => res.json())
+      .then(data => {
+        if (data.ok) {
+          setPendingRequests(data.data || []);
+        }
+      })
+      .catch(err => console.error('Failed to fetch pending requests:', err));
+  }, []);
 
   // === ALL dates of the visible month (do NOT skip available/empty days) ===
   const monthDatesAll = React.useMemo(() => {
@@ -146,9 +158,6 @@ export default function UserSchedulePage() {
         </div>
               </header>
 
-      {/* Map with overlay summary of first booking */}
-      <MapHeader selectedDateISO={selectedISO} topBooking={bookings[0] ?? null} />
-
       <div className="rounded-3xl border border-neutral-200/60 bg-white shadow-md shadow-black/5">
         <FiltersBar
           value={filters}
@@ -163,6 +172,7 @@ export default function UserSchedulePage() {
             onNext={onNext}
             onSelectDate={openDate}
             selectedISO={selectedISO}
+            pendingRequests={pendingRequests}
           />
         </div>
       </div>

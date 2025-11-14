@@ -10,13 +10,14 @@ export default function SignatureSettings() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    fetch("/api/signature")
+    fetch("/api/settings/signature")
       .then(res => res.json())
       .then(data => {
-        if (data.ok && data.signature) {
-          setSignature(data.signature);
+        if (data.ok && data.data?.signature) {
+          setSignature(data.data.signature);
         }
-      });
+      })
+      .catch(err => console.error("Failed to load signature:", err));
   }, []);
 
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -73,7 +74,7 @@ export default function SignatureSettings() {
     const dataURL = canvas.toDataURL();
 
     try {
-      const res = await fetch("/api/signature", {
+      const res = await fetch("/api/settings/signature", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ signature: dataURL }),

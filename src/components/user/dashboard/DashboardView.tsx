@@ -9,6 +9,7 @@ import KpiCard from "@/components/user/dashboard/KpiCard.ui";
 import StaggerIn from "@/components/common/StaggerIn";
 import AvailabilityHeatmap from "@/components/user/dashboard/AvailabilityHeatmap.ui";
 import ActivityTimeline from "@/components/user/dashboard/ActivityTimeline.ui";
+import VehicleShowcase from "@/components/user/dashboard/VehicleShowcase.ui";
 import type { Trip } from "@/lib/user/schedule/types";
 import { ClipboardList, BusFront, Activity } from "lucide-react";
 
@@ -20,6 +21,15 @@ type Props = {
   onOpenSchedule?: () => void;
   onNewRequest?: () => void;
   userName?: string;
+  vehicles?: Array<{
+    id: string;
+    vehicle_name: string;
+    plate_number: string;
+    type: string;
+    capacity: number;
+    photo_url?: string;
+    status: string;
+  }>;
 };
 
 export default function DashboardView({
@@ -28,6 +38,7 @@ export default function DashboardView({
   onOpenSchedule,
   onNewRequest,
   userName = "User",
+  vehicles = [],
 }: Props) {
   const now = new Date();
   const upcoming = Array.isArray(trips)
@@ -59,6 +70,8 @@ export default function DashboardView({
 
         {/* Right column */}
         <div className="xl:col-span-2 space-y-4">
+          <VehicleShowcase vehicles={vehicles} />
+          
           <div className="rounded-2xl bg-white p-4 pb-6 shadow-sm ring-1 ring-gray-100">
             <div className="mb-2 text-sm font-medium text-gray-900">Upcoming (next 6)</div>
             <UpcomingList trips={upcoming} />

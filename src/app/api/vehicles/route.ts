@@ -48,6 +48,7 @@ export async function GET(request: Request) {
       capacity: v.capacity,
       status: v.status,
       notes: v.notes,
+      photo_url: v.photo_url || v.photoUrl,  // Include photo URL
     }));
 
     return NextResponse.json({ ok: true, data: vehicles });

@@ -13,94 +13,64 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const available = searchParams.get("available"); // Optional filter
 
-    // Fetch drivers with their user info from existing schema
-    // Try simple query first without join
+    // Fetch users and drivers separately, then join manually (most reliable)
+    const { data: usersData, error: usersError } = await supabase
+      .from("users")
+      .select("id, name, email, phone_number, status, role")
+      .eq("role", "driver")
+      .order("name", { ascending: true });
+
     const { data: driversData, error: driversError } = await supabase
       .from("drivers")
-      .select("*");
-    
-    console.log("[API /drivers] Drivers table query result:", driversData);
-    
-    if (driversError) {
-      console.error("[API /drivers] Error fetching drivers table:", driversError);
-    }
+      .select("user_id, license_no, license_expiry, driver_rating, phone");
 
-    // Fetch ALL users and filter manually (simplest approach)
-    const { data: allUsers, error: usersError } = await supabase
-      .from("users")
-      .select("id, name, email, status, role");
-    
-    console.log("[API /drivers] All users fetched:", allUsers?.length);
-    console.log("[API /drivers] Sample user:", allUsers?.[0]);
-    
-    if (usersError) {
-      console.error("[API /drivers] Error fetching users:", usersError);
-    }
-    
-    // Filter for drivers manually - only check role='driver'
-    const finalUsersData = allUsers?.filter((u: any) => {
-      const roleStr = u.role ? u.role.toString().trim().toLowerCase() : '';
-      const hasDriverRole = roleStr === 'driver';
-      
-      if (hasDriverRole) {
-        console.log(`[API /drivers] Found driver: ${u.name} (${u.email})`);
-      }
-      
-      return hasDriverRole; // Only role check, no email requirement
-    }) || [];
-    
-    console.log("[API /drivers] Filtered driver users:", finalUsersData.length);
-    console.log("[API /drivers] Driver users:", finalUsersData);
-
-    // Manual join in code
-    const data = driversData?.map((driver: any) => {
-      const user = finalUsersData?.find((u: any) => u.id === driver.user_id);
-      return {
-        ...driver,
-        users: user
-      };
-    }).filter((d: any) => d.users); // Only return drivers with matching users
-
-    const error = driversError || usersError;
-
-    if (error) {
-      console.error("Error fetching drivers:", error);
+    if (usersError || driversError) {
+      console.error("[API /drivers] Error:", usersError || driversError);
       return NextResponse.json(
-        { ok: false, error: error.message },
+        { ok: false, error: (usersError || driversError).message },
         { status: 500 }
       );
     }
 
-    // Debug: Log raw data
-    console.log("[API /drivers] Raw data from DB:", JSON.stringify(data, null, 2));
+    console.log("[API /drivers] Users found:", usersData?.length || 0);
+    console.log("[API /drivers] Sample user:", usersData?.[0]);
+    console.log("[API /drivers] Driver records found:", driversData?.length || 0);
+    console.log("[API /drivers] Sample driver record:", driversData?.[0]);
+
+    // Manual join: Map users to drivers
+    const driversMap = new Map((driversData || []).map((d: any) => [d.user_id, d]));
 
     // Transform data to match expected format
-    let drivers = data?.map((driver: any) => {
-      console.log("[API /drivers] Processing driver:", driver);
-      const user = driver.users; // Note: plural 'users' from the join
-      return {
-        id: user?.id || driver.user_id,
-        name: user?.name || 'Unknown',
-        email: user?.email || '',
-        licenseNumber: driver.license_no,
-        licenseExpiry: driver.license_expiry,
-        rating: driver.driver_rating,
-        isAvailable: user?.status === 'active',
+    let drivers = (usersData || []).map((user: any) => {
+      const driverInfo = driversMap.get(user.id);
+      
+      // Clean status - remove quotes if present
+      const cleanStatus = typeof user.status === 'string' 
+        ? user.status.replace(/^'|'$/g, '') 
+        : user.status;
+      
+      const driver = {
+        id: user.id,
+        name: user.name || 'Unknown',
+        email: user.email || '',
+        phone: driverInfo?.phone || user.phone_number || '',
+        licenseNumber: driverInfo?.license_no || null,
+        licenseExpiry: driverInfo?.license_expiry || null,
+        rating: driverInfo?.driver_rating ? parseFloat(driverInfo.driver_rating) : null,
+        isAvailable: cleanStatus === 'active',
       };
-    }) || [];
+      
+      return driver;
+    });
 
-    console.log("[API /drivers] Transformed drivers:", drivers);
-
-    // Filter by available if requested (client-side filtering)
+    // Filter by available if requested
     if (available === "true") {
       drivers = drivers.filter((d: any) => d.isAvailable);
-      console.log("[API /drivers] After filtering:", drivers);
     }
 
-    // Sort by name
-    drivers.sort((a: any, b: any) => (a.name || '').localeCompare(b.name || ''));
-
-    console.log("[API /drivers] Final response:", { ok: true, data: drivers });
+    console.log("[API /drivers] Returning", drivers.length, "drivers");
+    console.log("[API /drivers] Sample driver in response:", drivers[0]);
+    console.log("[API /drivers] Full response:", JSON.stringify({ ok: true, data: drivers }, null, 2));
     return NextResponse.json({ ok: true, data: drivers });
   } catch (err: any) {
     console.error("Unexpected error in GET /api/drivers:", err);
