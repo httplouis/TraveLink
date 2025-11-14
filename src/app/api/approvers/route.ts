@@ -86,16 +86,16 @@ export async function GET(req: NextRequest) {
         let allAdmins: any[] = [];
         
         // Strategy 1: Query by role column (primary method)
-        const { data: adminsByRole, error: roleError } = await supabase
+        const { data: adminsByRole, error: adminRoleError } = await supabase
           .from("users")
           .select(`id, name, email, profile_picture, phone_number, position_title, role, status`)
           .eq("role", "admin");
 
-        if (!roleError && adminsByRole) {
+        if (!adminRoleError && adminsByRole) {
           allAdmins = adminsByRole;
           console.log(`[GET /api/approvers] Found ${allAdmins.length} admins via role query`);
         } else {
-          console.error(`[GET /api/approvers] Role query error:`, roleError);
+          console.error(`[GET /api/approvers] Role query error:`, adminRoleError);
           
           // Strategy 2: Fallback - get all users and filter in code
           console.log(`[GET /api/approvers] Trying to fetch all users and filter...`);
@@ -135,12 +135,12 @@ export async function GET(req: NextRequest) {
         let allComptrollers: any[] = [];
         
         // Try by role first (most reliable)
-        const { data: comptrollersByRole, error: roleError } = await supabase
+        const { data: comptrollersByRole, error: comptrollerRoleError } = await supabase
           .from("users")
           .select(`id, name, email, profile_picture, phone_number, position_title, role, status`)
           .eq("role", "comptroller");
 
-        if (!roleError && comptrollersByRole) {
+        if (!comptrollerRoleError && comptrollersByRole) {
           allComptrollers = comptrollersByRole;
         } else {
           // Try by flag if role query fails
@@ -200,13 +200,13 @@ export async function GET(req: NextRequest) {
         // Fetch president - use role column primarily
         let allPresidents: any[] = [];
         
-        // Try by role first (most reliable)
-        const { data: presidentsByRole, error: roleError } = await supabase
+        // Try by role first (most reliable) - using unique variable name to avoid conflicts
+        const { data: presidentsByRole, error: presidentRoleError } = await supabase
           .from("users")
           .select(`id, name, email, profile_picture, phone_number, position_title, role, status`)
           .eq("role", "president");
 
-        if (!roleError && presidentsByRole) {
+        if (!presidentRoleError && presidentsByRole) {
           allPresidents = presidentsByRole;
         } else {
           // Try by flag if role query fails
