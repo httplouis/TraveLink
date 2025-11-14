@@ -22,14 +22,17 @@ export async function GET() {
       return NextResponse.json({ ok: false, error: "Profile not found" }, { status: 404 });
     }
 
-    // Get all requests by this user
+    // Get all requests submitted by this user (either as requester OR as submitter)
+    // This includes:
+    // 1. Requests where user is the requester (requester_id = profile.id)
+    // 2. Requests where user submitted on behalf of someone else (submitted_by_user_id = profile.id)
     const { data: requests, error } = await supabase
       .from("requests")
       .select(`
         *,
         department:departments!department_id(id, code, name)
       `)
-      .eq("requester_id", profile.id)
+      .or(`requester_id.eq.${profile.id},submitted_by_user_id.eq.${profile.id}`)
       .order("created_at", { ascending: false })
       .limit(100); // Limit to 100 most recent submissions
 
