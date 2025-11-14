@@ -96,8 +96,9 @@ export async function POST(req: Request) {
     let requestingPersonUser: any = null;
     if (mightBeRepresentative && travelOrder.requestingPerson) {
       try {
-        // Try exact match first (most reliable)
         const exactName = travelOrder.requestingPerson.trim();
+        
+        // Strategy 1: Try exact match first
         let { data: userData } = await supabase
           .from("users")
           .select("id, name, is_head, role, department_id")
@@ -105,27 +106,32 @@ export async function POST(req: Request) {
           .eq("status", "active")
           .maybeSingle();
         
-        // If exact match fails, try partial match
+        // Strategy 2: If exact match fails, try partial match
         if (!userData) {
           console.log("[/api/requests/submit] Exact match failed, trying partial match for:", exactName);
-          const { data: partialMatch } = await supabase
+          const { data: partialMatches } = await supabase
             .from("users")
             .select("id, name, is_head, role, department_id")
             .ilike("name", `%${exactName}%`)
-            .eq("status", "active")
-            .limit(1)
-            .maybeSingle();
-          userData = partialMatch;
+            .eq("status", "active");
+          
+          if (partialMatches && partialMatches.length > 0) {
+            // If multiple matches, prefer the one with department_id
+            const withDept = partialMatches.find((u: any) => u.department_id);
+            userData = withDept || partialMatches[0];
+            console.log("[/api/requests/submit] Found", partialMatches.length, "partial matches, selected:", userData.name);
+          }
         }
         
         if (userData) {
           requestingPersonUser = userData;
           console.log("[/api/requests/submit] ✅ Found requesting person:", userData.name, "ID:", userData.id, "Dept ID:", userData.department_id);
         } else {
-          console.warn("[/api/requests/submit] ⚠️ Could not find requesting person in database:", exactName);
+          console.error("[/api/requests/submit] ❌ CRITICAL: Could not find requesting person in database:", exactName);
+          console.error("[/api/requests/submit] ❌ This will cause the request to go to the wrong inbox!");
         }
       } catch (error) {
-        console.warn("[/api/requests/submit] Could not fetch requesting person early:", error);
+        console.error("[/api/requests/submit] ❌ Error fetching requesting person:", error);
       }
     }
 
@@ -426,6 +432,43 @@ export async function POST(req: Request) {
     // Use mightBeRepresentative as isRepresentative (they're the same check)
     const isRepresentative = mightBeRepresentative;
 
+    // CRITICAL: Determine requester_id BEFORE building requestData
+    // For representative submissions, we MUST find the requesting person's ID
+    let finalRequesterId = profile.id; // Default to submitter
+    if (isRepresentative && !isSeminar) {
+      if (requestingPersonUser?.id) {
+        finalRequesterId = requestingPersonUser.id;
+        console.log("[/api/requests/submit] ✅ Using requesting person ID:", requestingPersonUser.id, "for requester_id");
+        console.log("[/api/requests/submit] ✅ Requesting person name:", requestingPersonUser.name);
+      } else {
+        // Emergency lookup - try to find the user one more time
+        console.error("[/api/requests/submit] ❌ CRITICAL: Representative submission but requesting person not found in early fetch!");
+        console.error("[/api/requests/submit] ❌ Requesting person name from form:", requestingPersonName);
+        console.error("[/api/requests/submit] ❌ Attempting emergency lookup...");
+        
+        try {
+          const { data: emergencyMatch } = await supabase
+            .from("users")
+            .select("id, name, department_id")
+            .ilike("name", `%${requestingPersonName.trim()}%`)
+            .eq("status", "active");
+          
+          if (emergencyMatch && emergencyMatch.length > 0) {
+            // Prefer the one with department_id
+            const withDept = emergencyMatch.find((u: any) => u.department_id);
+            const found = withDept || emergencyMatch[0];
+            finalRequesterId = found.id;
+            requestingPersonUser = found; // Update for department_id lookup later
+            console.log("[/api/requests/submit] ✅ Emergency lookup found:", found.name, "ID:", found.id);
+          } else {
+            console.error("[/api/requests/submit] ❌ FAILED: Cannot find requesting person, using submitter ID (WRONG!)");
+          }
+        } catch (err) {
+          console.error("[/api/requests/submit] ❌ Emergency lookup failed:", err);
+        }
+      }
+    }
+
     // Build request object
     // For seminar requests, use seminar data; for travel orders, use travelOrder data
     
@@ -459,23 +502,8 @@ export async function POST(req: Request) {
       }),
       
       // Requester = person who needs the travel (from form)
-      // If representative submission, use requesting person's ID; otherwise use submitter's ID
-      // CRITICAL: For representative submissions, we MUST have requestingPersonUser.id, otherwise the request goes to wrong inbox
-      requester_id: (() => {
-        if (isRepresentative && !isSeminar) {
-          if (requestingPersonUser?.id) {
-            console.log("[/api/requests/submit] ✅ Using requesting person ID:", requestingPersonUser.id, "for requester_id");
-            return requestingPersonUser.id;
-          } else {
-            console.error("[/api/requests/submit] ❌ CRITICAL: Representative submission but requesting person not found!");
-            console.error("[/api/requests/submit] ❌ Requesting person name:", requestingPersonName);
-            console.error("[/api/requests/submit] ❌ Falling back to submitter ID (THIS IS WRONG - request will go to wrong inbox!)");
-            // Still fall back, but log the error
-            return profile.id;
-          }
-        }
-        return profile.id;
-      })(),
+      // Already calculated above with emergency lookup if needed
+      requester_id: finalRequesterId,
       requester_name: requestingPersonName,
       requester_signature: isSeminar 
         ? (seminar.requesterSignature || null)
@@ -484,9 +512,17 @@ export async function POST(req: Request) {
       // For representative submissions: use requesting person's department_id if available,
       // otherwise use the department from the form (which should be the requesting person's department)
       // The form department (CCMS) should be used if we can't find the requesting person's department_id
-      department_id: isRepresentative && !isSeminar 
-        ? (requestingPersonUser?.department_id || departmentId)
-        : departmentId,
+      department_id: (() => {
+        if (isRepresentative && !isSeminar) {
+          const finalDeptId = requestingPersonUser?.department_id || departmentId;
+          console.log("[/api/requests/submit] 📍 Department ID determination:");
+          console.log("[/api/requests/submit]   - Requesting person dept_id:", requestingPersonUser?.department_id || "null");
+          console.log("[/api/requests/submit]   - Form selected dept_id:", departmentId);
+          console.log("[/api/requests/submit]   - Final dept_id:", finalDeptId);
+          return finalDeptId;
+        }
+        return departmentId;
+      })(),
       
       // Submitter = account that clicked submit (logged in user)
       submitted_by_user_id: profile.id,
