@@ -8,6 +8,7 @@ import TrackingModal from "@/components/common/TrackingModal";
 import StatusBadge from "@/components/common/StatusBadge";
 import PersonDisplay from "@/components/common/PersonDisplay";
 import { Eye, Search, FileText } from "lucide-react";
+import { createSupabaseClient } from "@/lib/supabase/client";
 
 export default function ExecInboxContainer() {
   const [items, setItems] = React.useState<any[]>([]);
@@ -31,10 +32,61 @@ export default function ExecInboxContainer() {
   }
 
   React.useEffect(() => {
+    let isMounted = true;
+    let mutateTimeout: NodeJS.Timeout | null = null;
+    let channel: any = null;
+    
+    // Initial load
     load();
-    const interval = setInterval(() => load(false), 10000); // Poll every 10s
-    return () => clearInterval(interval);
-  }, []);
+    
+    // Set up real-time subscription
+    const supabase = createSupabaseClient();
+    console.log("[ExecInboxContainer] Setting up real-time subscription...");
+    
+    channel = supabase
+      .channel("exec-inbox-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "requests",
+        },
+        (payload) => {
+          if (!isMounted) return;
+          
+          const newStatus = (payload.new as any)?.status;
+          const oldStatus = (payload.old as any)?.status;
+          
+          // Only react to changes that affect exec inbox statuses
+          const execStatuses = ['pending_vp', 'pending_president', 'pending_exec', 'approved', 'rejected'];
+          if (execStatuses.includes(newStatus) || execStatuses.includes(oldStatus)) {
+            console.log("[ExecInboxContainer] 🔄 Real-time change detected:", payload.eventType, newStatus, (payload.new as any)?.id || 'unknown');
+            
+            // Debounce: only trigger refetch after 500ms of no changes
+            if (mutateTimeout) clearTimeout(mutateTimeout);
+            mutateTimeout = setTimeout(() => {
+              if (isMounted) {
+                console.log("[ExecInboxContainer] ⚡ Triggering refetch after debounce");
+                load(false); // Silent refresh
+              }
+            }, 500);
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log("[ExecInboxContainer] Subscription status:", status);
+      });
+
+    // Cleanup
+    return () => {
+      isMounted = false;
+      if (mutateTimeout) clearTimeout(mutateTimeout);
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
+  }, []); // Empty deps - only run once on mount
 
   const handleApproved = (id: string) => {
     setSelected(null);
@@ -52,7 +104,10 @@ export default function ExecInboxContainer() {
       item.request_number?.toLowerCase().includes(query) ||
       item.requester_name?.toLowerCase().includes(query) ||
       item.requester?.name?.toLowerCase().includes(query) ||
-      item.purpose?.toLowerCase().includes(query)
+      item.submitted_by_name?.toLowerCase().includes(query) ||
+      item.submitted_by?.name?.toLowerCase().includes(query) ||
+      item.purpose?.toLowerCase().includes(query) ||
+      item.destination?.toLowerCase().includes(query)
     );
   });
 
@@ -73,7 +128,7 @@ export default function ExecInboxContainer() {
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search by request number, requester, or purpose..."
+          placeholder="Search by request number, purpose, or destination..."
           className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-transparent"
         />
       </div>
@@ -95,6 +150,8 @@ export default function ExecInboxContainer() {
         <div className="space-y-3">
           {filteredItems.map((item) => {
             const requester = item.requester_name || item.requester?.name || "Unknown";
+            const submittedBy = item.submitted_by_name || item.submitted_by?.name || null;
+            const isRepresentative = item.is_representative && submittedBy && submittedBy !== requester;
             const department = item.department?.name || item.department?.code || "Not specified";
             const purpose = item.purpose || "No purpose indicated";
             const requestNumber = item.request_number || "—";
@@ -125,6 +182,15 @@ export default function ExecInboxContainer() {
                     profilePicture={item.requester?.profile_picture}
                     size="sm"
                   />
+                  
+                  {/* Show submitted by if different from requester */}
+                  {isRepresentative && (
+                    <div className="mt-1 mb-1">
+                      <span className="text-xs text-purple-600 font-medium">
+                        Submitted by: <span className="font-bold">{submittedBy}</span>
+                      </span>
+                    </div>
+                  )}
                   
                   <p className="text-sm text-slate-600 line-clamp-1 mt-2 mb-1">
                     {purpose}

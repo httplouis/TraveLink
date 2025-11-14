@@ -217,68 +217,200 @@ export default function ExecRequestModal({
             </div>
           </div>
 
-          {/* Approval History */}
+          {/* Submission Info - Show if submitted by someone else */}
+          {request.is_representative && request.submitted_by_name && request.submitted_by_name !== requester && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-sm font-semibold text-blue-700">Submitted on behalf by:</span>
+                <span className="text-sm font-bold text-blue-900">{request.submitted_by_name}</span>
+              </div>
+              {request.submitted_by?.email && (
+                <p className="text-xs text-blue-600">{request.submitted_by.email}</p>
+              )}
+            </div>
+          )}
+
+          {/* Signature History */}
           <div className="bg-gray-50 rounded-lg p-4">
-            <h3 className="text-sm font-bold text-gray-700 mb-3">Approval Timeline</h3>
-            <div className="space-y-3">
-              <div className="flex items-start gap-3 text-sm">
-                <span className="w-2 h-2 bg-green-500 rounded-full mt-1.5"></span>
-                <div className="flex-1">
-                  <p className="font-medium text-green-700">Head Approved</p>
-                  <p className="text-xs text-gray-500">
-                    {request.head_approver?.name || "Department Head"}
-                  </p>
+            <h3 className="text-sm font-bold text-gray-700 mb-3">Signature History</h3>
+            <div className="space-y-4">
+              {/* Request Submitted */}
+              {request.created_at && (
+                <div className="flex items-start gap-3 text-sm border-b border-gray-200 pb-3">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                    <span className="text-blue-600 font-bold text-xs">1</span>
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-gray-900">Request Submitted</p>
+                    <p className="text-xs text-gray-600 mt-1">
+                      by {request.submitted_by_name || request.submitted_by?.name || requester}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {new Date(request.created_at).toLocaleString()}
+                    </p>
+                    {request.requester_signature && (
+                      <div className="mt-2 pt-2 border-t border-gray-200">
+                        <p className="text-xs text-gray-500 mb-1">Requester Signature:</p>
+                        <img 
+                          src={request.requester_signature} 
+                          alt="Requester Signature" 
+                          className="h-16 border border-gray-300 rounded bg-white p-1"
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
 
-              <div className="flex items-start gap-3 text-sm">
-                <span className="w-2 h-2 bg-green-500 rounded-full mt-1.5"></span>
-                <div className="flex-1">
-                  <p className="font-medium text-green-700">Admin Processed</p>
-                  <p className="text-xs text-gray-500">{request.admin_approver?.name || "Admin"}</p>
+              {/* Head Approved */}
+              {request.head_approved_at && (
+                <div className="flex items-start gap-3 text-sm border-b border-gray-200 pb-3">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
+                    <span className="text-green-600 font-bold text-xs">2</span>
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-green-700">Head Approved</p>
+                    <p className="text-xs text-gray-600 mt-1">
+                      by {request.head_approver?.name || "Department Head"}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {new Date(request.head_approved_at).toLocaleString()}
+                    </p>
+                    {request.head_signature && (
+                      <div className="mt-2 pt-2 border-t border-gray-200">
+                        <p className="text-xs text-gray-500 mb-1">Head Signature:</p>
+                        <img 
+                          src={request.head_signature} 
+                          alt="Head Signature" 
+                          className="h-16 border border-gray-300 rounded bg-white p-1"
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
 
+              {/* Admin Processed */}
+              {request.admin_processed_at && (
+                <div className="flex items-start gap-3 text-sm border-b border-gray-200 pb-3">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center">
+                    <span className="text-purple-600 font-bold text-xs">3</span>
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-purple-700">Admin Processed</p>
+                    <p className="text-xs text-gray-600 mt-1">
+                      by {request.admin_approver?.name || "Admin"}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {new Date(request.admin_processed_at).toLocaleString()}
+                    </p>
+                    {request.admin_signature && (
+                      <div className="mt-2 pt-2 border-t border-gray-200">
+                        <p className="text-xs text-gray-500 mb-1">Admin Signature:</p>
+                        <img 
+                          src={request.admin_signature} 
+                          alt="Admin Signature" 
+                          className="h-16 border border-gray-300 rounded bg-white p-1"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Comptroller Approved */}
               {request.comptroller_approved_at && (
-                <div className="flex items-start gap-3 text-sm">
-                  <span className="w-2 h-2 bg-green-500 rounded-full mt-1.5"></span>
+                <div className="flex items-start gap-3 text-sm border-b border-gray-200 pb-3">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center">
+                    <span className="text-orange-600 font-bold text-xs">4</span>
+                  </div>
                   <div className="flex-1">
-                    <p className="font-medium text-green-700">Comptroller Approved</p>
-                    <p className="text-xs text-gray-500">Budget approved</p>
+                    <p className="font-semibold text-orange-700">Comptroller Approved</p>
+                    <p className="text-xs text-gray-600 mt-1">
+                      by {request.comptroller_approver?.name || "Comptroller"}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {new Date(request.comptroller_approved_at).toLocaleString()}
+                    </p>
+                    {request.comptroller_signature && (
+                      <div className="mt-2 pt-2 border-t border-gray-200">
+                        <p className="text-xs text-gray-500 mb-1">Comptroller Signature:</p>
+                        <img 
+                          src={request.comptroller_signature} 
+                          alt="Comptroller Signature" 
+                          className="h-16 border border-gray-300 rounded bg-white p-1"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
 
+              {/* HR Approved */}
               {request.hr_approved_at && (
-                <div className="flex items-start gap-3 text-sm">
-                  <span className="w-2 h-2 bg-green-500 rounded-full mt-1.5"></span>
+                <div className="flex items-start gap-3 text-sm border-b border-gray-200 pb-3">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-teal-100 flex items-center justify-center">
+                    <span className="text-teal-600 font-bold text-xs">5</span>
+                  </div>
                   <div className="flex-1">
-                    <p className="font-medium text-green-700">HR Approved</p>
-                    <p className="text-xs text-gray-500">{request.hr_approver?.name || "HR"}</p>
+                    <p className="font-semibold text-teal-700">HR Approved</p>
+                    <p className="text-xs text-gray-600 mt-1">
+                      by {request.hr_approver?.name || "HR"}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {new Date(request.hr_approved_at).toLocaleString()}
+                    </p>
+                    {request.hr_signature && (
+                      <div className="mt-2 pt-2 border-t border-gray-200">
+                        <p className="text-xs text-gray-500 mb-1">HR Signature:</p>
+                        <img 
+                          src={request.hr_signature} 
+                          alt="HR Signature" 
+                          className="h-16 border border-gray-300 rounded bg-white p-1"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
 
+              {/* Executive Approved */}
               {request.exec_approved_at && (
                 <div className="flex items-start gap-3 text-sm">
-                  <span className="w-2 h-2 bg-green-500 rounded-full mt-1.5"></span>
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
+                    <span className="text-green-600 font-bold text-xs">✓</span>
+                  </div>
                   <div className="flex-1">
-                    <p className="font-medium text-green-700">Executive Approved</p>
-                    <p className="text-xs text-gray-500">
+                    <p className="font-semibold text-green-700">Executive Approved (Final)</p>
+                    <p className="text-xs text-gray-600 mt-1">
                       by {request.exec_approver?.name || "Executive"}
-                      <br />
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
                       {new Date(request.exec_approved_at).toLocaleString()}
                     </p>
+                    {request.exec_signature && (
+                      <div className="mt-2 pt-2 border-t border-gray-200">
+                        <p className="text-xs text-gray-500 mb-1">Executive Signature:</p>
+                        <img 
+                          src={request.exec_signature} 
+                          alt="Executive Signature" 
+                          className="h-16 border border-gray-300 rounded bg-white p-1"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
 
+              {/* Pending Executive Approval */}
               {!request.exec_approved_at && !request.rejected_at && (
                 <div className="flex items-start gap-3 text-sm">
-                  <span className="w-2 h-2 bg-yellow-500 rounded-full mt-1.5 animate-pulse"></span>
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-yellow-100 flex items-center justify-center animate-pulse">
+                    <span className="text-yellow-600 font-bold text-xs">!</span>
+                  </div>
                   <div className="flex-1">
                     <p className="font-bold text-[#7A0010]">Pending Executive Final Approval</p>
-                    <p className="text-xs text-gray-500">Awaiting your action</p>
+                    <p className="text-xs text-gray-500 mt-1">Awaiting your signature</p>
                   </div>
                 </div>
               )}
