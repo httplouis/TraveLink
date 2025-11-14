@@ -576,7 +576,16 @@ function RequestWizardContent() {
 
   async function handleSubmit() {
     // library validation
-    const v = canSubmit(data, { isRepresentativeSubmission });
+    console.log('[RequestWizard] 🚀 handleSubmit called');
+    console.log('  - isRepresentativeSubmission state:', isRepresentativeSubmission);
+    console.log('  - requestingPerson:', data.travelOrder?.requestingPerson);
+    console.log('  - currentUser?.name:', currentUser?.name);
+    const v = canSubmit(data, { 
+      isRepresentativeSubmission,
+      currentUserName: currentUser?.name,
+      requestingPersonName: data.travelOrder?.requestingPerson,
+    });
+    console.log('  - Validation result:', { ok: v.ok, errors: Object.keys(v.errors) });
 
     const mergedErrors = { ...v.errors };
     setErrors(mergedErrors);
@@ -668,7 +677,11 @@ function RequestWizardContent() {
     reason: data.reason,
     hasBudget,
   });
-  const validation = canSubmit(data, { isRepresentativeSubmission });
+  const validation = canSubmit(data, { 
+    isRepresentativeSubmission,
+    currentUserName: currentUser?.name,
+    requestingPersonName: data.travelOrder?.requestingPerson,
+  });
 
   return (
     <>

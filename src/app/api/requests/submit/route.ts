@@ -78,23 +78,67 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Profile not found" }, { status: 404 });
     }
 
+    // Extract request data early to check if representative submission
+    const travelOrder = body.travelOrder ?? body.payload?.travelOrder ?? {};
+    const reason = body.reason ?? "visit";
+    const isSeminar = reason === "seminar";
+    
+    // Quick check: might this be a representative submission?
+    // For travel orders, check if requesting person is different from submitter
+    const requestingPersonName = isSeminar
+      ? (profile.name || profile.email || "Unknown")
+      : (travelOrder.requestingPerson || profile.name || profile.email || "Unknown");
+    const submitterName = profile.name || profile.email || "Unknown";
+    const mightBeRepresentative = !isSeminar && 
+      requestingPersonName.trim().toLowerCase() !== submitterName.trim().toLowerCase();
+
+    // If might be representative, try to fetch requesting person's info
+    let requestingPersonUser: any = null;
+    if (mightBeRepresentative && travelOrder.requestingPerson) {
+      try {
+        const { data: userData } = await supabase
+          .from("users")
+          .select("id, name, is_head, role, department_id")
+          .ilike("name", `%${travelOrder.requestingPerson}%`)
+          .eq("status", "active")
+          .limit(1)
+          .maybeSingle();
+        
+        if (userData) {
+          requestingPersonUser = userData;
+          console.log("[/api/requests/submit] ✅ Found requesting person:", userData.name, "Dept ID:", userData.department_id);
+        }
+      } catch (error) {
+        console.warn("[/api/requests/submit] Could not fetch requesting person early:", error);
+      }
+    }
+
     // Validate department exists
+    // For representative submissions: allow if requesting person has department OR form has department selected, even if submitter doesn't
+    // For regular submissions: require submitter to have department
     if (!profile.department_id) {
-      console.error("[/api/requests/submit] User has no department assigned:", profile.email);
-      return NextResponse.json({ 
-        ok: false, 
-        error: "Your account is not assigned to a department. Please contact your administrator to assign you to a department before submitting requests." 
-      }, { status: 400 });
+      if (mightBeRepresentative && (requestingPersonUser?.department_id || travelOrder.department)) {
+        // Representative submission: requesting person has department OR form has department selected, so allow it
+        console.log("[/api/requests/submit] ℹ️ Submitter has no department, but representative submission detected:");
+        console.log("  - Requesting person department_id:", requestingPersonUser?.department_id);
+        console.log("  - Form selected department:", travelOrder.department);
+        console.log("  - Allowing representative submission");
+      } else {
+        // Not representative OR requesting person also has no department - require submitter to have department
+        console.error("[/api/requests/submit] User has no department assigned:", profile.email);
+        return NextResponse.json({ 
+          ok: false, 
+          error: "Your account is not assigned to a department. Please contact your administrator to assign you to a department before submitting requests." 
+        }, { status: 400 });
+      }
     }
 
     // Check if department has parent (for office hierarchy)
     const hasParentDepartment = !!(profile.department as any)?.parent_department_id;
 
-    // Extract request data from body
-    const travelOrder = body.travelOrder ?? body.payload?.travelOrder ?? {};
+    // Extract request data from body (travelOrder and reason already extracted above)
     const costs = travelOrder.costs ?? {};
     const vehicleMode = body.vehicleMode ?? "owned"; // "owned", "institutional", "rent"
-    const reason = body.reason ?? "visit"; // "visit", "seminar", "official", etc.
 
     // Get the department ID from the selected department in the form
     let departmentId = profile.department_id;
@@ -274,35 +318,40 @@ export async function POST(req: Request) {
       console.log(`[/api/requests/submit] ℹ️ No vehicle preference provided by client`);
     }
 
-    // Determine if this is a seminar request
-    const isSeminar = reason === "seminar";
+    // Note: isSeminar is already defined above (line 84) - do not redeclare
     
     // Check if requester (logged in user) is a head
     const requesterIsHead = profile.is_head === true;
 
     // Check if REQUESTING PERSON (from form) is a head
     // This is different from the submitter - the requesting person is who needs the travel
+    // Note: requestingPersonUser may already be fetched in early check above
     let requestingPersonIsHead = false;
-    let requestingPersonUser: any = null;
     if (!isSeminar && travelOrder.requestingPerson) {
-      try {
-        // Find requesting person in database
-        const { data: userData } = await supabase
-          .from("users")
-          .select("id, name, is_head, role, department_id")
-          .ilike("name", `%${travelOrder.requestingPerson}%`)
-          .eq("status", "active")
-          .limit(1)
-          .single();
-        
-        if (userData) {
-          requestingPersonUser = userData;
-          requestingPersonIsHead = userData.is_head === true || userData.role === "head";
+      // If we already fetched requestingPersonUser in early check, use it
+      if (requestingPersonUser) {
+        requestingPersonIsHead = requestingPersonUser.is_head === true || requestingPersonUser.role === "head";
+        console.log("[/api/requests/submit] ✅ Using previously fetched requesting person data");
+      } else {
+        // Otherwise, fetch it now
+        try {
+          const { data: userData } = await supabase
+            .from("users")
+            .select("id, name, is_head, role, department_id")
+            .ilike("name", `%${travelOrder.requestingPerson}%`)
+            .eq("status", "active")
+            .limit(1)
+            .maybeSingle();
+          
+          if (userData) {
+            requestingPersonUser = userData;
+            requestingPersonIsHead = userData.is_head === true || userData.role === "head";
+          }
+        } catch (error) {
+          console.warn("[/api/requests/submit] Could not check if requesting person is head:", error);
+          // Default to false if check fails
+          requestingPersonIsHead = false;
         }
-      } catch (error) {
-        console.warn("[/api/requests/submit] Could not check if requesting person is head:", error);
-        // Default to false if check fails
-        requestingPersonIsHead = false;
       }
     } else if (isSeminar) {
       // For seminars, requesting person is the logged-in user
@@ -318,7 +367,7 @@ export async function POST(req: Request) {
     let initialStatus: string;
     if (requestedStatus === "draft") {
       initialStatus = "draft";
-    } else if (isRepresentative && !isSeminar && travelOrder.requestingPerson) {
+    } else if (mightBeRepresentative && !isSeminar && travelOrder.requestingPerson) {
       // Representative submission: send to requesting person first for signature
       // Status: "pending_requester_signature" or "pending_head" (if requesting person is head)
       if (requestingPersonIsHead) {
@@ -343,12 +392,9 @@ export async function POST(req: Request) {
     const participants = travelOrder.participants || [];
     
     // Determine if this is a representative submission
-    // For seminars, use profile name; for travel orders, use form field
-    const requestingPersonName = isSeminar
-      ? (profile.name || profile.email || "Unknown")
-      : (travelOrder.requestingPerson || profile.name || profile.email || "Unknown");
-    const submitterName = profile.name || profile.email || "Unknown";
-    const isRepresentative = requestingPersonName.trim().toLowerCase() !== submitterName.trim().toLowerCase();
+    // Note: requestingPersonName, submitterName, and mightBeRepresentative already defined above
+    // Use mightBeRepresentative as isRepresentative (they're the same check)
+    const isRepresentative = mightBeRepresentative;
 
     // Build request object
     // For seminar requests, use seminar data; for travel orders, use travelOrder data

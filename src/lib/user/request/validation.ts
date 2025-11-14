@@ -17,11 +17,39 @@ function hasSignature(sig?: string | null): boolean {
   return s.length > 3000;
 }
 
-export function canSubmit(data: RequestFormData, options?: { isRepresentativeSubmission?: boolean }) {
+export function canSubmit(
+  data: RequestFormData, 
+  options?: { 
+    isRepresentativeSubmission?: boolean;
+    currentUserName?: string;
+    requestingPersonName?: string;
+  }
+) {
   const errors: Errors = {};
   const to = (data.travelOrder ?? {}) as NonNullable<RequestFormData["travelOrder"]>;
   const c = (to.costs ?? {}) as NonNullable<typeof to["costs"]>;
-  const isRepresentative = options?.isRepresentativeSubmission ?? false;
+  
+  // Determine if representative submission:
+  // 1. Use explicit flag if provided
+  // 2. Fallback: compare names if both provided
+  let isRepresentative = options?.isRepresentativeSubmission ?? false;
+  
+  // Fallback check: if names don't match, it's representative
+  if (!isRepresentative && options?.currentUserName && options?.requestingPersonName) {
+    const currentName = options.currentUserName.toLowerCase().trim();
+    const requestingName = options.requestingPersonName.toLowerCase().trim();
+    if (currentName !== requestingName) {
+      isRepresentative = true;
+      console.log('[Validation] 🔄 Fallback: Names don\'t match, treating as representative');
+    }
+  }
+  
+  console.log('[Validation] canSubmit called');
+  console.log('  - isRepresentativeSubmission (from flag):', options?.isRepresentativeSubmission);
+  console.log('  - isRepresentativeSubmission (final):', isRepresentative);
+  console.log('  - currentUserName:', options?.currentUserName);
+  console.log('  - requestingPersonName:', options?.requestingPersonName || to.requestingPerson);
+  console.log('  - hasSignature:', hasSignature(to.requesterSignature));
 
   if (!req(to.date)) errors["travelOrder.date"] = "Required";
   if (!req(to.requestingPerson)) errors["travelOrder.requestingPerson"] = "Required";
