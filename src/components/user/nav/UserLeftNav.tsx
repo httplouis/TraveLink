@@ -13,6 +13,7 @@ import {
   IdCard,
   UserRound,
   MessageSquareText,
+  Inbox,
 } from "lucide-react";
 import * as React from "react";
 import { supabase } from "@/lib/supabaseClient";
@@ -53,6 +54,8 @@ const NAV: Item[] = [
     ],
   },
 
+  { type: "link", href: "/user/inbox", label: "Inbox", Icon: Inbox },
+
   { type: "link", href: "/user/vehicles", label: "Vehicles", Icon: Car },
   { type: "link", href: "/user/drivers", label: "Drivers", Icon: IdCard },
   { type: "link", href: "/user/profile", label: "Profile", Icon: UserRound },
@@ -62,6 +65,7 @@ const NAV: Item[] = [
 export default function UserLeftNav() {
   const pathname = usePathname() ?? "";
   const [submissionsCount, setSubmissionsCount] = React.useState(0);
+  const [inboxCount, setInboxCount] = React.useState(0);
   const [hoveredItem, setHoveredItem] = React.useState<string | null>(null);
   const navRefs = React.useRef<Record<string, HTMLElement | null>>({});
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -88,6 +92,31 @@ export default function UserLeftNav() {
 
     fetchCount();
     const interval = setInterval(fetchCount, 30000); // Poll every 30s
+
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  // Real-time polling for inbox count (pending signature requests)
+  React.useEffect(() => {
+    let mounted = true;
+
+    const fetchInboxCount = async () => {
+      try {
+        const res = await fetch("/api/user/inbox/count", { cache: "no-store" });
+        const json = await res.json();
+        if (mounted && json.ok) {
+          setInboxCount(json.pending_count || 0);
+        }
+      } catch (err) {
+        console.error("Failed to fetch inbox count:", err);
+      }
+    };
+
+    fetchInboxCount();
+    const interval = setInterval(fetchInboxCount, 30000); // Poll every 30s
 
     return () => {
       mounted = false;
@@ -252,6 +281,8 @@ export default function UserLeftNav() {
         if (item.type === "link") {
           const active = isActive(item.href, item.exact);
           const isHovered = hoveredItem === item.href;
+          const isInbox = item.href === "/user/inbox";
+          const showBadge = isInbox && inboxCount > 0;
           
           return (
             <Link
@@ -268,7 +299,18 @@ export default function UserLeftNav() {
             >
               <item.Icon className={`h-5 w-5 transition-transform ${active ? "" : "group-hover:scale-110 group-hover:text-white"}`} />
               <span className="flex-1 group-hover:text-white">{item.label}</span>
-              {active && (
+              {showBadge && (
+                <span 
+                  className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-bold transition-all duration-300"
+                  style={{
+                    backgroundColor: (active || isHovered) ? '#ffffff' : '#7a0019',
+                    color: (active || isHovered) ? '#7a0019' : '#ffffff'
+                  }}
+                >
+                  {inboxCount > 9 ? "9+" : inboxCount}
+                </span>
+              )}
+              {active && !showBadge && (
                 <div className="h-2 w-2 rounded-full bg-white/80"></div>
               )}
             </Link>

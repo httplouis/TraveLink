@@ -587,35 +587,70 @@ export default function RequestDetailsModalUI({
                       <tbody>
                         {"food" in row.travelOrder.costs && (row.travelOrder.costs as any).food > 0 && (
                           <tr>
-                            <td className="px-2 py-1">Food</td>
+                            <td className="px-2 py-1">
+                              <div>
+                                <div className="font-medium">Food</div>
+                                {(row.travelOrder.costs as any).foodDescription && (
+                                  <div className="text-xs text-slate-500 mt-0.5">{(row.travelOrder.costs as any).foodDescription}</div>
+                                )}
+                              </div>
+                            </td>
                             <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).food)}</td>
                           </tr>
                         )}
                         {"driversAllowance" in row.travelOrder.costs &&
                           (row.travelOrder.costs as any).driversAllowance > 0 && (
                             <tr>
-                              <td className="px-2 py-1">Driver’s allowance</td>
+                              <td className="px-2 py-1">
+                                <div>
+                                  <div className="font-medium">Driver's allowance</div>
+                                  {(row.travelOrder.costs as any).driversAllowanceDescription && (
+                                    <div className="text-xs text-slate-500 mt-0.5">{(row.travelOrder.costs as any).driversAllowanceDescription}</div>
+                                  )}
+                                </div>
+                              </td>
                               <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).driversAllowance)}</td>
                             </tr>
                           )}
                         {"rentVehicles" in row.travelOrder.costs &&
                           (row.travelOrder.costs as any).rentVehicles > 0 && (
                             <tr>
-                              <td className="px-2 py-1">Rent vehicles</td>
+                              <td className="px-2 py-1">
+                                <div>
+                                  <div className="font-medium">Rent vehicles</div>
+                                  {(row.travelOrder.costs as any).rentVehiclesDescription && (
+                                    <div className="text-xs text-slate-500 mt-0.5">{(row.travelOrder.costs as any).rentVehiclesDescription}</div>
+                                  )}
+                                </div>
+                              </td>
                               <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).rentVehicles)}</td>
                             </tr>
                           )}
                         {"hiredDrivers" in row.travelOrder.costs &&
                           (row.travelOrder.costs as any).hiredDrivers > 0 && (
                             <tr>
-                              <td className="px-2 py-1">Hired drivers</td>
+                              <td className="px-2 py-1">
+                                <div>
+                                  <div className="font-medium">Hired drivers</div>
+                                  {(row.travelOrder.costs as any).hiredDriversDescription && (
+                                    <div className="text-xs text-slate-500 mt-0.5">{(row.travelOrder.costs as any).hiredDriversDescription}</div>
+                                  )}
+                                </div>
+                              </td>
                               <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).hiredDrivers)}</td>
                             </tr>
                           )}
                         {"accommodation" in row.travelOrder.costs &&
                           (row.travelOrder.costs as any).accommodation > 0 && (
                             <tr>
-                              <td className="px-2 py-1">Accommodation</td>
+                              <td className="px-2 py-1">
+                                <div>
+                                  <div className="font-medium">Accommodation</div>
+                                  {(row.travelOrder.costs as any).accommodationDescription && (
+                                    <div className="text-xs text-slate-500 mt-0.5">{(row.travelOrder.costs as any).accommodationDescription}</div>
+                                  )}
+                                </div>
+                              </td>
                               <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).accommodation)}</td>
                             </tr>
                           )}
@@ -625,17 +660,28 @@ export default function RequestDetailsModalUI({
                           (row.travelOrder.costs as any).otherLabel &&
                           (row.travelOrder.costs as any).otherAmount > 0 && (
                             <tr>
-                              <td className="px-2 py-1">{(row.travelOrder.costs as any).otherLabel}</td>
+                              <td className="px-2 py-1">
+                                <div>
+                                  <div className="font-medium">{(row.travelOrder.costs as any).otherLabel}</div>
+                                </div>
+                              </td>
                               <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).otherAmount)}</td>
                             </tr>
                           )}
 
                         {Array.isArray((row.travelOrder.costs as any).otherItems) &&
                           (row.travelOrder.costs as any).otherItems.map(
-                            (item: { label: string; amount: number }, i: number) =>
+                            (item: { label: string; amount: number; description?: string }, i: number) =>
                               item?.amount > 0 && (
                                 <tr key={i}>
-                                  <td className="px-2 py-1">{item.label}</td>
+                                  <td className="px-2 py-1">
+                                    <div>
+                                      <div className="font-medium">{item.label}</div>
+                                      {item.description && (
+                                        <div className="text-xs text-slate-500 mt-0.5">{item.description}</div>
+                                      )}
+                                    </div>
+                                  </td>
                                   <td className="px-2 py-1 text-right">{peso(item.amount)}</td>
                                 </tr>
                               )

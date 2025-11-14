@@ -6,7 +6,7 @@ import { UI_TEXT } from "@/lib/user/request/uiText";
 import { toNumOrNull } from "@/lib/common/number";
 import { AlertTriangle, Trash2, Plus } from "lucide-react";
 
-type OtherItem = { label: string; amount: number | null };
+type OtherItem = { label: string; amount: number | null; description?: string };
 
 type Props = {
   costs: any;
@@ -189,56 +189,105 @@ export default function CostsSection({
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <CurrencyInput
-          label={TXT.food}
-          placeholder={TXT.amountPh}
-          value={costs?.food ?? ""}
-          onChange={(e) => {
-            handleValidation(e.target.value, "Food", (validated) => {
-              onChangeCosts({ food: validated });
-            });
-          }}
-        />
-        <CurrencyInput
-          label={TXT.driversAllowance}
-          placeholder={TXT.amountPh}
-          value={costs?.driversAllowance ?? ""}
-          onChange={(e) => {
-            handleValidation(e.target.value, "Driver's Allowance", (validated) => {
-              onChangeCosts({ driversAllowance: validated });
-            });
-          }}
-        />
-        <CurrencyInput
-          label={TXT.rentVehicles}
-          placeholder={TXT.amountPh}
-          value={costs?.rentVehicles ?? ""}
-          onChange={(e) => {
-            handleValidation(e.target.value, "Rent Vehicles", (validated) => {
-              onChangeCosts({ rentVehicles: validated });
-            });
-          }}
-        />
-        <CurrencyInput
-          label={TXT.hiredDrivers}
-          placeholder={TXT.amountPh}
-          value={costs?.hiredDrivers ?? ""}
-          onChange={(e) => {
-            handleValidation(e.target.value, "Hired Drivers", (validated) => {
-              onChangeCosts({ hiredDrivers: validated });
-            });
-          }}
-        />
-        <CurrencyInput
-          label={TXT.accommodation}
-          placeholder={TXT.amountPh}
-          value={costs?.accommodation ?? ""}
-          onChange={(e) => {
-            handleValidation(e.target.value, "Accommodation", (validated) => {
-              onChangeCosts({ accommodation: validated });
-            });
-          }}
-        />
+        {/* Food */}
+        <div className="space-y-2">
+          <CurrencyInput
+            label={TXT.food}
+            placeholder={TXT.amountPh}
+            value={costs?.food ?? ""}
+            onChange={(e) => {
+              handleValidation(e.target.value, "Food", (validated) => {
+                onChangeCosts({ food: validated });
+              });
+            }}
+          />
+          <TextInput
+            label=""
+            placeholder="e.g., Lunch during seminar, Meals for 2 days"
+            value={costs?.foodDescription ?? ""}
+            onChange={(e) => onChangeCosts({ foodDescription: e.target.value })}
+          />
+        </div>
+
+        {/* Driver's Allowance */}
+        <div className="space-y-2">
+          <CurrencyInput
+            label={TXT.driversAllowance}
+            placeholder={TXT.amountPh}
+            value={costs?.driversAllowance ?? ""}
+            onChange={(e) => {
+              handleValidation(e.target.value, "Driver's Allowance", (validated) => {
+                onChangeCosts({ driversAllowance: validated });
+              });
+            }}
+          />
+          <TextInput
+            label=""
+            placeholder="e.g., Daily allowance for driver"
+            value={costs?.driversAllowanceDescription ?? ""}
+            onChange={(e) => onChangeCosts({ driversAllowanceDescription: e.target.value })}
+          />
+        </div>
+
+        {/* Rent Vehicles */}
+        <div className="space-y-2">
+          <CurrencyInput
+            label={TXT.rentVehicles}
+            placeholder={TXT.amountPh}
+            value={costs?.rentVehicles ?? ""}
+            onChange={(e) => {
+              handleValidation(e.target.value, "Rent Vehicles", (validated) => {
+                onChangeCosts({ rentVehicles: validated });
+              });
+            }}
+          />
+          <TextInput
+            label=""
+            placeholder="e.g., Van rental for 3 days"
+            value={costs?.rentVehiclesDescription ?? ""}
+            onChange={(e) => onChangeCosts({ rentVehiclesDescription: e.target.value })}
+          />
+        </div>
+
+        {/* Hired Drivers */}
+        <div className="space-y-2">
+          <CurrencyInput
+            label={TXT.hiredDrivers}
+            placeholder={TXT.amountPh}
+            value={costs?.hiredDrivers ?? ""}
+            onChange={(e) => {
+              handleValidation(e.target.value, "Hired Drivers", (validated) => {
+                onChangeCosts({ hiredDrivers: validated });
+              });
+            }}
+          />
+          <TextInput
+            label=""
+            placeholder="e.g., Hired driver for long-distance travel"
+            value={costs?.hiredDriversDescription ?? ""}
+            onChange={(e) => onChangeCosts({ hiredDriversDescription: e.target.value })}
+          />
+        </div>
+
+        {/* Accommodation */}
+        <div className="space-y-2">
+          <CurrencyInput
+            label={TXT.accommodation}
+            placeholder={TXT.amountPh}
+            value={costs?.accommodation ?? ""}
+            onChange={(e) => {
+              handleValidation(e.target.value, "Accommodation", (validated) => {
+                onChangeCosts({ accommodation: validated });
+              });
+            }}
+          />
+          <TextInput
+            label=""
+            placeholder="e.g., Hotel for 2 nights, Lodging expenses"
+            value={costs?.accommodationDescription ?? ""}
+            onChange={(e) => onChangeCosts({ accommodationDescription: e.target.value })}
+          />
+        </div>
 
         {/* Dynamic Other expenses - Enhanced */}
         <div className="md:col-span-2">
@@ -248,10 +297,10 @@ export default function CostsSection({
               <button
                 type="button"
                 onClick={addOther}
-                className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-maroon-600 to-maroon-700 px-4 py-2 text-sm font-semibold text-white shadow-md transition-all hover:from-maroon-700 hover:to-maroon-800 hover:shadow-lg"
+                className="flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-[#7A0010] to-[#5A0010] px-4 py-2 text-sm font-semibold text-white shadow-md transition-all hover:from-[#8A0010] hover:to-[#6A0010] hover:shadow-lg active:scale-[0.98]"
               >
-                <Plus className="h-4 w-4" strokeWidth={2.5} />
-                Add Expense
+                <Plus className="h-4 w-4 text-white" strokeWidth={2.5} />
+                <span className="text-white">Add Expense</span>
               </button>
             </div>
 
@@ -265,32 +314,40 @@ export default function CostsSection({
 
               {otherItems.map((row, idx) => (
                 <div key={idx} className="rounded-lg border-2 border-gray-200 bg-gradient-to-br from-gray-50 to-white p-4 shadow-sm transition-all hover:border-gray-300">
-                  <div className="grid grid-cols-[1fr_180px_50px] gap-3 items-end">
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-[1fr_180px_50px] gap-3 items-end">
+                      <TextInput
+                        label={idx === 0 ? TXT.otherLabel : ""}         
+                        placeholder={TXT.otherLabelPh}
+                        value={row.label}
+                        onChange={(e) => updateOther(idx, { label: e.target.value })}
+                      />
+                      <CurrencyInput
+                        label={idx === 0 ? TXT.otherAmount : ""}       
+                        placeholder={TXT.amountPh}
+                        value={row.amount ?? ""}
+                        onChange={(e) => {
+                          handleValidation(e.target.value, row.label || "Other Expense", (validated) => {
+                            updateOther(idx, { amount: validated });
+                          });
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeOther(idx)}
+                        className="mb-0.5 flex h-10 w-10 items-center justify-center rounded-lg border-2 border-red-200 bg-red-50 text-red-600 transition-all hover:border-red-300 hover:bg-red-100"
+                        aria-label="Remove"
+                        title="Remove"
+                      >
+                        <Trash2 className="h-4 w-4" strokeWidth={2.5} />
+                      </button>
+                    </div>
                     <TextInput
-                      label={idx === 0 ? TXT.otherLabel : ""}         
-                      placeholder={TXT.otherLabelPh}
-                      value={row.label}
-                      onChange={(e) => updateOther(idx, { label: e.target.value })}
+                      label=""
+                      placeholder="e.g., Details or justification for this expense"
+                      value={row.description ?? ""}
+                      onChange={(e) => updateOther(idx, { description: e.target.value })}
                     />
-                    <CurrencyInput
-                      label={idx === 0 ? TXT.otherAmount : ""}       
-                      placeholder={TXT.amountPh}
-                      value={row.amount ?? ""}
-                      onChange={(e) => {
-                        handleValidation(e.target.value, row.label || "Other Expense", (validated) => {
-                          updateOther(idx, { amount: validated });
-                        });
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeOther(idx)}
-                      className="mb-0.5 flex h-10 w-10 items-center justify-center rounded-lg border-2 border-red-200 bg-red-50 text-red-600 transition-all hover:border-red-300 hover:bg-red-100"
-                      aria-label="Remove"
-                      title="Remove"
-                    >
-                      <Trash2 className="h-4 w-4" strokeWidth={2.5} />
-                    </button>
                   </div>
                 </div>
               ))}

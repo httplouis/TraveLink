@@ -13,6 +13,9 @@ export default function SubmitBar({
   headName,
   department,
   isHeadRequester,
+  requestingPersonIsHead,
+  isRepresentativeSubmission,
+  requestingPersonName,
   vehicleMode,
   errors,
   onGoToField,
@@ -25,6 +28,9 @@ export default function SubmitBar({
   headName?: string;
   department?: string;
   isHeadRequester?: boolean;
+  requestingPersonIsHead?: boolean | null;
+  isRepresentativeSubmission?: boolean;
+  requestingPersonName?: string;
   vehicleMode?: "owned" | "institutional" | "rent";
   errors?: Record<string, string>;
   onGoToField?: (fieldKey: string) => void;
@@ -43,25 +49,44 @@ export default function SubmitBar({
       }
     }
   };
-  // Determine button text based on role
-  const submitButtonText = isHeadRequester 
-    ? (vehicleMode === "institutional" ? "Send to Transport Manager" : "Send to Comptroller")
+  // Determine button text based on role and requesting person
+  // If representative submission (requesting person ≠ submitter), send to requesting person first
+  // If requesting person is NOT a head, send to their department head first
+  // If requesting person IS a head, can go directly to admin
+  const submitButtonText = isRepresentativeSubmission
+    ? `Send to ${requestingPersonName || "Requesting Person"}`
+    : requestingPersonIsHead === true || isHeadRequester
+    ? (vehicleMode === "institutional" ? "Send to Transport Manager" : "Send to Admin")
     : "Send to Department Head";
   
   // Determine helper text
-  const helperRecipient = isHeadRequester
-    ? (vehicleMode === "institutional" ? "Transport Manager" : "Comptroller")
-    : "your department head";
+  const helperRecipient = isRepresentativeSubmission
+    ? requestingPersonName || "requesting person"
+    : requestingPersonIsHead === true || isHeadRequester
+    ? (vehicleMode === "institutional" ? "Transport Manager" : "Admin")
+    : "department head";
   
   return (
     <div className="sticky bottom-3 z-30 mt-2 flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-lg">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-semibold text-gray-900">Ready to submit?</p>
-          {isHeadRequester ? (
+          {isRepresentativeSubmission ? (
             <p className="flex items-center gap-1.5 text-xs text-gray-500">
               <Send className="h-3.5 w-3.5" />
-              Your request will be sent to {helperRecipient}
+              Will be sent to: <span className="font-medium text-[#7A0010]">{requestingPersonName || "Requesting Person"}</span>
+              <span className="text-gray-400 ml-1">(for signature and approval)</span>
+            </p>
+          ) : requestingPersonIsHead === true || isHeadRequester ? (
+            <p className="flex items-center gap-1.5 text-xs text-gray-500">
+              <Send className="h-3.5 w-3.5" />
+              Request will be sent to {helperRecipient}
+            </p>
+          ) : requestingPersonIsHead === false && headName && department ? (
+            <p className="flex items-center gap-1.5 text-xs text-gray-500">
+              <Send className="h-3.5 w-3.5" />
+              Will be sent to: <span className="font-medium text-[#7A0010]">{headName}</span> ({department})
+              <span className="text-gray-400 ml-1">(for signature)</span>
             </p>
           ) : headName && department ? (
             <p className="flex items-center gap-1.5 text-xs text-gray-500">

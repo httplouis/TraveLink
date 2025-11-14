@@ -19,6 +19,8 @@ type ViewProps = {
 
   // extra props
   isHeadRequester?: boolean;
+  isRepresentativeSubmission?: boolean;
+  requestingPersonHeadName?: string; // Head name for requesting person's department
   currentUserName?: string;
 };
 
@@ -32,9 +34,18 @@ export default function TravelOrderFormView({
   setHeadEdited,
   footerRight,
   isHeadRequester,
+  isRepresentativeSubmission,
+  requestingPersonHeadName,
   currentUserName,
 }: ViewProps) {
   const c = data?.costs || {};
+
+  // Debug: Log props
+  React.useEffect(() => {
+    console.log('[TravelOrderFormView] Props received:');
+    console.log('  - isRepresentativeSubmission:', isRepresentativeSubmission);
+    console.log('  - isHeadRequester:', isHeadRequester);
+  }, [isRepresentativeSubmission, isHeadRequester]);
 
   return (
     <section className="rounded-2xl border-2 border-gray-200 bg-gradient-to-br from-white via-gray-50/30 to-white p-7 shadow-xl">
@@ -55,6 +66,7 @@ export default function TravelOrderFormView({
         onChange={onChange}
         onDepartmentChange={onDepartmentChange}
         isHeadRequester={isHeadRequester}
+        isRepresentativeSubmission={isRepresentativeSubmission}
       />
 
       <CostsSection
@@ -66,7 +78,9 @@ export default function TravelOrderFormView({
 
       {/* Head details + (optionally) signature kapag head mismo nagrerequest */}
       <EndorsementSection
-        nameValue={data?.endorsedByHeadName ?? ""}
+        nameValue={isRepresentativeSubmission && requestingPersonHeadName 
+          ? requestingPersonHeadName 
+          : (data?.endorsedByHeadName ?? "")}
         dateValue={data?.endorsedByHeadDate ?? ""}
         onNameChange={(v) => {
           setHeadEdited();

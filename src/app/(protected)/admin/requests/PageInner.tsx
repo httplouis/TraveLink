@@ -417,21 +417,36 @@ export default function PageInner() {
             const breakdown = remoteReq.expense_breakdown || [];
             const costs: any = {};
             
-            // Map items to expected field names
+            // Map items to expected field names and descriptions
             breakdown.forEach((item: any) => {
               const itemName = item.item?.toLowerCase() || '';
               
-              if (itemName === 'food') costs.food = item.amount;
-              else if (itemName === 'accommodation') costs.accommodation = item.amount;
-              else if (itemName.includes('driver')) costs.driversAllowance = item.amount;
-              else if (itemName.includes('rent') || itemName.includes('vehicle')) costs.rentVehicles = item.amount;
-              else if (itemName === 'other' && item.description) {
+              if (itemName === 'food') {
+                costs.food = item.amount;
+                if (item.description) costs.foodDescription = item.description;
+              } else if (itemName === 'accommodation') {
+                costs.accommodation = item.amount;
+                if (item.description) costs.accommodationDescription = item.description;
+              } else if (itemName.includes('driver') && itemName.includes('allowance')) {
+                costs.driversAllowance = item.amount;
+                if (item.description) costs.driversAllowanceDescription = item.description;
+              } else if (itemName.includes('hired') && itemName.includes('driver')) {
+                costs.hiredDrivers = item.amount;
+                if (item.description) costs.hiredDriversDescription = item.description;
+              } else if (itemName.includes('rent') || itemName.includes('vehicle') || itemName.includes('transport')) {
+                costs.rentVehicles = item.amount;
+                if (item.description) costs.rentVehiclesDescription = item.description;
+              } else if (itemName === 'other' && item.description) {
                 costs.otherLabel = item.description;
                 costs.otherAmount = item.amount;
               } else if (itemName !== '') {
                 // Store as other with item name as label
-                costs.otherLabel = item.item;
-                costs.otherAmount = item.amount;
+                if (!costs.otherItems) costs.otherItems = [];
+                costs.otherItems.push({
+                  label: item.item,
+                  amount: item.amount,
+                  description: item.description
+                });
               }
             });
             

@@ -69,6 +69,18 @@ function RequestWizardContent() {
   const [errors, setErrors] = React.useState<Record<string, string>>({});
   const [submitting, setSubmitting] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
+  const [requestingPersonIsHead, setRequestingPersonIsHead] = React.useState<boolean | null>(null);
+  const [requestingPersonHeadInfo, setRequestingPersonHeadInfo] = React.useState<{
+    name: string;
+    department: string;
+  } | null>(null);
+  const [requestingPersonInfo, setRequestingPersonInfo] = React.useState<{
+    id: string;
+    name: string;
+    department: string;
+    departmentId: string;
+  } | null>(null);
+  const [isRepresentativeSubmission, setIsRepresentativeSubmission] = React.useState(false);
 
   const showSeminar = data.reason === "seminar";
   const showSchoolService = data.vehicleMode === "institutional";
@@ -168,6 +180,237 @@ function RequestWizardContent() {
     }
   }, [currentUser]);
 
+  // Check if requesting person is a head when requesting person or department changes
+  React.useEffect(() => {
+    console.log('[RequestWizard] 🔄 useEffect triggered');
+    console.log('  - requestingPerson:', data.travelOrder?.requestingPerson);
+    console.log('  - currentUser?.name:', currentUser?.name);
+    console.log('  - userLoading:', userLoading);
+    
+    const checkRequestingPerson = async () => {
+      const requestingPerson = data.travelOrder?.requestingPerson;
+      
+      if (!requestingPerson || requestingPerson.trim() === "") {
+        console.log('[RequestWizard] ⚠️ No requesting person, setting to false');
+        setRequestingPersonIsHead(null);
+        setRequestingPersonHeadInfo(null);
+        setRequestingPersonInfo(null);
+        setIsRepresentativeSubmission(false);
+        return;
+      }
+
+      try {
+        // First, get department ID from department name if available
+        let deptId = null;
+        if (data.travelOrder?.department) {
+          const deptResponse = await fetch(`/api/departments?name=${encodeURIComponent(data.travelOrder.department)}`);
+          const deptData = await deptResponse.json();
+          if (deptData.ok && deptData.departments?.[0]) {
+            deptId = deptData.departments[0].id;
+          }
+        }
+
+        const response = await fetch("/api/users/check-head", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            requestingPersonName: requestingPerson,
+            departmentId: deptId,
+          }),
+        });
+
+        const result = await response.json();
+        if (result.ok && result.user) {
+          setRequestingPersonIsHead(result.isHead);
+          
+          // Store requesting person info - ALWAYS use requester's department
+          const requesterDepartment = result.user.department || "";
+          setRequestingPersonInfo({
+            id: result.user.id,
+            name: result.user.name || requestingPerson,
+            department: requesterDepartment,
+            departmentId: result.user.department_id || "",
+          });
+
+          // Check if requesting person is different from logged-in user
+          // Compare by user ID first (most reliable), then by name
+          const requestingPersonNameFromDB = result.user.name || requestingPerson;
+          const requestingPersonId = result.user.id;
+          
+          // If currentUser is null but userLoading is false, try to fetch current user info
+          let actualCurrentUser = currentUser;
+          if (!actualCurrentUser && !userLoading) {
+            try {
+              // Try to get current user from API
+              const currentUserResponse = await fetch("/api/profile");
+              const currentUserData = await currentUserResponse.json();
+              if (currentUserData.ok && currentUserData.data) {
+                actualCurrentUser = {
+                  id: currentUserData.data.id,
+                  email: currentUserData.data.email,
+                  name: currentUserData.data.name,
+                  role: currentUserData.data.role,
+                  department: currentUserData.data.department,
+                };
+                console.log('[RequestWizard] Fetched current user from API:', actualCurrentUser);
+              }
+            } catch (error) {
+              console.warn('[RequestWizard] Failed to fetch current user from API:', error);
+            }
+          }
+          
+          // Check if it's the same person by comparing IDs or names
+          const isSamePersonById = actualCurrentUser?.id && requestingPersonId && actualCurrentUser.id === requestingPersonId;
+          const isSamePersonByName = actualCurrentUser?.name && 
+            actualCurrentUser.name.toLowerCase().trim() === requestingPersonNameFromDB.toLowerCase().trim();
+          
+          // It's the same person if either ID or name matches
+          const isSamePerson = isSamePersonById || isSamePersonByName;
+          
+          // It's a representative submission if:
+          // 1. Current user exists AND requesting person is different (not same by ID or name)
+          // 2. If current user doesn't exist, compare by name only (fallback)
+          // 3. If still can't determine, default to false (show signature pad - safer for self-requests)
+          let finalIsDifferent = false;
+          if (actualCurrentUser) {
+            finalIsDifferent = !isSamePerson;  // User exists: check if different (not same person)
+          } else {
+            // No current user info available - compare requesting person name with what we might know
+            // If requesting person name looks like it could be the current user, default to false (not representative)
+            // Otherwise, we can't determine, so default to false (show signature pad - safer)
+            console.log('[RequestWizard] ⚠️ No current user info available, defaulting to NOT representative (show signature pad)');
+            finalIsDifferent = false;
+          }
+          
+          console.log('[RequestWizard] Checking representative submission:');
+          console.log('  - Current user ID (from hook):', currentUser?.id);
+          console.log('  - Current user name (from hook):', currentUser?.name);
+          console.log('  - Actual current user ID:', actualCurrentUser?.id);
+          console.log('  - Actual current user name:', actualCurrentUser?.name);
+          console.log('  - Requesting person ID:', requestingPersonId);
+          console.log('  - Requesting person name (from DB):', requestingPersonNameFromDB);
+          console.log('  - Is same person (by ID)?', isSamePersonById);
+          console.log('  - Is same person (by name)?', isSamePersonByName);
+          console.log('  - Is same person (overall)?', isSamePerson);
+          console.log('  - Is representative submission?', finalIsDifferent);
+          setIsRepresentativeSubmission(finalIsDifferent);
+
+          // ALWAYS update department to requesting person's department (requester's department)
+          // This ensures the department matches the requester, not the current user
+          if (requesterDepartment) {
+            if (requesterDepartment !== data.travelOrder?.department) {
+              console.log('[RequestWizard] 🔄 Updating department to requester\'s department:', requesterDepartment);
+              patchTravelOrder({ department: requesterDepartment });
+            } else {
+              console.log('[RequestWizard] ✅ Department already matches requester\'s department:', requesterDepartment);
+            }
+          }
+          
+          // If requesting person is NOT a head, find their department head (requester's department head)
+          if (!result.isHead && result.user?.department_id) {
+            const headResponse = await fetch(`/api/approvers?departmentId=${result.user.department_id}`);
+            const headData = await headResponse.json();
+            if (headData.ok && headData.heads?.[0]) {
+              setRequestingPersonHeadInfo({
+                name: headData.heads[0].name || "Department Head",
+                department: headData.heads[0].department || requesterDepartment || "",
+              });
+            } else {
+              setRequestingPersonHeadInfo({
+                name: "Department Head",
+                department: requesterDepartment || "",
+              });
+            }
+          } else {
+            setRequestingPersonHeadInfo(null);
+          }
+        } else {
+          // User not found in database, compare by name only
+          // Try to get current user info if not available
+          let actualCurrentUser = currentUser;
+          if (!actualCurrentUser && !userLoading) {
+            try {
+              const currentUserResponse = await fetch("/api/profile");
+              const currentUserData = await currentUserResponse.json();
+              if (currentUserData.ok && currentUserData.data) {
+                actualCurrentUser = {
+                  id: currentUserData.data.id,
+                  email: currentUserData.data.email,
+                  name: currentUserData.data.name,
+                  role: currentUserData.data.role,
+                  department: currentUserData.data.department,
+                };
+              }
+            } catch (error) {
+              console.warn('[RequestWizard] Failed to fetch current user from API:', error);
+            }
+          }
+          
+          // If current user is loaded, check if names match
+          const isSamePersonByName = actualCurrentUser?.name && 
+            actualCurrentUser.name.toLowerCase().trim() === requestingPerson.toLowerCase().trim();
+          const finalIsDifferent = actualCurrentUser 
+            ? !isSamePersonByName  // User exists: check if different by name
+            : false;  // User not available: default to NOT representative (show signature pad - safer)
+          setIsRepresentativeSubmission(finalIsDifferent);
+          setRequestingPersonIsHead(null);
+          setRequestingPersonHeadInfo(null);
+          setRequestingPersonInfo(null);
+        }
+      } catch (error) {
+        console.error("Failed to check requesting person:", error);
+        // Still check if different from current user even if API fails
+        // Try to get current user info if not available
+        let actualCurrentUser = currentUser;
+        if (!actualCurrentUser && !userLoading) {
+          try {
+            const currentUserResponse = await fetch("/api/profile");
+            const currentUserData = await currentUserResponse.json();
+            if (currentUserData.ok && currentUserData.data) {
+              actualCurrentUser = {
+                id: currentUserData.data.id,
+                email: currentUserData.data.email,
+                name: currentUserData.data.name,
+                role: currentUserData.data.role,
+                department: currentUserData.data.department,
+              };
+            }
+          } catch (fetchError) {
+            console.warn('[RequestWizard] Failed to fetch current user from API:', fetchError);
+          }
+        }
+        
+        // Compare by name only if API fails
+        const isSamePersonByName = actualCurrentUser?.name && 
+          actualCurrentUser.name.toLowerCase().trim() === requestingPerson.toLowerCase().trim();
+        const finalIsDifferent = actualCurrentUser 
+          ? !isSamePersonByName  // User exists: check if different by name
+          : false;  // User not available: default to NOT representative (show signature pad - safer)
+        setIsRepresentativeSubmission(finalIsDifferent);
+        setRequestingPersonIsHead(null);
+        setRequestingPersonHeadInfo(null);
+        setRequestingPersonInfo(null);
+      }
+    };
+
+    // Wait for user to load first - we need currentUser to properly determine if it's representative
+    if (userLoading) {
+      console.log('[RequestWizard] ⏳ Waiting for user to load...');
+      // While loading, don't set representative yet - will be determined once user loads
+      // This prevents hiding signature pad prematurely
+      return;
+    }
+    
+    // Check if we have requesting person - we need both to compare properly
+    if (data.travelOrder?.requestingPerson) {
+      console.log('[RequestWizard] ✅ Requesting person available, running check...');
+      checkRequestingPerson();
+    } else {
+      console.log('[RequestWizard] ⚠️ No requesting person, setting to false');
+      setIsRepresentativeSubmission(false);
+    }
+  }, [data.travelOrder?.requestingPerson, data.travelOrder?.department, currentUser?.id, currentUser?.name, userLoading]);
+
   // autosave on change (debounced)
   React.useEffect(() => {
     const id = setTimeout(() => saveAutosave(data), 400);
@@ -217,7 +460,26 @@ function RequestWizardContent() {
   }
 
   // pass patchers (latest state inside store)
-  const onChangeTravelOrder = (p: any) => patchTravelOrder(p);
+  const onChangeTravelOrder = (p: any) => {
+    patchTravelOrder(p);
+    
+    // Immediately check if requesting person changed and if it's different from current user
+    // Note: This is a quick check by name only, but the full check in useEffect will run after API call with ID comparison
+    if (p.requestingPerson !== undefined) {
+      if (currentUser?.name) {
+        // Quick check by name - full check with ID will happen in useEffect
+        const isSamePersonByName = currentUser.name.toLowerCase().trim() === p.requestingPerson.toLowerCase().trim();
+        const isDifferent = !isSamePersonByName;
+        console.log('[RequestWizard] 🚀 Immediate check on onChange (by name):');
+        console.log('  - Current user:', currentUser.name);
+        console.log('  - New requesting person:', p.requestingPerson);
+        console.log('  - Is different?', isDifferent);
+        setIsRepresentativeSubmission(isDifferent);
+      }
+      // If currentUser is not loaded yet, don't set it here - let useEffect handle it with full API check
+      // This prevents incorrect assumptions
+    }
+  };
   const onChangeCosts = (p: any) => patchCosts(p);
   const onChangeSchoolService = (p: any) => patchSchoolService(p);
   const onChangeSeminar = (p: any) => patchSeminar(p);
@@ -481,6 +743,8 @@ function RequestWizardContent() {
               errors={errors}
               vehicleMode={data.vehicleMode}
               isHeadRequester={currentUser?.role === "head"}
+              isRepresentativeSubmission={isRepresentativeSubmission}
+              requestingPersonHeadName={requestingPersonHeadInfo?.name}
               currentUserName={currentUser?.name}
             />
           )}
@@ -509,9 +773,21 @@ function RequestWizardContent() {
             submitting={submitting}
             onSaveDraft={handleSaveDraft}
             onSubmit={handleSubmit}
-            headName={data.travelOrder?.endorsedByHeadName}
-            department={data.travelOrder?.department}
-            isHeadRequester={currentUser?.role === "head"}
+            headName={
+              requestingPersonIsHead === false && requestingPersonHeadInfo
+                ? requestingPersonHeadInfo.name
+                : requestingPersonHeadInfo?.name || data.travelOrder?.endorsedByHeadName
+            }
+            department={
+              // ALWAYS use requester's department (from requestingPersonInfo or requestingPersonHeadInfo)
+              requestingPersonInfo?.department || 
+              requestingPersonHeadInfo?.department || 
+              data.travelOrder?.department
+            }
+            isHeadRequester={requestingPersonIsHead === true || currentUser?.role === "head"}
+            requestingPersonIsHead={requestingPersonIsHead}
+            isRepresentativeSubmission={isRepresentativeSubmission}
+            requestingPersonName={data.travelOrder?.requestingPerson}
             vehicleMode={data.vehicleMode}
             errors={validation.errors}
             onGoToField={(fieldKey) => {
