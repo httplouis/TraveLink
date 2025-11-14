@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import * as React from "react";
 import DashboardView from "./DashboardView";
 import CommandPalette from "@/components/common/CommandPalette";
 import type { Trip } from "@/lib/user/schedule/types";
@@ -15,6 +16,19 @@ const KPIS = [
 export default function DashboardContainer() {
   const router = useRouter();
   const trips: Trip[] = MOCK_TRIPS;
+  const [vehicles, setVehicles] = React.useState<any[]>([]);
+
+  React.useEffect(() => {
+    // Fetch available vehicles for dashboard showcase
+    fetch('/api/vehicles?status=available')
+      .then(res => res.json())
+      .then(data => {
+        if (data.ok) {
+          setVehicles(data.data || []);
+        }
+      })
+      .catch(err => console.error('Failed to fetch vehicles:', err));
+  }, []);
 
   return (
     <>
@@ -29,6 +43,7 @@ export default function DashboardContainer() {
       <DashboardView
         kpis={KPIS}
         trips={trips}
+        vehicles={vehicles}
         userName="Jose"
         onOpenSchedule={() => router.push("/user/schedule")}
         onNewRequest={() => router.push("/user/request")}

@@ -71,6 +71,9 @@ END $$;
 -- ============================================
 -- 3. FUNCTION: Check if all participants confirmed
 -- ============================================
+-- Drop function if exists (for re-running the script)
+DROP FUNCTION IF EXISTS check_all_participants_confirmed(UUID);
+
 CREATE OR REPLACE FUNCTION check_all_participants_confirmed(request_uuid UUID)
 RETURNS BOOLEAN AS $$
 DECLARE
@@ -96,6 +99,14 @@ $$ LANGUAGE plpgsql;
 -- ============================================
 -- 4. TRIGGER: Auto-update all_participants_confirmed
 -- ============================================
+-- IMPORTANT: Drop trigger FIRST, then function (because trigger depends on function)
+-- Drop trigger if it already exists (for re-running the script)
+DROP TRIGGER IF EXISTS trigger_update_participants_confirmed ON public.participant_invitations;
+
+-- Drop function if exists (for re-running the script)
+DROP FUNCTION IF EXISTS update_participants_confirmed_status();
+
+-- Create function
 CREATE OR REPLACE FUNCTION update_participants_confirmed_status()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -107,6 +118,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Create trigger (after function is created)
 CREATE TRIGGER trigger_update_participants_confirmed
 AFTER INSERT OR UPDATE OF status ON public.participant_invitations
 FOR EACH ROW

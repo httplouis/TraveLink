@@ -6,6 +6,7 @@ import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import { Users, UserCircle, User, Car, UserCog } from "lucide-react";
 import { useToast } from "@/components/common/ui/Toast";
 import ApproverSelectionModal from "@/components/common/ApproverSelectionModal";
+import { NameWithProfile } from "@/components/common/ProfileHoverCard";
 
 type Props = {
   request: any;
@@ -364,7 +365,17 @@ export default function HeadRequestModal({
                     <div>
                       <div className="flex items-center gap-2 mb-1">
                         <p className="text-base font-semibold text-slate-900">
-                          {t.requester_name || "Unknown Requester"}
+                          <NameWithProfile
+                            name={t.requester_name || "Unknown Requester"}
+                            profile={{
+                              id: t.requester?.id || '',
+                              name: t.requester_name || '',
+                              email: t.requester?.email,
+                              department: t.department?.name || t.department?.code,
+                              position: t.requester?.position_title,
+                              profile_picture: t.requester?.profile_picture,
+                            }}
+                          />
                         </p>
                         <span className="text-[10px] font-medium uppercase tracking-wider text-slate-500 bg-slate-50 px-2 py-1 rounded border border-slate-200">
                           On behalf
@@ -377,7 +388,19 @@ export default function HeadRequestModal({
                   </div>
                   <div className="pl-[52px] border-l-2 border-slate-100 ml-5">
                     <p className="text-xs text-slate-500 mb-1">Submitted by</p>
-                    <p className="text-sm font-medium text-slate-900">{t.submitted_by_name}</p>
+                    <p className="text-sm font-medium text-slate-900">
+                      <NameWithProfile
+                        name={t.submitted_by_name}
+                        profile={{
+                          id: t.requester?.id || '',
+                          name: t.submitted_by_name,
+                          email: t.requester?.email,
+                          department: t.department?.name || t.department?.code,
+                          position: t.requester?.position_title,
+                          profile_picture: t.requester?.profile_picture,
+                        }}
+                      />
+                    </p>
                   </div>
                 </div>
               ) : (
@@ -387,7 +410,17 @@ export default function HeadRequestModal({
                   </div>
                   <div>
                     <p className="text-base font-semibold text-slate-900 mb-1">
-                      {t.requester_name || t.requester?.name || t.requester?.email || "Unknown Requester"}
+                      <NameWithProfile
+                        name={t.requester_name || t.requester?.name || t.requester?.email || "Unknown Requester"}
+                        profile={{
+                          id: t.requester?.id || '',
+                          name: t.requester_name || t.requester?.name || '',
+                          email: t.requester?.email,
+                          department: t.department?.name || t.department?.code,
+                          position: t.requester?.position_title,
+                          profile_picture: t.requester?.profile_picture,
+                        }}
+                      />
                     </p>
                     <p className="text-sm text-slate-600">
                       {t.department?.name || t.department?.code || "No department indicated"}

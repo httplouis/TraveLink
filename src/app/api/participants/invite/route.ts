@@ -69,6 +69,15 @@ export async function POST(req: NextRequest) {
       expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiration
 
       // Create new invitation
+      console.log(`[POST /api/participants/invite] 📝 Creating invitation with:`, {
+        request_id,
+        email: email.toLowerCase(),
+        invited_by: profile.id,
+        token_length: token.length,
+        expires_at: expiresAt.toISOString(),
+        status: 'pending',
+      });
+
       const { data: newInvitation, error: inviteError } = await supabase
         .from("participant_invitations")
         .insert({
@@ -83,12 +92,22 @@ export async function POST(req: NextRequest) {
         .single();
 
       if (inviteError) {
-        console.error("[POST /api/participants/invite] Error:", inviteError);
+        console.error("[POST /api/participants/invite] ❌ Database Error:", inviteError);
+        console.error("[POST /api/participants/invite] ❌ Error Code:", inviteError.code);
+        console.error("[POST /api/participants/invite] ❌ Error Details:", inviteError.details);
+        console.error("[POST /api/participants/invite] ❌ Error Hint:", inviteError.hint);
         return NextResponse.json(
-          { ok: false, error: inviteError.message },
+          { 
+            ok: false, 
+            error: inviteError.message || "Failed to create invitation",
+            details: inviteError.details,
+            hint: inviteError.hint,
+          },
           { status: 500 }
         );
       }
+
+      console.log(`[POST /api/participants/invite] ✅ Invitation created:`, newInvitation?.id);
 
       invitation = newInvitation;
     }
@@ -172,9 +191,14 @@ export async function POST(req: NextRequest) {
       alreadyExists: alreadyExists,
     });
   } catch (err: any) {
-    console.error("[POST /api/participants/invite] Unexpected error:", err);
+    console.error("[POST /api/participants/invite] ❌ Unexpected error:", err);
+    console.error("[POST /api/participants/invite] ❌ Error stack:", err.stack);
     return NextResponse.json(
-      { ok: false, error: err.message || "Internal server error" },
+      { 
+        ok: false, 
+        error: err.message || "Internal server error",
+        stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+      },
       { status: 500 }
     );
   }

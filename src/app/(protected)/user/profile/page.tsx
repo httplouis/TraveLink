@@ -16,30 +16,52 @@ export default function ProfilePage() {
   const fetchProfile = async () => {
     try {
       setLoading(true);
+      
+      // First, try to force update if name is missing
+      const currentResponse = await fetch('/api/profile');
+      const currentData = await currentResponse.json();
+      
+      if (currentData.ok && (!currentData.data.name || currentData.data.name === currentData.data.email?.split("@")[0])) {
+        // Name is missing or just email prefix, try to force update
+        console.log('[ProfilePage] Name missing, attempting force update...');
+        try {
+          await fetch('/api/profile/force-update', { method: 'POST' });
+          // Wait a bit for update to complete
+          await new Promise(resolve => setTimeout(resolve, 500));
+        } catch (updateError) {
+          console.warn('[ProfilePage] Force update failed:', updateError);
+        }
+      }
+      
+      // Fetch profile again after potential update
       const response = await fetch('/api/profile');
       const data = await response.json();
       
       if (data.ok) {
         // Transform API data to ProfilePage format
         const transformed = {
-          name: data.data.name || `${data.data.firstName} ${data.data.lastName}`.trim(),
+          name: data.data.name || `${data.data.firstName} ${data.data.lastName}`.trim() || data.data.email?.split("@")[0] || "User",
           email: data.data.email,
-          phone_number: data.data.phone,
-          department: data.data.department,
-          position_title: data.data.position_title,
-          employee_id: data.data.employeeId,
-          bio: data.data.bio,
-          profile_picture: data.data.avatarUrl || data.data.profile_picture,
+          phone_number: data.data.phone || null,
+          department: data.data.department || null, // Now returns department name
+          position_title: data.data.position_title || null, // Now includes position_title
+          employee_id: data.data.employeeId || data.data.id,
+          bio: data.data.bio || null,
+          profile_picture: data.data.avatarUrl || data.data.profile_picture || null,
           roles: {
             is_user: true,
-            is_head: data.data.is_head,
-            is_admin: data.data.is_admin,
-            is_comptroller: data.data.is_comptroller,
-            is_hr: data.data.is_hr,
-            is_executive: data.data.is_executive
+            is_head: data.data.is_head || false,
+            is_admin: data.data.is_admin || false,
+            is_comptroller: data.data.is_comptroller || false,
+            is_hr: data.data.is_hr || false,
+            is_executive: data.data.is_executive || false
           }
         };
+        console.log('[ProfilePage] Transformed data:', transformed);
         setProfileData(transformed);
+      } else {
+        console.error('[ProfilePage] API error:', data.error);
+        toast.error(data.error || 'Failed to load profile');
       }
     } catch (error) {
       console.error('Error fetching profile:', error);
@@ -50,25 +72,35 @@ export default function ProfilePage() {
   };
 
   const handleSave = async (data: any) => {
-    const response = await fetch('/api/profile', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        firstName: data.name.split(' ')[0],
-        lastName: data.name.split(' ').slice(1).join(' '),
-        phone: data.phone_number,
-        avatarUrl: data.profile_picture
-      })
-    });
+    try {
+      const response = await fetch('/api/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: data.name, // Send full name
+          phone_number: data.phone_number || null,
+          department: data.department || null,
+          position_title: data.position_title || null,
+          // Note: employee_id is NOT sent - it's read-only, managed by admins
+          bio: data.bio || null,
+          profile_picture: data.profile_picture || null,
+        })
+      });
 
-    const result = await response.json();
-    if (!result.ok) {
-      throw new Error(result.error || 'Failed to save profile');
+      const result = await response.json();
+      if (!result.ok) {
+        console.error('[ProfilePage] Save error:', result.error);
+        throw new Error(result.error || 'Failed to save profile');
+      }
+
+      // Update local state
+      setProfileData(data);
+      toast.success('Profile updated successfully');
+    } catch (error: any) {
+      console.error('[ProfilePage] Save failed:', error);
+      toast.error(error.message || 'Failed to save profile. Please try again.');
+      throw error; // Re-throw to let component handle it
     }
-
-    // Update local state
-    setProfileData(data);
-    toast.success('Profile updated successfully');
   };
 
   const handleUploadImage = async (file: File): Promise<string> => {

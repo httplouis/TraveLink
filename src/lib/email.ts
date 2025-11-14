@@ -16,7 +16,16 @@ export async function sendEmail({ to, subject, html, from }: SendEmailOptions): 
   
   const apiKey = process.env.RESEND_API_KEY;
   // Use custom domain if verified, otherwise fallback to Resend's test domain
-  const fromEmail = from || process.env.EMAIL_FROM || "onboarding@resend.dev";
+  let fromEmail = from || process.env.EMAIL_FROM || "onboarding@resend.dev";
+  
+  // TEMPORARY: If using custom domain (@mseuf.edu.ph), fallback to test domain
+  // This prevents 403 errors when domain is not yet verified
+  // TODO: Remove this fallback once mseuf.edu.ph domain is verified in Resend
+  if (fromEmail.includes("@mseuf.edu.ph")) {
+    console.log(`[sendEmail] ⚠️ Custom domain (@mseuf.edu.ph) detected but not verified yet, using test domain for now`);
+    console.log(`[sendEmail] 💡 Once domain is verified in Resend, update EMAIL_FROM to use @mseuf.edu.ph`);
+    fromEmail = "onboarding@resend.dev";
+  }
 
   // Debug: Check environment variables
   console.log(`[sendEmail] 🔍 Environment check:`);
@@ -71,15 +80,44 @@ export async function sendEmail({ to, subject, html, from }: SendEmailOptions): 
       console.error("[sendEmail] Response status:", response.status);
       console.error("[sendEmail] Full error:", JSON.stringify(data, null, 2));
       
-      // Handle Resend test account restriction (403 error)
-      if (response.status === 403 && data.message?.includes("only send testing emails")) {
-        console.warn("[sendEmail] ⚠️ Resend test account restriction: Can only send to verified email");
-        console.warn("[sendEmail] 💡 For production, verify a domain at resend.com/domains");
-        // Still return success=false but with helpful error message
-        return { 
-          success: false, 
-          error: "Email sending restricted: Resend test accounts can only send to the account owner's email. Please verify a domain for production use." 
-        };
+      // Handle Resend domain verification error (403 error)
+      if (response.status === 403) {
+        if (data.message?.includes("domain is not verified")) {
+          console.warn("[sendEmail] ⚠️ Domain not verified - retrying with test domain");
+          // Try again with test domain
+          const testFromEmail = "onboarding@resend.dev";
+          console.log(`[sendEmail] 🔄 Retrying with test domain: ${testFromEmail}`);
+          
+          const retryResponse = await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+              from: testFromEmail,
+              to: [to],
+              subject,
+              html,
+            }),
+          });
+          
+          const retryData = await retryResponse.json();
+          if (retryResponse.ok) {
+            console.log(`[sendEmail] ✅ Email sent successfully using test domain`);
+            return { success: true, emailId: retryData.id };
+          } else {
+            console.error("[sendEmail] ❌ Retry with test domain also failed:", retryData);
+            return { success: false, error: retryData.message || "Failed to send email even with test domain" };
+          }
+        } else if (data.message?.includes("only send testing emails")) {
+          console.warn("[sendEmail] ⚠️ Resend test account restriction: Can only send to verified email");
+          console.warn("[sendEmail] 💡 For production, verify a domain at resend.com/domains");
+          return { 
+            success: false, 
+            error: "Email sending restricted: Resend test accounts can only send to the account owner's email. Please verify a domain for production use." 
+          };
+        }
       }
       
       return { success: false, error: data.message || "Failed to send email" };

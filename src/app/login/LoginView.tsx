@@ -5,64 +5,35 @@ import Image from "next/image";
 import * as React from "react";
 
 type Props = {
-  email: string;
-  password: string;
-  setEmail: (v: string) => void;
-  setPassword: (v: string) => void;
   loading: boolean;
   err: string | null;
-  onSubmit: (e: React.FormEvent) => void;
-  remember: boolean;
-  setRemember: (v: boolean) => void;
+  onMicrosoftLogin: () => void;
 };
 
 export default function LoginView({
-  email,
-  password,
-  setEmail,
-  setPassword,
   loading,
   err,
-  onSubmit,
-  remember,
-  setRemember,
+  onMicrosoftLogin,
 }: Props) {
-  const [showPw, setShowPw] = React.useState(false);
 
   return (
     <div className="fixed inset-0 font-sans h-dvh overflow-hidden">
       {/* page background */}
-      <div className="absolute inset-0 -z-10 bg-gray-100">
-        <Image
-          src="/pattern-light.jpg"
-          alt="Campus background"
-          fill
-          priority
-          className="object-cover"
-          sizes="100vw"
-          quality={75}
-        />
-        <div className="absolute inset-0 bg-black/30" />
+      <div className="absolute inset-0 -z-10 bg-gradient-to-br from-gray-100 via-gray-50 to-gray-200">
+        {/* Fallback gradient background - image might not load */}
+        <div className="absolute inset-0 bg-black/20" />
       </div>
 
       {/* container */}
       <div className="relative z-10 h-full w-full flex items-center justify-center p-4 sm:p-8">
-        <form
-  onSubmit={onSubmit}
+        <div
   className="w-full max-w-6xl grid grid-cols-1 md:grid-cols-2 rounded-3xl shadow-2xl bg-white overflow-hidden"
   suppressHydrationWarning
 >
   {/* LEFT: image panel */}
-  <div className="relative hidden md:block overflow-hidden rounded-l-3xl group bg-[#7A0010]">
-    <Image
-      src="/pattern-light.jpg"
-      alt="Campus"
-      fill
-      className="object-cover transition-transform duration-500 group-hover:scale-105"
-      sizes="(max-width: 768px) 0vw, 50vw"
-      quality={75}
-    />
-    <div className="absolute inset-0 bg-[#7A0010]/70" />
+  <div className="relative hidden md:block overflow-hidden rounded-l-3xl group bg-gradient-to-br from-[#7A0010] via-[#8A0010] to-[#6A0010]">
+    {/* Gradient background instead of image to avoid loading errors */}
+    <div className="absolute inset-0 bg-[#7A0010]/90" />
 
     {/* logo */}
     <div className="absolute right-6 top-6 z-20">
@@ -93,109 +64,72 @@ export default function LoginView({
   
 
           {/* RIGHT: form panel */}
-          <div className="relative bg-white rounded-3xl shadow-2xl p-7 sm:p-10">
-            <h2 className="text-2xl sm:text-[28px] font-extrabold tracking-tight text-[#7A0010] mb-6">
+          <div className="relative bg-white rounded-3xl shadow-2xl p-7 sm:p-10 flex flex-col justify-center">
+            <h2 className="text-2xl sm:text-[28px] font-extrabold tracking-tight text-[#7A0010] mb-2">
               SIGN IN NOW
             </h2>
+            <p className="text-sm text-gray-600 mb-8">
+              Use your institutional Microsoft account to sign in
+            </p>
 
-            {/* Email */}
-            <div className="mb-5">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Email
-              </label>
-              <div className="relative group">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-gray-600">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M2 6a2 2 0 012-2h16a2 2 0 012 2v1l-10 6L2 7V6zm0 4.236l9.445 5.667a1 1 0 001.11 0L22 10.236V18a2 2 0 01-2 2H4a2 2 0 01-2-2v-7.764z" />
-                  </svg>
-                </span>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@mseuf.edu.ph"
-                  required
-                  className="h-12 w-full rounded-md border border-gray-300 pl-10 pr-3 text-gray-900 placeholder-gray-400 shadow-sm outline-none focus:border-[#7A0010] focus:ring-2 focus:ring-[#7A0010]/20"
-                  suppressHydrationWarning
-                />
-              </div>
-            </div>
-
-            {/* Password */}
-            <div className="mb-2">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Password
-              </label>
-              <div className="relative group">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-gray-600">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 1a5 5 0 00-5 5v3H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2v-8a2 2 0 00-2-2h-1V6a5 5 0 00-5-5zm-3 8V6a3 3 0 016 0v3H9z" />
-                  </svg>
-                </span>
-                <input
-                  type={showPw ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  required
-                  className="h-12 w-full rounded-md border border-gray-300 pl-10 pr-10 text-gray-900 placeholder-gray-400 shadow-sm outline-none focus:border-[#7A0010] focus:ring-2 focus:ring-[#7A0010]/20"
-                  suppressHydrationWarning
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPw((v) => !v)}
-                  aria-label={showPw ? "Hide password" : "Show password"}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-2 py-1 text-gray-500 hover:bg-gray-100"
-                  suppressHydrationWarning
-                >
-                  {showPw ? (
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7zm0 12a5 5 0 110-10 5 5 0 010 10z" />
+            {err && (
+              <div className="mb-6 p-4 rounded-lg bg-red-50 border-2 border-red-300 shadow-sm">
+                <div className="flex items-start gap-3">
+                  <div className="flex-shrink-0 mt-0.5">
+                    <svg className="h-5 w-5 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                     </svg>
-                  ) : (
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M3.707 2.293L2.293 3.707l3.22 3.22C3.66 8.17 2 12 2 12s3 7 10 7c2.107 0 3.9-.54 5.383-1.37l2.91 2.91 1.414-1.414-18-18zM12 17c-2.761 0-5-2.239-5-5 0-.6.109-1.174.304-1.705l6.401 6.401A4.96 4.96 0 0112 17zm7.696-2.295A12.61 12.61 0 0022 12s-3-7-10-7c-1.297 0-2.493.198-3.59.53l1.7 1.7c.61-.13 1.255-.2 1.89-.2 2.761 0 5 2.239 5 5 0 .635-.07 1.28-.2 1.89l1.896 1.896z" />
-                    </svg>
-                  )}
-                </button>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-red-800 mb-1">Azure Provider Not Enabled</p>
+                    <p className="text-sm text-red-700 mb-2">{err}</p>
+                    <div className="mt-3 p-3 bg-white rounded border border-red-200">
+                      <p className="text-xs font-semibold text-red-900 mb-2">Quick Fix:</p>
+                      <ol className="text-xs text-red-800 space-y-1 list-decimal list-inside">
+                        <li>Go to <strong>Supabase Dashboard</strong> → Your project</li>
+                        <li>Click <strong>"Authentication"</strong> → <strong>"Providers"</strong></li>
+                        <li>Find <strong>"Azure"</strong> → Toggle <strong>ON</strong></li>
+                        <li>Fill in: <strong>Client ID</strong>, <strong>Client Secret</strong>, <strong>Tenant ID</strong></li>
+                        <li>Click <strong>"Save"</strong></li>
+                      </ol>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* remember / forgot */}
-            <div className="mb-6 flex items-center justify-between">
-              <label className="flex items-center gap-2 text-sm text-gray-700 select-none">
-                <input
-                  type="checkbox"
-                  className="accent-[#7A0010]"
-                  checked={remember}
-                  onChange={(e) => setRemember(e.target.checked)}
-                />
-                Remember me
-              </label>
-              <Link href="/forgot" className="text-sm text-[#7A0010] hover:underline">
-                Forgot Password?
-              </Link>
-            </div>
-
-            {err && <p className="mb-4 text-sm text-red-600">{err}</p>}
-
+            {/* Microsoft Login Button */}
             <button
-              type="submit"
+              type="button"
+              onClick={onMicrosoftLogin}
               disabled={loading}
-              className="h-12 w-full rounded-md bg-[#7A0010] text-white font-semibold shadow-md transition hover:bg-[#69000d] disabled:opacity-60"
+              className="h-14 w-full rounded-md bg-white border-2 border-gray-300 text-gray-700 font-semibold shadow-sm transition-all hover:border-[#0078d4] hover:bg-[#0078d4] hover:text-white disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-3 group"
               suppressHydrationWarning
             >
-              {loading ? "Signing in..." : "Login"}
+              {loading ? (
+                <>
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
+                  <span>Connecting...</span>
+                </>
+              ) : (
+                <>
+                  {/* Microsoft Logo */}
+                  <svg className="h-6 w-6" viewBox="0 0 23 23" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="0" y="0" width="11" height="11" fill="#F25022" className="group-hover:fill-white transition-colors"/>
+                    <rect x="12" y="0" width="11" height="11" fill="#7FBA00" className="group-hover:fill-white transition-colors"/>
+                    <rect x="0" y="12" width="11" height="11" fill="#00A4EF" className="group-hover:fill-white transition-colors"/>
+                    <rect x="12" y="12" width="11" height="11" fill="#FFB900" className="group-hover:fill-white transition-colors"/>
+                  </svg>
+                  <span>Sign in with Microsoft</span>
+                </>
+              )}
             </button>
 
-            <p className="mt-6 text-sm text-gray-700">
-              Don’t have an account?{" "}
-              <Link href="/register" className="font-semibold text-[#7A0010] hover:underline">
-                Register
-              </Link>
+            <p className="mt-6 text-xs text-gray-500 text-center">
+              By signing in, you agree to use your institutional Microsoft account
             </p>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );

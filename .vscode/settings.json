@@ -1,4 +1,6 @@
 {
     "python-envs.defaultEnvManager": "ms-python.python:system",
-    "python-envs.pythonProjects": []
+    "python-envs.pythonProjects": [],
+    "workbench.sideBar.location": "left",
+    "workbench.panel.defaultLocation": "right"
 }

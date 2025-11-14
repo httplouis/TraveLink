@@ -3,7 +3,6 @@
 
 import * as React from "react";
 import { Search, Filter, User, Phone, Mail, Star } from "lucide-react";
-import ProfilePicture from "@/components/common/ProfilePicture";
 
 type DriverStatus = "active" | "on_trip" | "off_duty" | "suspended";
 
@@ -32,14 +31,22 @@ export default function UserDriversPage() {
   const fetchDrivers = async () => {
     try {
       setLoading(true);
+      console.log('[Drivers Page] Fetching drivers...');
       const response = await fetch('/api/drivers');
+      console.log('[Drivers Page] Response status:', response.status);
       const data = await response.json();
+      console.log('[Drivers Page] Response data:', data);
       
-      if (data.ok) {
+      if (data.ok && data.data) {
+        console.log('[Drivers Page] Setting drivers:', data.data.length);
         setDrivers(data.data || []);
+      } else {
+        console.error('[Drivers Page] API returned error:', data);
+        setDrivers([]);
       }
     } catch (error) {
-      console.error('Error fetching drivers:', error);
+      console.error('[Drivers Page] Error fetching drivers:', error);
+      setDrivers([]);
     } finally {
       setLoading(false);
     }
@@ -119,11 +126,10 @@ export default function UserDriversPage() {
               className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-lg transition-shadow"
             >
               <div className="flex items-start gap-4 mb-4">
-                <ProfilePicture
-                  src={driver.profile_picture}
-                  name={driver.name}
-                  size="lg"
-                />
+                {/* Privacy: No driver avatars, use initials only */}
+                <div className="h-12 w-12 rounded-full bg-gradient-to-br from-[#7a0019] to-[#5a0010] flex items-center justify-center text-white font-semibold text-lg shadow-md">
+                  {driver.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'D'}
+                </div>
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-gray-900 truncate">{driver.name}</h3>
                   {driver.rating && (

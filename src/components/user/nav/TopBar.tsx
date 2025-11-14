@@ -26,14 +26,21 @@ export default function TopBar() {
       <div className="flex h-full items-center justify-between px-4 md:px-6">
         {/* Logo + App Name */}
         <div className="flex items-center gap-3">
-          <Link href="/user" className="inline-flex items-center gap-2">
-            <span className="grid h-8 w-8 place-items-center rounded-md bg-white text-[#7a0019] text-sm font-semibold">
-              TL
-            </span>
-            <span className="font-medium">TraviLink</span>
+          <Link href="/user" className="inline-flex items-center gap-2.5 group">
+            <div className="relative">
+              <span className="grid h-9 w-9 place-items-center rounded-lg bg-white text-[#7a0019] text-sm font-bold shadow-sm transition-transform group-hover:scale-105">
+                TL
+              </span>
+              {/* Logo placeholder - ready for image */}
+              <div className="absolute inset-0 rounded-lg bg-gradient-to-br from-white to-gray-50 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </div>
+            <div className="flex flex-col">
+              <span className="font-semibold text-base leading-tight">TraviLink</span>
+              <span className="text-xs opacity-80 font-normal">Travel Management System</span>
+            </div>
           </Link>
-          <span className="opacity-70">|</span>
-          <span className="opacity-90">User</span>
+          <span className="h-6 w-px bg-white/30" />
+          <span className="opacity-90 text-sm font-medium">User Portal</span>
         </div>
 
         {/* Actions */}

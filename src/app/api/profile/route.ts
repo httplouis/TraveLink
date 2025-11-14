@@ -32,20 +32,60 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
     
+    // Fetch department separately to avoid schema cache issues
+    let departmentName = data.department || null; // Use text field first
+    if (data.department_id && !departmentName) {
+      // If we have department_id but no text, fetch from departments table
+      const { data: deptData } = await supabase
+        .from("departments")
+        .select("name")
+        .eq("id", data.department_id)
+        .single();
+      
+      if (deptData) {
+        departmentName = deptData.name;
+      }
+    }
+    
+    // Log raw data for debugging
+    console.log('[GET /api/profile] Raw user data:', {
+      id: data.id,
+      name: data.name,
+      email: data.email,
+      department: data.department,
+      department_id: data.department_id,
+      position_title: data.position_title,
+    });
+    
     // Transform to frontend format
     const profile = {
       id: data.id,
+      name: data.name || `${data.email?.split("@")[0] || "User"}`,
       firstName: data.name?.split(' ')[0] || '',
       lastName: data.name?.split(' ').slice(1).join(' ') || '',
       email: data.email || user.email,
       role: data.role || 'faculty',
-      department: data.department_id,
-      employeeId: data.id,
-      phone: data.phone,
-      avatarUrl: data.avatar_url,
+      department: departmentName, // Return department name, not just ID
+      department_id: data.department_id,
+      position_title: data.position_title || null, // Include position title
+      employeeId: data.employee_id || data.id, // Use employee_id field if exists, fallback to id
+      phone: data.phone || null,
+      avatarUrl: data.avatar_url || null,
+      bio: data.bio || null,
       joinedAt: data.created_at,
       prefs: data.preferences || { theme: 'system', emailNotifications: true },
+      is_head: data.is_head || false,
+      is_admin: data.is_admin || false,
+      is_comptroller: data.is_comptroller || false,
+      is_hr: data.is_hr || false,
+      is_executive: data.is_executive || false,
     };
+    
+    console.log('[GET /api/profile] Returning profile:', {
+      name: profile.name,
+      department: profile.department,
+      position_title: profile.position_title,
+    });
     
     return NextResponse.json({ ok: true, data: profile });
   } catch (err: any) {
@@ -70,17 +110,58 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ ok: false, error: "Not authenticated" }, { status: 401 });
     }
     
-    // Update profile
-    const updates: any = {
-      updated_at: new Date().toISOString(),
-    };
+    // Update profile - handle all fields
+    const updates: any = {};
     
+    // Name handling
     if (body.firstName || body.lastName) {
       updates.name = `${body.firstName || ''} ${body.lastName || ''}`.trim();
+    } else if (body.name) {
+      updates.name = body.name;
     }
-    if (body.phone) updates.phone = body.phone;
-    if (body.avatarUrl !== undefined) updates.avatar_url = body.avatarUrl;
-    if (body.prefs) updates.preferences = body.prefs;
+    
+    // Phone handling (support both phone and phone_number)
+    if (body.phone !== undefined) {
+      updates.phone = body.phone || null;
+    } else if (body.phone_number !== undefined) {
+      updates.phone = body.phone_number || null;
+    }
+    
+    // Avatar/Profile picture
+    if (body.avatarUrl !== undefined) {
+      updates.avatar_url = body.avatarUrl;
+    } else if (body.profile_picture !== undefined) {
+      updates.avatar_url = body.profile_picture;
+    }
+    
+    // Department (as text, not ID - for display)
+    if (body.department !== undefined) {
+      updates.department = body.department || null;
+    }
+    
+    // Position title
+    if (body.position_title !== undefined) {
+      updates.position_title = body.position_title || null;
+    }
+    
+    // Employee ID
+    if (body.employee_id !== undefined) {
+      updates.employee_id = body.employee_id || null;
+    } else if (body.employeeId !== undefined) {
+      updates.employee_id = body.employeeId || null;
+    }
+    
+    // Bio
+    if (body.bio !== undefined) {
+      updates.bio = body.bio || null;
+    }
+    
+    // Preferences
+    if (body.prefs) {
+      updates.preferences = body.prefs;
+    }
+    
+    // Note: Removed updated_at - column might not exist
     
     const { data, error } = await supabase
       .from("users")

@@ -13,6 +13,7 @@ export default function MonthCalendar({
   onNext,
   onSelectDate,
   selectedISO,
+  pendingRequests = [],
 }: {
   month: number; // 0..11
   year: number;
@@ -21,6 +22,7 @@ export default function MonthCalendar({
   onNext: () => void;
   onSelectDate: (iso: string) => void;
   selectedISO: string | null;
+  pendingRequests?: Array<{id: string; dates: string[]; title: string; status: string}>;
 }) {
   // build grid
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -78,6 +80,7 @@ export default function MonthCalendar({
                   used={availability[iso] ?? 0}
                   selected={selectedISO === iso}
                   onClick={() => onSelectDate(iso)}
+                  hasPending={pendingRequests.some(pr => pr.dates.includes(iso))}
                 />
               ) : (
                 <div key={`blank-${i}-${j}`} />
@@ -121,11 +124,13 @@ function DayCell({
   used,
   selected,
   onClick,
+  hasPending = false,
 }: {
   iso: string;
   used: number;
   selected: boolean;
   onClick: () => void;
+  hasPending?: boolean;
 }) {
   const status = used >= 5 ? "full" : used > 0 ? "partial" : "available";
 
@@ -158,9 +163,17 @@ function DayCell({
     >
       <div className="flex items-start justify-between text-xs">
         <div className="font-semibold text-neutral-900">{day}</div>
-        <span className={`rounded-full border px-1.5 py-0.5 text-[10px] ${pill}`}>
-          {status === "available" ? "Available" : status === "partial" ? `${5 - used} left` : "Full"}
-        </span>
+        <div className="flex items-center gap-1">
+          {hasPending && (
+            <span className="inline-flex items-center gap-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200 px-1.5 py-0.5 text-[10px] font-medium">
+              <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
+              Pending
+            </span>
+          )}
+          <span className={`rounded-full border px-1.5 py-0.5 text-[10px] ${pill}`}>
+            {status === "available" ? "Available" : status === "partial" ? `${5 - used} left` : "Full"}
+          </span>
+        </div>
       </div>
       <div className="mt-3 text-[11px] text-neutral-500">{used}/5</div>
     </button>

@@ -19,6 +19,7 @@ import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 
 // 🔹 Submission history component
 import SubmissionHistoryUI from "@/components/admin/requests/ui/SubmissionHistory.ui";
+import { NameWithProfile } from "@/components/common/ProfileHoverCard";
 
 // Drivers and vehicles will be fetched from API
 
@@ -501,12 +502,32 @@ export default function RequestDetailsModalUI({
                   <dd>
                     <div className="flex items-center gap-2">
                       <User className="h-4 w-4 text-slate-400" />
-                      <span className="font-semibold text-slate-900">{(row as any).requester_name || row.travelOrder?.requestingPerson || "—"}</span>
+                      <NameWithProfile
+                        name={(row as any).requester_name || row.travelOrder?.requestingPerson || "—"}
+                        profile={{
+                          id: (row as any).requester?.id || '',
+                          name: (row as any).requester_name || (row as any).requester?.name || '',
+                          email: (row as any).requester?.email,
+                          department: (row as any).requester?.department || (row as any).department?.name,
+                          position: (row as any).requester?.position_title,
+                          profile_picture: (row as any).requester?.profile_picture,
+                        }}
+                      />
                     </div>
                     {(row as any).requester?.name && (row as any).requester.name !== ((row as any).requester_name || row.travelOrder?.requestingPerson) && (
                       <div className="mt-1.5 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700 flex items-center gap-1.5">
                         <span className="font-medium">Submitted on behalf by:</span>
-                        <span className="font-semibold">{(row as any).requester.name || (row as any).requester.email}</span>
+                        <NameWithProfile
+                          name={(row as any).requester.name || (row as any).requester.email}
+                          profile={{
+                            id: (row as any).requester?.id || '',
+                            name: (row as any).requester.name || '',
+                            email: (row as any).requester.email,
+                            department: (row as any).requester?.department,
+                            position: (row as any).requester?.position_title,
+                            profile_picture: (row as any).requester?.profile_picture,
+                          }}
+                        />
                       </div>
                     )}
                     {getRequesterSig(row.travelOrder) && (
