@@ -17,10 +17,11 @@ function hasSignature(sig?: string | null): boolean {
   return s.length > 3000;
 }
 
-export function canSubmit(data: RequestFormData) {
+export function canSubmit(data: RequestFormData, options?: { isRepresentativeSubmission?: boolean }) {
   const errors: Errors = {};
   const to = (data.travelOrder ?? {}) as NonNullable<RequestFormData["travelOrder"]>;
   const c = (to.costs ?? {}) as NonNullable<typeof to["costs"]>;
+  const isRepresentative = options?.isRepresentativeSubmission ?? false;
 
   if (!req(to.date)) errors["travelOrder.date"] = "Required";
   if (!req(to.requestingPerson)) errors["travelOrder.requestingPerson"] = "Required";
@@ -31,7 +32,8 @@ export function canSubmit(data: RequestFormData) {
   if (!req(to.purposeOfTravel)) errors["travelOrder.purposeOfTravel"] = "Required";
 
   // ✅ REQUIRED: Requester signature must be saved (and not blank)
-  if (!hasSignature(to.requesterSignature)) {
+  // BUT: Skip if this is a representative submission (requester will sign later via inbox)
+  if (!isRepresentative && !hasSignature(to.requesterSignature)) {
     errors["travelOrder.requesterSignature"] = "Requester signature is required.";
   }
 
@@ -56,7 +58,8 @@ export function canSubmit(data: RequestFormData) {
     if (!req(s.dateTo)) errors["seminar.dateTo"] = "Required";
     
     // ✅ REQUIRED: Requester signature must be saved (and not blank)
-    if (!hasSignature(s.requesterSignature)) {
+    // BUT: Skip if this is a representative submission (requester will sign later via inbox)
+    if (!isRepresentative && !hasSignature(s.requesterSignature)) {
       errors["seminar.requesterSignature"] = "Requester signature is required.";
     }
     

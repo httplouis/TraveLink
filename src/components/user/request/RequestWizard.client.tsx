@@ -576,7 +576,7 @@ function RequestWizardContent() {
 
   async function handleSubmit() {
     // library validation
-    const v = canSubmit(data);
+    const v = canSubmit(data, { isRepresentativeSubmission });
 
     const mergedErrors = { ...v.errors };
     setErrors(mergedErrors);
@@ -668,7 +668,7 @@ function RequestWizardContent() {
     reason: data.reason,
     hasBudget,
   });
-  const validation = canSubmit(data);
+  const validation = canSubmit(data, { isRepresentativeSubmission });
 
   return (
     <>
