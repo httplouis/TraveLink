@@ -97,38 +97,90 @@ export async function POST(req: Request) {
     if (mightBeRepresentative && travelOrder.requestingPerson) {
       try {
         const exactName = travelOrder.requestingPerson.trim();
+        console.log("[/api/requests/submit] 🔍 Looking up requesting person:", exactName);
         
-        // Strategy 1: Try exact match first
-        let { data: userData } = await supabase
-          .from("users")
-          .select("id, name, is_head, role, department_id")
-          .ilike("name", exactName)
-          .eq("status", "active")
-          .maybeSingle();
+        // Use the same search method as /api/users/check-head which successfully finds users
+        // Create a direct client with service role key (same as check-head endpoint)
+        const { createClient } = await import("@supabase/supabase-js");
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
         
-        // Strategy 2: If exact match fails, try partial match
-        if (!userData) {
-          console.log("[/api/requests/submit] Exact match failed, trying partial match for:", exactName);
-          const { data: partialMatches } = await supabase
-            .from("users")
-            .select("id, name, is_head, role, department_id")
-            .ilike("name", `%${exactName}%`)
-            .eq("status", "active");
+        if (supabaseUrl && supabaseServiceKey) {
+          const directSupabase = createClient(supabaseUrl, supabaseServiceKey, {
+            auth: {
+              autoRefreshToken: false,
+              persistSession: false
+            }
+          });
           
-          if (partialMatches && partialMatches.length > 0) {
-            // If multiple matches, prefer the one with department_id
-            const withDept = partialMatches.find((u: any) => u.department_id);
-            userData = withDept || partialMatches[0];
-            console.log("[/api/requests/submit] Found", partialMatches.length, "partial matches, selected:", userData.name);
+          // Use the same search method as /api/users/check-head
+          let query = directSupabase
+            .from("users")
+            .select("id, name, email, is_head, role, department_id, status")
+            .ilike("name", `%${exactName}%`)
+            .eq("status", "active")
+            .limit(5);
+          
+          const { data: users, error: searchError } = await query;
+          
+          if (searchError) {
+            console.error("[/api/requests/submit] Search error with direct client:", searchError);
+          } else {
+            console.log("[/api/requests/submit] Direct client search found", users?.length || 0, "users");
+            if (users && users.length > 0) {
+              console.log("[/api/requests/submit] Users found:", users.map((u: any) => `${u.name} (ID: ${u.id}, status: ${u.status})`));
+            }
           }
+          
+          // Find exact match first (case-insensitive, normalized), then closest match
+          const normalizedName = exactName.replace(/\s+/g, ' ').trim().toLowerCase();
+          const exactMatch = users?.find(u => 
+            u.name?.replace(/\s+/g, ' ').trim().toLowerCase() === normalizedName
+          );
+          const matchedUser = exactMatch || users?.[0];
+          
+          if (matchedUser) {
+            requestingPersonUser = {
+              id: matchedUser.id,
+              name: matchedUser.name,
+              is_head: matchedUser.is_head,
+              role: matchedUser.role,
+              department_id: matchedUser.department_id,
+            };
+            console.log("[/api/requests/submit] ✅ Found requesting person using direct client:", matchedUser.name, "ID:", matchedUser.id, "Dept ID:", matchedUser.department_id || "NULL");
+          } else {
+            console.error("[/api/requests/submit] ❌ Direct client search found no users for:", exactName);
+          }
+        } else {
+          console.error("[/api/requests/submit] ❌ Missing Supabase credentials for direct client");
         }
         
-        if (userData) {
-          requestingPersonUser = userData;
-          console.log("[/api/requests/submit] ✅ Found requesting person:", userData.name, "ID:", userData.id, "Dept ID:", userData.department_id);
-        } else {
-          console.error("[/api/requests/submit] ❌ CRITICAL: Could not find requesting person in database:", exactName);
-          console.error("[/api/requests/submit] ❌ This will cause the request to go to the wrong inbox!");
+        // Fallback to original search method if direct client didn't work
+        if (!requestingPersonUser) {
+          console.log("[/api/requests/submit] Direct client didn't find user, trying original search method...");
+          const normalizedName = exactName.replace(/\s+/g, ' ').trim();
+          
+          // Try with the server client as fallback
+          let { data: userData, error: exactError } = await supabase
+            .from("users")
+            .select("id, name, is_head, role, department_id")
+            .ilike("name", `%${normalizedName}%`)
+            .eq("status", "active")
+            .limit(5);
+          
+          if (exactError) {
+            console.warn("[/api/requests/submit] Fallback search error:", exactError);
+          }
+          
+          if (userData && userData.length > 0) {
+            // Find exact match
+            const exactMatch = userData.find(u => 
+              u.name?.replace(/\s+/g, ' ').trim().toLowerCase() === normalizedName.toLowerCase()
+            );
+            const match = exactMatch || userData[0];
+            requestingPersonUser = match;
+            console.log("[/api/requests/submit] ✅ Found using fallback search:", match.name, "ID:", match.id);
+          }
         }
       } catch (error) {
         console.error("[/api/requests/submit] ❌ Error fetching requesting person:", error);
@@ -169,7 +221,21 @@ export async function POST(req: Request) {
     console.log(`[/api/requests/submit] Initial dept: ${(profile.department as any)?.name} (${departmentId})`);
     console.log(`[/api/requests/submit] Form selected dept: ${travelOrder.department}`);
     
-    if (travelOrder.department && travelOrder.department !== (profile.department as any)?.name) {
+    // For representative submissions, prioritize requesting person's department if available
+    if (mightBeRepresentative && requestingPersonUser?.department_id) {
+      console.log(`[/api/requests/submit] ✅ Representative submission: Using requesting person's department_id: ${requestingPersonUser.department_id}`);
+      departmentId = requestingPersonUser.department_id;
+      // Fetch department info
+      const { data: reqDept } = await supabase
+        .from("departments")
+        .select("id, code, name, parent_department_id")
+        .eq("id", requestingPersonUser.department_id)
+        .maybeSingle();
+      if (reqDept) {
+        selectedDepartment = reqDept;
+        console.log(`[/api/requests/submit] ✅ Using requesting person's department: ${reqDept.name} (${reqDept.code})`);
+      }
+    } else if (travelOrder.department && travelOrder.department !== (profile.department as any)?.name) {
       // User selected a different department - look it up
       // Try multiple search strategies to handle different name formats
       let deptData = null;
@@ -447,26 +513,131 @@ export async function POST(req: Request) {
         console.error("[/api/requests/submit] ❌ Attempting emergency lookup...");
         
         try {
-          const { data: emergencyMatch } = await supabase
+          const searchName = requestingPersonName.trim();
+          console.log("[/api/requests/submit] 🔍 Emergency lookup searching for:", searchName);
+          
+          let emergencyMatches: any[] = [];
+          
+          // Try full name partial match
+          const { data: fullMatch, error: fullError } = await supabase
             .from("users")
             .select("id, name, department_id")
-            .ilike("name", `%${requestingPersonName.trim()}%`)
+            .ilike("name", `%${searchName}%`)
             .eq("status", "active");
           
-          if (emergencyMatch && emergencyMatch.length > 0) {
-            // Prefer the one with department_id
-            const withDept = emergencyMatch.find((u: any) => u.department_id);
-            const found = withDept || emergencyMatch[0];
+          if (!fullError && fullMatch) {
+            emergencyMatches = fullMatch;
+          }
+          
+          // Try flexible match with first + last name
+          const nameParts = searchName.split(/\s+/).filter(p => p.length > 2);
+          if (nameParts.length >= 2) {
+            const firstName = nameParts[0];
+            const lastName = nameParts[nameParts.length - 1];
+            console.log("[/api/requests/submit] Emergency flexible match:", firstName, lastName);
+            
+            // Use raw SQL-like approach: fetch all matching firstName, then filter for lastName
+            const { data: firstNameMatches, error: firstNameError } = await supabase
+              .from("users")
+              .select("id, name, department_id")
+              .ilike("name", `%${firstName}%`)
+              .eq("status", "active");
+            
+            console.log("[/api/requests/submit] Emergency firstName search found", firstNameMatches?.length || 0, "users");
+            if (firstNameMatches && firstNameMatches.length > 0) {
+              console.log("[/api/requests/submit] Emergency firstName matches:", firstNameMatches.map((u: any) => `${u.name} (dept: ${u.department_id || 'none'})`));
+            }
+            
+            if (!firstNameError && firstNameMatches && firstNameMatches.length > 0) {
+              // Filter in JavaScript to ensure both firstName and lastName are present
+              const firstNameLower = firstName.toLowerCase();
+              const lastNameLower = lastName.toLowerCase();
+              
+              const flexMatch = firstNameMatches.filter((u: any) => {
+                const nameLower = u.name.toLowerCase();
+                const hasFirstName = nameLower.includes(firstNameLower);
+                const hasLastName = nameLower.includes(lastNameLower);
+                console.log(`[/api/requests/submit] Checking "${u.name}": hasFirstName=${hasFirstName}, hasLastName=${hasLastName}`);
+                return hasFirstName && hasLastName;
+              });
+              
+              console.log("[/api/requests/submit] Emergency flexible match found", flexMatch.length, "users after filtering");
+              if (flexMatch.length > 0) {
+                console.log("[/api/requests/submit] Emergency flexible matches:", flexMatch.map((u: any) => `${u.name} (dept: ${u.department_id || 'none'})`));
+              }
+              
+              if (flexMatch.length > 0) {
+                flexMatch.forEach((u: any) => {
+                  if (!emergencyMatches.find((m: any) => m.id === u.id)) {
+                    emergencyMatches.push(u);
+                  }
+                });
+              }
+            } else if (firstNameError) {
+              console.log("[/api/requests/submit] Emergency firstName search error:", firstNameError);
+            }
+          }
+          
+          if (emergencyMatches.length > 0) {
+            console.log("[/api/requests/submit] Emergency found", emergencyMatches.length, "matches:", emergencyMatches.map((u: any) => `${u.name} (ID: ${u.id}, dept: ${u.department_id || 'none'})`));
+            // ALWAYS prefer the one with department_id
+            const withDept = emergencyMatches.find((u: any) => u.department_id);
+            const found = withDept || emergencyMatches[0];
             finalRequesterId = found.id;
             requestingPersonUser = found; // Update for department_id lookup later
-            console.log("[/api/requests/submit] ✅ Emergency lookup found:", found.name, "ID:", found.id);
+            console.log("[/api/requests/submit] ✅ Emergency lookup found:", found.name, "ID:", found.id, "Dept ID:", found.department_id || "NULL");
+            console.log("[/api/requests/submit] ✅ Will set requester_id to:", found.id);
           } else {
-            console.error("[/api/requests/submit] ❌ FAILED: Cannot find requesting person, using submitter ID (WRONG!)");
+            // CRITICAL: DO NOT use submitter ID for representative submissions!
+            // This would send the request to the wrong person's inbox
+            console.error("[/api/requests/submit] ❌ FAILED: Cannot find requesting person:", searchName);
+            console.error("[/api/requests/submit] ❌ This is a representative submission - cannot proceed without valid requesting person ID");
+            console.error("[/api/requests/submit] ❌ Available users (first 10) for debugging:");
+            
+            // Debug: Show some users to help troubleshoot
+            const { data: sampleUsers } = await supabase
+              .from("users")
+              .select("id, name, email, status")
+              .eq("status", "active")
+              .limit(10);
+            
+            if (sampleUsers) {
+              sampleUsers.forEach((u: any) => {
+                console.error(`  - "${u.name}" (${u.email})`);
+              });
+            }
+            
+            return NextResponse.json({ 
+              ok: false, 
+              error: `Cannot find user "${searchName}" in the system. Please check the spelling of the requesting person's name. If this person is not in the system, they need to be added first.` 
+            }, { status: 400 });
           }
         } catch (err) {
           console.error("[/api/requests/submit] ❌ Emergency lookup failed:", err);
+          return NextResponse.json({ 
+            ok: false, 
+            error: `Failed to find requesting person "${requestingPersonName}". Please verify the name is correct and the person exists in the system.` 
+          }, { status: 400 });
         }
       }
+      
+      // Final validation: make sure we're not using submitter's ID for representative submission
+      if (finalRequesterId === profile.id) {
+        console.error("[/api/requests/submit] ❌ CRITICAL ERROR: Representative submission but requester_id is set to submitter's ID!");
+        console.error("[/api/requests/submit] ❌ This would send the request to the wrong inbox!");
+        console.error("[/api/requests/submit] ❌ Submitter ID:", profile.id, "Name:", submitterName);
+        console.error("[/api/requests/submit] ❌ Requesting person name:", requestingPersonName);
+        return NextResponse.json({ 
+          ok: false, 
+          error: `Cannot process representative submission: Could not find user "${requestingPersonName}" in the system. The request cannot be sent to the correct person. Please verify the name is spelled correctly.` 
+        }, { status: 400 });
+      }
+      
+      console.log("[/api/requests/submit] ✅ Representative submission validated:");
+      console.log("[/api/requests/submit]   - Requester ID:", finalRequesterId, "(NOT submitter's ID:", profile.id + ")");
+      console.log("[/api/requests/submit]   - Requester Name:", requestingPersonName);
+      console.log("[/api/requests/submit]   - Submitter ID:", profile.id);
+      console.log("[/api/requests/submit]   - Submitter Name:", submitterName);
     }
 
     // Build request object
@@ -748,3 +919,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   }
 }
+
