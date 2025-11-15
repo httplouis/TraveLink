@@ -260,7 +260,7 @@ export async function GET(request: NextRequest) {
     // Get user profile for redirect
     const { data: profile } = await supabaseAdmin
       .from("users")
-      .select("id, role, is_head, is_hr, is_vp, is_president, is_admin, is_comptroller")
+      .select("id, role, is_head, is_hr, is_vp, is_president, is_admin")
       .eq("auth_user_id", authUser.id)
       .single();
 
@@ -269,9 +269,15 @@ export async function GET(request: NextRequest) {
     if (profile) {
       const userRole = profile.role?.toLowerCase() || "faculty";
       
-      if (profile.is_admin || userRole === "admin") {
+      // Super Admin: is_admin = true AND role = 'admin' → /super-admin
+      if (profile.is_admin && userRole === "admin") {
+        redirectPath = "/super-admin";
+      } 
+      // Transport Admin: role = 'admin' but not super admin → /admin
+      else if (userRole === "admin") {
         redirectPath = "/admin";
-      } else if (profile.is_comptroller || userRole === "comptroller") {
+      } 
+      else if (userRole === "comptroller") {
         redirectPath = "/comptroller/inbox";
       } else if (profile.is_head || userRole === "head") {
         redirectPath = "/head/dashboard";
@@ -283,6 +289,69 @@ export async function GET(request: NextRequest) {
         redirectPath = "/president/dashboard";
       } else {
         redirectPath = "/user";
+      }
+    }
+
+    // Log login to audit_logs
+    if (profile) {
+      try {
+        let clientIp = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || null;
+        // Handle comma-separated IPs (x-forwarded-for can have multiple)
+        if (clientIp) {
+          clientIp = clientIp.split(",")[0].trim();
+        }
+        // Validate IP format for INET type
+        if (clientIp && !clientIp.match(/^(\d{1,3}\.){3}\d{1,3}$/)) {
+          clientIp = null; // Set to null if invalid format
+        }
+        const userAgent = request.headers.get("user-agent") || null;
+        
+        const auditInsertData: any = {
+          user_id: profile.id,
+          action: "login",
+          entity_type: "auth",
+          entity_id: profile.id,
+          new_value: {
+            method: "microsoft_oauth",
+            email: userEmail,
+            role: profile.role,
+            is_admin: profile.is_admin,
+          },
+          user_agent: userAgent,
+        };
+        
+        // Only add ip_address if it's valid, otherwise set to null
+        if (clientIp) {
+          auditInsertData.ip_address = clientIp;
+        }
+
+        console.log('[auth/callback] 📝 Attempting to insert audit log:', {
+          user_id: auditInsertData.user_id,
+          action: auditInsertData.action,
+          has_ip: !!auditInsertData.ip_address,
+        });
+
+        const { error: auditError, data: auditData } = await supabaseAdmin
+          .from("audit_logs")
+          .insert(auditInsertData)
+          .select();
+
+        if (auditError) {
+          console.error('[auth/callback] ❌ Failed to log to audit_logs:', auditError);
+          console.error('[auth/callback] Audit error code:', auditError.code);
+          console.error('[auth/callback] Audit error message:', auditError.message);
+          console.error('[auth/callback] Audit error details:', JSON.stringify(auditError, null, 2));
+          console.error('[auth/callback] Profile ID:', profile.id);
+          console.error('[auth/callback] Client IP:', clientIp);
+          console.error('[auth/callback] Insert data:', JSON.stringify(auditInsertData, null, 2));
+        } else {
+          console.log('[auth/callback] ✅ Login logged to audit_logs successfully');
+          console.log('[auth/callback] Audit log ID:', auditData?.[0]?.id);
+          console.log('[auth/callback] Audit log created_at:', auditData?.[0]?.created_at);
+        }
+      } catch (auditErr: any) {
+        console.error('[auth/callback] ❌ Exception logging to audit_logs:', auditErr);
+        // Don't fail login if audit logging fails
       }
     }
 

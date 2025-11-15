@@ -45,7 +45,10 @@ export default function SubmitConfirmationDialog({
       TM: "Transportation Manager",
       COMPTROLLER: "Comptroller",
       HRD: "Human Resources",
+      VP: "Vice President",
       "VP/COO": "VP/COO",
+      "PRESIDENT/COO": "President / COO",
+      PRESIDENT: "President",
       OSAS_ADMIN: "OSAS Admin",
       "TM(close-out)": "TM (Close-out)",
     };

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { WorkflowEngine } from "@/lib/workflow/engine";
 import { getPhilippineTimestamp } from "@/lib/datetime";
+import { createNotification } from "@/lib/notifications/helpers";
 
 // GET /api/head  → list all pending_head for THIS head's departments
 export async function GET() {
@@ -258,6 +259,42 @@ export async function PATCH(req: Request) {
         comments: comments || "Approved by department head",
       });
 
+      // Create notifications
+      try {
+        // Notify requester that request was approved by head
+        if (request.requester_id) {
+          await createNotification({
+            user_id: request.requester_id,
+            notification_type: "request_approved",
+            title: "Request Approved by Department Head",
+            message: `Your travel order request ${request.request_number || ''} has been approved by the department head and is now being processed.`,
+            related_type: "request",
+            related_id: id,
+            action_url: `/user/submissions?view=${id}`,
+            action_label: "View Request",
+            priority: "normal",
+          });
+        }
+
+        // Notify submitter (if different from requester) that request was approved
+        if (request.submitted_by_user_id && request.submitted_by_user_id !== request.requester_id) {
+          await createNotification({
+            user_id: request.submitted_by_user_id,
+            notification_type: "request_status_change",
+            title: "Request Approved",
+            message: `The travel order request ${request.request_number || ''} you submitted has been approved by the department head.`,
+            related_type: "request",
+            related_id: id,
+            action_url: `/user/submissions?view=${id}`,
+            action_label: "View Request",
+            priority: "normal",
+          });
+        }
+      } catch (notifError: any) {
+        console.error("[PATCH /api/head] Failed to create notifications:", notifError);
+        // Don't fail the request if notifications fail
+      }
+
       console.log(`[PATCH /api/head] Success! Next status: ${nextStatus}`);
 
       return NextResponse.json({ ok: true, nextStatus, data: { status: nextStatus } });
@@ -294,6 +331,42 @@ export async function PATCH(req: Request) {
         new_status: "rejected",
         comments: comments || "Rejected by department head",
       });
+
+      // Create notifications
+      try {
+        // Notify requester that request was rejected
+        if (request.requester_id) {
+          await createNotification({
+            user_id: request.requester_id,
+            notification_type: "request_rejected",
+            title: "Request Rejected",
+            message: `Your travel order request ${request.request_number || ''} has been rejected by the department head.${comments ? ` Reason: ${comments}` : ''}`,
+            related_type: "request",
+            related_id: id,
+            action_url: `/user/submissions?view=${id}`,
+            action_label: "View Request",
+            priority: "high",
+          });
+        }
+
+        // Notify submitter (if different from requester) that request was rejected
+        if (request.submitted_by_user_id && request.submitted_by_user_id !== request.requester_id) {
+          await createNotification({
+            user_id: request.submitted_by_user_id,
+            notification_type: "request_rejected",
+            title: "Request Rejected",
+            message: `The travel order request ${request.request_number || ''} you submitted has been rejected by the department head.${comments ? ` Reason: ${comments}` : ''}`,
+            related_type: "request",
+            related_id: id,
+            action_url: `/user/submissions?view=${id}`,
+            action_label: "View Request",
+            priority: "high",
+          });
+        }
+      } catch (notifError: any) {
+        console.error("[PATCH /api/head] Failed to create notifications:", notifError);
+        // Don't fail the request if notifications fail
+      }
 
       return NextResponse.json({ ok: true, data: { status: "rejected" } });
     }

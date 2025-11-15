@@ -76,6 +76,27 @@ export async function POST(request: Request) {
 
     const isHead = matchedUser.is_head === true || matchedUser.role === "head";
 
+    // Fetch department info separately if department_id exists
+    let departmentName = null;
+    if (matchedUser.department_id) {
+      try {
+        const { data: dept, error: deptError } = await supabase
+          .from("departments")
+          .select("id, name, code")
+          .eq("id", matchedUser.department_id)
+          .maybeSingle();
+        
+        if (!deptError && dept) {
+          departmentName = dept.code 
+            ? `${dept.name} (${dept.code})`
+            : dept.name;
+        }
+      } catch (err) {
+        console.error("[API /users/check-head] Error fetching department:", err);
+        // Continue without department name
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       isHead,
@@ -84,6 +105,7 @@ export async function POST(request: Request) {
         name: matchedUser.name,
         email: matchedUser.email,
         department_id: matchedUser.department_id,
+        department: departmentName, // Include formatted department name
         role: matchedUser.role,
       }
     });

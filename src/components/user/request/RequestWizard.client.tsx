@@ -101,11 +101,7 @@ function RequestWizardContent() {
       clearIds();
       if (h.from === "draft") setCurrentDraftId(h.id);
       if (h.from === "submission") setCurrentSubmissionId(h.id);
-      toast({
-        kind: "success",
-        title: "Draft loaded",
-        message: "Form populated from draft.",
-      });
+      toast({ kind: "success", title: "Draft loaded", message: "Form populated from draft." });
       did = true;
     }
 
@@ -122,11 +118,7 @@ function RequestWizardContent() {
           hardSet(d.data);
           clearIds();
           setCurrentDraftId(draftId);
-          toast({
-            kind: "success",
-            title: "Draft loaded",
-            message: "Form populated from draft.",
-          });
+          toast({ kind: "success", title: "Draft loaded", message: "Form populated from draft." });
           did = true;
         }
       } else if (subId) {
@@ -135,11 +127,7 @@ function RequestWizardContent() {
           hardSet(s.data);
           clearIds();
           setCurrentSubmissionId(subId);
-          toast({
-            kind: "info",
-            title: "Editing submission",
-            message: "Form populated from submission.",
-          });
+          toast({ kind: "info", title: "Editing submission", message: "Form populated from submission." });
           did = true;
         }
       }
@@ -149,11 +137,7 @@ function RequestWizardContent() {
         const autosaved = loadAutosave();
         if (autosaved) {
           hardSet(autosaved);
-          toast({
-            kind: "info",
-            title: "Restored",
-            message: "Unsaved form recovered.",
-          });
+          toast({ kind: "info", title: "Restored", message: "Unsaved form recovered." });
         }
       }
     })().catch(() => {
@@ -186,6 +170,16 @@ function RequestWizardContent() {
     console.log('  - requestingPerson:', data.travelOrder?.requestingPerson);
     console.log('  - currentUser?.name:', currentUser?.name);
     console.log('  - userLoading:', userLoading);
+    
+    // For seminars, there's no separate "requesting person" - the submitter is the organizer
+    // So seminars are never representative submissions
+    if (data.reason === "seminar") {
+      console.log('[RequestWizard] ✅ Seminar application - not a representative submission');
+      setIsRepresentativeSubmission(false);
+      // For seminars, requesting person is the current user (organizer)
+      setRequestingPersonIsHead(currentUser?.role === "head" || currentUser?.is_head === true);
+      return;
+    }
     
     const checkRequestingPerson = async () => {
       const requestingPerson = data.travelOrder?.requestingPerson;
@@ -223,8 +217,42 @@ function RequestWizardContent() {
         if (result.ok && result.user) {
           setRequestingPersonIsHead(result.isHead);
           
+          // Get department name - use from API response if available, otherwise fetch it
+          let requesterDepartment = result.user.department || "";
+          console.log('[RequestWizard] 🔍 Checking department:', {
+            fromAPI: result.user.department,
+            department_id: result.user.department_id
+          });
+          
+          // If department not in response but department_id exists, fetch it
+          if (!requesterDepartment && result.user.department_id) {
+            try {
+              console.log('[RequestWizard] 📡 Fetching department from API...');
+              const deptResponse = await fetch(`/api/departments?id=${result.user.department_id}`);
+              const deptData = await deptResponse.json();
+              console.log('[RequestWizard] 📡 Department API response:', deptData);
+              if (deptData.ok && deptData.departments?.[0]) {
+                // Format: "Name (CODE)" to match DepartmentSelect format
+                const dept = deptData.departments[0];
+                requesterDepartment = dept.code 
+                  ? `${dept.name} (${dept.code})`
+                  : dept.name;
+                console.log('[RequestWizard] ✅ Fetched department:', requesterDepartment);
+              } else {
+                console.warn('[RequestWizard] ⚠️ Department not found in API response:', deptData);
+              }
+            } catch (deptErr) {
+              console.error('[RequestWizard] ❌ Failed to fetch department:', deptErr);
+            }
+          }
+          
+          if (!requesterDepartment) {
+            console.warn('[RequestWizard] ⚠️ Requesting person has no department assigned:', result.user);
+          } else {
+            console.log('[RequestWizard] ✅ Using department:', requesterDepartment);
+          }
+          
           // Store requesting person info - ALWAYS use requester's department
-          const requesterDepartment = result.user.department || "";
           setRequestingPersonInfo({
             id: result.user.id,
             name: result.user.name || requestingPerson,
@@ -297,13 +325,13 @@ function RequestWizardContent() {
 
           // ALWAYS update department to requesting person's department (requester's department)
           // This ensures the department matches the requester, not the current user
+          // Force update even if it's already set, to ensure it's always correct
           if (requesterDepartment) {
-            if (requesterDepartment !== data.travelOrder?.department) {
-              console.log('[RequestWizard] 🔄 Updating department to requester\'s department:', requesterDepartment);
-              patchTravelOrder({ department: requesterDepartment });
-            } else {
-              console.log('[RequestWizard] ✅ Department already matches requester\'s department:', requesterDepartment);
-            }
+            console.log('[RequestWizard] 🔄 Auto-populating department to requester\'s department:', requesterDepartment);
+            console.log('[RequestWizard]   - Current department in form:', data.travelOrder?.department);
+            patchTravelOrder({ department: requesterDepartment });
+          } else {
+            console.warn('[RequestWizard] ⚠️ Requesting person has no department assigned');
           }
           
           // If requesting person is NOT a head, find their department head (requester's department head)
@@ -409,7 +437,7 @@ function RequestWizardContent() {
       console.log('[RequestWizard] ⚠️ No requesting person, setting to false');
       setIsRepresentativeSubmission(false);
     }
-  }, [data.travelOrder?.requestingPerson, data.travelOrder?.department, currentUser?.id, currentUser?.name, userLoading]);
+  }, [data.travelOrder?.requestingPerson, data.travelOrder?.department, currentUser?.id, currentUser?.name, userLoading, data.reason]);
 
   // autosave on change (debounced)
   React.useEffect(() => {
@@ -504,8 +532,12 @@ function RequestWizardContent() {
 
       const result = await response.json();
 
-      if (!result.ok) {
-        throw new Error(result.error || "Failed to save draft");
+      if (!response.ok || !result.ok) {
+        console.error("[handleSaveDraft] API error:", result);
+        console.error("[handleSaveDraft] Response status:", response.status);
+        console.error("[handleSaveDraft] Response body:", result);
+        const errorMessage = result.error || result.message || `Failed to save draft (Status: ${response.status})`;
+        throw new Error(errorMessage);
       }
 
       // Store the request ID in the form data (for invitations)
@@ -519,13 +551,11 @@ function RequestWizardContent() {
       // Also save to localStorage for draft management
       const res = await saveDraft(data, currentDraftId || undefined);
       if (!currentDraftId) setCurrentDraftId(res.id);
-      toast({
-        kind: "success",
-        title: "Draft saved",
-        message: "Your draft has been saved.",
-      });
-    } catch {
-      toast({ kind: "error", title: "Save failed", message: "Could not save draft." });
+      toast({ kind: "success", title: "Draft saved", message: "Your draft has been saved." });
+    } catch (err: any) {
+      console.error("[handleSaveDraft] Error saving draft:", err);
+      const errorMessage = err.message || "Could not save draft.";
+      toast({ kind: "error", title: "Save failed", message: errorMessage });
     } finally {
       setSaving(false);
     }
@@ -593,11 +623,7 @@ function RequestWizardContent() {
     const ok = v.ok;
     if (!ok) {
       scrollToFirstError(mergedErrors);
-      toast({
-        kind: "error",
-        title: "Cannot submit",
-        message: "Please complete required fields.",
-      });
+      toast({ kind: "error", title: "Cannot submit", message: "Please complete required fields." });
       return;
     }
 
@@ -648,21 +674,13 @@ function RequestWizardContent() {
           afterSuccessfulSubmitReset();
         } else {
           // Keep form open so they can send invitations
-          toast({
-            kind: "info",
-            title: "Request submitted",
-            message: "You can now send participant invitations. The form will remain open for you to send invitations.",
-          });
+          toast({ kind: "info", title: "Request submitted", message: "You can now send participant invitations. The form will remain open for you to send invitations." });
         }
       } else {
         afterSuccessfulSubmitReset();
       }
     } catch (err: any) {
-      toast({
-        kind: "error",
-        title: "Submit failed",
-        message: err.message || "Please try again.",
-      });
+      toast({ kind: "error", title: "Submit failed", message: err.message || "Please try again." });
     } finally {
       setSubmitting(false);
     }
@@ -762,8 +780,8 @@ function RequestWizardContent() {
             />
           )}
 
-          {/* Show School Service only for institutional vehicles AND not seminar */}
-          {showSchoolService && !showSeminar && (
+          {/* Show School Service for institutional vehicles (both travel orders and seminars) */}
+          {showSchoolService && (
             <SchoolServiceSection
               data={data.schoolService}
               onChange={onChangeSchoolService}
@@ -799,8 +817,8 @@ function RequestWizardContent() {
             }
             isHeadRequester={requestingPersonIsHead === true || currentUser?.role === "head"}
             requestingPersonIsHead={requestingPersonIsHead}
-            isRepresentativeSubmission={isRepresentativeSubmission}
-            requestingPersonName={data.travelOrder?.requestingPerson}
+            isRepresentativeSubmission={data.reason === "seminar" ? false : isRepresentativeSubmission}
+            requestingPersonName={data.reason === "seminar" ? undefined : data.travelOrder?.requestingPerson}
             vehicleMode={data.vehicleMode}
             errors={validation.errors}
             onGoToField={(fieldKey) => {
@@ -869,6 +887,8 @@ function RequestWizardContent() {
         approvalPath={fullApprovalPath({
           requesterRole: data.requesterRole,
           vehicleMode: data.vehicleMode,
+          hasBudget,
+          needsVehicle,
         })}
         firstReceiver={firstHop}
         isSubmitting={submitting}

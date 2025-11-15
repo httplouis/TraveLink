@@ -20,7 +20,7 @@ import { WowCard, WowButton } from './Modal';
 import ProfilePicture, { PersonDisplay } from './ProfilePicture';
 import { NameWithProfile } from './ProfileHoverCard';
 import SignatureStageRail from './SignatureStageRail';
-import TrackingTimeline from './TrackingTimeline';
+import RequestStatusTracker from './RequestStatusTracker';
 import { formatLongDate, formatLongDateTime } from '@/lib/datetime';
 
 interface RequestData {
@@ -106,7 +106,7 @@ export default function RequestDetailsView({
   onClose,
   className = ''
 }: RequestDetailsViewProps) {
-  const [activeTab, setActiveTab] = useState<'details' | 'timeline' | 'attachments'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'timeline' | 'attachments'>('timeline');
 
   // Debug vehicle/driver data
   console.log('RequestDetailsView DEBUG:', {
@@ -483,13 +483,85 @@ export default function RequestDetailsView({
                 </motion.div>
               )}
 
-              {/* Timeline Tab */}
+              {/* Timeline Tab - Enhanced Tracking */}
               {activeTab === 'timeline' && (
                 <motion.div
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="space-y-6"
                 >
-                  <TrackingTimeline events={request.timeline} />
+                  {/* Enhanced Status Tracker */}
+                  <div className="bg-gradient-to-br from-blue-50 via-white to-purple-50 rounded-xl p-6 border border-blue-100">
+                    <div className="flex items-center gap-3 mb-6">
+                      <div className="p-2 bg-blue-100 rounded-lg">
+                        <Route className="w-6 h-6 text-blue-600" />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-bold text-gray-900">Approval Timeline</h3>
+                        <p className="text-sm text-gray-600">Track your request through the approval process</p>
+                      </div>
+                    </div>
+                    
+                    <RequestStatusTracker
+                      status={request.status as any}
+                      requesterIsHead={request.requesterIsHead}
+                      hasBudget={request.hasBudget}
+                      hasParentHead={request.hasParentHead}
+                      requiresPresidentApproval={request.requiresPresidentApproval}
+                      headApprovedAt={request.headApprovedAt}
+                      headApprovedBy={request.headApprovedBy}
+                      parentHeadApprovedAt={request.parentHeadApprovedAt}
+                      parentHeadApprovedBy={request.parentHeadApprovedBy}
+                      adminProcessedAt={request.adminProcessedAt}
+                      adminProcessedBy={request.adminProcessedBy}
+                      comptrollerApprovedAt={request.comptrollerApprovedAt}
+                      comptrollerApprovedBy={request.comptrollerApprovedBy}
+                      hrApprovedAt={request.hrApprovedAt}
+                      hrApprovedBy={request.hrApprovedBy}
+                      vpApprovedAt={request.vpApprovedAt}
+                      vpApprovedBy={request.vpApprovedBy}
+                      presidentApprovedAt={request.presidentApprovedAt}
+                      presidentApprovedBy={request.presidentApprovedBy}
+                      execApprovedAt={request.execApprovedAt}
+                      execApprovedBy={request.execApprovedBy}
+                      rejectedAt={request.rejectedAt}
+                      rejectedBy={request.rejectedBy}
+                      rejectionStage={request.rejectionStage}
+                      compact={false}
+                    />
+                  </div>
+
+                  {/* Additional Timeline Events (if available) */}
+                  {request.timeline && request.timeline.length > 0 && (
+                    <div className="bg-white rounded-xl p-6 border border-gray-200">
+                      <h4 className="text-lg font-semibold text-gray-900 mb-4">Activity History</h4>
+                      <div className="space-y-4">
+                        {request.timeline.map((event: any, index: number) => (
+                          <motion.div
+                            key={index}
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: index * 0.1 }}
+                            className="flex gap-4 pb-4 border-b border-gray-100 last:border-0 last:pb-0"
+                          >
+                            <div className="flex-shrink-0 w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                              <Clock className="w-5 h-5 text-blue-600" />
+                            </div>
+                            <div className="flex-1">
+                              <p className="font-medium text-gray-900">{event.title || event.action}</p>
+                              <p className="text-sm text-gray-600 mt-1">{event.description || event.comments}</p>
+                              {event.created_at && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                  {formatLongDateTime(event.created_at)}
+                                </p>
+                              )}
+                            </div>
+                          </motion.div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </motion.div>
               )}
 
@@ -542,13 +614,6 @@ export default function RequestDetailsView({
                 Print Request
               </WowButton>
               
-              <WowButton 
-                variant="outline" 
-                className="w-full justify-start"
-              >
-                <Route className="w-4 h-4" />
-                View Tracking
-              </WowButton>
               
               <WowButton 
                 variant="outline" 

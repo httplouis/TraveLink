@@ -2,9 +2,10 @@
 "use client";
 
 import * as React from "react";
-import { Mail, CheckCircle2, XCircle, Clock, Send, UserPlus, AlertCircle } from "lucide-react";
+import { Mail, CheckCircle2, XCircle, Clock, Send, UserPlus, AlertCircle, Copy, Check } from "lucide-react";
 import { TextInput } from "./controls";
 import { useToast } from "@/components/common/ui/Toast";
+import Modal from "@/components/common/Modal";
 
 interface ParticipantInvitation {
   email: string;
@@ -30,6 +31,9 @@ export default function ParticipantInvitationEditor({
   disabled = false,
   onStatusChange,
 }: ParticipantInvitationEditorProps) {
+  const [showLinkModal, setShowLinkModal] = React.useState(false);
+  const [linkToShow, setLinkToShow] = React.useState<{ email: string; link: string } | null>(null);
+  const [copied, setCopied] = React.useState(false);
   const toast = useToast();
   const [sending, setSending] = React.useState<string | null>(null); // email being sent
   const [sendingAll, setSendingAll] = React.useState(false);
@@ -130,7 +134,7 @@ export default function ParticipantInvitationEditor({
     
     if (!requestId) {
       console.warn(`[ParticipantInvitationEditor] ⚠️ No requestId - cannot send invitation`);
-      toast({ kind: "info", title: "Save request first", message: "Please save the request as draft or submit it first, then you can send invitations. The request ID is needed to link the invitations." });
+      toast.info("Save request first", "Please save the request as draft or submit it first, then you can send invitations. The request ID is needed to link the invitations.");
       return;
     }
 
@@ -157,11 +161,43 @@ export default function ParticipantInvitationEditor({
       next[index] = { ...next[index], invitationId: data.data.id, status: data.data.status || 'pending' };
       onChange(next);
 
-          if (data.alreadyExists) {
-            toast.info("Invitation already sent", `Invitation was already sent to ${email}`);
+      // Show warning if email sending failed
+      if (data.warning) {
+        // If email failed but we have a confirmation link, show it
+        if (data.confirmationLink) {
+          // Show modal with full link
+          setLinkToShow({ email, link: data.confirmationLink });
+          setShowLinkModal(true);
+          
+          // Also copy to clipboard automatically
+          navigator.clipboard.writeText(data.confirmationLink).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+          }).catch(() => {
+            // Silent fail
+          });
+        } else {
+          toast.error("Email sending failed", data.warning);
+        }
+      } else {
+        if (data.alreadyExists) {
+          toast.info("Invitation already sent", `Invitation was already sent to ${email}`);
+        } else {
+          // Show success with email ID if available
+          const emailId = data.emailId || data.data?.emailId;
+          const resendUrl = data.resendUrl || (emailId ? `https://resend.com/emails/${emailId}` : null);
+          
+          if (emailId && resendUrl) {
+            console.log(`[ParticipantInvitationEditor] ✅ Email sent! ID: ${emailId}`);
+            console.log(`[ParticipantInvitationEditor] 🔗 Check delivery: ${resendUrl}`);
+            toast.success("Invitation sent", `Sent to ${email}. Check console for delivery link.`);
+            // Open Resend dashboard in new tab
+            setTimeout(() => window.open(resendUrl, '_blank'), 500);
           } else {
             toast.success("Invitation sent", `Invitation sent to ${email}`);
           }
+        }
+      }
 
       // Start polling if not already started
       if (hasSentInvitations) {
@@ -224,17 +260,17 @@ export default function ParticipantInvitationEditor({
       await Promise.all(promises);
 
       if (successCount > 0) {
-        toast({ kind: "success", title: "Invitations sent", message: `Successfully sent ${successCount} invitation${successCount > 1 ? 's' : ''}` });
+        toast.success("Invitations sent", `Successfully sent ${successCount} invitation${successCount > 1 ? 's' : ''}`);
         
         // Start polling for status updates
         startPolling();
       }
 
       if (failCount > 0) {
-        toast({ kind: "error", title: "Some invitations failed", message: `${failCount} invitation${failCount > 1 ? 's' : ''} could not be sent` });
+        toast.error("Some invitations failed", `${failCount} invitation${failCount > 1 ? 's' : ''} could not be sent`);
       }
     } catch (err: any) {
-      toast({ kind: "error", title: "Failed to send invitations", message: err.message || "Could not send invitations" });
+      toast.error("Failed to send invitations", err.message || "Could not send invitations");
     } finally {
       setSendingAll(false);
     }
@@ -256,6 +292,17 @@ export default function ParticipantInvitationEditor({
             if (updated.status !== inv.status) {
               if (updated.status === 'confirmed') {
                 toast.success("Participant confirmed", `${updated.name || updated.email} has confirmed their participation`);
+                
+                // Sync confirmed participant to applicants table
+                // This will be handled by the parent component via onChange callback
+                // The parent should merge confirmed participants into applicants array
+                console.log("[ParticipantInvitationEditor] ✅ Participant confirmed, should sync to applicants:", {
+                  name: updated.name,
+                  email: updated.email,
+                  department: updated.department,
+                  availableFdp: updated.available_fdp,
+                  signature: updated.signature,
+                });
               } else if (updated.status === 'declined') {
                 toast.info("Participant declined", `${updated.name || updated.email} has declined the invitation`);
               }
@@ -268,6 +315,7 @@ export default function ParticipantInvitationEditor({
               name: updated.name || inv.name,
               department: updated.department || inv.department,
               availableFdp: updated.available_fdp || inv.availableFdp,
+              signature: updated.signature || inv.signature,
             };
           }
           return inv;
@@ -332,8 +380,95 @@ export default function ParticipantInvitationEditor({
     }
   };
 
+  const handleCopyLink = async () => {
+    if (linkToShow?.link) {
+      try {
+        await navigator.clipboard.writeText(linkToShow.link);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+        toast.success("Link copied!", "Invitation link copied to clipboard");
+      } catch (err) {
+        toast.error("Copy failed", "Please copy the link manually");
+      }
+    }
+  };
+
   return (
-    <div className="mt-8 rounded-xl border-2 border-gray-200 bg-gradient-to-br from-white via-gray-50/30 to-white p-6 shadow-lg">
+    <>
+      {/* Link Modal */}
+      <Modal
+        open={showLinkModal}
+        onClose={() => {
+          setShowLinkModal(false);
+          setLinkToShow(null);
+          setCopied(false);
+        }}
+        title="📧 Invitation Link"
+        maxWidth="max-w-2xl"
+      >
+        <div className="space-y-4">
+          <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-4">
+            <p className="text-sm text-yellow-800 font-medium mb-2">
+              ⚠️ Email sending failed, but invitation is created!
+            </p>
+            <p className="text-xs text-yellow-700">
+              Share this link manually with <strong>{linkToShow?.email}</strong>
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Invitation Link:
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                readOnly
+                value={linkToShow?.link || ""}
+                className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-lg bg-gray-50 text-sm font-mono break-all"
+                onClick={(e) => (e.target as HTMLInputElement).select()}
+              />
+              <button
+                onClick={handleCopyLink}
+                className="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 font-medium"
+              >
+                {copied ? (
+                  <>
+                    <Check className="w-4 h-4" />
+                    Copied!
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4" />
+                    Copy
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-lg bg-blue-50 border border-blue-200 p-4">
+            <p className="text-xs text-blue-800">
+              <strong>Tip:</strong> The link is already copied to your clipboard. Just paste (Ctrl+V) it in Messenger, email, or any chat app to share with the participant.
+            </p>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              onClick={() => {
+                setShowLinkModal(false);
+                setLinkToShow(null);
+                setCopied(false);
+              }}
+              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <div className="mt-8 rounded-xl border-2 border-gray-200 bg-gradient-to-br from-white via-gray-50/30 to-white p-6 shadow-lg">
       <div className="mb-5 flex items-center justify-between border-b-2 border-gray-200 pb-4">
         <div>
           <h4 className="text-lg font-bold text-gray-900 tracking-tight">Participants</h4>
@@ -526,15 +661,39 @@ export default function ParticipantInvitationEditor({
                   )}
                 </div>
 
-                {!disabled && (
-                  <button
-                    type="button"
-                    onClick={() => removeInvitation(index)}
-                    className="ml-2 rounded-lg border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 transition-colors"
-                  >
-                    Remove
-                  </button>
-                )}
+                <div className="flex items-center gap-2">
+                  {!disabled && inv.status === 'pending' && inv.invitationId && (
+                    <button
+                      type="button"
+                      onClick={() => sendInvitation(inv.email, index)}
+                      disabled={sending === inv.email}
+                      className="rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Resend invitation email"
+                    >
+                      {sending === inv.email ? (
+                        <>
+                          <div className="h-3 w-3 inline-block animate-spin rounded-full border-2 border-blue-700 border-t-transparent mr-1.5" />
+                          Resending...
+                        </>
+                      ) : (
+                        <>
+                          <Send className="h-3 w-3 inline mr-1" />
+                          Resend
+                        </>
+                      )}
+                    </button>
+                  )}
+                  
+                  {!disabled && (
+                    <button
+                      type="button"
+                      onClick={() => removeInvitation(index)}
+                      className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 transition-colors"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           ))
@@ -554,6 +713,7 @@ export default function ParticipantInvitationEditor({
         </div>
       )}
     </div>
+    </>
   );
 }
 

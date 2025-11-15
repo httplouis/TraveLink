@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useSearchParams } from "next/navigation";
 import { Inbox, Search, FileText, Calendar, MapPin, CheckCircle, History, Clock } from "lucide-react";
 import UserRequestModal from "@/components/user/UserRequestModal";
 import { useToast } from "@/components/common/ui/Toast";
@@ -24,6 +25,7 @@ type Request = {
 export default function UserInboxPage() {
   const [requests, setRequests] = React.useState<Request[]>([]);
   const [historyRequests, setHistoryRequests] = React.useState<Request[]>([]);
+  const [historyCount, setHistoryCount] = React.useState(0);
   const [loading, setLoading] = React.useState(true);
   const [historyLoading, setHistoryLoading] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
@@ -31,10 +33,70 @@ export default function UserInboxPage() {
   const [showModal, setShowModal] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<"pending" | "history">("pending");
   const toast = useToast();
+  const searchParams = useSearchParams();
 
   React.useEffect(() => {
     document.title = "My Inbox - TraviLink";
   }, []);
+
+  // Fetch history count on mount
+  React.useEffect(() => {
+    const fetchHistoryCount = async () => {
+      try {
+        const res = await fetch("/api/user/inbox/history/count", { cache: "no-store" });
+        const data = await res.json();
+        if (data.ok) {
+          setHistoryCount(data.count || 0);
+        }
+      } catch (err) {
+        console.error("Failed to fetch history count:", err);
+      }
+    };
+
+    fetchHistoryCount();
+  }, []);
+
+  // Handle view parameter from notification click - FAST loading
+  React.useEffect(() => {
+    const viewId = searchParams?.get('view');
+    if (viewId && !showModal) {
+      // If requests are already loaded, open immediately
+      if (requests.length > 0) {
+        const requestToView = requests.find(r => r.id === viewId);
+        if (requestToView) {
+          setSelectedRequest(requestToView);
+          setShowModal(true);
+          // Clean up URL immediately
+          if (typeof window !== 'undefined') {
+            window.history.replaceState({}, '', '/user/inbox');
+          }
+        }
+      } 
+      // If requests are still loading, wait for them
+      else if (!loading) {
+        // Requests finished loading but not found - might need to fetch specific request
+        const fetchSpecificRequest = async () => {
+          try {
+            const res = await fetch(`/api/user/inbox?limit=100`, { cache: "no-store" });
+            const data = await res.json();
+            if (data.ok && data.data) {
+              const requestToView = data.data.find((r: Request) => r.id === viewId);
+              if (requestToView) {
+                setSelectedRequest(requestToView);
+                setShowModal(true);
+                if (typeof window !== 'undefined') {
+                  window.history.replaceState({}, '', '/user/inbox');
+                }
+              }
+            }
+          } catch (err) {
+            console.error('[UserInbox] Failed to fetch specific request:', err);
+          }
+        };
+        fetchSpecificRequest();
+      }
+    }
+  }, [requests, searchParams, showModal, loading]);
 
   React.useEffect(() => {
     let isMounted = true;
@@ -188,6 +250,7 @@ export default function UserInboxPage() {
       
       if (data.ok && Array.isArray(data.data)) {
         setHistoryRequests(data.data);
+        setHistoryCount(data.data.length); // Update count when history is loaded
       }
     } catch (err) {
       console.error("Failed to load history:", err);
@@ -198,6 +261,17 @@ export default function UserInboxPage() {
 
   const handleSigned = () => {
     loadRequests(); // Refresh list after signing
+    
+    // Refresh history count
+    fetch("/api/user/inbox/history/count", { cache: "no-store" })
+      .then(res => res.json())
+      .then(data => {
+        if (data.ok) {
+          setHistoryCount(data.count || 0);
+        }
+      })
+      .catch(err => console.error("Failed to refresh history count:", err));
+    
     if (activeTab === "history") {
       loadHistory(); // Also refresh history
     }
@@ -246,8 +320,20 @@ export default function UserInboxPage() {
               console.log("[UserInbox History] 🔄 New signature detected, refreshing history");
               if (mutateTimeout) clearTimeout(mutateTimeout);
               mutateTimeout = setTimeout(() => {
-                if (isMounted && activeTab === "history") {
-                  loadHistory();
+                if (isMounted) {
+                  // Refresh history count
+                  fetch("/api/user/inbox/history/count", { cache: "no-store" })
+                    .then(res => res.json())
+                    .then(data => {
+                      if (data.ok && isMounted) {
+                        setHistoryCount(data.count || 0);
+                      }
+                    })
+                    .catch(err => console.error("Failed to refresh history count:", err));
+                  
+                  if (activeTab === "history") {
+                    loadHistory();
+                  }
                 }
               }, 500);
             }
@@ -321,7 +407,7 @@ export default function UserInboxPage() {
             `}
           >
             <History className="h-4 w-4 inline mr-2" />
-            History ({historyRequests.length})
+            History ({historyCount})
           </button>
         </div>
 

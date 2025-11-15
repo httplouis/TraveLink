@@ -240,7 +240,7 @@ export default function ExecRequestModal({
                   <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
                     <span className="text-blue-600 font-bold text-xs">1</span>
                   </div>
-                  <div className="flex-1">
+                <div className="flex-1">
                     <p className="font-semibold text-gray-900">Request Submitted</p>
                     <p className="text-xs text-gray-600 mt-1">
                       by {request.submitted_by_name || request.submitted_by?.name || requester}
@@ -267,8 +267,8 @@ export default function ExecRequestModal({
                 <div className="flex items-start gap-3 text-sm border-b border-gray-200 pb-3">
                   <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
                     <span className="text-green-600 font-bold text-xs">2</span>
-                  </div>
-                  <div className="flex-1">
+              </div>
+                <div className="flex-1">
                     <p className="font-semibold text-green-700">Head Approved</p>
                     <p className="text-xs text-gray-600 mt-1">
                       by {request.head_approver?.name || "Department Head"}
@@ -314,8 +314,8 @@ export default function ExecRequestModal({
                         />
                       </div>
                     )}
-                  </div>
                 </div>
+              </div>
               )}
 
               {/* Comptroller Approved */}

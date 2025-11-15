@@ -28,8 +28,8 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
 
         {/* app body */}
         <div className="fixed inset-x-0 bottom-0 top-[var(--topbar-h)] grid grid-cols-[260px_minmax(0,1fr)]">
-          <aside className="overflow-y-auto border-r border-neutral-200 bg-white/90">
-            <div className="p-3">
+          <aside className="overflow-y-auto border-r border-neutral-200 bg-white/90 flex flex-col">
+            <div className="p-3 flex-1 flex flex-col">
               <UserLeftNav />
             </div>
           </aside>

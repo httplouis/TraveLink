@@ -44,18 +44,20 @@ export default function TopGridFields({
   return (
     <div className="space-y-6">
       {/* Row 1: Date and Requester */}
-      <div className="grid gap-6 md:grid-cols-2">
-        <DateInput
-          id="to-date"
-          label={UI_TEXT.date.label}
-          required
-          value={data?.date || ""}
-          onChange={(e) => onChange({ date: e.target.value })}
-          error={errors["travelOrder.date"]}
-          helper={UI_TEXT.date.helper}
-        />
+      <div className="grid gap-6 md:grid-cols-2 items-start">
+        <div className="flex flex-col h-full">
+          <DateInput
+            id="to-date"
+            label={UI_TEXT.date.label}
+            required
+            value={data?.date || ""}
+            onChange={(e) => onChange({ date: e.target.value })}
+            error={errors["travelOrder.date"]}
+            helper={UI_TEXT.date.helper}
+          />
+        </div>
 
-        <div>
+        <div className="flex flex-col h-full">
           <UserSearchableSelect
             value={data?.requestingPerson || ""}
             onChange={(userName) => onChange({ requestingPerson: userName })}
@@ -64,7 +66,7 @@ export default function TopGridFields({
             required
             error={errors["travelOrder.requestingPerson"]}
           />
-          <div className="mt-1 flex items-start gap-1.5 text-xs text-slate-600">
+          <div className="mt-1 flex items-start gap-1.5 text-xs text-slate-600 min-h-[20px]">
             <Info className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
             <span>Search and select a user. You can edit this if you're filling out the form for someone else</span>
           </div>
@@ -72,8 +74,8 @@ export default function TopGridFields({
       </div>
 
       {/* Row 2: Department and Destination */}
-      <div className="grid gap-6 md:grid-cols-2">
-        <div>
+      <div className="grid gap-6 md:grid-cols-2 items-start">
+        <div className="flex flex-col h-full">
           <DepartmentSelect
             id="to-department"
             label={UI_TEXT.dept.label}
@@ -82,19 +84,21 @@ export default function TopGridFields({
             placeholder={UI_TEXT.dept.placeholder}
             onChange={onDepartmentChange}
           />
-          {errors["travelOrder.department"] ? (
-            <span className="text-xs text-red-600">
-              {errors["travelOrder.department"]}
-            </span>
-          ) : (
-            <div className="flex items-start gap-1.5 text-xs text-slate-600 mt-1">
-              <Info className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
-              <span>Select the requester's department/office</span>
-            </div>
-          )}
+          <div className="mt-1 min-h-[20px]">
+            {errors["travelOrder.department"] ? (
+              <span className="text-xs text-red-600">
+                {errors["travelOrder.department"]}
+              </span>
+            ) : (
+              <div className="flex items-start gap-1.5 text-xs text-slate-600">
+                <Info className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+                <span>Select the requester's department/office</span>
+              </div>
+            )}
+          </div>
         </div>
 
-        <div>
+        <div className="flex flex-col h-full">
           <LocationField
             label={UI_TEXT.destination.label}
             inputId="to-destination"
@@ -105,16 +109,18 @@ export default function TopGridFields({
             }
             placeholder={UI_TEXT.destination.placeholder}
           />
-          {errors["travelOrder.destination"] && (
-            <span className="text-xs text-red-600 mt-1">
-              {errors["travelOrder.destination"]}
-            </span>
-          )}
+          <div className="mt-1 min-h-[20px]">
+            {errors["travelOrder.destination"] && (
+              <span className="text-xs text-red-600">
+                {errors["travelOrder.destination"]}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Row 3: Dates */}
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-6 md:grid-cols-2 items-start">
         <DateInput
           id="to-departure"
           label={UI_TEXT.departure.label}

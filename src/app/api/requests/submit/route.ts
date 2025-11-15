@@ -3,11 +3,22 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { WorkflowEngine } from "@/lib/workflow/engine";
 import { sendEmail, generateParticipantInvitationEmail } from "@/lib/email";
+import { createNotification } from "@/lib/notifications/helpers";
 import crypto from "crypto";
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+    console.log("[/api/requests/submit] ========== REQUEST RECEIVED ==========");
+    console.log("[/api/requests/submit] Body keys:", Object.keys(body));
+    console.log("[/api/requests/submit] Status:", body.status);
+    console.log("[/api/requests/submit] Reason:", body.reason);
+    console.log("[/api/requests/submit] Seminar data present:", !!body.seminar);
+    console.log("[/api/requests/submit] Seminar data type:", typeof body.seminar);
+    if (body.seminar) {
+      console.log("[/api/requests/submit] Seminar keys:", Object.keys(body.seminar || {}));
+    }
+    console.log("[/api/requests/submit] ======================================");
     const supabase = await createSupabaseServerClient(true);
 
     // Get current user
@@ -82,6 +93,7 @@ export async function POST(req: Request) {
     const travelOrder = body.travelOrder ?? body.payload?.travelOrder ?? {};
     const reason = body.reason ?? "visit";
     const isSeminar = reason === "seminar";
+    const requestedStatus = body.status; // Extract early to use in validation checks
     
     // Quick check: might this be a representative submission?
     // For travel orders, check if requesting person is different from submitter
@@ -198,12 +210,18 @@ export async function POST(req: Request) {
         console.log("  - Form selected department:", travelOrder.department);
         console.log("  - Allowing representative submission");
       } else {
-        // Not representative OR requesting person also has no department - require submitter to have department
-        console.error("[/api/requests/submit] User has no department assigned:", profile.email);
-        return NextResponse.json({ 
-          ok: false, 
-          error: "Your account is not assigned to a department. Please contact your administrator to assign you to a department before submitting requests." 
-        }, { status: 400 });
+        // Not representative OR requesting person also has no department
+        // For drafts, allow saving without department (will be validated on final submit)
+        if (requestedStatus === "draft") {
+          console.log("[/api/requests/submit] 📝 Draft mode: Allowing save without department (will be validated on final submit)");
+        } else {
+          // Not a draft - require submitter to have department
+          console.error("[/api/requests/submit] User has no department assigned:", profile.email);
+          return NextResponse.json({ 
+            ok: false, 
+            error: "Your account is not assigned to a department. Please contact your administrator to assign you to a department before submitting requests." 
+          }, { status: 400 });
+        }
       }
     }
 
@@ -221,19 +239,46 @@ export async function POST(req: Request) {
     console.log(`[/api/requests/submit] Initial dept: ${(profile.department as any)?.name} (${departmentId})`);
     console.log(`[/api/requests/submit] Form selected dept: ${travelOrder.department}`);
     
-    // For representative submissions, prioritize requesting person's department if available
+    // For representative submissions, validate and use requesting person's department
     if (mightBeRepresentative && requestingPersonUser?.department_id) {
-      console.log(`[/api/requests/submit] ✅ Representative submission: Using requesting person's department_id: ${requestingPersonUser.department_id}`);
-      departmentId = requestingPersonUser.department_id;
-      // Fetch department info
+      // Get requesting person's department info
       const { data: reqDept } = await supabase
         .from("departments")
         .select("id, code, name, parent_department_id")
         .eq("id", requestingPersonUser.department_id)
         .maybeSingle();
+      
       if (reqDept) {
+        // Validate that the selected department matches the requesting person's department
+        const selectedDeptName = travelOrder.department?.trim() || "";
+        const requesterDeptName = reqDept.name?.trim() || "";
+        const requesterDeptCode = reqDept.code?.trim() || "";
+        
+        // Check if selected department matches (by name or code)
+        const matchesName = selectedDeptName === requesterDeptName;
+        const matchesCode = selectedDeptName.includes(`(${requesterDeptCode})`) || selectedDeptName === requesterDeptCode;
+        const matchesFull = selectedDeptName === `${requesterDeptName} (${requesterDeptCode})`;
+        
+        if (!matchesName && !matchesCode && !matchesFull && selectedDeptName !== "") {
+          console.error(`[/api/requests/submit] ❌ Department mismatch!`);
+          console.error(`  - Requesting person's department: ${requesterDeptName} (${requesterDeptCode})`);
+          console.error(`  - Selected department: ${selectedDeptName}`);
+          return NextResponse.json({ 
+            ok: false, 
+            error: `The selected department "${selectedDeptName}" does not match the requesting person's department "${requesterDeptName}". Please select the correct department for ${requestingPersonName}.` 
+          }, { status: 400 });
+        }
+        
+        // Use requesting person's department
+        departmentId = requestingPersonUser.department_id;
         selectedDepartment = reqDept;
-        console.log(`[/api/requests/submit] ✅ Using requesting person's department: ${reqDept.name} (${reqDept.code})`);
+        console.log(`[/api/requests/submit] ✅ Representative submission: Using requesting person's department: ${reqDept.name} (${reqDept.code})`);
+      } else {
+        console.error(`[/api/requests/submit] ❌ Could not find requesting person's department (ID: ${requestingPersonUser.department_id})`);
+        return NextResponse.json({ 
+          ok: false, 
+          error: `The requesting person's department could not be found. Please contact support.` 
+        }, { status: 400 });
       }
     } else if (travelOrder.department && travelOrder.department !== (profile.department as any)?.name) {
       // User selected a different department - look it up
@@ -465,7 +510,7 @@ export async function POST(req: Request) {
     // If representative submission (requesting person ≠ submitter), send to requesting person first
     // If requesting person is NOT a head, send to their department head first
     // If requesting person IS a head, can go directly to admin
-    const requestedStatus = body.status;
+    // Note: requestedStatus is already defined above
     let initialStatus: string;
     if (requestedStatus === "draft") {
       initialStatus = "draft";
@@ -485,6 +530,22 @@ export async function POST(req: Request) {
       initialStatus = "pending_head";
     }
     const seminar = body.seminar || {};
+    
+    // Validate seminar data structure if it's a seminar request
+    // For drafts, be more lenient - allow empty or incomplete seminar data
+    if (isSeminar && requestedStatus !== "draft" && typeof seminar !== 'object') {
+      console.error("[/api/requests/submit] Invalid seminar data structure:", typeof seminar);
+      return NextResponse.json({ 
+        ok: false, 
+        error: "Invalid seminar data. Please refresh the page and try again." 
+      }, { status: 400 });
+    }
+    
+    // For drafts, ensure seminar is at least an object (even if empty)
+    if (isSeminar && requestedStatus === "draft" && typeof seminar !== 'object') {
+      console.warn("[/api/requests/submit] Draft: Converting invalid seminar data to empty object");
+      // This shouldn't happen due to || {} above, but just in case
+    }
     
     // Parse travel dates
     const travelStartDate = travelOrder.date || travelOrder.dateFrom || new Date().toISOString();
@@ -607,22 +668,36 @@ export async function POST(req: Request) {
               });
             }
             
-            return NextResponse.json({ 
-              ok: false, 
-              error: `Cannot find user "${searchName}" in the system. Please check the spelling of the requesting person's name. If this person is not in the system, they need to be added first.` 
-            }, { status: 400 });
+            // For drafts, allow saving even if requesting person not found
+            if (requestedStatus === "draft") {
+              console.log("[/api/requests/submit] 📝 Draft mode: Allowing save even if requesting person not found");
+              // Use submitter's ID as fallback for drafts
+              finalRequesterId = profile.id;
+            } else {
+              return NextResponse.json({ 
+                ok: false, 
+                error: `Cannot find user "${searchName}" in the system. Please check the spelling of the requesting person's name. If this person is not in the system, they need to be added first.` 
+              }, { status: 400 });
+            }
           }
         } catch (err) {
           console.error("[/api/requests/submit] ❌ Emergency lookup failed:", err);
-          return NextResponse.json({ 
-            ok: false, 
-            error: `Failed to find requesting person "${requestingPersonName}". Please verify the name is correct and the person exists in the system.` 
-          }, { status: 400 });
+          // For drafts, allow saving even if lookup fails
+          if (requestedStatus === "draft") {
+            console.log("[/api/requests/submit] 📝 Draft mode: Allowing save even if lookup failed");
+            finalRequesterId = profile.id;
+          } else {
+            return NextResponse.json({ 
+              ok: false, 
+              error: `Failed to find requesting person "${requestingPersonName}". Please verify the name is correct and the person exists in the system.` 
+            }, { status: 400 });
+          }
         }
       }
       
       // Final validation: make sure we're not using submitter's ID for representative submission
-      if (finalRequesterId === profile.id) {
+      // SKIP this validation for drafts - allow saving incomplete data
+      if (requestedStatus !== "draft" && finalRequesterId === profile.id) {
         console.error("[/api/requests/submit] ❌ CRITICAL ERROR: Representative submission but requester_id is set to submitter's ID!");
         console.error("[/api/requests/submit] ❌ This would send the request to the wrong inbox!");
         console.error("[/api/requests/submit] ❌ Submitter ID:", profile.id, "Name:", submitterName);
@@ -633,44 +708,95 @@ export async function POST(req: Request) {
         }, { status: 400 });
       }
       
-      console.log("[/api/requests/submit] ✅ Representative submission validated:");
-      console.log("[/api/requests/submit]   - Requester ID:", finalRequesterId, "(NOT submitter's ID:", profile.id + ")");
-      console.log("[/api/requests/submit]   - Requester Name:", requestingPersonName);
-      console.log("[/api/requests/submit]   - Submitter ID:", profile.id);
-      console.log("[/api/requests/submit]   - Submitter Name:", submitterName);
+      if (requestedStatus !== "draft") {
+        console.log("[/api/requests/submit] ✅ Representative submission validated:");
+        console.log("[/api/requests/submit]   - Requester ID:", finalRequesterId, "(NOT submitter's ID:", profile.id + ")");
+        console.log("[/api/requests/submit]   - Requester Name:", requestingPersonName);
+        console.log("[/api/requests/submit]   - Submitter ID:", profile.id);
+        console.log("[/api/requests/submit]   - Submitter Name:", submitterName);
+      } else {
+        console.log("[/api/requests/submit] 📝 Draft mode: Skipping representative validation");
+        // For drafts, if we couldn't find the requesting person, use submitter's ID as fallback
+        // This allows saving drafts even if the requesting person isn't found yet
+        if (finalRequesterId === profile.id && isRepresentative) {
+          console.log("[/api/requests/submit] 📝 Draft: Using submitter's ID as requester_id (will be updated on final submit)");
+        }
+      }
     }
 
     // Build request object
     // For seminar requests, use seminar data; for travel orders, use travelOrder data
+    // For drafts, provide sensible defaults to ensure required fields are not empty
+    // CRITICAL: All NOT NULL fields must have non-empty values
+    
+    // Ensure title is never empty (required NOT NULL)
+    const finalTitle = isSeminar 
+      ? (seminar.title?.trim() || (requestedStatus === "draft" ? "Draft Seminar Application" : "Seminar Application"))
+      : (travelOrder.purposeOfTravel?.trim() || travelOrder.purpose?.trim() || "Travel Request");
+    
+    // Ensure purpose is never empty (required NOT NULL)
+    const finalPurpose = isSeminar 
+      ? (seminar.title?.trim() || (requestedStatus === "draft" ? "Draft Seminar Application" : "Seminar Application"))
+      : (travelOrder.purposeOfTravel?.trim() || travelOrder.purpose?.trim() || "Travel Request");
+    
+    // Ensure destination is never empty (required NOT NULL)
+    const finalDestination = isSeminar 
+      ? (seminar.venue?.trim() || (requestedStatus === "draft" ? "TBD" : "TBD"))
+      : (travelOrder.destination?.trim() || "TBD");
+    
+    // Ensure dates are valid (required NOT NULL)
+    // Parse dates and ensure end date is not before start date
+    let finalTravelStartDate = isSeminar 
+      ? (seminar.dateFrom || new Date().toISOString())
+      : (travelOrder.departureDate || travelOrder.date || new Date().toISOString());
+    
+    let finalTravelEndDate = isSeminar 
+      ? (seminar.dateTo || finalTravelStartDate)
+      : (travelOrder.returnDate || travelOrder.dateTo || travelOrder.date || finalTravelStartDate);
+    
+    // Ensure dates are in correct order (end date must be >= start date)
+    const startDate = new Date(finalTravelStartDate);
+    const endDate = new Date(finalTravelEndDate);
+    
+    if (endDate < startDate) {
+      console.warn("[/api/requests/submit] ⚠️ End date is before start date, swapping dates");
+      // Swap dates if they're in wrong order
+      const temp = finalTravelStartDate;
+      finalTravelStartDate = finalTravelEndDate;
+      finalTravelEndDate = temp;
+    }
+    
+    // CRITICAL: Validate requester_id is not null/undefined (required NOT NULL)
+    if (!finalRequesterId) {
+      console.error("[/api/requests/submit] ❌ CRITICAL: finalRequesterId is null/undefined!");
+      console.error("[/api/requests/submit] Profile ID:", profile.id);
+      console.error("[/api/requests/submit] Is representative:", isRepresentative);
+      console.error("[/api/requests/submit] Requesting person user:", requestingPersonUser);
+      
+      // For drafts, use submitter's ID as fallback
+      if (requestedStatus === "draft") {
+        console.log("[/api/requests/submit] 📝 Draft mode: Using submitter's ID as requester_id fallback");
+        finalRequesterId = profile.id;
+      } else {
+        return NextResponse.json({ 
+          ok: false, 
+          error: "Cannot determine requester. Please verify the requesting person information." 
+        }, { status: 400 });
+      }
+    }
     
     const requestData = {
       request_type: requestType,
-      // Title: use seminar_title for seminars, purposeOfTravel for travel orders
-      title: isSeminar 
-        ? (seminar.title || "Seminar Application")
-        : (travelOrder.purposeOfTravel || travelOrder.purpose || "Travel Request"),
-      // For seminars, also save seminar_title separately
-      ...(isSeminar ? { seminar_title: seminar.title || "" } : {}),
-      purpose: isSeminar 
-        ? (seminar.title || "")
-        : (travelOrder.purposeOfTravel || travelOrder.purpose || ""),
-      destination: isSeminar 
-        ? (seminar.venue || "")
-        : (travelOrder.destination || ""),
-      // For seminars, also save seminar_venue separately
-      ...(isSeminar ? { seminar_venue: seminar.venue || "" } : {}),
+      title: finalTitle,
+      purpose: finalPurpose,
+      destination: finalDestination,
+      // NOTE: seminar_title and seminar_venue are stored in seminar_data JSONB field, not as separate columns
       
-      // Dates: use date_from/date_to for seminars, travel_start_date/travel_end_date for travel orders
-      ...(isSeminar ? {
-        date_from: seminar.dateFrom || new Date().toISOString(),
-        date_to: seminar.dateTo || new Date().toISOString(),
-        // Also set travel dates for compatibility
-        travel_start_date: seminar.dateFrom || new Date().toISOString(),
-        travel_end_date: seminar.dateTo || new Date().toISOString(),
-      } : {
-        travel_start_date: travelOrder.departureDate || travelOrder.date || new Date().toISOString(),
-        travel_end_date: travelOrder.returnDate || travelOrder.dateTo || travelOrder.date || new Date().toISOString(),
-      }),
+      // Dates: use travel_start_date/travel_end_date for both seminars and travel orders
+      // CRITICAL: These are NOT NULL fields, must have valid timestamps
+      // NOTE: The database only has travel_start_date and travel_end_date columns, not date_from/date_to
+      travel_start_date: finalTravelStartDate,
+      travel_end_date: finalTravelEndDate,
       
       // Requester = person who needs the travel (from form)
       // Already calculated above with emergency lookup if needed
@@ -724,8 +850,75 @@ export async function POST(req: Request) {
       
       status: initialStatus,
       current_approver_role: WorkflowEngine.getApproverRole(initialStatus),
+      
+      // For seminar requests, save full seminar data including applicants
+      ...(isSeminar ? {
+        seminar_data: {
+          applicationDate: seminar.applicationDate || new Date().toISOString().split('T')[0],
+          title: seminar.title || "",
+          dateFrom: seminar.dateFrom || new Date().toISOString(),
+          dateTo: seminar.dateTo || new Date().toISOString(),
+          typeOfTraining: seminar.typeOfTraining || [],
+          trainingCategory: seminar.trainingCategory || "",
+          sponsor: seminar.sponsor || "",
+          venue: seminar.venue || "",
+          venueGeo: seminar.venueGeo || null,
+          modality: seminar.modality || "",
+          registrationCost: seminar.registrationCost ?? null,
+          totalAmount: seminar.totalAmount ?? null,
+          breakdown: seminar.breakdown || [],
+          makeUpClassSchedule: seminar.makeUpClassSchedule || "",
+          applicantUndertaking: seminar.applicantUndertaking || false,
+          fundReleaseLine: seminar.fundReleaseLine ?? null,
+          requesterSignature: seminar.requesterSignature || null,
+          // Applicants array - include any manually added + confirmed participants
+          applicants: Array.isArray(seminar.applicants) ? seminar.applicants : [],
+          // Participant invitations (for tracking)
+          participantInvitations: Array.isArray(seminar.participantInvitations) ? seminar.participantInvitations : [],
+          allParticipantsConfirmed: seminar.allParticipantsConfirmed || false,
+        }
+      } : {}),
     };
 
+    // Final validation: Ensure all NOT NULL fields are present
+    const requiredFields = {
+      request_type: requestData.request_type,
+      title: requestData.title,
+      purpose: requestData.purpose,
+      destination: requestData.destination,
+      travel_start_date: requestData.travel_start_date,
+      travel_end_date: requestData.travel_end_date,
+      requester_id: requestData.requester_id,
+    };
+    
+    const missingFields = Object.entries(requiredFields)
+      .filter(([key, value]) => value === null || value === undefined || value === "")
+      .map(([key]) => key);
+    
+    if (missingFields.length > 0) {
+      console.error("[/api/requests/submit] ❌ CRITICAL: Missing required fields:", missingFields);
+      console.error("[/api/requests/submit] Required fields values:", requiredFields);
+      return NextResponse.json({ 
+        ok: false, 
+        error: `Missing required fields: ${missingFields.join(", ")}. Please fill in all required information.` 
+      }, { status: 400 });
+    }
+    
+    // Log request data before insert (for debugging)
+    console.log("[/api/requests/submit] ========== REQUEST DATA TO INSERT ==========");
+    console.log("[/api/requests/submit] Request type:", requestData.request_type);
+    console.log("[/api/requests/submit] Title:", requestData.title, "(length:", requestData.title?.length || 0, ")");
+    console.log("[/api/requests/submit] Purpose:", requestData.purpose, "(length:", requestData.purpose?.length || 0, ")");
+    console.log("[/api/requests/submit] Destination:", requestData.destination, "(length:", requestData.destination?.length || 0, ")");
+    console.log("[/api/requests/submit] Requester ID:", requestData.requester_id);
+    console.log("[/api/requests/submit] Department ID:", requestData.department_id);
+    console.log("[/api/requests/submit] Status:", requestData.status);
+    console.log("[/api/requests/submit] Travel dates:", requestData.travel_start_date, "to", requestData.travel_end_date);
+    if (isSeminar) {
+      console.log("[/api/requests/submit] Seminar data present:", !!requestData.seminar_data);
+    }
+    console.log("[/api/requests/submit] ============================================");
+    
     // Insert request with retry logic for duplicate key errors
     let data: any = null;
     let error: any = null;
@@ -762,17 +955,31 @@ export async function POST(req: Request) {
     }
 
     if (error) {
+      console.error("[/api/requests/submit] ========== DATABASE INSERT ERROR ==========");
       console.error("[/api/requests/submit] Insert failed after retries:", error);
       console.error("[/api/requests/submit] Error code:", error.code);
       console.error("[/api/requests/submit] Error message:", error.message);
       console.error("[/api/requests/submit] Error details:", error.details);
+      console.error("[/api/requests/submit] Error hint:", error.hint);
+      console.error("[/api/requests/submit] Full error object:", JSON.stringify(error, null, 2));
       console.error("[/api/requests/submit] Request data being inserted:", JSON.stringify(requestData, null, 2));
+      console.error("[/api/requests/submit] ==========================================");
       
       // Convert database errors to user-friendly messages
       let userFriendlyError = "Failed to submit request. Please try again.";
       
-      if (error.code === '23505') {
+      if (error.code === 'PGRST204') {
+        // PostgREST schema cache error - column doesn't exist
+        const columnName = error.message?.match(/'([^']+)'/)?.[1] || "unknown column";
+        userFriendlyError = `Database schema error: Column '${columnName}' not found. Please contact support.`;
+        console.error("[/api/requests/submit] PostgREST schema error - column doesn't exist:", columnName);
+      } else if (error.code === '23505') {
         userFriendlyError = "Failed to generate unique request number. Please try again.";
+      } else if (error.code === '23502') {
+        // NOT NULL constraint violation
+        const fieldName = error.message?.match(/column "([^"]+)"/)?.[1] || "unknown field";
+        userFriendlyError = `Missing required field: ${fieldName}. Please fill in all required fields.`;
+        console.error("[/api/requests/submit] NOT NULL violation on field:", fieldName);
       } else if (error.message?.includes('valid_dates')) {
         userFriendlyError = "Invalid dates: Return date must be on or after departure date. Please check your travel dates.";
       } else if (error.message?.includes('check constraint')) {
@@ -790,18 +997,31 @@ export async function POST(req: Request) {
           userFriendlyError = "Invalid department. Your account may not be properly configured. Please contact your administrator.";
         } else if (error.message?.includes('driver') || error.message?.includes('vehicle')) {
           userFriendlyError = "Invalid driver or vehicle selection. Please refresh the page and try again.";
+        } else if (error.message?.includes('requester_id')) {
+          userFriendlyError = "Invalid requester information. Please verify the requesting person exists in the system.";
         } else {
           userFriendlyError = "Invalid information provided. Please refresh the page and try again.";
         }
-      } else if (error.message?.includes('not null')) {
+      } else if (error.message?.includes('not null') || error.message?.includes('NOT NULL')) {
         // NOT NULL constraint
-        userFriendlyError = "Missing required information. Please fill in all required fields.";
+        const fieldName = error.message?.match(/column "([^"]+)"/)?.[1] || "unknown field";
+        userFriendlyError = `Missing required field: ${fieldName}. Please fill in all required fields.`;
       }
       
-      return NextResponse.json({ 
+      // Ensure error response is properly formatted
+      const errorResponse = { 
         ok: false, 
-        error: userFriendlyError
-      }, { status: 400 });
+        error: userFriendlyError,
+        details: process.env.NODE_ENV === 'development' ? {
+          code: error.code,
+          message: error.message,
+          hint: error.hint
+        } : undefined
+      };
+      
+      console.error("[/api/requests/submit] Returning error response:", JSON.stringify(errorResponse, null, 2));
+      
+      return NextResponse.json(errorResponse, { status: 400 });
     }
 
     if (!data) {
@@ -839,6 +1059,90 @@ export async function POST(req: Request) {
     });
 
     console.log("[/api/requests/submit] Request created:", data.id, "Status:", initialStatus);
+
+    // Log to audit_logs
+    try {
+      let clientIp = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || null;
+      if (clientIp) {
+        clientIp = clientIp.split(",")[0].trim();
+      }
+      if (clientIp && !clientIp.match(/^(\d{1,3}\.){3}\d{1,3}$/)) {
+        clientIp = null;
+      }
+      const userAgent = req.headers.get("user-agent") || null;
+
+      const auditInsertData: any = {
+        user_id: profile.id,
+        action: mightBeRepresentative ? "create_request_representative" : "create_request",
+        entity_type: "request",
+        entity_id: data.id,
+        new_value: {
+          request_number: data.request_number,
+          request_type: requestType,
+          status: initialStatus,
+          destination: travelOrder.destination,
+          purpose: travelOrder.purposeOfTravel,
+          requester_id: finalRequesterId || profile.id,
+          requester_name: mightBeRepresentative ? requestingPersonName : profile.name,
+          submitted_by_id: profile.id,
+          submitted_by_name: submitterName,
+          has_budget: hasBudget,
+          needs_vehicle: needsVehicle,
+        },
+        user_agent: userAgent,
+      };
+
+      if (clientIp) {
+        auditInsertData.ip_address = clientIp;
+      }
+
+      const { error: auditError } = await supabase
+        .from("audit_logs")
+        .insert(auditInsertData);
+
+      if (auditError) {
+        console.error("[/api/requests/submit] ❌ Failed to log to audit_logs:", auditError);
+      } else {
+        console.log("[/api/requests/submit] ✅ Request creation logged to audit_logs");
+      }
+    } catch (auditErr: any) {
+      console.error("[/api/requests/submit] ❌ Exception logging to audit_logs:", auditErr);
+      // Don't fail request if audit logging fails
+    }
+
+    // Create notifications
+    try {
+      // 1. Notify submitter that request was submitted
+      await createNotification({
+        user_id: profile.id,
+        notification_type: "request_submitted",
+        title: "Request Submitted",
+        message: `Your travel order request ${data.request_number || 'has been submitted'} and is now pending approval.`,
+        related_type: "request",
+        related_id: data.id,
+        action_url: `/user/submissions?view=${data.id}`,
+        action_label: "View Request",
+        priority: "normal",
+      });
+
+      // 2. If representative submission, notify requester that they need to sign
+      if (mightBeRepresentative && finalRequesterId && finalRequesterId !== profile.id) {
+        await createNotification({
+          user_id: finalRequesterId,
+          notification_type: "request_pending_signature",
+          title: "Signature Required",
+          message: `${submitterName} submitted a travel order request on your behalf. Please sign to proceed.`,
+          related_type: "request",
+          related_id: data.id,
+          action_url: `/user/inbox`,
+          action_label: "Sign Request",
+          priority: "high",
+        });
+      }
+    } catch (notifError: any) {
+      console.error("[/api/requests/submit] Failed to create notifications:", notifError);
+      // Don't fail the request if notifications fail
+    }
 
     // Auto-send participant invitations for seminar requests
     // This runs asynchronously and won't block the response
@@ -934,8 +1238,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, data });
 
   } catch (error: any) {
+    console.error("[/api/requests/submit] ========== UNEXPECTED ERROR ==========");
     console.error("[/api/requests/submit] Error:", error);
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    console.error("[/api/requests/submit] Error name:", error?.name);
+    console.error("[/api/requests/submit] Error message:", error?.message);
+    console.error("[/api/requests/submit] Error stack:", error?.stack);
+    console.error("[/api/requests/submit] ======================================");
+    const errorMessage = error?.message || error?.toString() || "An unexpected error occurred while processing your request";
+    return NextResponse.json({ 
+      ok: false, 
+      error: errorMessage 
+    }, { status: 500 });
   }
 }
 

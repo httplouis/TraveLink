@@ -2,7 +2,7 @@
 
 import React from "react";
 import { motion } from "framer-motion";
-import { Eye, TrendingUp, Calendar, MapPin, Clock, DollarSign, Zap } from "lucide-react";
+import { Eye, TrendingUp, Calendar, MapPin, Clock, DollarSign, Zap, Route } from "lucide-react";
 import StatusBadge from "./StatusBadge";
 import { PersonDisplay } from "./ProfilePicture";
 import { WowCard, WowButton } from "./Modal";
@@ -129,12 +129,8 @@ export default function RequestCard({
         <div className="flex items-center justify-between pt-4 border-t border-gray-200">
           <div className="flex gap-2">
             <WowButton variant="outline" size="sm" onClick={() => onView?.()}>
-              <Eye className="w-4 h-4" />
-              View Details
-            </WowButton>
-            <WowButton variant="outline" size="sm" onClick={() => onTrack?.()}>
-              <Clock className="w-4 h-4" />
-              Track Status
+              <Route className="w-4 h-4" />
+              View Details & Tracking
             </WowButton>
           </div>
           {onAction && (

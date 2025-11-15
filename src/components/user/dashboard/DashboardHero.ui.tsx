@@ -126,15 +126,6 @@ export default function DashboardHero({
         </motion.div>
       </div>
 
-      <div className="relative mt-4 flex flex-wrap gap-2">
-        <Chip label="Fast approvals" />
-        <Chip label="Live vehicle status" />
-        <Chip label="One-tap scheduling" />
-      </div>
     </motion.section>
   );
-}
-
-function Chip({ label }: { label: string }) {
-  return <span className="rounded-full bg-white/15 px-3 py-1 text-xs text-white/90 backdrop-blur">{label}</span>;
 }

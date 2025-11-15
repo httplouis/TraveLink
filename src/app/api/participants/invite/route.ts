@@ -112,10 +112,10 @@ export async function POST(req: NextRequest) {
       invitation = newInvitation;
     }
 
-    // Get request details for email (including requester profile picture)
+    // Get request details for email (including requester profile picture and seminar data)
     const { data: requestData } = await supabase
       .from("requests")
-      .select("id, reason, seminar_title, date_from, date_to, requester:users!requester_id(name, profile_picture)")
+      .select("id, reason, seminar_title, travel_start_date, travel_end_date, seminar_data, requester:users!requester_id(name, profile_picture)")
       .eq("id", request_id)
       .single();
 
@@ -135,10 +135,50 @@ export async function POST(req: NextRequest) {
     console.log(`[POST /api/participants/invite] 🔗 Base URL:`, baseUrl);
     console.log(`[POST /api/participants/invite] 🔗 Confirmation link:`, confirmationLink);
 
-    const seminarTitle = requestData?.seminar_title || "Seminar/Training";
+    // Extract title and dates from seminar_data JSONB
+    let seminarTitle = "Seminar/Training";
+    let dateFrom = "";
+    let dateTo = "";
+    
+    if (requestData?.seminar_data) {
+      const seminarData = typeof requestData.seminar_data === 'string' 
+        ? JSON.parse(requestData.seminar_data) 
+        : requestData.seminar_data;
+      
+      console.log(`[POST /api/participants/invite] 📅 Raw seminar_data:`, JSON.stringify(seminarData, null, 2));
+      
+      seminarTitle = seminarData?.title || requestData.title || "Seminar/Training";
+      dateFrom = seminarData?.dateFrom || seminarData?.date_from || "";
+      dateTo = seminarData?.dateTo || seminarData?.date_to || "";
+      
+      console.log(`[POST /api/participants/invite] 📅 Extracted from seminar_data:`, { 
+        title: seminarTitle, 
+        dateFrom, 
+        dateTo 
+      });
+    } else {
+      seminarTitle = requestData?.title || "Seminar/Training";
+    }
+    
+    // Fallback to travel_start_date and travel_end_date if seminar_data doesn't have dates
+    if (!dateFrom && requestData?.travel_start_date) {
+      dateFrom = new Date(requestData.travel_start_date).toISOString().split('T')[0];
+      console.log(`[POST /api/participants/invite] 📅 Using travel_start_date fallback:`, dateFrom);
+    }
+    if (!dateTo && requestData?.travel_end_date) {
+      dateTo = new Date(requestData.travel_end_date).toISOString().split('T')[0];
+      console.log(`[POST /api/participants/invite] 📅 Using travel_end_date fallback:`, dateTo);
+    }
+    
     const requesterName = (requestData?.requester as any)?.name || profile.name || "Requester";
-    const dateFrom = requestData?.date_from || "";
-    const dateTo = requestData?.date_to || "";
+    
+    console.log(`[POST /api/participants/invite] 📅 Final dates for email:`, { 
+      seminarTitle, 
+      dateFrom, 
+      dateTo,
+      hasDateFrom: !!dateFrom,
+      hasDateTo: !!dateTo
+    });
 
     console.log(`[POST /api/participants/invite] 📧 Email details:`, {
       to: email,
@@ -169,10 +209,23 @@ export async function POST(req: NextRequest) {
     console.log(`[POST /api/participants/invite] 📧 Email result:`, emailResult);
 
     if (!emailResult.success) {
-      console.warn(`[POST /api/participants/invite] Email sending failed for ${email}:`, emailResult.error);
+      console.warn(`[POST /api/participants/invite] ⚠️ Email sending failed for ${email}:`, emailResult.error);
       // Don't fail the request - invitation is still created in DB
+      // But return a warning message to the frontend WITH the confirmation link
+      return NextResponse.json({
+        ok: true,
+        data: invitation,
+        message: alreadyExists ? "Invitation resent successfully" : "Invitation created successfully",
+        warning: `Email could not be sent: ${emailResult.error}. Please check your RESEND_API_KEY configuration or check the server logs for details.`,
+        confirmationLink: confirmationLink, // Include link so user can manually share
+        alreadyExists: alreadyExists,
+      });
     } else {
       console.log(`[POST /api/participants/invite] ✅ Email sent successfully to ${email}`);
+      if (emailResult.emailId) {
+        console.log(`[POST /api/participants/invite] 📧 Email ID: ${emailResult.emailId}`);
+        console.log(`[POST /api/participants/invite] 📧 Check delivery at: https://resend.com/emails/${emailResult.emailId}`);
+      }
     }
 
     // Update request to mark invitations as sent
@@ -186,9 +239,14 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      data: invitation,
+      data: {
+        ...invitation,
+        emailId: emailResult.emailId, // Include email ID for tracking
+      },
       message: alreadyExists ? "Invitation resent successfully" : "Invitation sent successfully",
       alreadyExists: alreadyExists,
+      emailId: emailResult.emailId, // Also include at top level for easy access
+      resendUrl: emailResult.emailId ? `https://resend.com/emails/${emailResult.emailId}` : null,
     });
   } catch (err: any) {
     console.error("[POST /api/participants/invite] ❌ Unexpected error:", err);

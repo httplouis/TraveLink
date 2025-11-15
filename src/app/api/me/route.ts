@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
     // Get user profile
     const { data: profile, error: profileError } = await supabase
       .from("users")
-      .select("id, email, department, role, is_head, is_hr, is_exec, is_vp, is_president")
+      .select("id, email, department, role, is_head, is_hr, is_exec, is_vp, is_president, is_admin")
       .eq("auth_user_id", user.id)
       .single();
 
@@ -70,6 +70,7 @@ export async function GET(request: NextRequest) {
   // Check admin by email (since role might be 'faculty' due to trigger restrictions)
   const adminEmails = ["admin@mseuf.edu.ph", "admin.cleofe@mseuf.edu.ph"];
   const isAdmin = userRole === 'admin' || adminEmails.includes(userEmail);
+  const isSuperAdmin = profile.is_admin === true && userRole === 'admin';
   const isHead = userRole === 'head' || profile.is_head === true;
   const isHr = userRole === 'hr' || profile.is_hr === true;
   const isExec = userRole === 'exec' || profile.is_exec === true;
@@ -87,6 +88,7 @@ export async function GET(request: NextRequest) {
     is_exec: isExec,
     is_vp: isVp,
     is_president: isPresident,
+    is_admin: isSuperAdmin,
     is_driver: isDriver,
   });
   } catch (error) {

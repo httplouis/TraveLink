@@ -33,6 +33,14 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: false, error: "Profile not found" }, { status: 404 });
     }
     
+    // First, check if there are any notifications at all for this user
+    const { count: totalCount } = await supabase
+      .from("notifications")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", profile.id);
+    
+    console.log("[GET /api/notifications] Total notifications for user", profile.id, ":", totalCount);
+    
     let query = supabase
       .from("notifications")
       .select("*")
@@ -41,14 +49,36 @@ export async function GET(request: Request) {
       .limit(limit);
     
     if (unreadOnly) {
-      query = query.eq("is_read", false);
+      query = query.or("is_read.is.null,is_read.eq.false");
     }
     
     const { data, error } = await query;
     
     if (error) {
       console.error("[GET /api/notifications] Error:", error);
+      console.error("[GET /api/notifications] Error details:", JSON.stringify(error, null, 2));
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    }
+    
+    console.log("[GET /api/notifications] Found", data?.length || 0, "notifications for user", profile.id);
+    if (data && data.length > 0) {
+      console.log("[GET /api/notifications] Sample notification:", JSON.stringify(data[0], null, 2));
+      console.log("[GET /api/notifications] All notifications:", data.map(n => ({
+        id: n.id,
+        title: n.title,
+        notification_type: n.notification_type,
+        is_read: n.is_read,
+        created_at: n.created_at
+      })));
+    } else {
+      console.log("[GET /api/notifications] No notifications found, but total count is:", totalCount);
+      // Try to get all notifications without filters to debug
+      const { data: allData } = await supabase
+        .from("notifications")
+        .select("*")
+        .eq("user_id", profile.id)
+        .limit(5);
+      console.log("[GET /api/notifications] Debug - All notifications (no filters):", allData);
     }
     
     return NextResponse.json({ ok: true, data: data || [] });

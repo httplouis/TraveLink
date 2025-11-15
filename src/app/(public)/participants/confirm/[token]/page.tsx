@@ -50,26 +50,20 @@ export default function ParticipantConfirmationPage() {
       if (data.data.department) setDepartment(data.data.department);
       if (data.data.available_fdp) setAvailableFdp(data.data.available_fdp.toString());
       
-      // Auto-retrieve from email directory if name is not yet filled
-      const invitationEmail = data.data.email;
-      if (invitationEmail && !data.data.name) {
-        try {
-          const dirResponse = await fetch(`/api/email-directory?email=${encodeURIComponent(invitationEmail)}`);
-          const dirData = await dirResponse.json();
-          
-          if (dirData.ok && dirData.data) {
-            // Auto-fill name and department from directory
-            if (dirData.data.name && !name) {
-              setName(dirData.data.name);
-            }
-            if (dirData.data.department && !department) {
-              setDepartment(dirData.data.department);
-            }
-          }
-        } catch (dirErr) {
-          // Silently fail - user can still fill manually
-          console.log("[participant-confirm] Directory lookup failed:", dirErr);
+      // Auto-populate from user profile if user exists in system
+      if (data.data.userProfile && data.data.userProfile.isUser) {
+        // User exists in TraviLink - auto-populate their info
+        if (data.data.userProfile.name && !name) {
+          setName(data.data.userProfile.name);
         }
+        if (data.data.userProfile.department && !department) {
+          setDepartment(data.data.userProfile.department);
+        }
+        // Note: Signature will be auto-populated on the backend when they confirm
+        console.log("[participant-confirm] ✅ Auto-populated from user profile");
+      } else {
+        // User not found - they need to fill manually
+        console.log("[participant-confirm] ℹ️ User not in system, manual input required");
       }
     } catch (err: any) {
       setError(err.message || "Failed to load invitation");
@@ -298,6 +292,22 @@ export default function ParticipantConfirmationPage() {
 
             {action === 'confirm' ? (
               <>
+                {invitation?.userProfile?.isUser ? (
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 mb-4">
+                    <p className="text-sm text-blue-800">
+                      <strong>✓ Account Found:</strong> We found your TraviLink account. Your name and department have been pre-filled. 
+                      {invitation.userProfile.hasSignature && " Your signature will be automatically added when you confirm."}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 mb-4">
+                    <p className="text-sm text-amber-800">
+                      <strong>ℹ️ New User:</strong> You're not yet registered in TraviLink. Please fill in your information below. 
+                      Once you confirm, you'll be automatically added to the applicants list.
+                    </p>
+                  </div>
+                )}
+
                 <TextInput
                   label="Full Name"
                   required
@@ -324,6 +334,9 @@ export default function ParticipantConfirmationPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Signature <span className="text-red-500">*</span>
+                    {invitation?.userProfile?.hasSignature && (
+                      <span className="ml-2 text-xs text-green-600">(Will use your saved signature)</span>
+                    )}
                   </label>
                   <div className="rounded-lg border border-gray-200 p-4">
                     <SignaturePad
@@ -334,6 +347,11 @@ export default function ParticipantConfirmationPage() {
                       hideSaveButton
                     />
                   </div>
+                  {invitation?.userProfile?.hasSignature && (
+                    <p className="mt-2 text-xs text-gray-500">
+                      Your saved signature will be used automatically. You can still sign manually if needed.
+                    </p>
+                  )}
                 </div>
               </>
             ) : (

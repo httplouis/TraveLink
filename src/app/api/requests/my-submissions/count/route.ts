@@ -12,17 +12,18 @@ export async function GET() {
     }
 
     // Get user profile
-    const { data: profile, error: profileError } = await supabase
+    const { data: profiles, error: profileError } = await supabase
       .from("users")
       .select("id")
       .eq("auth_user_id", user.id)
-      .single();
+      .limit(1);
 
     if (profileError) {
       console.error("[GET /api/requests/my-submissions/count] Profile error:", profileError);
       return NextResponse.json({ ok: false, error: "Profile not found: " + profileError.message }, { status: 404 });
     }
 
+    const profile = profiles?.[0];
     if (!profile) {
       console.error("[GET /api/requests/my-submissions/count] No profile returned");
       return NextResponse.json({ ok: false, error: "Profile not found" }, { status: 404 });
@@ -30,24 +31,47 @@ export async function GET() {
 
     console.log("[GET /api/requests/my-submissions/count] Profile ID:", profile.id);
 
-    // Count only pending submissions (lightweight query)
-    const { data, error } = await supabase
+    // Count submissions based on:
+    // 1. Requests submitted BY this user (submitted_by_user_id = profile.id) - ALWAYS count these
+    // 2. Requests where user is the requester AND they've signed it (for representative submissions)
+    //    This ensures representative submissions only count for requester AFTER they sign
+    
+    // Query 1: Requests submitted by this user
+    const { data: submittedRequests, error: submittedError } = await supabase
       .from("requests")
       .select("id, status")
-      .eq("requester_id", profile.id);
+      .eq("submitted_by_user_id", profile.id);
 
-    if (error) {
-      console.error("[GET /api/requests/my-submissions/count] Query error:", error);
-      return NextResponse.json({ ok: false, error: "Database error: " + (error.message || JSON.stringify(error)) }, { status: 500 });
+    if (submittedError) {
+      console.error("[GET /api/requests/my-submissions/count] Submitted requests query error:", submittedError);
+      return NextResponse.json({ ok: false, error: "Database error: " + (submittedError.message || JSON.stringify(submittedError)) }, { status: 500 });
     }
 
-    console.log("[GET /api/requests/my-submissions/count] Total requests found:", data?.length || 0);
+    // Query 2: Requests where user is requester AND has signed (representative submissions)
+    const { data: signedRequests, error: signedError } = await supabase
+      .from("requests")
+      .select("id, status")
+      .eq("requester_id", profile.id)
+      .not("requester_signature", "is", null);
+
+    if (signedError) {
+      console.error("[GET /api/requests/my-submissions/count] Signed requests query error:", signedError);
+      return NextResponse.json({ ok: false, error: "Database error: " + (signedError.message || JSON.stringify(signedError)) }, { status: 500 });
+    }
+
+    // Combine and deduplicate by ID (in case a request matches both conditions)
+    const allRequests = [...(submittedRequests || []), ...(signedRequests || [])];
+    const uniqueRequests = Array.from(
+      new Map(allRequests.map((r: any) => [r.id, r])).values()
+    );
+
+    console.log("[GET /api/requests/my-submissions/count] Total unique requests found:", uniqueRequests.length);
 
     // Filter out completed statuses
-    const pendingCount = data?.filter((r: any) => {
+    const pendingCount = uniqueRequests.filter((r: any) => {
       const status = r.status;
       return status !== 'approved' && status !== 'rejected' && status !== 'cancelled';
-    })?.length || 0;
+    }).length;
 
     console.log("[GET /api/requests/my-submissions/count] Pending count:", pendingCount);
 
