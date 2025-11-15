@@ -5,7 +5,6 @@ import React, { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createSupabaseClient } from "@/lib/supabase/client";
 import LoginView from "./LoginView";
-import LoadingModal from "@/components/common/LoadingModal";
 
 function LoginPageContent() {
   const router = useRouter();
@@ -14,7 +13,9 @@ function LoginPageContent() {
 
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [loadingMessage, setLoadingMessage] = useState("Connecting to Microsoft...");
+  const [loginMode, setLoginMode] = useState<"microsoft" | "email">("microsoft");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
   // Check if user already logged in via Supabase session
   // Only redirect if there's a nextUrl (came from middleware redirect)
@@ -33,7 +34,6 @@ function LoginPageContent() {
   async function handleMicrosoftLogin() {
     setLoading(true);
     setErr("");
-    setLoadingMessage("Redirecting to Microsoft...");
 
     try {
       const supabase = createSupabaseClient();
@@ -76,15 +76,44 @@ function LoginPageContent() {
     }
   }
 
+  async function handleEmailLogin() {
+    setLoading(true);
+    setErr("");
+
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Login failed");
+      }
+
+      // Redirect to the appropriate portal
+      router.push(data.redirectPath || "/user");
+    } catch (error: any) {
+      setErr(error.message || 'Login failed. Please check your credentials.');
+      setLoading(false);
+    }
+  }
+
   return (
-    <>
-      <LoginView
-        loading={loading}
-        err={err}
-        onMicrosoftLogin={handleMicrosoftLogin}
-      />
-      <LoadingModal isOpen={loading} message={loadingMessage} />
-    </>
+    <LoginView
+      loading={loading}
+      err={err}
+      loginMode={loginMode}
+      email={email}
+      password={password}
+      onLoginModeChange={setLoginMode}
+      onEmailChange={setEmail}
+      onPasswordChange={setPassword}
+      onMicrosoftLogin={handleMicrosoftLogin}
+      onEmailLogin={handleEmailLogin}
+    />
   );
 }
 

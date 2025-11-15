@@ -11,13 +11,15 @@ import {
   ListChecks,
   Car,
   IdCard,
-  UserRound,
   MessageSquareText,
   Inbox,
+  LogOut,
 } from "lucide-react";
 import * as React from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { motion } from "framer-motion";
+import ProfilePicture from "@/components/common/ProfilePicture";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog.ui";
 
 type Item =
   | {
@@ -58,7 +60,6 @@ const NAV: Item[] = [
 
   { type: "link", href: "/user/vehicles", label: "Vehicles", Icon: Car },
   { type: "link", href: "/user/drivers", label: "Drivers", Icon: IdCard },
-  { type: "link", href: "/user/profile", label: "Profile", Icon: UserRound },
   { type: "link", href: "/user/feedback", label: "Feedback", Icon: MessageSquareText },
 ];
 
@@ -67,6 +68,9 @@ export default function UserLeftNav() {
   const [submissionsCount, setSubmissionsCount] = React.useState(0);
   const [inboxCount, setInboxCount] = React.useState(0);
   const [hoveredItem, setHoveredItem] = React.useState<string | null>(null);
+  const [userProfile, setUserProfile] = React.useState<{ name: string; avatarUrl?: string | null } | null>(null);
+  const [loggingOut, setLoggingOut] = React.useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = React.useState(false);
   const navRefs = React.useRef<Record<string, HTMLElement | null>>({});
   const containerRef = React.useRef<HTMLDivElement>(null);
 
@@ -124,13 +128,84 @@ export default function UserLeftNav() {
     };
   }, []);
 
+  // Fetch user profile for avatar
+  React.useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const res = await fetch("/api/profile");
+        const data = await res.json();
+        if (data.ok && data.data) {
+          setUserProfile({
+            name: data.data.name || data.data.email?.split("@")[0] || "User",
+            avatarUrl: data.data.avatarUrl || data.data.profile_picture || null,
+          });
+        }
+      } catch (err) {
+        console.error("Failed to fetch profile:", err);
+      }
+    };
+    fetchProfile();
+  }, []);
+
+  // Handle logout
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      window.location.href = "/login";
+    } catch (error) {
+      console.error("Logout failed:", error);
+      setLoggingOut(false);
+    }
+  };
+
+  const handleLogoutClick = () => {
+    setShowLogoutConfirm(true);
+  };
+
+  const isProfileActive = pathname === "/user/profile" || pathname.startsWith("/user/profile/");
+
   return (
     <nav 
       ref={containerRef}
       aria-label="User menu" 
-      className="space-y-1.5 relative"
+      className="space-y-1.5 relative flex flex-col min-h-full"
       onMouseLeave={() => setHoveredItem(null)}
     >
+      {/* Profile Section at Top */}
+      <Link
+        href="/user/profile"
+        className={[
+          "group relative flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200 mb-2 z-10",
+          isProfileActive
+            ? "text-white"
+            : "text-neutral-700 hover:text-white active:scale-[0.98]",
+        ].join(" ")}
+        onMouseEnter={() => setHoveredItem("profile")}
+      >
+        {isProfileActive && (
+          <motion.div
+            className="absolute inset-0 rounded-xl pointer-events-none z-0"
+            initial={false}
+            style={{ background: '#7a0019' }}
+            layoutId="activeNav"
+          />
+        )}
+        <ProfilePicture
+          src={userProfile?.avatarUrl || undefined}
+          name={userProfile?.name || "User"}
+          size="sm"
+          className="flex-shrink-0 relative z-10"
+        />
+        <span className="flex-1 group-hover:text-white relative z-10 break-words line-clamp-2">
+          {userProfile?.name || "Profile"}
+        </span>
+        {isProfileActive && (
+          <div className="h-2 w-2 rounded-full bg-white/80 relative z-10"></div>
+        )}
+      </Link>
+
+      <div className="h-px bg-gray-200 mb-2"></div>
       {/* Main nav sliding active background (for Dashboard, Schedule, Request parent) */}
       {(() => {
         // Find active main nav item or group parent
@@ -383,6 +458,35 @@ export default function UserLeftNav() {
           </div>
         );
       })}
+
+      {/* Spacer to push logout to bottom */}
+      <div className="flex-1"></div>
+
+      {/* Logout Button at Bottom */}
+      <div className="pt-4 border-t border-gray-200">
+        <button
+          onClick={handleLogoutClick}
+          disabled={loggingOut}
+          className="w-full group relative flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200 text-neutral-700 hover:text-white hover:bg-[#7a0019] active:scale-[0.98] disabled:opacity-50"
+        >
+          <LogOut className="h-5 w-5 transition-transform group-hover:scale-110" />
+          <span className="flex-1 text-left group-hover:text-white">
+            {loggingOut ? "Logging out..." : "Logout"}
+          </span>
+        </button>
+      </div>
+
+      {/* Logout Confirmation Dialog */}
+      <ConfirmDialog
+        open={showLogoutConfirm}
+        title="Logout"
+        message="Are you sure you want to logout? You will need to sign in again to access your account."
+        confirmText="Logout"
+        cancelText="Cancel"
+        tone="danger"
+        onCancel={() => setShowLogoutConfirm(false)}
+        onConfirm={handleLogout}
+      />
     </nav>
   );
 }

@@ -11,7 +11,7 @@ interface SendEmailOptions {
   from?: string;
 }
 
-export async function sendEmail({ to, subject, html, from }: SendEmailOptions): Promise<{ success: boolean; error?: string }> {
+export async function sendEmail({ to, subject, html, from }: SendEmailOptions): Promise<{ success: boolean; error?: string; emailId?: string }> {
   console.log(`[sendEmail] 🚀 Function called with:`, { to, subject: subject.substring(0, 50) + "..." });
   
   const apiKey = process.env.RESEND_API_KEY;

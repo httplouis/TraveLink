@@ -29,8 +29,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Forbidden: Super Admin access required" }, { status: 403 });
     }
 
-    // Get all users with department info
-    const { data: users, error } = await supabase
+    // Get all users first
+    const { data: users, error: usersError } = await supabase
       .from("users")
       .select(`
         id,
@@ -44,25 +44,43 @@ export async function GET(req: NextRequest) {
         is_vp,
         is_president,
         is_hr,
-        is_comptroller,
         status,
-        department_id,
-        department:departments!users_department_id_fkey(
-          id,
-          name,
-          code
-        )
+        department_id
       `)
       .order("created_at", { ascending: false });
 
-    if (error) {
-      console.error("[GET /api/admin/users] Error:", error);
-      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    if (usersError) {
+      console.error("[GET /api/admin/users] Error fetching users:", usersError);
+      return NextResponse.json({ ok: false, error: usersError.message }, { status: 500 });
     }
+
+    // Get departments separately and map them
+    const departmentIds = users?.filter(u => u.department_id).map(u => u.department_id) || [];
+    let departmentsMap: Record<string, any> = {};
+    
+    if (departmentIds.length > 0) {
+      const { data: departments, error: deptError } = await supabase
+        .from("departments")
+        .select("id, name, code")
+        .in("id", departmentIds);
+      
+      if (!deptError && departments) {
+        departmentsMap = departments.reduce((acc, dept) => {
+          acc[dept.id] = dept;
+          return acc;
+        }, {} as Record<string, any>);
+      }
+    }
+
+    // Map users with their departments
+    const usersWithDepartments = users?.map(user => ({
+      ...user,
+      department: user.department_id ? departmentsMap[user.department_id] || null : null,
+    })) || [];
 
     return NextResponse.json({
       ok: true,
-      data: users || [],
+      data: usersWithDepartments,
     });
   } catch (err: any) {
     console.error("[GET /api/admin/users] Unexpected error:", err);

@@ -4,6 +4,7 @@ import * as React from "react";
 import { X, CheckCircle, Calendar, MapPin, DollarSign, FileText, User, Users, Building2, Car, UserCheck, Clock, History } from "lucide-react";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import { useToast } from "@/components/common/ui/Toast";
+import SignConfirmationDialog from "@/components/user/request/SignConfirmationDialog";
 
 type Props = {
   request: any;
@@ -71,6 +72,7 @@ export default function UserRequestModal({
   const [fullRequestData, setFullRequestData] = React.useState<any>(null);
   const [history, setHistory] = React.useState<HistoryEntry[]>([]);
   const [loadingDetails, setLoadingDetails] = React.useState(true);
+  const [showConfirmDialog, setShowConfirmDialog] = React.useState(false);
 
   const expenseBreakdown = request.expense_breakdown || fullRequestData?.expense_breakdown || [];
   const totalBudget = request.total_budget || fullRequestData?.total_budget || 0;
@@ -151,16 +153,17 @@ export default function UserRequestModal({
 
   const requestData = fullRequestData || request;
 
-  async function handleSign() {
+  function handleSignClick() {
     if (!signature || signature.trim() === "") {
-      toast({
-        kind: "error",
-        title: "Signature required",
-        message: "Please provide your signature to approve this request.",
-      });
+      toast.error("Signature required", "Please provide your signature to approve this request.");
       return;
     }
 
+    // Show confirmation dialog first
+    setShowConfirmDialog(true);
+  }
+
+  async function handleSign() {
     setSubmitting(true);
     try {
       const response = await fetch("/api/user/inbox/sign", {
@@ -178,20 +181,13 @@ export default function UserRequestModal({
         throw new Error(result.error || "Failed to sign request");
       }
 
-      toast({
-        kind: "success",
-        title: "Request signed",
-        message: "Your request has been signed and forwarded to your department head.",
-      });
+      toast.success("Request signed", "Your request has been signed and forwarded to your department head.");
 
+      setShowConfirmDialog(false);
       onSigned();
       onClose();
     } catch (err: any) {
-      toast({
-        kind: "error",
-        title: "Sign failed",
-        message: err.message || "Please try again.",
-      });
+      toast.error("Sign failed", err.message || "Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -528,7 +524,7 @@ export default function UserRequestModal({
               Cancel
             </button>
             <button
-              onClick={handleSign}
+              onClick={handleSignClick}
               disabled={submitting || !signature || loadingDetails}
               className="px-6 py-2 rounded-lg bg-gradient-to-r from-[#7A0010] to-[#5A0010] text-white font-semibold shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
@@ -557,6 +553,14 @@ export default function UserRequestModal({
           </div>
         )}
       </div>
+
+      {/* Sign Confirmation Dialog */}
+      <SignConfirmationDialog
+        open={showConfirmDialog}
+        requestId={request.id}
+        onConfirm={handleSign}
+        onCancel={() => setShowConfirmDialog(false)}
+      />
     </div>
   );
 }

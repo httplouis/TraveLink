@@ -12,6 +12,7 @@ type Me = {
   is_exec?: boolean;
   is_vp?: boolean;
   is_president?: boolean;
+  is_admin?: boolean;
   department?: string | null;
 };
 
@@ -39,6 +40,9 @@ function resolveHomeBase(me: Me): string {
   const adminEmails = ["admin@mseuf.edu.ph", "admin.cleofe@mseuf.edu.ph"];
   const comptrollerEmails = ["comptroller@mseuf.edu.ph"];
   
+  // Super Admin: is_admin = true AND role = 'admin' → /super-admin
+  if (me.is_admin && me.role === "admin") return "/super-admin";
+  // Transport Admin: role = 'admin' but not super admin → /admin
   if (me.role === "admin" || adminEmails.includes((me as any).email)) return "/admin";
   if (comptrollerEmails.includes((me as any).email)) return "/comptroller/inbox";
   if (me.is_president) return "/president/dashboard";
@@ -54,10 +58,14 @@ function isAllowed(me: Me, path: string): boolean {
   const adminEmails = ["admin@mseuf.edu.ph", "admin.cleofe@mseuf.edu.ph"];
   const comptrollerEmails = ["comptroller@mseuf.edu.ph"];
   const isAdmin = me.role === "admin" || adminEmails.includes((me as any).email);
+  const isSuperAdmin = me.is_admin === true && me.role === "admin";
   const isComptroller = comptrollerEmails.includes((me as any).email);
   
   // Strict role-based access - each role can ONLY access their designated pages
-  if (path.startsWith("/admin")) return isAdmin;
+  // Super Admin: is_admin = true AND role = 'admin' → /super-admin
+  if (path.startsWith("/super-admin")) return isSuperAdmin;
+  // Transport Admin: role = 'admin' but not super admin → /admin
+  if (path.startsWith("/admin")) return isAdmin && !isSuperAdmin;
   if (path.startsWith("/president")) return !!me.is_president && !isAdmin;
   if (path.startsWith("/vp")) return !!me.is_vp && !isAdmin;
   if (path.startsWith("/head")) return !!me.is_head && !isAdmin;

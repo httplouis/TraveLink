@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function POST(request: NextRequest) {
   try {
@@ -9,7 +10,7 @@ export async function POST(request: NextRequest) {
     
     const cookieStore = await cookies();
     
-    // Create Supabase client
+    // Create Supabase client for auth (uses anon key)
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -35,46 +36,128 @@ export async function POST(request: NextRequest) {
     });
 
     if (error) {
+      console.error('[/api/auth/login] Sign in error:', error);
       return NextResponse.json({ error: error.message }, { status: 401 });
     }
 
-    // Get user profile
-    const { data: profile } = await supabase
+    if (!data.user) {
+      console.error('[/api/auth/login] No user returned from sign in');
+      return NextResponse.json({ error: "Sign in failed" }, { status: 401 });
+    }
+
+    console.log('[/api/auth/login] User signed in:', data.user.id, data.user.email);
+
+    // Get user profile using service role to bypass RLS
+    const supabaseAdmin = await createSupabaseServerClient(true);
+    const { data: profile, error: profileError } = await supabaseAdmin
       .from("users")
-      .select("id, role, department, is_head, is_hr, is_exec")
+      .select("id, role, department, is_head, is_hr, is_vp, is_president, is_admin")
       .eq("auth_user_id", data.user.id)
       .single();
 
+    if (profileError) {
+      console.error('[/api/auth/login] Profile query error:', profileError);
+      console.error('[/api/auth/login] Auth user ID:', data.user.id);
+      console.error('[/api/auth/login] Email:', email);
+      return NextResponse.json({ 
+        error: "Profile not found", 
+        details: profileError.message 
+      }, { status: 404 });
+    }
+
     if (!profile) {
+      console.error('[/api/auth/login] Profile is null for user:', data.user.id);
       return NextResponse.json({ error: "Profile not found" }, { status: 404 });
     }
 
-    // Determine redirect path
-    const userRole = profile.role?.toLowerCase() || "faculty";
-    const userEmail = data.user.email?.toLowerCase() || "";
-    
-    const adminEmails = ["admin@mseuf.edu.ph", "admin.cleofe@mseuf.edu.ph", "casinotrizzia@mseuf.edu.ph"];
-    const comptrollerEmails = ["comptroller@mseuf.edu.ph"];
-    
-    const isAdmin = userRole === "admin" || adminEmails.includes(userEmail);
-    const isComptroller = comptrollerEmails.includes(userEmail);
-    const isHead = userRole === "head" || profile.is_head === true;
-    const isHR = userRole === "hr" || profile.is_hr === true;
-    const isExec = userRole === "exec" || profile.is_exec === true;
-    const isDriver = userRole === "driver";
+    console.log('[/api/auth/login] Profile found:', profile.id, profile.role, profile.is_admin);
 
+    // Log login to audit_logs
+    try {
+      let clientIp = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || null;
+      // Handle comma-separated IPs (x-forwarded-for can have multiple)
+      if (clientIp) {
+        clientIp = clientIp.split(",")[0].trim();
+      }
+      // Validate IP format for INET type
+      if (clientIp && !clientIp.match(/^(\d{1,3}\.){3}\d{1,3}$/)) {
+        clientIp = null; // Set to null if invalid format
+      }
+      const userAgent = request.headers.get("user-agent") || null;
+      
+      const auditInsertData: any = {
+        user_id: profile.id,
+        action: "login",
+        entity_type: "auth",
+        entity_id: profile.id,
+        new_value: {
+          method: "email_password",
+          email: email,
+          role: profile.role,
+          is_admin: profile.is_admin,
+        },
+        user_agent: userAgent,
+      };
+      
+      // Only add ip_address if it's valid, otherwise set to null
+      if (clientIp) {
+        auditInsertData.ip_address = clientIp;
+      }
+
+      console.log('[/api/auth/login] 📝 Attempting to insert audit log:', {
+        user_id: auditInsertData.user_id,
+        action: auditInsertData.action,
+        has_ip: !!auditInsertData.ip_address,
+      });
+
+      const { error: auditError, data: auditData } = await supabaseAdmin
+        .from("audit_logs")
+        .insert(auditInsertData)
+        .select();
+
+      if (auditError) {
+        console.error('[/api/auth/login] ❌ Failed to log to audit_logs:', auditError);
+        console.error('[/api/auth/login] Audit error code:', auditError.code);
+        console.error('[/api/auth/login] Audit error message:', auditError.message);
+        console.error('[/api/auth/login] Audit error details:', JSON.stringify(auditError, null, 2));
+        console.error('[/api/auth/login] Profile ID:', profile.id);
+        console.error('[/api/auth/login] Client IP:', clientIp);
+        console.error('[/api/auth/login] Insert data:', JSON.stringify(auditInsertData, null, 2));
+      } else {
+        console.log('[/api/auth/login] ✅ Login logged to audit_logs successfully');
+        console.log('[/api/auth/login] Audit log ID:', auditData?.[0]?.id);
+        console.log('[/api/auth/login] Audit log created_at:', auditData?.[0]?.created_at);
+      }
+    } catch (auditErr: any) {
+      console.error('[/api/auth/login] ❌ Exception logging to audit_logs:', auditErr);
+      // Don't fail login if audit logging fails
+    }
+
+    // Determine redirect path based on role
+    const userRole = profile.role?.toLowerCase() || "faculty";
+    
+    // Super Admin: is_admin = true AND role = 'admin' → /super-admin
     let redirectPath = "/user";
-    if (isAdmin) {
+    if (profile.is_admin && userRole === "admin") {
+      redirectPath = "/super-admin";
+    } 
+    // Transport Admin: role = 'admin' but not super admin → /admin
+    else if (userRole === "admin") {
       redirectPath = "/admin";
-    } else if (isComptroller) {
+    } 
+    else if (userRole === "comptroller") {
       redirectPath = "/comptroller/inbox";
-    } else if (isHead) {
+    } else if (profile.is_head || userRole === "head") {
       redirectPath = "/head/dashboard";
-    } else if (isHR) {
+    } else if (profile.is_hr || userRole === "hr") {
       redirectPath = "/hr/dashboard";
-    } else if (isExec) {
+    } else if (profile.is_vp || userRole === "vp") {
+      redirectPath = "/vp/dashboard";
+    } else if (profile.is_president || userRole === "president") {
+      redirectPath = "/president/dashboard";
+    } else if (userRole === "exec") {
       redirectPath = "/exec/dashboard";
-    } else if (isDriver) {
+    } else if (userRole === "driver") {
       redirectPath = "/driver";
     }
 

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createNotification } from "@/lib/notifications/helpers";
 
 /**
  * POST /api/user/inbox/sign
@@ -34,19 +35,38 @@ export async function POST(req: Request) {
     }
 
     // Verify this request belongs to the current user and is pending their signature
+    // For representative submissions, check both requester_id (person being requested for) 
+    // and submitted_by_user_id (person who submitted on their behalf)
     const { data: request, error: requestError } = await supabase
       .from("requests")
       .select("*")
       .eq("id", requestId)
-      .eq("requester_id", profile.id)
       .eq("status", "pending_requester_signature")
+      .or(`requester_id.eq.${profile.id},submitted_by_user_id.eq.${profile.id}`)
       .single();
 
     if (requestError || !request) {
+      console.error("[User Inbox Sign] Request not found:", requestError);
+      console.error("[User Inbox Sign] Profile ID:", profile.id);
       return NextResponse.json({ 
         ok: false, 
         error: "Request not found or not pending your signature" 
       }, { status: 404 });
+    }
+
+    // Additional check: verify the current user is either the requester OR the submitter
+    const isRequester = request.requester_id === profile.id;
+    const isSubmitter = request.submitted_by_user_id === profile.id;
+    
+    if (!isRequester && !isSubmitter) {
+      console.error("[User Inbox Sign] User is neither requester nor submitter");
+      console.error("[User Inbox Sign] Requester ID:", request.requester_id);
+      console.error("[User Inbox Sign] Submitter ID:", request.submitted_by_user_id);
+      console.error("[User Inbox Sign] Current User ID:", profile.id);
+      return NextResponse.json({ 
+        ok: false, 
+        error: "You are not authorized to sign this request" 
+      }, { status: 403 });
     }
 
     // Update request: add signature and change status to pending_head
@@ -84,6 +104,42 @@ export async function POST(req: Request) {
     });
 
     console.log(`[User Inbox Sign] Request ${requestId} signed by ${profile.name} and forwarded to department head`);
+
+    // Create notifications
+    try {
+      // Notify submitter (if different from requester) that request was signed
+      if (request.submitted_by_user_id && request.submitted_by_user_id !== profile.id) {
+        await createNotification({
+          user_id: request.submitted_by_user_id,
+          notification_type: "request_signed",
+          title: "Request Signed",
+          message: `${profile.name} has signed the travel order request ${request.request_number || ''} and it has been forwarded to the department head.`,
+          related_type: "request",
+          related_id: requestId,
+          action_url: `/user/submissions?view=${requestId}`,
+          action_label: "View Request",
+          priority: "normal",
+        });
+      }
+
+      // Notify requester (if different from signer) that their request is moving forward
+      if (request.requester_id && request.requester_id !== profile.id) {
+        await createNotification({
+          user_id: request.requester_id,
+          notification_type: "request_status_change",
+          title: "Request Forwarded",
+          message: `Your travel order request ${request.request_number || ''} has been signed and forwarded to the department head for approval.`,
+          related_type: "request",
+          related_id: requestId,
+          action_url: `/user/submissions?view=${requestId}`,
+          action_label: "View Request",
+          priority: "normal",
+        });
+      }
+    } catch (notifError: any) {
+      console.error("[User Inbox Sign] Failed to create notifications:", notifError);
+      // Don't fail the request if notifications fail
+    }
 
     return NextResponse.json({ 
       ok: true, 

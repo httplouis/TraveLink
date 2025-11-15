@@ -10,6 +10,8 @@ import StaggerIn from "@/components/common/StaggerIn";
 import AvailabilityHeatmap from "@/components/user/dashboard/AvailabilityHeatmap.ui";
 import ActivityTimeline from "@/components/user/dashboard/ActivityTimeline.ui";
 import VehicleShowcase from "@/components/user/dashboard/VehicleShowcase.ui";
+import AnalyticsChart from "@/components/user/dashboard/AnalyticsChart.ui";
+import AIInsights from "@/components/user/dashboard/AIInsights.ui";
 import type { Trip } from "@/lib/user/schedule/types";
 import { ClipboardList, BusFront, Activity } from "lucide-react";
 
@@ -30,6 +32,10 @@ type Props = {
     photo_url?: string;
     status: string;
   }>;
+  analytics?: any;
+  aiInsights?: any;
+  recentActivity?: Array<{ id: string; title: string; meta: string; when: string }>;
+  loading?: boolean;
 };
 
 export default function DashboardView({
@@ -39,6 +45,10 @@ export default function DashboardView({
   onNewRequest,
   userName = "User",
   vehicles = [],
+  analytics,
+  aiInsights,
+  recentActivity = [],
+  loading = false,
 }: Props) {
   const now = new Date();
   const upcoming = Array.isArray(trips)
@@ -48,16 +58,54 @@ export default function DashboardView({
         .slice(0, 6)
     : [];
 
+  // Generate trend data for KPIs from analytics
+  const getTrendData = (index: number) => {
+    if (!analytics?.monthlyTrends || analytics.monthlyTrends.length < 2) {
+      return [];
+    }
+    // Return last 5 months of data for the trend sparkline
+    return analytics.monthlyTrends.slice(-5).map((m: any) => {
+      if (index === 0) return m.total; // Active requests
+      if (index === 1) return m.approved; // Vehicles (not applicable, use 0)
+      return m.pending; // Pending approvals
+    });
+  };
+
   return (
     <div className="space-y-6">
       <DashboardHero userName={userName} onOpenSchedule={onOpenSchedule} onNewRequest={onNewRequest} />
 
       {/* KPI row with stagger */}
       <StaggerIn className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <KpiCard icon={<ClipboardList className="h-5 w-5" />} label={kpis[0]?.label ?? "Active Requests"} value={kpis[0]?.value ?? 0} trend={[2,3,3,4,5]} />
-        <KpiCard icon={<BusFront className="h-5 w-5" />} label={kpis[1]?.label ?? "Vehicles Online"} value={kpis[1]?.value ?? 0} trend={[1,1,2,2,3]} />
-        <KpiCard icon={<Activity className="h-5 w-5" />} label={kpis[2]?.label ?? "Pending Approvals"} value={kpis[2]?.value ?? 0} trend={[6,5,5,4,4]} />
+        <KpiCard 
+          icon={<ClipboardList className="h-5 w-5" />} 
+          label={kpis[0]?.label ?? "Active Requests"} 
+          value={kpis[0]?.value ?? 0} 
+          trend={getTrendData(0)} 
+        />
+        <KpiCard 
+          icon={<BusFront className="h-5 w-5" />} 
+          label={kpis[1]?.label ?? "Vehicles Online"} 
+          value={kpis[1]?.value ?? 0} 
+          trend={[]} 
+        />
+        <KpiCard 
+          icon={<Activity className="h-5 w-5" />} 
+          label={kpis[2]?.label ?? "Pending Approvals"} 
+          value={kpis[2]?.value ?? 0} 
+          trend={getTrendData(2)} 
+        />
       </StaggerIn>
+
+      {/* AI Insights - Only show if AI is enabled */}
+      {aiInsights && aiInsights.aiEnabled && (
+        <AIInsights insights={aiInsights} loading={loading} />
+      )}
+
+      {/* Analytics Chart */}
+      {analytics?.monthlyTrends && (
+        <AnalyticsChart monthlyTrends={analytics.monthlyTrends} />
+      )}
 
       {/* Overview with stagger */}
       <StaggerIn className="grid grid-cols-1 gap-4 xl:grid-cols-3">
@@ -78,11 +126,7 @@ export default function DashboardView({
           </div>
 
           <ActivityTimeline
-            items={[
-              { id: "a1", title: "Trip approved", meta: "Tagaytay • CCMS", when: "2h ago" },
-              { id: "a2", title: "Vehicle assigned", meta: "Van • SCH-1002", when: "yesterday" },
-              { id: "a3", title: "Request submitted", meta: "San Pablo • CHM", when: "2 days ago" },
-            ]}
+            items={recentActivity.length > 0 ? recentActivity : []}
           />
         </div>
       </StaggerIn>

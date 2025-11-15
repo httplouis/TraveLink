@@ -10,7 +10,9 @@ export async function GET(
     const supabase = await createSupabaseServerClient(true);
 
     // Get full request details with all approval information AND department
-    const { data: request, error } = await supabase
+    // Try with join first, if it fails, fetch without join
+    let request, requestError;
+    const { data: requestWithJoin, error: joinError } = await supabase
       .from("requests")
       .select(`
         *,
@@ -19,12 +21,36 @@ export async function GET(
       .eq("id", requestId)
       .single();
     
+    if (joinError) {
+      console.warn('[Tracking API] Join query failed, trying without join:', joinError);
+      // Try without join
+      const { data: requestNoJoin, error: noJoinError } = await supabase
+        .from("requests")
+        .select("*")
+        .eq("id", requestId)
+        .single();
+      
+      if (noJoinError) {
+        console.error("[GET /api/requests/[id]/tracking] Error:", noJoinError);
+        return NextResponse.json(
+          { ok: false, error: noJoinError.message || "Request not found" },
+          { status: noJoinError.code === 'PGRST116' ? 404 : 500 }
+        );
+      }
+      
+      request = requestNoJoin;
+      requestError = null;
+    } else {
+      request = requestWithJoin;
+      requestError = null;
+    }
+    
     console.log('[Tracking API] Raw request data:', request);
 
-    if (error) {
-      console.error("[GET /api/requests/[id]/tracking] Error:", error);
+    if (requestError) {
+      console.error("[GET /api/requests/[id]/tracking] Error:", requestError);
       return NextResponse.json(
-        { ok: false, error: error.message },
+        { ok: false, error: requestError.message },
         { status: 500 }
       );
     }
@@ -50,12 +76,21 @@ export async function GET(
     // Fetch related data separately to avoid schema cache issues
     const fetchUserName = async (userId: string | null) => {
       if (!userId) return null;
-      const { data } = await supabase
+      try {
+        const { data, error } = await supabase
         .from("users")
-        .select("full_name")
+          .select("name, full_name")
         .eq("id", userId)
         .single();
-      return data?.full_name || null;
+        if (error) {
+          console.error('[fetchUserName] Error:', error);
+          return null;
+        }
+        return data?.name || data?.full_name || null;
+      } catch (err) {
+        console.error('[fetchUserName] Exception:', err);
+        return null;
+      }
     };
 
     const fetchDepartment = async (deptId: string | null) => {
@@ -95,35 +130,61 @@ export async function GET(
 
     const fetchDriver = async (driverId: string | null) => {
       if (!driverId) return null;
+      try {
       // Driver data is in users table, not drivers table
       const { data, error } = await supabase
         .from("users")
-        .select("name, id")
+          .select("name, id, full_name")
         .eq("id", driverId)
         .single();
       
       if (error) {
-        console.log('[fetchDriver] Error:', error);
+          console.error('[fetchDriver] Error:', error);
+          return null;
+        }
+        
+        return data ? { full_name: data.name || data.full_name || 'Unknown Driver' } : null;
+      } catch (err) {
+        console.error('[fetchDriver] Exception:', err);
         return null;
       }
-      
-      return data ? { full_name: data.name } : null;
     };
 
     // Fetch requester's user data to get department as fallback
     const fetchRequesterData = async (userId: string | null) => {
       if (!userId) return null;
-      const { data } = await supabase
+      try {
+        const { data, error } = await supabase
         .from("users")
-        .select("full_name, department_id, departments:department_id(id, name, code)")
+          .select("name, full_name, department_id, departments:department_id(id, name, code)")
         .eq("id", userId)
         .single();
+        
+        if (error) {
+          console.error('[fetchRequesterData] Error:', error);
+          return null;
+        }
+        
+        // Normalize name field
+        if (data && !data.full_name && data.name) {
+          data.full_name = data.name;
+        }
+        
       console.log('[Tracking API] Requester data:', data);
       return data || null;
+      } catch (err) {
+        console.error('[fetchRequesterData] Exception:', err);
+        return null;
+      }
     };
 
-    // Fetch all related data in parallel
-    const [
+    // Fetch all related data in parallel with error handling
+    let requesterData, department, headApproverName, parentHeadApproverName, adminProcessorName;
+    let comptrollerApproverName, hrApproverName, vpApproverName, presidentApproverName, execApproverName;
+    let rejectedByName, assignedVehicle, assignedDriverName, preferredVehicle, preferredDriver;
+    
+    try {
+      [
       requesterData,
       department,
       headApproverName,
@@ -139,7 +200,7 @@ export async function GET(
       assignedDriverName,
       preferredVehicle,
       preferredDriver,
-    ] = await Promise.all([
+      ] = await Promise.allSettled([
       fetchRequesterData(request.requester_id),
       fetchDepartment(request.department_id),
       fetchUserName(request.head_approved_by),
@@ -155,7 +216,11 @@ export async function GET(
       fetchUserName(request.assigned_driver_id),
       fetchVehicle(request.preferred_vehicle_id),
       fetchDriver(request.preferred_driver_id),
-    ]);
+      ]).then(results => results.map(r => r.status === 'fulfilled' ? r.value : null));
+    } catch (err) {
+      console.error('[Tracking API] Error fetching related data:', err);
+      // Continue with null values - don't crash
+    }
 
     // Debug vehicle/driver resolution
     console.log('[Tracking API] Vehicle/Driver Resolution:', {
@@ -176,7 +241,7 @@ export async function GET(
         : requesterData.departments;
     }
     
-    const requesterName = requesterData?.full_name || null;
+    const requesterName = requesterData?.full_name || requesterData?.name || null;
     
     console.log('[Tracking API] Department sources:', {
       from_request_join: request.departments,
@@ -186,11 +251,23 @@ export async function GET(
     });
 
     // Get history timeline
-    const { data: history } = await supabase
+    let history = [];
+    try {
+      const { data: historyData, error: historyError } = await supabase
       .from("request_history")
       .select("*")
       .eq("request_id", requestId)
       .order("created_at", { ascending: true });
+      
+      if (historyError) {
+        console.error('[Tracking API] Error fetching history:', historyError);
+      } else {
+        history = historyData || [];
+      }
+    } catch (err) {
+      console.error('[Tracking API] Exception fetching history:', err);
+      history = [];
+    }
 
     // Build tracking data
     const trackingData = {
@@ -296,8 +373,13 @@ export async function GET(
     return NextResponse.json({ ok: true, data: trackingData });
   } catch (err: any) {
     console.error("[GET /api/requests/[id]/tracking] Unexpected error:", err);
+    console.error("[GET /api/requests/[id]/tracking] Error stack:", err.stack);
     return NextResponse.json(
-      { ok: false, error: err.message || "Internal server error" },
+      { 
+        ok: false, 
+        error: err.message || "Internal server error",
+        details: process.env.NODE_ENV === 'development' ? err.stack : undefined
+      },
       { status: 500 }
     );
   }

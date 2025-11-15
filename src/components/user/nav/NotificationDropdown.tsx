@@ -23,34 +23,111 @@ export default function NotificationDropdown() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [inboxCount, setInboxCount] = useState(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
-  // Load notifications
+  // Load notifications and combine with inbox items - OPTIMIZED
   const loadNotifications = async () => {
-    setLoading(true);
+    // Don't show loading spinner - just update silently
     try {
-      const res = await fetch("/api/notifications?limit=10");
-      const data = await res.json();
-      console.log('[NotificationDropdown] API Response:', data);
-      if (data.ok) {
-        console.log('[NotificationDropdown] Notifications loaded:', data.data);
-        console.log('[NotificationDropdown] First notification:', data.data?.[0]);
-        setNotifications(data.data || []);
-        setUnreadCount(data.data?.filter((n: Notification) => !n.is_read).length || 0);
+      // Load both in parallel for speed
+      const [notificationsRes, inboxRes] = await Promise.all([
+        fetch("/api/notifications?limit=10", { 
+          cache: "no-store",
+          headers: {
+            'Cache-Control': 'no-cache'
+          }
+        }),
+        fetch("/api/user/inbox?limit=5", { cache: "no-store" })
+      ]);
+      
+      const [notificationsData, inboxData] = await Promise.all([
+        notificationsRes.json(),
+        inboxRes.json()
+      ]);
+      
+      let notificationsList: Notification[] = [];
+      
+      if (notificationsData.ok) {
+        notificationsList = Array.isArray(notificationsData.data) ? notificationsData.data : [];
       }
+
+      // Convert inbox items to notification format
+      const inboxItems = inboxData.ok && inboxData.data ? inboxData.data : [];
+      const inboxRequestIds = new Set(inboxItems.map((item: any) => item.id));
+      
+      // Filter out database notifications that are already represented by inbox items
+      // (to avoid duplicates - inbox items are more up-to-date)
+      const filteredNotifications = notificationsList.filter((notif) => {
+        // If it's a signature required notification and the request is in inbox, skip it
+        if (notif.notification_type === "request_pending_signature" && notif.related_id) {
+          return !inboxRequestIds.has(notif.related_id);
+        }
+        return true; // Keep all other notifications
+      });
+      
+      const inboxNotifications: Notification[] = inboxItems.map((item: any) => ({
+        id: `inbox-${item.id}`,
+        notification_type: "request_pending_signature",
+        title: "Signature Required",
+        message: `${item.submitted_by_name || 'Someone'} submitted a travel order request on your behalf. Please sign to proceed.`,
+        related_type: "request",
+        related_id: item.id,
+        action_url: "/user/inbox",
+        action_label: "Sign Request",
+        priority: "high",
+        is_read: false, // Inbox items are always unread
+        created_at: item.created_at || new Date().toISOString(),
+      }));
+
+      // Combine filtered notifications and inbox items
+      const allNotifications = [...filteredNotifications, ...inboxNotifications];
+      const uniqueNotifications = Array.from(
+        new Map(allNotifications.map(n => [n.related_id || n.id, n])).values()
+      );
+      
+      // Sort by created_at descending
+      uniqueNotifications.sort((a, b) => {
+        const dateA = new Date(a.created_at).getTime();
+        const dateB = new Date(b.created_at).getTime();
+        return dateB - dateA;
+      });
+
+      setNotifications(uniqueNotifications);
+      
+      const unread = uniqueNotifications.filter((n: Notification) => !n.is_read || n.is_read === false);
+      setUnreadCount(unread.length);
     } catch (error) {
-      console.error("Failed to load notifications:", error);
-    } finally {
-      setLoading(false);
+      console.error("[NotificationDropdown] Failed to load notifications:", error);
+      setNotifications([]);
+      setUnreadCount(0);
     }
   };
+
+  // Load inbox count and items
+  const loadInboxCount = async () => {
+    try {
+      const res = await fetch("/api/user/inbox/count", { cache: "no-store" });
+      const data = await res.json();
+      if (data.ok) {
+        setInboxCount(data.pending_count || 0);
+      }
+    } catch (error) {
+      console.error("Failed to load inbox count:", error);
+    }
+  };
+
 
   // Load on mount
   useEffect(() => {
     loadNotifications();
+    loadInboxCount();
     // Refresh every 30 seconds
-    const interval = setInterval(loadNotifications, 30000);
+    const interval = setInterval(() => {
+      loadNotifications();
+      loadInboxCount();
+    }, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -97,27 +174,31 @@ export default function NotificationDropdown() {
     }
   };
 
-  // Handle notification click
-  const handleNotificationClick = async (notification: Notification) => {
-    console.log('[Notification] Clicked:', notification);
-    console.log('[Notification] Action URL:', notification.action_url);
-    console.log('[Notification] Related ID:', notification.related_id);
+  // Handle notification click - FAST navigation
+  const handleNotificationClick = (notification: Notification) => {
+    // Close dropdown immediately
+    setIsOpen(false);
     
-    // Mark as read first
-    if (!notification.is_read) {
-      await markAsRead(notification.id);
+    // Mark as read in background (don't wait)
+    if (!notification.is_read && !notification.id.startsWith('inbox-')) {
+      markAsRead(notification.id).catch(console.error);
     }
     
-    // Navigate to submissions with view parameter
-    if (notification.related_id && notification.related_type === "request") {
-      setIsOpen(false);
-      // Always use the related_id to build the URL
+    // Navigate immediately - use prefetch for faster loading
+    if (notification.notification_type === "request_pending_signature" && notification.related_id) {
+      // Prefetch the inbox page for instant loading
+      router.prefetch(`/user/inbox?view=${notification.related_id}`);
+      router.push(`/user/inbox?view=${notification.related_id}`);
+    } 
+    // Otherwise, navigate to the action URL or submissions
+    else if (notification.related_id && notification.related_type === "request") {
+      router.prefetch(`/user/submissions?view=${notification.related_id}`);
       router.push(`/user/submissions?view=${notification.related_id}`);
     } else if (notification.action_url) {
-      setIsOpen(false);
+      router.prefetch(notification.action_url);
       router.push(notification.action_url);
     } else {
-      setIsOpen(false);
+      router.prefetch(`/user/submissions`);
       router.push(`/user/submissions`);
     }
   };
@@ -156,7 +237,16 @@ export default function NotificationDropdown() {
     <div className="relative" ref={dropdownRef}>
       {/* Bell Button */}
       <button
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => {
+          setIsOpen(!isOpen);
+          // Reload notifications when opening dropdown
+          if (!isOpen) {
+            loadNotifications();
+            // Prefetch inbox and submissions pages for faster navigation
+            router.prefetch('/user/inbox');
+            router.prefetch('/user/submissions');
+          }
+        }}
         className="relative rounded-full p-2 hover:bg-white/10 transition-colors"
         aria-label="Notifications"
       >
@@ -186,12 +276,7 @@ export default function NotificationDropdown() {
 
           {/* Notifications List */}
           <div className="overflow-y-auto max-h-[500px]">
-            {loading ? (
-              <div className="p-8 text-center">
-                <div className="animate-spin h-8 w-8 border-4 border-[#7a0019] border-t-transparent rounded-full mx-auto"></div>
-                <p className="mt-2 text-sm text-gray-500">Loading...</p>
-              </div>
-            ) : notifications.length === 0 ? (
+            {notifications.length === 0 ? (
               <div className="p-8 text-center">
                 <Bell className="h-12 w-12 text-gray-300 mx-auto mb-3" />
                 <p className="text-sm text-gray-500">No notifications yet</p>

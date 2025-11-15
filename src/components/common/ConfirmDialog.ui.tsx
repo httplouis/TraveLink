@@ -33,23 +33,27 @@ export function ConfirmDialog({
   const cancelBtnRef = React.useRef<HTMLButtonElement | null>(null);
   const confirmBtnRef = React.useRef<HTMLButtonElement | null>(null);
 
-  // Mount guard
-  if (!open) return null;
-
   // Focus first button on open
   React.useEffect(() => {
-    cancelBtnRef.current?.focus();
-  }, []);
+    if (open) {
+      cancelBtnRef.current?.focus();
+    }
+  }, [open]);
 
   // Esc to close, Enter on confirm
   React.useEffect(() => {
+    if (!open) return;
+    
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onCancel();
       if (e.key === "Enter") onConfirm();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onCancel, onConfirm]);
+  }, [open, onCancel, onConfirm]);
+
+  // Mount guard - must be after all hooks
+  if (!open) return null;
 
   // Basic focus trap for the two buttons
   function handleKeyDown(e: React.KeyboardEvent) {

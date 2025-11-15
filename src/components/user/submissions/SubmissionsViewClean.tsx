@@ -6,7 +6,6 @@ import { Clock, Eye, CheckCircle, XCircle, AlertCircle } from "lucide-react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { WorkflowEngine } from "@/lib/workflow/engine";
 import { SkeletonRequestCard } from "@/components/common/ui/Skeleton";
-import ComprehensiveRequestModal from "@/components/user/ComprehensiveRequestModal";
 import RequestCard from "@/components/common/RequestCardWow";
 import RequestDetailsView from "@/components/common/RequestDetailsView";
 import Modal from "@/components/common/Modal";
@@ -30,7 +29,7 @@ type Request = {
   department: {
     code: string;
     name: string;
-  };
+  } | null;
 };
 
 type HistoryItem = {
@@ -54,7 +53,6 @@ export default function SubmissionsView() {
   const [selectedRequest, setSelectedRequest] = React.useState<Request | null>(null);
   const [fullRequestData, setFullRequestData] = React.useState<any>(null);
   const [history, setHistory] = React.useState<HistoryItem[]>([]);
-  const [showTrackingModal, setShowTrackingModal] = React.useState(false);
   const [showDetailsModal, setShowDetailsModal] = React.useState(false);
   const [loadingDetails, setLoadingDetails] = React.useState(false);
   const [lastUpdate, setLastUpdate] = React.useState(new Date());
@@ -101,74 +99,87 @@ export default function SubmissionsView() {
     }
   }
 
-  function viewTracking(request: Request) {
-    setSelectedRequest(request);
-    setShowTrackingModal(true);
-  }
-
   async function viewDetails(request: Request) {
     setSelectedRequest(request);
     setShowDetailsModal(true);
     setLoadingDetails(true);
+    // Default to Timeline tab to show tracking immediately
     
     // Use tracking API - it has the proper name fields and we'll fix the timestamp format
     try {
       const res = await fetch(`/api/requests/${request.id}/tracking`);
+      
+      if (!res.ok) {
+        const errorText = await res.text();
+        let errorJson;
+        try {
+          errorJson = JSON.parse(errorText);
+        } catch {
+          errorJson = { error: errorText || `HTTP ${res.status}: ${res.statusText}` };
+        }
+        console.error(`Failed to fetch request ${request.id} details:`, errorJson);
+        throw new Error(errorJson.error || `Failed to load request: ${res.status} ${res.statusText}`);
+      }
+      
       const json = await res.json();
       console.log(`Fetched request ${request.id} details:`, json);
+      
+      if (!json.ok || !json.data) {
+        console.error("Failed to fetch request details:", json.error || "Unknown error");
+        alert(`Error loading request details: ${json.error || "Unknown error"}`);
+        setLoadingDetails(false);
+        return;
+      }
+      
+      // Only log debug info if data exists
       console.log('=== FULL API RESPONSE DEBUG ===');
       console.log('COMPLETE DATA:', json.data);
       console.log('ALL SIGNATURES:', {
-        requester_signature: json.data.requester_signature ? 'EXISTS (' + json.data.requester_signature.substring(0, 50) + '...)' : 'NULL',
-        head_signature: json.data.head_signature ? 'EXISTS (' + json.data.head_signature.substring(0, 50) + '...)' : 'NULL',
-        admin_signature: json.data.admin_signature ? 'EXISTS (' + json.data.admin_signature.substring(0, 50) + '...)' : 'NULL', 
-        comptroller_signature: json.data.comptroller_signature ? 'EXISTS (' + json.data.comptroller_signature.substring(0, 50) + '...)' : 'NULL',
-        hr_signature: json.data.hr_signature ? 'EXISTS (' + json.data.hr_signature.substring(0, 50) + '...)' : 'NULL',
-        vp_signature: json.data.vp_signature ? 'EXISTS (' + json.data.vp_signature.substring(0, 50) + '...)' : 'NULL',
-        president_signature: json.data.president_signature ? 'EXISTS (' + json.data.president_signature.substring(0, 50) + '...)' : 'NULL',
-        exec_signature: json.data.exec_signature ? 'EXISTS (' + json.data.exec_signature.substring(0, 50) + '...)' : 'NULL'
+        requester_signature: json.data?.requester_signature ? 'EXISTS (' + json.data.requester_signature.substring(0, 50) + '...)' : 'NULL',
+        head_signature: json.data?.head_signature ? 'EXISTS (' + json.data.head_signature.substring(0, 50) + '...)' : 'NULL',
+        admin_signature: json.data?.admin_signature ? 'EXISTS (' + json.data.admin_signature.substring(0, 50) + '...)' : 'NULL', 
+        comptroller_signature: json.data?.comptroller_signature ? 'EXISTS (' + json.data.comptroller_signature.substring(0, 50) + '...)' : 'NULL',
+        hr_signature: json.data?.hr_signature ? 'EXISTS (' + json.data.hr_signature.substring(0, 50) + '...)' : 'NULL',
+        vp_signature: json.data?.vp_signature ? 'EXISTS (' + json.data.vp_signature.substring(0, 50) + '...)' : 'NULL',
+        president_signature: json.data?.president_signature ? 'EXISTS (' + json.data.president_signature.substring(0, 50) + '...)' : 'NULL',
+        exec_signature: json.data?.exec_signature ? 'EXISTS (' + json.data.exec_signature.substring(0, 50) + '...)' : 'NULL'
       });
       console.log('ALL TIMESTAMPS:', {
-        head_approved_at: json.data.head_approved_at,
-        admin_processed_at: json.data.admin_processed_at,
-        comptroller_approved_at: json.data.comptroller_approved_at,
-        hr_approved_at: json.data.hr_approved_at,
-        vp_approved_at: json.data.vp_approved_at,
-        president_approved_at: json.data.president_approved_at,
-        exec_approved_at: json.data.exec_approved_at,
-        final_approved_at: json.data.final_approved_at
+        head_approved_at: json.data?.head_approved_at,
+        admin_processed_at: json.data?.admin_processed_at,
+        comptroller_approved_at: json.data?.comptroller_approved_at,
+        hr_approved_at: json.data?.hr_approved_at,
+        vp_approved_at: json.data?.vp_approved_at,
+        president_approved_at: json.data?.president_approved_at,
+        exec_approved_at: json.data?.exec_approved_at,
+        final_approved_at: json.data?.final_approved_at
       });
-      console.log('EXPENSE BREAKDOWN:', json.data.expense_breakdown);
-      console.log('EXPENSE BREAKDOWN TYPE:', typeof json.data.expense_breakdown);
-      console.log('EXPENSE BREAKDOWN LENGTH:', json.data.expense_breakdown?.length);
+      console.log('EXPENSE BREAKDOWN:', json.data?.expense_breakdown);
+      console.log('EXPENSE BREAKDOWN TYPE:', typeof json.data?.expense_breakdown);
+      console.log('EXPENSE BREAKDOWN LENGTH:', json.data?.expense_breakdown?.length);
       console.log('=== VEHICLE/DRIVER DEBUG ===');
-      console.log('transportation_type:', json.data.transportation_type);
-      console.log('cost_justification:', json.data.cost_justification);
-      console.log('preferred_vehicle_id:', json.data.preferred_vehicle_id);
-      console.log('preferred_driver_id:', json.data.preferred_driver_id);
-      console.log('preferred_vehicle_note:', json.data.preferred_vehicle_note);
-      console.log('preferred_driver_note:', json.data.preferred_driver_note);
+      console.log('transportation_type:', json.data?.transportation_type);
+      console.log('cost_justification:', json.data?.cost_justification);
+      console.log('preferred_vehicle_id:', json.data?.preferred_vehicle_id);
+      console.log('preferred_driver_id:', json.data?.preferred_driver_id);
+      console.log('preferred_vehicle_note:', json.data?.preferred_vehicle_note);
+      console.log('preferred_driver_note:', json.data?.preferred_driver_note);
       console.log('=== RESOLVED NAMES ===');
-      console.log('preferred_vehicle (resolved):', json.data.preferred_vehicle);
-      console.log('preferred_driver (resolved):', json.data.preferred_driver);
+      console.log('preferred_vehicle (resolved):', json.data?.preferred_vehicle);
+      console.log('preferred_driver (resolved):', json.data?.preferred_driver);
       console.log('=== END DEBUG ===');
       // DETAILED VP/President field check
       console.log('=== VP/PRESIDENT FIELD DEBUG ===');
-      console.log('vp_approved_at:', json.data.vp_approved_at);
-      console.log('president_approved_at:', json.data.president_approved_at);
-      console.log('exec_approved_at:', json.data.exec_approved_at);
-      console.log('final_approved_at:', json.data.final_approved_at);
-      console.log('vp_approved_by:', json.data.vp_approved_by);
-      console.log('president_approved_by:', json.data.president_approved_by);
-      console.log('exec_approved_by:', json.data.exec_approved_by);
+      console.log('vp_approved_at:', json.data?.vp_approved_at);
+      console.log('president_approved_at:', json.data?.president_approved_at);
+      console.log('exec_approved_at:', json.data?.exec_approved_at);
+      console.log('final_approved_at:', json.data?.final_approved_at);
+      console.log('vp_approved_by:', json.data?.vp_approved_by);
+      console.log('president_approved_by:', json.data?.president_approved_by);
+      console.log('exec_approved_by:', json.data?.exec_approved_by);
       console.log('=== END FIELD DEBUG ===');
       
-      if (json.ok && json.data) {
         setFullRequestData(json.data);
-      } else {
-        console.error("Failed to fetch request details:", json.error || "Unknown error");
-        alert(`Error loading request details: ${json.error || "Unknown error"}`);
-      }
     } catch (err) {
       console.error("Failed to fetch request details:", err);
       alert(`Error loading request details: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -247,7 +258,7 @@ export default function SubmissionsView() {
             requester: {
               id: 'current-user',
               name: req.requester_name || 'Unknown User', // Use actual requester name
-              department: req.department.name,
+              department: req.department?.name || 'No Department',
               profile_picture: undefined,
               position: 'Faculty/Staff'
             },
@@ -269,7 +280,6 @@ export default function SubmissionsView() {
                 request={transformedRequest}
                 showActions={true}
                 onView={() => viewDetails(req)}
-                onTrack={() => viewTracking(req)}
                 className="hover:shadow-xl transition-all duration-300"
               />
               
@@ -291,15 +301,6 @@ export default function SubmissionsView() {
           );
         })}
       </div>
-
-      {/* Comprehensive Request Modal */}
-      {selectedRequest && (
-        <ComprehensiveRequestModal
-          isOpen={showTrackingModal}
-          onClose={() => setShowTrackingModal(false)}
-          requestId={selectedRequest.id}
-        />
-      )}
 
       {/* DETAILS MODAL */}
       <Modal
@@ -404,17 +405,17 @@ export default function SubmissionsView() {
                 id: 'current-user',
                 name: selectedRequest.requester_name || 'Unknown User',
                 profile_picture: undefined,
-                department: selectedRequest.department.name,
+                department: selectedRequest.department?.name || 'No Department',
                 position: 'Faculty/Staff',
                 email: undefined,
                 phone: undefined
               },
               
-              department: {
+              department: selectedRequest.department ? {
                 id: 'dept-1',
                 name: selectedRequest.department.name,
                 code: selectedRequest.department.code
-              },
+              } : undefined,
               
               participants: fullRequestData?.participants || [],
               
@@ -429,7 +430,7 @@ export default function SubmissionsView() {
                     id: 'current-user',
                     name: selectedRequest.requester_name || 'Unknown User',
                     profile_picture: undefined,
-                    department: selectedRequest.department.name,
+                    department: selectedRequest.department?.name || 'No Department',
                     position: 'Faculty/Staff'
                   },
                   signature: fullRequestData?.requester_signature || null,
@@ -444,7 +445,7 @@ export default function SubmissionsView() {
                     id: 'dept-head',
                     name: fullRequestData?.head_approved_by || 'Department Head',
                     position: 'Department Head',
-                    department: selectedRequest.department.name
+                    department: selectedRequest.department?.name || 'No Department'
                   } : undefined,
                   signature: fullRequestData?.head_signature || null,
                   approved_at: fullRequestData?.head_approved_at || null
@@ -532,7 +533,7 @@ export default function SubmissionsView() {
                     id: 'current-user',
                     name: selectedRequest.requester_name || 'Unknown User',
                     profile_picture: undefined,
-                    department: selectedRequest.department.name,
+                    department: selectedRequest.department?.name || 'No Department',
                     position: 'Faculty/Staff'
                   },
                   timestamp: selectedRequest.created_at
@@ -541,7 +542,32 @@ export default function SubmissionsView() {
               
               smart_skips_applied: [],
               efficiency_boost: undefined,
-              requires_budget: selectedRequest.has_budget
+              requires_budget: selectedRequest.has_budget,
+              
+              // Status tracking props for enhanced timeline
+              requesterIsHead: fullRequestData?.requester_is_head || false,
+              hasBudget: fullRequestData?.has_budget || false,
+              hasParentHead: fullRequestData?.has_parent_head || false,
+              requiresPresidentApproval: (fullRequestData?.total_budget || 0) > 50000,
+              headApprovedAt: fullRequestData?.head_approved_at || null,
+              headApprovedBy: fullRequestData?.head_approved_by || null,
+              parentHeadApprovedAt: fullRequestData?.parent_head_approved_at || null,
+              parentHeadApprovedBy: fullRequestData?.parent_head_approved_by || null,
+              adminProcessedAt: fullRequestData?.admin_processed_at || null,
+              adminProcessedBy: fullRequestData?.admin_processed_by || null,
+              comptrollerApprovedAt: fullRequestData?.comptroller_approved_at || null,
+              comptrollerApprovedBy: fullRequestData?.comptroller_approved_by || null,
+              hrApprovedAt: fullRequestData?.hr_approved_at || null,
+              hrApprovedBy: fullRequestData?.hr_approved_by || null,
+              vpApprovedAt: fullRequestData?.vp_approved_at || null,
+              vpApprovedBy: fullRequestData?.vp_approved_by || null,
+              presidentApprovedAt: fullRequestData?.president_approved_at || null,
+              presidentApprovedBy: fullRequestData?.president_approved_by || null,
+              execApprovedAt: fullRequestData?.exec_approved_at || null,
+              execApprovedBy: fullRequestData?.exec_approved_by || null,
+              rejectedAt: fullRequestData?.rejected_at || null,
+              rejectedBy: fullRequestData?.rejected_by || null,
+              rejectionStage: fullRequestData?.rejection_stage || null
             }}
             onPrint={() => window.print()}
             onClose={() => setShowDetailsModal(false)}
