@@ -23,7 +23,7 @@ import SignatureStageRail from './SignatureStageRail';
 import RequestStatusTracker from './RequestStatusTracker';
 import { formatLongDate, formatLongDateTime } from '@/lib/datetime';
 
-interface RequestData {
+export interface RequestData {
   id: string;
   request_number: string;
   title: string;
