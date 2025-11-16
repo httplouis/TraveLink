@@ -36,6 +36,8 @@ export default function SubmitConfirmationDialog({
   approvalPath,
   firstReceiver,
   isSubmitting = false,
+  headName,
+  isSeminar = false,
 }: Props) {
   if (!isOpen) return null;
 
@@ -119,11 +121,15 @@ export default function SubmitConfirmationDialog({
                   FIRST
                 </span>
                 <span className="text-sm font-medium text-blue-900">
-                  {getApproverLabel(firstReceiver)}
+                  {firstReceiver === "DEPT_HEAD" && headName 
+                    ? `${headName} (${getApproverLabel(firstReceiver)})`
+                    : getApproverLabel(firstReceiver)}
                 </span>
               </div>
               <p className="text-xs text-blue-700">
-                Your request will be sent here first for approval
+                {firstReceiver === "DEPT_HEAD" && headName
+                  ? `Your request will be sent to ${headName} (${department}) first for approval`
+                  : `Your request will be sent here first for approval`}
               </p>
             </div>
 

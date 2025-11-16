@@ -364,7 +364,13 @@ export default function UserLeftNav() {
               key={`${idx}-${item.href}`}
               ref={(el) => { navRefs.current[item.href] = el; }}
               href={item.href}
-              onMouseEnter={() => setHoveredItem(item.href)}
+              onMouseEnter={() => {
+                setHoveredItem(item.href);
+                // Prefetch on hover for faster navigation
+                if (!active) {
+                  router.prefetch(item.href);
+                }
+              }}
               className={[
                 "group relative flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200",
                 active
@@ -401,7 +407,12 @@ export default function UserLeftNav() {
             <Link
               ref={(el) => { navRefs.current[groupKey] = el; }}
               href={firstChild.href}
-              onMouseEnter={() => setHoveredItem(groupKey)}
+              onMouseEnter={() => {
+                setHoveredItem(groupKey);
+                if (!anyActive) {
+                  router.prefetch(firstChild.href);
+                }
+              }}
               className={[
                 "group relative flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200",
                 anyActive 
@@ -430,7 +441,12 @@ export default function UserLeftNav() {
                     key={c.href}
                     ref={(el) => { navRefs.current[c.href] = el; }}
                     href={c.href}
-                    onMouseEnter={() => setHoveredItem(c.href)}
+                    onMouseEnter={() => {
+                      setHoveredItem(c.href);
+                      if (!active) {
+                        router.prefetch(c.href);
+                      }
+                    }}
                     className={[
                       "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150",
                       active

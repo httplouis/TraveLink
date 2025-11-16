@@ -12,6 +12,7 @@ import ActivityTimeline from "@/components/user/dashboard/ActivityTimeline.ui";
 import VehicleShowcase from "@/components/user/dashboard/VehicleShowcase.ui";
 import AnalyticsChart from "@/components/user/dashboard/AnalyticsChart.ui";
 import AIInsights from "@/components/user/dashboard/AIInsights.ui";
+import DashboardSkeleton from "@/components/common/skeletons/DashboardSkeleton";
 import type { Trip } from "@/lib/user/schedule/types";
 import { ClipboardList, BusFront, Activity } from "lucide-react";
 
@@ -70,6 +71,10 @@ export default function DashboardView({
       return m.pending; // Pending approvals
     });
   };
+
+  if (loading) {
+    return <DashboardSkeleton />;
+  }
 
   return (
     <div className="space-y-6">

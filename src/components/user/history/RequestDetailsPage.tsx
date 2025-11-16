@@ -91,6 +91,23 @@ export default function RequestDetailsPage({ requestId }: RequestDetailsPageProp
         efficiency_boost: data.efficiency_boost,
         requires_budget: data.requires_budget || data.has_budget,
         
+        // Seminar data
+        request_type: data.request_type || 'travel_order',
+        seminar_data: (() => {
+          if (data.seminar_data) {
+            if (typeof data.seminar_data === 'string') {
+              try {
+                return JSON.parse(data.seminar_data);
+              } catch (e) {
+                console.warn('[RequestDetailsPage] Failed to parse seminar_data:', e);
+                return null;
+              }
+            }
+            return data.seminar_data;
+          }
+          return null;
+        })(),
+        
         // Build signature stages with real data
         signatures: [
           {

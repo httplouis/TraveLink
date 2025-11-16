@@ -54,7 +54,11 @@ export async function sendEmail({ to, subject, html, from }: SendEmailOptions): 
     console.log("\n📄 HTML Content (first 300 chars):");
     console.log(html.substring(0, 300) + "...");
     console.log("=".repeat(70) + "\n");
-    return { success: true }; // Return success so app doesn't break
+    // Return error so user knows email wasn't actually sent
+    return { 
+      success: false, 
+      error: "RESEND_API_KEY not configured. Email was not sent. Check server console for confirmation link." 
+    };
   }
 
   try {
@@ -108,16 +112,55 @@ export async function sendEmail({ to, subject, html, from }: SendEmailOptions): 
             return { success: true, emailId: retryData.id };
           } else {
             console.error("[sendEmail] ❌ Retry with test domain also failed:", retryData);
+            // Check if it's a recipient restriction
+            if (retryData.message?.includes("only send testing emails") || 
+                retryData.message?.includes("can only send") ||
+                retryData.message?.includes("verified email")) {
+              return { 
+                success: false, 
+                error: `Resend account restriction: Can only send to verified email addresses. The email "${to}" is not verified. To send to any email, verify a domain at resend.com/domains or add this email as a verified recipient.` 
+              };
+            }
             return { success: false, error: retryData.message || "Failed to send email even with test domain" };
           }
-        } else if (data.message?.includes("only send testing emails")) {
-          console.warn("[sendEmail] ⚠️ Resend test account restriction: Can only send to verified email");
+        } else if (data.message?.includes("only send testing emails") || 
+                   data.message?.includes("can only send") ||
+                   data.message?.includes("verified email") ||
+                   data.message?.includes("your own email") ||
+                   data.message?.includes("verify a domain")) {
+          console.warn("[sendEmail] ⚠️ Resend test account restriction detected");
+          console.warn("[sendEmail] 💡 Recipient email:", to);
+          console.warn("[sendEmail] 💡 Resend message:", data.message);
           console.warn("[sendEmail] 💡 For production, verify a domain at resend.com/domains");
+          
+          // Extract the allowed email from Resend's message if available
+          const ownEmailMatch = data.message?.match(/\(([^)]+)\)/);
+          const allowedEmail = ownEmailMatch ? ownEmailMatch[1] : "your verified email";
+          
           return { 
             success: false, 
-            error: "Email sending restricted: Resend test accounts can only send to the account owner's email. Please verify a domain for production use." 
+            error: `Resend account restriction: Can only send to ${allowedEmail}. The email "${to}" is not verified. To send to any email address, verify a domain at resend.com/domains and update the EMAIL_FROM environment variable.` 
           };
         }
+      }
+      
+      // Check for other common restriction messages (for non-403 errors)
+      if (data.message?.includes("only send testing emails") || 
+          data.message?.includes("can only send") ||
+          data.message?.includes("verified email") ||
+          data.message?.includes("your own email") ||
+          data.message?.includes("verify a domain")) {
+        console.warn("[sendEmail] ⚠️ Resend account restriction detected");
+        console.warn("[sendEmail] 💡 Resend message:", data.message);
+        
+        // Extract the allowed email from Resend's message if available
+        const ownEmailMatch = data.message?.match(/\(([^)]+)\)/);
+        const allowedEmail = ownEmailMatch ? ownEmailMatch[1] : "your verified email";
+        
+        return { 
+          success: false, 
+          error: `Resend account restriction: Can only send to ${allowedEmail}. The email "${to}" is not verified. To send to any email address, verify a domain at resend.com/domains and update the EMAIL_FROM environment variable.` 
+        };
       }
       
       return { success: false, error: data.message || "Failed to send email" };

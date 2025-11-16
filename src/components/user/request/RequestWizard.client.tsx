@@ -176,8 +176,66 @@ function RequestWizardContent() {
     if (data.reason === "seminar") {
       console.log('[RequestWizard] ✅ Seminar application - not a representative submission');
       setIsRepresentativeSubmission(false);
+      
       // For seminars, requesting person is the current user (organizer)
-      setRequestingPersonIsHead(currentUser?.role === "head" || currentUser?.is_head === true);
+      const isCurrentUserHead = currentUser?.role === "head" || currentUser?.is_head === true;
+      setRequestingPersonIsHead(isCurrentUserHead);
+      
+      // Find department head for seminar organizer (current user)
+      const findSeminarDepartmentHead = async () => {
+        if (!currentUser || userLoading) {
+          console.log('[RequestWizard] ⏳ Waiting for user to load...');
+          return;
+        }
+        
+        try {
+          // Get current user's department ID
+          const userResponse = await fetch("/api/profile");
+          const userData = await userResponse.json();
+          
+          if (userData.ok && userData.data?.department_id) {
+            const departmentId = userData.data.department_id;
+            const departmentName = userData.data.department || "";
+            
+            console.log('[RequestWizard] 📍 Seminar organizer department:', {
+              id: departmentId,
+              name: departmentName
+            });
+            
+            // If current user is NOT a head, find their department head
+            if (!isCurrentUserHead && departmentId) {
+              const headResponse = await fetch(`/api/approvers?role=head&department_id=${departmentId}`);
+              const headData = await headResponse.json();
+              
+              if (headData.ok && headData.data && headData.data.length > 0) {
+                const head = headData.data[0]; // Use first head if multiple
+                console.log('[RequestWizard] ✅ Found department head for seminar:', head);
+                setRequestingPersonHeadInfo({
+                  name: head.name || "Department Head",
+                  department: head.department || departmentName || "",
+                });
+              } else {
+                console.warn('[RequestWizard] ⚠️ No department head found for seminar organizer');
+                setRequestingPersonHeadInfo({
+                  name: "Department Head",
+                  department: departmentName || "",
+                });
+              }
+            } else {
+              // Current user is a head, no need to find department head
+              setRequestingPersonHeadInfo(null);
+            }
+          } else {
+            console.warn('[RequestWizard] ⚠️ Current user has no department assigned');
+            setRequestingPersonHeadInfo(null);
+          }
+        } catch (error) {
+          console.error('[RequestWizard] ❌ Failed to find department head for seminar:', error);
+          setRequestingPersonHeadInfo(null);
+        }
+      };
+      
+      findSeminarDepartmentHead();
       return;
     }
     
@@ -805,15 +863,22 @@ function RequestWizardContent() {
             onSaveDraft={handleSaveDraft}
             onSubmit={handleSubmit}
             headName={
-              requestingPersonIsHead === false && requestingPersonHeadInfo
-                ? requestingPersonHeadInfo.name
-                : requestingPersonHeadInfo?.name || data.travelOrder?.endorsedByHeadName
+              showSeminar
+                ? (requestingPersonIsHead === false && requestingPersonHeadInfo
+                    ? requestingPersonHeadInfo.name
+                    : requestingPersonHeadInfo?.name)
+                : (requestingPersonIsHead === false && requestingPersonHeadInfo
+                    ? requestingPersonHeadInfo.name
+                    : requestingPersonHeadInfo?.name || data.travelOrder?.endorsedByHeadName)
             }
             department={
-              // ALWAYS use requester's department (from requestingPersonInfo or requestingPersonHeadInfo)
-              requestingPersonInfo?.department || 
-              requestingPersonHeadInfo?.department || 
-              data.travelOrder?.department
+              showSeminar
+                ? (requestingPersonInfo?.department || 
+                   requestingPersonHeadInfo?.department || 
+                   currentUser?.department || "")
+                : (requestingPersonInfo?.department || 
+                   requestingPersonHeadInfo?.department || 
+                   data.travelOrder?.department)
             }
             isHeadRequester={requestingPersonIsHead === true || currentUser?.role === "head"}
             requestingPersonIsHead={requestingPersonIsHead}
@@ -878,12 +943,36 @@ function RequestWizardContent() {
         isOpen={showConfirmDialog}
         onClose={() => setShowConfirmDialog(false)}
         onConfirm={handleConfirmedSubmit}
-        requesterName={data.travelOrder?.requestingPerson || ""}
-        department={data.travelOrder?.department || ""}
-        purpose={data.travelOrder?.purposeOfTravel || ""}
-        destination={data.travelOrder?.destination || ""}
-        travelDate={data.travelOrder?.departureDate || ""}
-        returnDate={data.travelOrder?.returnDate || ""}
+        requesterName={
+          showSeminar 
+            ? (currentUser?.name || data.seminar?.requesterName || "")
+            : (data.travelOrder?.requestingPerson || "")
+        }
+        department={
+          showSeminar
+            ? (requestingPersonInfo?.department || requestingPersonHeadInfo?.department || currentUser?.department || "")
+            : (data.travelOrder?.department || "")
+        }
+        purpose={
+          showSeminar
+            ? (data.seminar?.title || "")
+            : (data.travelOrder?.purposeOfTravel || "")
+        }
+        destination={
+          showSeminar
+            ? (data.seminar?.venue || "")
+            : (data.travelOrder?.destination || "")
+        }
+        travelDate={
+          showSeminar
+            ? (data.seminar?.dateFrom || "")
+            : (data.travelOrder?.departureDate || "")
+        }
+        returnDate={
+          showSeminar
+            ? (data.seminar?.dateTo || "")
+            : (data.travelOrder?.returnDate || "")
+        }
         approvalPath={fullApprovalPath({
           requesterRole: data.requesterRole,
           vehicleMode: data.vehicleMode,
@@ -892,6 +981,12 @@ function RequestWizardContent() {
         })}
         firstReceiver={firstHop}
         isSubmitting={submitting}
+        headName={
+          requestingPersonIsHead === false && requestingPersonHeadInfo
+            ? requestingPersonHeadInfo.name
+            : requestingPersonHeadInfo?.name
+        }
+        isSeminar={showSeminar}
       />
     </>
   );
