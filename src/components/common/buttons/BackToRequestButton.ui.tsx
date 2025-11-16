@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, FileText } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { motion } from "framer-motion";
 
 export default function BackToRequestButton() {
@@ -16,7 +16,6 @@ export default function BackToRequestButton() {
       >
         <ArrowLeft className="h-4 w-4 transition-transform duration-200 group-hover:-translate-x-0.5" strokeWidth={2.5} />
         <span>Back to Request</span>
-        <FileText className="h-3.5 w-3.5 opacity-60" strokeWidth={2.5} />
       </Link>
     </motion.div>
   );
