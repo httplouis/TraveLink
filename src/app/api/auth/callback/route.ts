@@ -29,7 +29,8 @@ export async function GET(request: NextRequest) {
   try {
     const cookieStore = await cookies();
     
-    // Create Supabase client
+    // Create Supabase client with proper cookie settings for production
+    const isProduction = process.env.NODE_ENV === 'production';
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -39,10 +40,27 @@ export async function GET(request: NextRequest) {
             return cookieStore.get(name)?.value;
           },
           set(name: string, value: string, options: any) {
-            cookieStore.set({ name, value, ...options });
+            cookieStore.set({ 
+              name, 
+              value, 
+              ...options,
+              // Ensure cookies work in production
+              httpOnly: options.httpOnly ?? true,
+              secure: isProduction, // Secure cookies in production (HTTPS only)
+              sameSite: 'lax' as const, // Allow cookies to be sent on top-level navigations
+              path: '/',
+            });
           },
           remove(name: string, options: any) {
-            cookieStore.set({ name, value: "", ...options });
+            cookieStore.set({ 
+              name, 
+              value: "", 
+              ...options,
+              httpOnly: options.httpOnly ?? true,
+              secure: isProduction,
+              sameSite: 'lax' as const,
+              path: '/',
+            });
           },
         },
       }
@@ -50,13 +68,28 @@ export async function GET(request: NextRequest) {
 
     // Exchange code for session
     // Supabase OAuth redirects here with a code after Microsoft authentication
+    console.log("[auth/callback] 🔄 Exchanging code for session...");
+    console.log("[auth/callback] Code received:", code ? `${code.substring(0, 10)}...` : "none");
+    
     const { data: { session }, error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
 
     if (sessionError || !session) {
+      console.error("[auth/callback] ❌ Session exchange failed!");
       console.error("[auth/callback] Session error:", sessionError);
       console.error("[auth/callback] Error details:", JSON.stringify(sessionError, null, 2));
-      return NextResponse.redirect(new URL("/login?error=session_failed", request.url));
+      console.error("[auth/callback] Request URL:", request.url);
+      console.error("[auth/callback] Request origin:", requestUrl.origin);
+      
+      // Return more specific error
+      const errorParam = sessionError?.message 
+        ? encodeURIComponent(sessionError.message.substring(0, 100))
+        : "session_failed";
+      return NextResponse.redirect(new URL(`/login?error=${errorParam}`, request.url));
     }
+    
+    console.log("[auth/callback] ✅ Session created successfully");
+    console.log("[auth/callback] User ID:", session.user.id);
+    console.log("[auth/callback] User email:", session.user.email);
 
     const authUser = session.user;
     const userEmail = authUser.email;

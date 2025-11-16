@@ -38,8 +38,11 @@ function LoginPageContent() {
     try {
       const supabase = createSupabaseClient();
       
-      // Get redirect URL
-      const redirectTo = `${window.location.origin}/api/auth/callback`;
+      // Get redirect URL - use environment variable if available, otherwise use current origin
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+      const redirectTo = `${baseUrl}/api/auth/callback`;
+      
+      console.log("[login] OAuth redirect URL:", redirectTo);
       
       // Sign in with Microsoft OAuth
       const { data, error } = await supabase.auth.signInWithOAuth({
