@@ -17,13 +17,16 @@ export async function GET(request: NextRequest) {
   const code = requestUrl.searchParams.get("code");
   const error = requestUrl.searchParams.get("error");
 
+  // Get base URL for redirects - use environment variable if available
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || requestUrl.origin;
+  
   if (error) {
     console.error("[auth/callback] OAuth error:", error);
-    return NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(error)}`, request.url));
+    return NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(error)}`, baseUrl));
   }
 
   if (!code) {
-    return NextResponse.redirect(new URL("/login?error=no_code", request.url));
+    return NextResponse.redirect(new URL("/login?error=no_code", baseUrl));
   }
 
   try {
@@ -84,7 +87,7 @@ export async function GET(request: NextRequest) {
       const errorParam = sessionError?.message 
         ? encodeURIComponent(sessionError.message.substring(0, 100))
         : "session_failed";
-      return NextResponse.redirect(new URL(`/login?error=${errorParam}`, request.url));
+      return NextResponse.redirect(new URL(`/login?error=${errorParam}`, baseUrl));
     }
     
     console.log("[auth/callback] ✅ Session created successfully");
@@ -100,7 +103,7 @@ export async function GET(request: NextRequest) {
     if (!userEmail || (!userEmail.endsWith("@mseuf.edu.ph") && !userEmail.endsWith("@student.mseuf.edu.ph"))) {
       // Sign out if not institutional email
       await supabase.auth.signOut();
-      return NextResponse.redirect(new URL("/login?error=invalid_email", request.url));
+      return NextResponse.redirect(new URL("/login?error=invalid_email", baseUrl));
     }
     
     // Log email type for debugging
@@ -388,12 +391,20 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    console.log(`[auth/callback] 🚀 Redirecting to: ${redirectPath}`);
-    return NextResponse.redirect(new URL(redirectPath, request.url));
+    // Get the correct base URL for redirect
+    // Use environment variable if available, otherwise use request origin
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || requestUrl.origin;
+    const redirectUrl = new URL(redirectPath, baseUrl);
+    
+    console.log(`[auth/callback] 🚀 Redirecting to: ${redirectUrl.toString()}`);
+    console.log(`[auth/callback] Base URL used: ${baseUrl}`);
+    
+    return NextResponse.redirect(redirectUrl);
 
   } catch (error: any) {
     console.error("[auth/callback] Unexpected error:", error);
-    return NextResponse.redirect(new URL("/login?error=unexpected", request.url));
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || requestUrl.origin;
+    return NextResponse.redirect(new URL("/login?error=unexpected", baseUrl));
   }
 }
 
