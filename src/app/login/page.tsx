@@ -38,11 +38,15 @@ function LoginPageContent() {
     try {
       const supabase = createSupabaseClient();
       
-      // Get redirect URL - use environment variable if available, otherwise use current origin
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+      // Get redirect URL - always use current origin to ensure correct URL
+      // In production (Vercel), window.location.origin will be the Vercel URL
+      // In local dev, it will be localhost:3000
+      const baseUrl = window.location.origin;
       const redirectTo = `${baseUrl}/api/auth/callback`;
       
       console.log("[login] OAuth redirect URL:", redirectTo);
+      console.log("[login] Current origin:", baseUrl);
+      console.log("[login] NEXT_PUBLIC_APP_URL:", process.env.NEXT_PUBLIC_APP_URL || "not set");
       
       // Sign in with Microsoft OAuth
       const { data, error } = await supabase.auth.signInWithOAuth({
