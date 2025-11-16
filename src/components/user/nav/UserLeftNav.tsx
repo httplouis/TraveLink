@@ -2,7 +2,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutGrid,
   CalendarDays,
@@ -65,6 +65,7 @@ const NAV: Item[] = [
 
 export default function UserLeftNav() {
   const pathname = usePathname() ?? "";
+  const router = useRouter();
   const [submissionsCount, setSubmissionsCount] = React.useState(0);
   const [inboxCount, setInboxCount] = React.useState(0);
   const [hoveredItem, setHoveredItem] = React.useState<string | null>(null);

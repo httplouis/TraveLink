@@ -25,24 +25,16 @@ export default function HeadDashboardContainer() {
       try {
         setLoading(true);
 
-        const [profileRes, vehiclesRes, statsRes, analyticsRes, aiInsightsRes, activityRes] = await Promise.all([
-          fetch('/api/profile').catch(() => ({ ok: false })),
-          fetch('/api/vehicles?status=available').catch(() => ({ ok: false })),
-          fetch('/api/head/stats').catch(() => ({ ok: false })),
-          fetch('/api/user/dashboard/analytics').catch(() => ({ ok: false })),
-          fetch('/api/user/dashboard/ai-insights').catch(() => ({ ok: false })),
-          fetch('/api/user/dashboard/recent-activity').catch(() => ({ ok: false })),
+        // Fetch critical data first (profile, stats) - these are needed immediately
+        const [profileRes, statsRes] = await Promise.all([
+          fetch('/api/profile', { cache: 'force-cache', next: { revalidate: 60 } }).catch(() => ({ ok: false })),
+          fetch('/api/head/stats', { cache: 'no-store' }).catch(() => ({ ok: false })),
         ]);
 
         const profileData = await profileRes.json().catch(() => ({ ok: false }));
         if (profileData.ok && profileData.data?.name) {
           const firstName = profileData.data.name.split(' ')[0];
           setUserName(firstName);
-        }
-
-        const vehiclesData = await vehiclesRes.json().catch(() => ({ ok: false }));
-        if (vehiclesData.ok) {
-          setVehicles(vehiclesData.data || []);
         }
 
         const statsData = await statsRes.json().catch(() => ({ ok: false }));
@@ -52,6 +44,19 @@ export default function HeadDashboardContainer() {
             { label: "Active Requests", value: statsData.data.activeRequests || 0 },
             { label: "My Department", value: statsData.data.departmentRequests || 0 },
           ]);
+        }
+
+        // Fetch non-critical data in parallel (can load after initial render)
+        const [vehiclesRes, analyticsRes, aiInsightsRes, activityRes] = await Promise.all([
+          fetch('/api/vehicles?status=available', { cache: 'force-cache', next: { revalidate: 300 } }).catch(() => ({ ok: false })),
+          fetch('/api/user/dashboard/analytics', { cache: 'force-cache', next: { revalidate: 300 } }).catch(() => ({ ok: false })),
+          fetch('/api/user/dashboard/ai-insights', { cache: 'force-cache', next: { revalidate: 300 } }).catch(() => ({ ok: false })),
+          fetch('/api/user/dashboard/recent-activity', { cache: 'no-store' }).catch(() => ({ ok: false })),
+        ]);
+
+        const vehiclesData = await vehiclesRes.json().catch(() => ({ ok: false }));
+        if (vehiclesData.ok) {
+          setVehicles(vehiclesData.data || []);
         }
 
         const analyticsData = await analyticsRes.json().catch(() => ({ ok: false }));
