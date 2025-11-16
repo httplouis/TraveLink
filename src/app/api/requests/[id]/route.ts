@@ -120,6 +120,15 @@ export async function GET(
       console.log(`[GET /api/requests/${requestId}] No driver or vehicle preferences set`);
     }
 
+    // Parse seminar_data if it's a string
+    if (request.seminar_data && typeof request.seminar_data === 'string') {
+      try {
+        request.seminar_data = JSON.parse(request.seminar_data);
+      } catch (e) {
+        console.warn(`[GET /api/requests/${requestId}] Failed to parse seminar_data:`, e);
+      }
+    }
+
     return NextResponse.json({ ok: true, data: request });
   } catch (err: any) {
     console.error("[GET /api/requests/[id]] Unexpected error:", err);

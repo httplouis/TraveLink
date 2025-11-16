@@ -2,6 +2,7 @@
 "use client";
 
 import * as React from "react";
+import { Trash2 } from "lucide-react";
 import {
   TextInput,
   DateInput,
@@ -482,36 +483,39 @@ function BreakdownEditor({
           </div>
         ) : (
           items?.map((it, i) => (
-            <div key={i} className="space-y-2">
-              <div className="grid grid-cols-[1fr_180px_40px] items-end gap-3">
+            <div key={i} className="rounded-lg border-2 border-gray-200 bg-gradient-to-br from-gray-50 to-white p-4 shadow-sm transition-all hover:border-gray-300">
+              <div className="space-y-3">
+                <div className="grid grid-cols-[1fr_180px_50px] gap-3 items-end">
+                  <TextInput
+                    label={i === 0 ? "Expense Item" : ""}
+                    placeholder="e.g., Accommodation / Transport / Materials"
+                    value={it.label}
+                    onChange={(e) => setItem(i, { label: e.target.value })}
+                  />
+                  <CurrencyInput
+                    label={i === 0 ? "Amount" : ""}
+                    placeholder="0.00"
+                    value={it.amount ?? ""}
+                    onChange={(e) => setItem(i, { amount: asNum(e.target.value) })}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => remove(i)}
+                    className="mb-0.5 flex h-10 w-10 items-center justify-center rounded-lg border-2 border-red-200 bg-red-50 text-red-600 transition-all hover:border-red-300 hover:bg-red-100"
+                    aria-label="Remove row"
+                    title="Remove"
+                  >
+                    <Trash2 className="h-4 w-4" strokeWidth={2.5} />
+                  </button>
+                </div>
                 <TextInput
-                  label={i === 0 ? "Expense Item" : ""}
-                  placeholder="e.g., Accommodation / Transport / Materials"
-                  value={it.label}
-                  onChange={(e) => setItem(i, { label: e.target.value })}
+                  label={i === 0 ? "Justification" : ""}
+                  placeholder="e.g., Details or justification for this expense"
+                  value={it.description || ""}
+                  onChange={(e) => setItem(i, { description: e.target.value })}
+                  helper={i === 0 ? "Explain why this expense is needed" : undefined}
                 />
-                <CurrencyInput
-                  label={i === 0 ? "Amount" : ""}
-                  placeholder="0.00"
-                  value={it.amount ?? ""}
-                  onChange={(e) => setItem(i, { amount: asNum(e.target.value) })}
-                />
-                <button
-                  type="button"
-                  onClick={() => remove(i)}
-                  className="mb-0.5 flex h-10 w-10 items-center justify-center rounded-lg border-2 border-red-200 bg-red-50 text-red-600 transition-all hover:border-red-300 hover:bg-red-100"
-                  aria-label="Remove row"
-                  title="Remove"
-                >
-                  <span className="text-lg font-bold">×</span>
-                </button>
               </div>
-              <TextInput
-                label=""
-                placeholder="e.g., Hotel accommodation for 3 nights, Transportation from airport to venue, etc."
-                value={it.description || ""}
-                onChange={(e) => setItem(i, { description: e.target.value })}
-              />
             </div>
           ))
         )}
@@ -535,79 +539,179 @@ function ApplicantsEditor({
   list,
   onChange,
 }: {
-  list: Array<{ name: string; department: string; availableFdp?: number | null; signature?: string | null }>;
-  onChange: (list: Array<{ name: string; department: string; availableFdp?: number | null; signature?: string | null }>) => void;
+  list: Array<{ name: string; department: string; availableFdp?: number | null; signature?: string | null; email?: string; invitationId?: string }>;
+  onChange: (list: Array<{ name: string; department: string; availableFdp?: number | null; signature?: string | null; email?: string; invitationId?: string }>) => void;
 }) {
-  function setRow(i: number, patch: Partial<{ name: string; department: string; availableFdp?: number | null; signature?: string | null }>) {
-    const next = [...list];
+  // Use React.useState to track list internally to prevent disappearing rows
+  // This is the source of truth - we only sync confirmed invitations from external list
+  const [internalList, setInternalList] = React.useState(() => list || []);
+  const prevListRef = React.useRef(list);
+  const isUserActionRef = React.useRef(false);
+  
+  // Sync ONLY when external list has new confirmed invitations
+  // NEVER reset or clear manually added rows
+  React.useEffect(() => {
+    // Skip if this was triggered by our own onChange
+    if (isUserActionRef.current) {
+      isUserActionRef.current = false;
+      prevListRef.current = list;
+      return;
+    }
+    
+    // Skip if list hasn't actually changed
+    if (prevListRef.current === list) return;
+    
+    if (!list || list.length === 0) {
+      prevListRef.current = list;
+      return; // Don't clear internal list - preserve manually added rows
+    }
+    
+    // Only process items that have invitationId or email (confirmed invitations)
+    const confirmedFromExternal = list.filter(item => item.invitationId || item.email);
+    
+    if (confirmedFromExternal.length === 0) {
+      prevListRef.current = list;
+      return; // No confirmed invitations to sync
+    }
+    
+    // Find new confirmed invitations that aren't in internalList
+    const newConfirmed = confirmedFromExternal.filter(item => 
+      !internalList.some(existing => 
+        existing.invitationId === item.invitationId || 
+        (existing.email && item.email && existing.email === item.email)
+      )
+    );
+    
+    // Find existing invitations that need updating
+    const toUpdate: Array<{ index: number; data: typeof list[0] }> = [];
+    confirmedFromExternal.forEach(item => {
+      const existingIndex = internalList.findIndex(existing =>
+        existing.invitationId === item.invitationId ||
+        (existing.email && item.email && existing.email === item.email)
+      );
+      if (existingIndex >= 0) {
+        const existing = internalList[existingIndex];
+        // Update if any field changed (especially signature)
+        if (JSON.stringify(existing) !== JSON.stringify(item)) {
+          toUpdate.push({ index: existingIndex, data: item });
+        }
+      }
+    });
+    
+    // Only update if there are actual changes
+    if (newConfirmed.length > 0 || toUpdate.length > 0) {
+      const merged = [...internalList];
+      
+      // Add new confirmed invitations
+      newConfirmed.forEach(item => merged.push(item));
+      
+      // Update existing invitations
+      toUpdate.forEach(({ index, data }) => {
+        merged[index] = { ...merged[index], ...data };
+      });
+      
+      setInternalList(merged);
+      isUserActionRef.current = true; // Mark as user action to prevent loop
+      onChange(merged);
+    }
+    
+    prevListRef.current = list;
+  }, [list]);
+
+  function setRow(i: number, patch: Partial<{ name: string; department: string; availableFdp?: number | null; signature?: string | null; email?: string; invitationId?: string }>) {
+    const next = [...internalList];
     next[i] = { ...next[i], ...patch };
+    setInternalList(next);
+    isUserActionRef.current = true; // Mark as user action
     onChange(next);
   }
+  
   function add() {
-    onChange([...(list || []), { name: "", department: "", availableFdp: null, signature: null }]);
+    const newItem = { name: "", department: "", availableFdp: null, signature: null };
+    const next = [...internalList, newItem];
+    setInternalList(next);
+    isUserActionRef.current = true; // Mark as user action
+    onChange(next);
   }
+  
   function remove(i: number) {
-    const next = [...list];
+    const next = [...internalList];
     next.splice(i, 1);
+    setInternalList(next);
+    isUserActionRef.current = true; // Mark as user action
     onChange(next);
   }
 
   return (
     <div className="space-y-4">
-      {/* Table Header */}
-      <div className="grid grid-cols-[2fr_1fr_120px_200px_80px] gap-3 rounded-lg border-2 border-gray-200 bg-gradient-to-r from-gray-50 to-gray-100/50 p-3 font-semibold text-sm text-gray-700">
-        <div>Name of Applicant</div>
-        <div>Department / Office</div>
-        <div>Available FDP</div>
-        <div>Signature</div>
-        <div></div>
+      {/* Table Header - Fixed alignment with proper spacing */}
+      <div className="grid grid-cols-[2.5fr_2fr_100px_240px_70px] gap-3 rounded-lg border-2 border-gray-200 bg-gradient-to-r from-gray-50 to-gray-100/50 px-4 py-3 font-semibold text-sm text-gray-700">
+        <div className="flex items-center">Name of Applicant</div>
+        <div className="flex items-center">Department / Office</div>
+        <div className="flex items-center justify-center">FDP</div>
+        <div className="flex items-center justify-start">Signature</div>
+        <div className="flex items-center justify-center"></div>
       </div>
 
       {/* Table Rows */}
-      {list?.length === 0 ? (
+      {internalList?.length === 0 ? (
         <div className="rounded-lg border-2 border-dashed border-gray-200 bg-gray-50/30 py-8 text-center">
           <p className="text-sm text-gray-500">No applicants added yet</p>
           <p className="mt-1 text-xs text-gray-400">Click "Add Applicant" below to add applicants</p>
         </div>
       ) : (
         <div className="space-y-2">
-          {list?.map((row, i) => (
-            <div key={i} className="grid grid-cols-[2fr_1fr_120px_200px_80px] gap-3 items-center rounded-lg border-2 border-gray-200 bg-white p-3 shadow-sm hover:shadow-md transition-all">
-              <input
-                type="text"
-                placeholder="Full name"
-                value={row.name || ""}
-                onChange={(e) => setRow(i, { name: e.target.value })}
-                className="h-9 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm outline-none focus:border-[#7A0010] focus:ring-2 focus:ring-[#7A0010]/20"
-              />
-              <DepartmentSelect
-                id={`app-dept-${i}`}
-                label=""
-                value={row.department}
-                placeholder="Select department"
-                onChange={(dept) => setRow(i, { department: dept })}
-              />
-              <input
-                type="number"
-                placeholder="FDP"
-                value={row.availableFdp ?? ""}
-                onChange={(e) => setRow(i, { availableFdp: asNum(e.target.value) })}
-                className="h-9 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm outline-none focus:border-[#7A0010] focus:ring-2 focus:ring-[#7A0010]/20"
-              />
-              <SignatureInline
-                value={row.signature || null}
-                onChange={(sig) => setRow(i, { signature: sig })}
-              />
-              <button
-                type="button"
-                onClick={() => remove(i)}
-                className="flex h-8 w-8 items-center justify-center rounded-lg border-2 border-red-200 bg-red-50 text-red-600 transition-all hover:border-red-300 hover:bg-red-100"
-                title="Remove applicant"
-              >
-                <span className="text-lg font-bold">×</span>
-              </button>
-            </div>
-          ))}
+          {internalList?.map((row, i) => {
+            // Generate stable key
+            const rowKey = row.invitationId || row.email || `manual-${i}-${row.name || 'empty'}`;
+            return (
+              <div key={rowKey} className="grid grid-cols-[2.5fr_2fr_100px_240px_70px] gap-3 items-start rounded-lg border-2 border-gray-200 bg-white px-4 py-3 shadow-sm hover:shadow-md transition-all">
+                <div className="min-w-0 w-full">
+                  <input
+                    type="text"
+                    placeholder="Full name"
+                    value={row.name || ""}
+                    onChange={(e) => setRow(i, { name: e.target.value })}
+                    className="h-9 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm outline-none focus:border-[#7A0010] focus:ring-2 focus:ring-[#7A0010]/20"
+                  />
+                </div>
+                <div className="min-w-0 w-full">
+                  <DepartmentSelect
+                    id={`app-dept-${i}`}
+                    label=""
+                    value={row.department}
+                    placeholder="Select department"
+                    onChange={(dept) => setRow(i, { department: dept })}
+                  />
+                </div>
+                <div className="flex items-center justify-center w-full">
+                  <input
+                    type="number"
+                    placeholder="FDP"
+                    value={row.availableFdp ?? ""}
+                    onChange={(e) => setRow(i, { availableFdp: asNum(e.target.value) })}
+                    className="h-9 w-full rounded-lg border border-gray-300 bg-white px-2 text-sm outline-none focus:border-[#7A0010] focus:ring-2 focus:ring-[#7A0010]/20 text-center"
+                  />
+                </div>
+                <div className="flex items-center justify-start w-full min-w-0">
+                  <SignatureInline
+                    value={row.signature || null}
+                    onChange={(sig) => setRow(i, { signature: sig })}
+                  />
+                </div>
+                <div className="flex items-center justify-center w-full">
+                  <button
+                    type="button"
+                    onClick={() => remove(i)}
+                    className="flex h-8 w-8 items-center justify-center rounded-lg border-2 border-red-200 bg-red-50 text-red-600 transition-all hover:border-red-300 hover:bg-red-100 flex-shrink-0"
+                    title="Remove applicant"
+                  >
+                    <Trash2 className="h-4 w-4" strokeWidth={2.5} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -637,34 +741,36 @@ function SignatureInline({
   const [dirty, setDirty] = React.useState(false);
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1.5 w-full">
       {value ? (
         <img
           src={value}
           alt="Signature"
-          className="h-12 w-32 rounded border-2 border-gray-300 bg-white object-contain"
+          className="h-10 w-28 rounded border-2 border-gray-300 bg-white object-contain flex-shrink-0"
         />
       ) : (
-        <div className="h-12 w-32 rounded border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center">
-          <span className="text-xs text-gray-400">No signature</span>
+        <div className="h-10 w-28 rounded border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center flex-shrink-0">
+          <span className="text-[10px] text-gray-400 text-center px-1 leading-tight">No signature</span>
         </div>
       )}
-      <button
-        type="button"
-        className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-        onClick={() => setOpen(true)}
-      >
-        {value ? "Change" : "Sign"}
-      </button>
-      {value && (
+      <div className="flex flex-col gap-1 flex-shrink-0">
         <button
           type="button"
-          className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100 transition-colors"
-          onClick={() => onChange(null)}
+          className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[10px] font-medium text-gray-700 hover:bg-gray-50 transition-colors whitespace-nowrap"
+          onClick={() => setOpen(true)}
         >
-          Clear
+          {value ? "Change" : "Sign"}
         </button>
-      )}
+        {value && (
+          <button
+            type="button"
+            className="rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[10px] font-medium text-red-600 hover:bg-red-100 transition-colors whitespace-nowrap"
+            onClick={() => onChange(null)}
+          >
+            Clear
+          </button>
+        )}
+      </div>
 
       {open && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">

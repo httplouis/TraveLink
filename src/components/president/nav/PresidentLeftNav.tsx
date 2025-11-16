@@ -1,24 +1,25 @@
 "use client";
 
-import React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { 
-  LayoutDashboard, 
-  Inbox, 
-  History, 
-  BarChart3,
-  Shield,
+import { usePathname, useRouter } from "next/navigation";
+import {
+  LayoutGrid,
+  CalendarDays,
   PlusSquare,
   FileClock,
   ListChecks,
-  UserRound,
-  Settings,
-  FileText
+  Car,
+  IdCard,
+  MessageSquareText,
+  Inbox,
+  LogOut,
 } from "lucide-react";
+import * as React from "react";
 import { motion } from "framer-motion";
+import ProfilePicture from "@/components/common/ProfilePicture";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog.ui";
 
-type NavItem =
+type Item =
   | {
       type: "link";
       href: string;
@@ -38,46 +39,167 @@ type NavItem =
       }>;
     };
 
-const NAV: NavItem[] = [
-  { type: "link", href: "/president/dashboard", label: "Dashboard", Icon: LayoutDashboard, exact: true },
-  { type: "link", href: "/president/inbox", label: "Final Review", Icon: Inbox },
-  { type: "link", href: "/president/policy", label: "Policy Management", Icon: FileText },
-  
+const NAV: Item[] = [
+  { type: "link", href: "/president", label: "Dashboard", Icon: LayoutGrid, exact: true },
+  { type: "link", href: "/president/schedule", label: "Schedule", Icon: CalendarDays },
+
   {
     type: "group",
-    label: "Requests",
+    label: "Request",
     Icon: PlusSquare,
     children: [
-      { href: "/president/request", label: "New Request", Icon: PlusSquare, exact: true },
-      { href: "/president/request/drafts", label: "Drafts", Icon: FileClock },
-      { href: "/president/request/submissions", label: "My Submissions", Icon: ListChecks },
-      { href: "/president/request/history", label: "My History", Icon: History },
+      { href: "/president/request", label: "New request", Icon: PlusSquare, exact: true },
+      { href: "/president/drafts", label: "Drafts", Icon: FileClock },
+      { href: "/president/submissions", label: "Submissions", Icon: ListChecks },
     ],
   },
-  
-  { type: "link", href: "/president/analytics", label: "Strategic Analytics", Icon: BarChart3 },
-  { type: "link", href: "/president/override", label: "Override Control", Icon: Shield },
-  { type: "link", href: "/president/profile", label: "Profile", Icon: UserRound },
-  { type: "link", href: "/president/settings", label: "Settings", Icon: Settings },
+
+  { type: "link", href: "/president/inbox", label: "Inbox", Icon: Inbox },
+
+  { type: "link", href: "/president/vehicles", label: "Vehicles", Icon: Car },
+  { type: "link", href: "/president/drivers", label: "Drivers", Icon: IdCard },
+  { type: "link", href: "/president/feedback", label: "Feedback", Icon: MessageSquareText },
 ];
 
 export default function PresidentLeftNav() {
   const pathname = usePathname() ?? "";
+  const router = useRouter();
+  const [submissionsCount, setSubmissionsCount] = React.useState(0);
+  const [inboxCount, setInboxCount] = React.useState(0);
   const [hoveredItem, setHoveredItem] = React.useState<string | null>(null);
+  const [userProfile, setUserProfile] = React.useState<{ name: string; avatarUrl?: string | null } | null>(null);
+  const [loggingOut, setLoggingOut] = React.useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = React.useState(false);
   const navRefs = React.useRef<Record<string, HTMLElement | null>>({});
   const containerRef = React.useRef<HTMLDivElement>(null);
 
-  const isActive = (href: string, exact?: boolean) => {
-    if (exact) return pathname === href;
-    return pathname === href || pathname.startsWith(href + "/");
+  const isActive = (href: string, exact?: boolean) =>
+    exact ? pathname === href : pathname === href || pathname.startsWith(href + "/");
+
+  React.useEffect(() => {
+    let mounted = true;
+
+    const fetchCount = async () => {
+      try {
+        const res = await fetch("/api/requests/my-submissions/count", { cache: "no-store" });
+        const json = await res.json();
+        if (mounted && json.ok) {
+          setSubmissionsCount(json.pending_count || 0);
+        }
+      } catch (err) {
+        console.error("Failed to fetch submissions count:", err);
+      }
+    };
+
+    fetchCount();
+    const interval = setInterval(fetchCount, 30000);
+
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  React.useEffect(() => {
+    let mounted = true;
+
+    const fetchInboxCount = async () => {
+      try {
+        const res = await fetch("/api/president/inbox/count", { cache: "no-store" });
+        const json = await res.json();
+        if (mounted && json.ok) {
+          setInboxCount(json.pending_count || 0);
+        }
+      } catch (err) {
+        console.error("Failed to fetch inbox count:", err);
+      }
+    };
+
+    fetchInboxCount();
+    const interval = setInterval(fetchInboxCount, 30000);
+
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  React.useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const res = await fetch("/api/profile");
+        const data = await res.json();
+        if (data.ok && data.data) {
+          setUserProfile({
+            name: data.data.name || data.data.email?.split("@")[0] || "President",
+            avatarUrl: data.data.avatarUrl || data.data.profile_picture || null,
+          });
+        }
+      } catch (err) {
+        console.error("Failed to fetch profile:", err);
+      }
+    };
+    fetchProfile();
+  }, []);
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      window.location.href = "/login";
+    } catch (error) {
+      console.error("Logout failed:", error);
+      setLoggingOut(false);
+    }
   };
+
+  const handleLogoutClick = () => {
+    setShowLogoutConfirm(true);
+  };
+
+  const isProfileActive = pathname === "/president/profile" || pathname.startsWith("/president/profile/");
 
   return (
     <nav 
       ref={containerRef}
-      className="space-y-1.5 relative"
+      aria-label="President menu" 
+      className="space-y-1.5 relative flex flex-col min-h-full"
       onMouseLeave={() => setHoveredItem(null)}
     >
+      {/* Profile Section at Top */}
+      <Link
+        href="/president/profile"
+        className={[
+          "group relative flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200 mb-2 z-10",
+          isProfileActive
+            ? "text-white"
+            : "text-neutral-700 hover:text-white active:scale-[0.98]",
+        ].join(" ")}
+        onMouseEnter={() => setHoveredItem("profile")}
+      >
+        {isProfileActive && (
+          <motion.div
+            className="absolute inset-0 rounded-xl pointer-events-none z-0"
+            initial={false}
+            style={{ background: '#7a0019' }}
+            layoutId="activeNav"
+          />
+        )}
+        <ProfilePicture
+          src={userProfile?.avatarUrl || undefined}
+          name={userProfile?.name || "President"}
+          size="sm"
+          className="flex-shrink-0 relative z-10"
+        />
+        <span className="flex-1 group-hover:text-white relative z-10 break-words line-clamp-2">
+          {userProfile?.name || "Profile"}
+        </span>
+        {isProfileActive && (
+          <div className="h-2 w-2 rounded-full bg-white/80 relative z-10"></div>
+        )}
+      </Link>
+
+      <div className="h-px bg-gray-200 mb-2"></div>
       {/* Main nav sliding active background */}
       {(() => {
         let activeHref: string | undefined;
@@ -218,87 +340,151 @@ export default function PresidentLeftNav() {
           />
         );
       })()}
-
       {NAV.map((item, idx) => {
-        if (item.type === "group") {
-          const anyActive = item.children.some((c) => isActive(c.href, c.exact));
-          const firstChild = item.children[0];
-          const groupKey = `group-${item.label.toLowerCase()}`;
+        if (item.type === "link") {
+          const active = isActive(item.href, item.exact);
+          const isHovered = hoveredItem === item.href;
+          const isInbox = item.href === "/president/inbox";
+          const showBadge = isInbox && inboxCount > 0;
           
           return (
-            <div key={`group-${idx}`} className="space-y-1.5">
-              <Link
-                ref={(el) => { navRefs.current[groupKey] = el; }}
-                href={firstChild.href}
-                onMouseEnter={() => setHoveredItem(groupKey)}
-                className={[
-                  "group relative flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200",
-                  anyActive 
-                    ? "text-white" 
-                    : "text-neutral-700 hover:text-white active:scale-[0.98]",
-                ].join(" ")}
-                title="New Request"
-              >
-                <item.Icon className={`h-5 w-5 transition-transform ${anyActive ? "" : "group-hover:scale-110 group-hover:text-white"}`} />
-                <span className="flex-1 group-hover:text-white">{item.label}</span>
-                {anyActive && (
-                  <div className="h-2 w-2 rounded-full bg-white/80"></div>
-                )}
-              </Link>
-
-              {/* Children shown by default */}
-              <div className="space-y-1 pl-6 relative">
-                {item.children.map((c) => {
-                  const active = isActive(c.href, c.exact);
-                  const isHovered = hoveredItem === c.href;
-                  
-                  return (
-                    <Link
-                      key={c.href}
-                      ref={(el) => { navRefs.current[c.href] = el; }}
-                      href={c.href}
-                      onMouseEnter={() => setHoveredItem(c.href)}
-                      className={[
-                        "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150",
-                        active
-                          ? "text-[#7a0019] border-l-2 border-[#7a0019]"
-                          : "text-neutral-600 hover:text-[#7a0019] border-l-2 border-transparent",
-                      ].join(" ")}
-                    >
-                      <c.Icon className={`h-4 w-4 transition-transform ${active ? "" : "group-hover:scale-110 group-hover:text-[#7a0019]"}`} />
-                      <span className="flex-1 group-hover:text-[#7a0019]">{c.label}</span>
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
+            <Link
+              key={`${idx}-${item.href}`}
+              ref={(el) => { navRefs.current[item.href] = el; }}
+              href={item.href}
+              onMouseEnter={() => {
+                setHoveredItem(item.href);
+                if (!active) {
+                  router.prefetch(item.href);
+                }
+              }}
+              className={[
+                "group relative flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200",
+                active
+                  ? "text-white"
+                  : "text-neutral-700 hover:text-white active:scale-[0.98]",
+              ].join(" ")}
+            >
+              <item.Icon className={`h-5 w-5 transition-transform ${active ? "" : "group-hover:scale-110 group-hover:text-white"}`} />
+              <span className="flex-1 group-hover:text-white">{item.label}</span>
+              {showBadge && (
+                <span 
+                  className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-bold transition-all duration-300"
+                  style={{
+                    backgroundColor: (active || isHovered) ? '#ffffff' : '#7a0019',
+                    color: (active || isHovered) ? '#7a0019' : '#ffffff'
+                  }}
+                >
+                  {inboxCount > 9 ? "9+" : inboxCount}
+                </span>
+              )}
+              {active && !showBadge && (
+                <div className="h-2 w-2 rounded-full bg-white/80"></div>
+              )}
+            </Link>
           );
         }
-        
-        const active = isActive(item.href, item.exact);
-        const isHovered = hoveredItem === item.href;
-        
+
+        const anyActive = item.children.some((c) => isActive(c.href, c.exact));
+        const firstChild = item.children[0];
+        const groupKey = `group-${item.label.toLowerCase()}`;
         return (
-          <Link
-            key={item.href}
-            ref={(el) => { navRefs.current[item.href] = el; }}
-            href={item.href}
-            onMouseEnter={() => setHoveredItem(item.href)}
-            className={[
-              "group relative flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200",
-              active
-                ? "text-white"
-                : "text-neutral-700 hover:text-white active:scale-[0.98]",
-            ].join(" ")}
-          >
-            <item.Icon className={`h-5 w-5 transition-transform ${active ? "" : "group-hover:scale-110 group-hover:text-white"}`} />
-            <span className="flex-1 group-hover:text-white">{item.label}</span>
-            {active && (
-              <div className="h-2 w-2 rounded-full bg-white/80"></div>
-            )}
-          </Link>
+          <div key={`group-${idx}`} className="space-y-1.5">
+            <Link
+              ref={(el) => { navRefs.current[groupKey] = el; }}
+              href={firstChild.href}
+              onMouseEnter={() => {
+                setHoveredItem(groupKey);
+                if (!anyActive) {
+                  router.prefetch(firstChild.href);
+                }
+              }}
+              className={[
+                "group relative flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200",
+                anyActive 
+                  ? "text-white" 
+                  : "text-neutral-700 hover:text-white active:scale-[0.98]",
+              ].join(" ")}
+              title="New request"
+            >
+              <item.Icon className={`h-5 w-5 transition-transform ${anyActive ? "" : "group-hover:scale-110 group-hover:text-white"}`} />
+              <span className="flex-1 group-hover:text-white">Request</span>
+              {anyActive && (
+                <div className="h-2 w-2 rounded-full bg-white/80"></div>
+              )}
+            </Link>
+
+            <div className="space-y-1 pl-6 relative">
+              {item.children.map((c) => {
+                const active = isActive(c.href, c.exact);
+                const isSubmissions = c.href === "/president/submissions";
+                const showBadge = isSubmissions && submissionsCount > 0;
+                const isHovered = hoveredItem === c.href;
+                
+                return (
+                  <Link
+                    key={c.href}
+                    ref={(el) => { navRefs.current[c.href] = el; }}
+                    href={c.href}
+                    onMouseEnter={() => {
+                      setHoveredItem(c.href);
+                      if (!active) {
+                        router.prefetch(c.href);
+                      }
+                    }}
+                    className={[
+                      "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150",
+                      active
+                        ? "text-[#7a0019] border-l-2 border-[#7a0019]"
+                        : "text-neutral-600 hover:text-[#7a0019] border-l-2 border-transparent",
+                    ].join(" ")}
+                  >
+                    <c.Icon className={`h-4 w-4 transition-transform ${active ? "" : "group-hover:scale-110 group-hover:text-[#7a0019]"}`} />
+                    <span className="flex-1 group-hover:text-[#7a0019]">{c.label}</span>
+                    {showBadge && (
+                      <span 
+                        className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-bold transition-all duration-300"
+                        style={{
+                          backgroundColor: (active || isHovered) ? '#ffffff' : '#7a0019',
+                          color: (active || isHovered) ? '#7a0019' : '#ffffff'
+                        }}
+                      >
+                        {submissionsCount > 9 ? "9+" : submissionsCount}
+                      </span>
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
         );
       })}
+
+      <div className="flex-1"></div>
+
+      <div className="pt-4 border-t border-gray-200">
+        <button
+          onClick={handleLogoutClick}
+          disabled={loggingOut}
+          className="w-full group relative flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200 text-neutral-700 hover:text-white hover:bg-[#7a0019] active:scale-[0.98] disabled:opacity-50"
+        >
+          <LogOut className="h-5 w-5 transition-transform group-hover:scale-110" />
+          <span className="flex-1 text-left group-hover:text-white">
+            {loggingOut ? "Logging out..." : "Logout"}
+          </span>
+        </button>
+      </div>
+
+      <ConfirmDialog
+        open={showLogoutConfirm}
+        title="Logout"
+        message="Are you sure you want to logout? You will need to sign in again to access your account."
+        confirmText="Logout"
+        cancelText="Cancel"
+        tone="danger"
+        onCancel={() => setShowLogoutConfirm(false)}
+        onConfirm={handleLogout}
+      />
     </nav>
   );
 }

@@ -75,9 +75,11 @@ export default function DepartmentSelect({
 
   return (
     <div className={`grid w-full gap-1.5 ${className}`}>
-      <label className="text-[13px] font-semibold text-gray-800">
-        {label} {required ? <span className="text-red-500">*</span> : null}
-      </label>
+      {label && (
+        <label className="text-[13px] font-semibold text-gray-800">
+          {label} {required ? <span className="text-red-500">*</span> : null}
+        </label>
+      )}
 
       <div className="relative">
         <input

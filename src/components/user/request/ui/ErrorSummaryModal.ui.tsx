@@ -15,6 +15,7 @@ interface ErrorSummaryModalProps {
 
 // Map error keys to human-readable field names
 const FIELD_LABELS: Record<string, string> = {
+  // Travel Order Fields
   "travelOrder.date": "Date",
   "travelOrder.requestingPerson": "Requesting Person",
   "travelOrder.department": "Department",
@@ -24,14 +25,46 @@ const FIELD_LABELS: Record<string, string> = {
   "travelOrder.purposeOfTravel": "Purpose of Travel",
   "travelOrder.requesterSignature": "Requesting Person's Signature",
   "travelOrder.costs.justification": "Justification for Renting/Hiring",
+  
+  // Seminar Application Fields
   "seminar.applicationDate": "Application Date",
   "seminar.title": "Seminar/Training Title",
-  "seminar.dateFrom": "Date From",
-  "seminar.dateTo": "Date To",
-  "seminar.requesterSignature": "Requesting Person's Signature",
+  "seminar.dateFrom": "Departure Date",
+  "seminar.dateTo": "End Date",
+  "seminar.venue": "Venue",
   "seminar.modality": "Modality",
-  "seminar.participants": "Participants",
+  "seminar.typeOfTraining": "Type of Training",
+  "seminar.trainingCategory": "Training Category",
+  "seminar.applicants": "Applicants",
+  "seminar.breakdown": "Expense Breakdown",
+  "seminar.requesterSignature": "Requesting Person's Signature",
 };
+
+// Helper to get field label with fallback
+function getFieldLabel(fieldKey: string): string {
+  // Handle nested field errors (e.g., seminar.applicants.0.name)
+  if (fieldKey.includes('.')) {
+    const parts = fieldKey.split('.');
+    if (parts[0] === 'seminar' && parts[1] === 'applicants') {
+      const index = parseInt(parts[2]);
+      const field = parts[3];
+      if (!isNaN(index)) {
+        if (field === 'name') return `Applicant ${index + 1} - Name`;
+        if (field === 'department') return `Applicant ${index + 1} - Department`;
+      }
+    }
+    if (parts[0] === 'seminar' && parts[1] === 'breakdown') {
+      const index = parseInt(parts[2]);
+      const field = parts[3];
+      if (!isNaN(index)) {
+        if (field === 'label') return `Expense Item ${index + 1} - Name`;
+        if (field === 'amount') return `Expense Item ${index + 1} - Amount`;
+      }
+    }
+  }
+  
+  return FIELD_LABELS[fieldKey] || fieldKey.replace(/\./g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+}
 
 export default function ErrorSummaryModal({
   errors,
@@ -93,7 +126,7 @@ export default function ErrorSummaryModal({
             <div className="max-h-[60vh] overflow-y-auto px-6 py-4">
               <ul className="space-y-2">
                 {errorEntries.map(([fieldKey, errorMessage], index) => {
-                  const fieldLabel = FIELD_LABELS[fieldKey] || fieldKey;
+                  const fieldLabel = getFieldLabel(fieldKey);
                   return (
                     <motion.li
                       key={fieldKey}

@@ -26,6 +26,8 @@ type Request = {
   requester_name?: string; // Add requester name from API
   requester_is_head?: boolean; // Whether requester is department head
   has_parent_head?: boolean; // Whether department has parent head
+  request_type?: 'seminar' | 'travel_order'; // Request type
+  seminar_data?: any; // Seminar data (JSONB field)
   department: {
     code: string;
     name: string;
@@ -178,6 +180,12 @@ export default function SubmissionsView() {
       console.log('president_approved_by:', json.data?.president_approved_by);
       console.log('exec_approved_by:', json.data?.exec_approved_by);
       console.log('=== END FIELD DEBUG ===');
+      console.log('=== SEMINAR DATA DEBUG ===');
+      console.log('request_type:', json.data?.request_type);
+      console.log('seminar_data exists:', !!json.data?.seminar_data);
+      console.log('seminar_data type:', typeof json.data?.seminar_data);
+      console.log('seminar_data:', json.data?.seminar_data);
+      console.log('=== END SEMINAR DEBUG ===');
       
         setFullRequestData(json.data);
     } catch (err) {
@@ -400,6 +408,22 @@ export default function SubmissionsView() {
               preferred_vehicle_note: fullRequestData?.preferred_vehicle_note || null,
               preferred_driver_note: fullRequestData?.preferred_driver_note || null,
               status: selectedRequest.status,
+              
+              // Seminar data
+              request_type: fullRequestData?.request_type || selectedRequest.request_type || 'travel_order',
+              seminar_data: (() => {
+                const seminarData = fullRequestData?.seminar_data || selectedRequest.seminar_data;
+                if (!seminarData) return undefined;
+                if (typeof seminarData === 'string') {
+                  try {
+                    return JSON.parse(seminarData);
+                  } catch (e) {
+                    console.warn('[SubmissionsView] Failed to parse seminar_data:', e);
+                    return undefined;
+                  }
+                }
+                return seminarData;
+              })(),
               
               requester: {
                 id: 'current-user',

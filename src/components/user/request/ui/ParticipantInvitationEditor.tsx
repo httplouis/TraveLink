@@ -163,8 +163,10 @@ export default function ParticipantInvitationEditor({
 
       // Show warning if email sending failed
       if (data.warning) {
+        console.warn(`[ParticipantInvitationEditor] ⚠️ Email sending warning:`, data.warning);
         // If email failed but we have a confirmation link, show it
         if (data.confirmationLink) {
+          console.log(`[ParticipantInvitationEditor] 🔗 Confirmation link available:`, data.confirmationLink);
           // Show modal with full link
           setLinkToShow({ email, link: data.confirmationLink });
           setShowLinkModal(true);
@@ -176,25 +178,41 @@ export default function ParticipantInvitationEditor({
           }).catch(() => {
             // Silent fail
           });
+          
+          toast.warning(
+            "Email sending restricted", 
+            `Resend can only send to verified emails. Confirmation link copied to clipboard - you can share it manually.`
+          );
         } else {
           toast.error("Email sending failed", data.warning);
         }
       } else {
         if (data.alreadyExists) {
-          toast.info("Invitation already sent", `Invitation was already sent to ${email}`);
+          toast.info("Invitation already sent", `Invitation was already sent to ${email}. Email resent.`);
         } else {
           // Show success with email ID if available
           const emailId = data.emailId || data.data?.emailId;
           const resendUrl = data.resendUrl || (emailId ? `https://resend.com/emails/${emailId}` : null);
           
           if (emailId && resendUrl) {
-            console.log(`[ParticipantInvitationEditor] ✅ Email sent! ID: ${emailId}`);
-            console.log(`[ParticipantInvitationEditor] 🔗 Check delivery: ${resendUrl}`);
-            toast.success("Invitation sent", `Sent to ${email}. Check console for delivery link.`);
-            // Open Resend dashboard in new tab
-            setTimeout(() => window.open(resendUrl, '_blank'), 500);
+            console.log(`[ParticipantInvitationEditor] ✅ Email sent successfully!`);
+            console.log(`[ParticipantInvitationEditor] 📧 Email ID: ${emailId}`);
+            console.log(`[ParticipantInvitationEditor] 🔗 Check delivery status: ${resendUrl}`);
+            toast.success(
+              "Invitation sent successfully", 
+              `Email sent to ${email}. Check your inbox (and spam folder).`
+            );
+            // Open Resend dashboard in new tab after a short delay
+            setTimeout(() => {
+              window.open(resendUrl, '_blank');
+            }, 1000);
           } else {
-            toast.success("Invitation sent", `Invitation sent to ${email}`);
+            // No email ID means it might have been logged to console only
+            console.warn(`[ParticipantInvitationEditor] ⚠️ No email ID returned - check if RESEND_API_KEY is configured`);
+            toast.warning(
+              "Invitation created", 
+              `Invitation created for ${email}, but email may not have been sent. Check server logs and RESEND_API_KEY configuration.`
+            );
           }
         }
       }

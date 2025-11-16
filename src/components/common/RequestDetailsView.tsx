@@ -29,6 +29,7 @@ interface RequestData {
   title: string;
   purpose: string;
   destination: string;
+  destination_geo?: { lat: number; lng: number; address?: string } | null;
   travel_start_date: string;
   travel_end_date: string;
   total_budget: number;
@@ -79,6 +80,31 @@ interface RequestData {
   smart_skips_applied?: string[];
   efficiency_boost?: number;
   requires_budget?: boolean;
+  
+  // Seminar application fields
+  request_type?: 'seminar' | 'travel_order';
+  seminar_data?: {
+    applicationDate?: string;
+    title?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    typeOfTraining?: string[];
+    trainingCategory?: string;
+    sponsor?: string;
+    venue?: string;
+    venueGeo?: any;
+    modality?: string;
+    registrationCost?: number | null;
+    totalAmount?: number | null;
+    breakdown?: Array<{ label: string; amount: number | null; description?: string }>;
+    makeUpClassSchedule?: string;
+    applicantUndertaking?: boolean;
+    fundReleaseLine?: number | null;
+    requesterSignature?: string | null;
+    applicants?: Array<{ name: string; department: string; availableFdp?: number | null; signature?: string | null; email?: string; invitationId?: string }>;
+    participantInvitations?: any[];
+    allParticipantsConfirmed?: boolean;
+  };
 }
 
 interface RequestDetailsViewProps {
@@ -106,7 +132,27 @@ export default function RequestDetailsView({
   onClose,
   className = ''
 }: RequestDetailsViewProps) {
-  const [activeTab, setActiveTab] = useState<'details' | 'timeline' | 'attachments'>('timeline');
+  const [activeTab, setActiveTab] = useState<'details' | 'timeline'>('timeline');
+  
+  // Function to open Google Maps
+  const openGoogleMaps = () => {
+    const location = request.seminar_data?.venue || request.destination;
+    const geo = request.seminar_data?.venueGeo || request.destination_geo;
+    
+    let mapsUrl = '';
+    
+    if (geo && geo.lat && geo.lng) {
+      // Use coordinates if available
+      mapsUrl = `https://www.google.com/maps?q=${geo.lat},${geo.lng}`;
+    } else if (location) {
+      // Use address/venue name as search query
+      mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`;
+    } else {
+      return; // No location data available
+    }
+    
+    window.open(mapsUrl, '_blank', 'noopener,noreferrer');
+  };
 
   // Debug vehicle/driver data
   console.log('RequestDetailsView DEBUG:', {
@@ -119,7 +165,32 @@ export default function RequestDetailsView({
 
   const formatDate = (dateString: string) => {
     if (!dateString) return '';
-    return formatLongDate(dateString);
+    try {
+      // Handle different date formats
+      let date: Date;
+      
+      // If it's already a valid ISO string or timestamp, use it directly
+      if (dateString.includes('T') || dateString.includes('Z') || dateString.includes('+') || dateString.includes('-', 10)) {
+        date = new Date(dateString);
+      } else if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        // YYYY-MM-DD format - add timezone
+        date = new Date(dateString + 'T00:00:00+08:00');
+      } else {
+        // Try parsing as-is
+        date = new Date(dateString);
+      }
+      
+      // Check if date is valid
+      if (isNaN(date.getTime())) {
+        console.warn('[RequestDetailsView] Invalid date:', dateString);
+        return '—';
+      }
+      
+      return formatLongDate(date.toISOString());
+    } catch (e) {
+      console.warn('[RequestDetailsView] Date formatting error:', e, dateString);
+      return '—';
+    }
   };
 
   const formatCurrency = (amount: number) => {
@@ -133,12 +204,42 @@ export default function RequestDetailsView({
     const colors: Record<string, string> = {
       'approved': 'bg-green-100 text-green-800 border-green-200',
       'pending': 'bg-yellow-100 text-yellow-800 border-yellow-200',
+      'pending_head': 'bg-yellow-100 text-yellow-800 border-yellow-200',
+      'pending_admin': 'bg-yellow-100 text-yellow-800 border-yellow-200',
+      'pending_comptroller': 'bg-yellow-100 text-yellow-800 border-yellow-200',
+      'pending_hr': 'bg-yellow-100 text-yellow-800 border-yellow-200',
+      'pending_exec': 'bg-yellow-100 text-yellow-800 border-yellow-200',
+      'pending_requester_signature': 'bg-yellow-100 text-yellow-800 border-yellow-200',
       'returned': 'bg-red-100 text-red-800 border-red-200',
       'dispatched': 'bg-blue-100 text-blue-800 border-blue-200',
       'completed': 'bg-emerald-100 text-emerald-800 border-emerald-200',
-      'cancelled': 'bg-gray-100 text-gray-800 border-gray-200'
+      'cancelled': 'bg-gray-100 text-gray-800 border-gray-200',
+      'draft': 'bg-blue-100 text-blue-800 border-blue-200'
     };
     return colors[status.toLowerCase()] || 'bg-gray-100 text-gray-800 border-gray-200';
+  };
+
+  const formatStatus = (status: string) => {
+    // Convert status to human-readable format
+    const statusMap: Record<string, string> = {
+      'pending_head': 'Pending Head',
+      'pending_admin': 'Pending Admin',
+      'pending_comptroller': 'Pending Comptroller',
+      'pending_hr': 'Pending HR',
+      'pending_exec': 'Pending Executive',
+      'pending_requester_signature': 'Pending Signature',
+      'approved': 'Approved',
+      'rejected': 'Rejected',
+      'cancelled': 'Cancelled',
+      'draft': 'Draft',
+      'dispatched': 'Dispatched',
+      'completed': 'Completed',
+      'returned': 'Returned'
+    };
+    
+    return statusMap[status.toLowerCase()] || status.split('_').map(word => 
+      word.charAt(0).toUpperCase() + word.slice(1)
+    ).join(' ');
   };
 
   const hasSmartFeatures = request.smart_skips_applied && request.smart_skips_applied.length > 0;
@@ -149,40 +250,58 @@ export default function RequestDetailsView({
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-gradient-to-r from-[#7a0019] to-[#5a0012] text-white rounded-xl p-6"
+        className="bg-gradient-to-br from-[#7a0019] via-[#6a0015] to-[#5a0012] text-white rounded-2xl p-8 shadow-2xl border-2 border-white/10"
       >
         <div className="flex items-start justify-between">
           <div className="flex-1">
-            <div className="flex items-center gap-4 mb-2">
-              <h1 className="text-2xl font-bold">{request.request_number}</h1>
+            <div className="flex items-center gap-4 mb-3 flex-wrap">
+              <h1 className="text-3xl font-extrabold tracking-tight">{request.request_number}</h1>
+              {/* Request Type Indicator */}
+              {request.request_type === 'seminar' ? (
+                <div className="bg-white/25 backdrop-blur-md px-4 py-1.5 rounded-full text-xs font-bold flex items-center gap-2 shadow-lg border border-white/30">
+                  <FileText className="w-3.5 h-3.5" />
+                  Seminar Application
+                </div>
+              ) : (
+                <div className="bg-white/25 backdrop-blur-md px-4 py-1.5 rounded-full text-xs font-bold flex items-center gap-2 shadow-lg border border-white/30">
+                  <Route className="w-3.5 h-3.5" />
+                  Travel Order
+                </div>
+              )}
               {hasSmartFeatures && (
-                <div className="bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full text-sm font-medium flex items-center gap-2">
-                  <span className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></span>
+                <div className="bg-white/25 backdrop-blur-md px-4 py-1.5 rounded-full text-xs font-bold flex items-center gap-2 shadow-lg border border-white/30">
+                  <span className="w-2.5 h-2.5 bg-blue-300 rounded-full animate-pulse"></span>
                   Smart Skip Active
                 </div>
               )}
             </div>
-            <p className="text-white/90 text-lg mb-4">{request.title}</p>
-            <div className="flex items-center gap-6 text-sm text-white/80">
-              <div className="flex items-center gap-2">
+            <p className="text-white/95 text-xl font-semibold mb-5 leading-relaxed">{request.title}</p>
+            <div className="flex items-center gap-8 text-sm text-white/90">
+              <div className="flex items-center gap-2.5 bg-white/10 backdrop-blur-sm px-4 py-2 rounded-lg border border-white/20">
                 <Calendar className="w-4 h-4" />
-                {formatDate(request.travel_start_date)}
-                {request.travel_start_date !== request.travel_end_date && 
-                  ` - ${formatDate(request.travel_end_date)}`
-                }
+                <span className="font-medium">
+                  {formatDate(request.travel_start_date)}
+                  {request.travel_start_date !== request.travel_end_date && 
+                    ` - ${formatDate(request.travel_end_date)}`
+                  }
+                </span>
               </div>
-              <div className="flex items-center gap-2">
+              <button
+                onClick={openGoogleMaps}
+                className="flex items-center gap-2.5 bg-white/10 backdrop-blur-sm px-4 py-2 rounded-lg border border-white/20 hover:bg-white/20 transition-colors cursor-pointer"
+                title="View location on Google Maps"
+              >
                 <MapPin className="w-4 h-4" />
-                {request.destination}
-              </div>
+                <span className="font-medium">{request.seminar_data?.venue || request.destination}</span>
+              </button>
             </div>
           </div>
           <div className="flex items-center gap-3">
             <span className={`
-              px-4 py-2 rounded-full text-sm font-medium border
+              px-5 py-2.5 rounded-full text-sm font-bold border-2 shadow-lg
               ${getStatusColor(request.status)}
             `}>
-              {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
+              {formatStatus(request.status)}
             </span>
           </div>
         </div>
@@ -223,8 +342,7 @@ export default function RequestDetailsView({
               <nav className="flex space-x-8">
                 {[
                   { id: 'details', label: 'Details', icon: FileText },
-                  { id: 'timeline', label: 'Timeline', icon: Clock },
-                  { id: 'attachments', label: 'Attachments', icon: FileText }
+                  { id: 'timeline', label: 'Timeline', icon: Clock }
                 ].map(({ id, label, icon: Icon }) => (
                   <button
                     key={id}
@@ -252,150 +370,272 @@ export default function RequestDetailsView({
                   animate={{ opacity: 1, x: 0 }}
                   className="space-y-6"
                 >
-                  {/* Purpose */}
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-3">Purpose</h3>
-                    <p className="text-gray-700 leading-relaxed">{request.purpose}</p>
-                  </div>
-
-                  {/* Travel Details Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Basic Information - Combined */}
+                  <div className="bg-white rounded-lg border border-gray-200 p-6">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Basic Information</h3>
                     <div className="space-y-4">
-                      <div className="flex items-start gap-3">
-                        <div className="w-5 h-5 flex items-center justify-center mt-0.5">
-                          <MapPin className="w-5 h-5 text-[#7a0019]" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-gray-500">Destination</p>
-                          <p className="text-gray-900">{request.destination}</p>
-                        </div>
+                      {/* Purpose */}
+                      <div>
+                        <p className="text-xs font-medium text-gray-500 mb-1">Purpose</p>
+                        <p className="text-gray-900">{request.purpose}</p>
                       </div>
-                      
-                      <div className="flex items-start gap-3">
-                        <div className="w-5 h-5 flex items-center justify-center mt-0.5">
-                          <Building2 className="w-5 h-5 text-[#7a0019]" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-gray-500">Department</p>
-                          <p className="text-gray-900">{request.department.name}</p>
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-start gap-3">
-                        <div className="w-5 h-5 flex items-center justify-center mt-0.5">
-                          <Clock className="w-5 h-5 text-[#7a0019]" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-gray-500">Date Requested</p>
-                          <p className="text-gray-900">{formatDate(request.created_at || request.travel_start_date)}</p>
-                        </div>
-                      </div>
-                    </div>
 
-                    <div className="space-y-4">
-                      <div className="flex items-start gap-3">
-                        <div className="w-5 h-5 flex items-center justify-center mt-0.5">
-                          <Calendar className="w-5 h-5 text-[#7a0019]" />
+                      {/* Destination/Venue */}
+                      <div>
+                        <p className="text-xs font-medium text-gray-500 mb-1">Destination</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-gray-900 font-medium">{request.seminar_data?.venue || request.destination}</p>
+                          <button
+                            onClick={openGoogleMaps}
+                            className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center gap-1"
+                            title="View on Google Maps"
+                          >
+                            <MapPin className="w-3.5 h-3.5" />
+                            View on Map
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Grid for other info */}
+                      <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-100">
+                        <div>
+                          <p className="text-xs font-medium text-gray-500 mb-1">Department</p>
+                          <p className="text-gray-900 font-medium">{request.department.name}</p>
                         </div>
                         <div>
-                          <p className="text-sm font-medium text-gray-500">Travel Dates</p>
-                          <p className="text-gray-900">
+                          <p className="text-xs font-medium text-gray-500 mb-1">Travel Dates</p>
+                          <p className="text-gray-900 font-medium">
                             {formatDate(request.travel_start_date)}
                             {request.travel_start_date !== request.travel_end_date && 
                               ` - ${formatDate(request.travel_end_date)}`
                             }
                           </p>
                         </div>
-                      </div>
-
-                      {request.total_budget > 0 && (
                         <div>
-                          <div className="flex items-start gap-3 mb-3">
-                            <div className="w-5 h-5 flex items-center justify-center mt-0.5">
-                              <Banknote className="w-5 h-5 text-[#7a0019]" />
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium text-gray-500">Budget</p>
-                              <p className="text-gray-900 font-semibold">
-                                {formatCurrency(request.total_budget)}
-                              </p>
-                            </div>
-                          </div>
-                          
-                          {/* Budget Breakdown */}
-                          <div className="ml-8 mt-3 bg-gray-50 rounded-lg p-4">
-                            <h4 className="text-sm font-semibold text-gray-700 mb-3">Budget Breakdown</h4>
-                            {request.expense_breakdown && request.expense_breakdown.length > 0 ? (
-                              <div className="space-y-2">
-                                {request.expense_breakdown.map((expense, index) => (
-                                  <div key={index} className="flex justify-between items-center text-sm">
-                                    <div>
-                                      <span className="text-gray-900 font-medium">{expense.category}</span>
-                                      {expense.description && (
-                                        <p className="text-gray-500 text-xs">{expense.description}</p>
-                                      )}
-                                    </div>
-                                    <span className="text-gray-900 font-semibold">
-                                      {formatCurrency(expense.amount)}
-                                    </span>
-                                  </div>
-                                ))}
-                                <div className="border-t pt-2 mt-2 flex justify-between items-center text-sm font-semibold">
-                                  <span className="text-gray-900">Total</span>
-                                  <span className="text-[#7a0019]">{formatCurrency(request.total_budget)}</span>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="text-center py-4">
-                                <p className="text-gray-500 text-sm">No detailed breakdown available</p>
-                                <p className="text-gray-400 text-xs mt-1">Total budget: {formatCurrency(request.total_budget)}</p>
-                              </div>
-                            )}
-                          </div>
+                          <p className="text-xs font-medium text-gray-500 mb-1">Date Requested</p>
+                          <p className="text-gray-900 font-medium">{formatDate(request.created_at || request.travel_start_date)}</p>
                         </div>
-                      )}
+                        {request.total_budget > 0 && (
+                          <div>
+                            <p className="text-xs font-medium text-gray-500 mb-1">Budget</p>
+                            <p className="text-gray-900 font-medium">{formatCurrency(request.total_budget)}</p>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
 
+
                   {/* Budget Justification */}
                   {request.cost_justification && (
-                    <div>
+                    <div className="bg-white rounded-lg border border-gray-200 p-6">
                       <h3 className="text-lg font-semibold text-gray-900 mb-3">Budget Justification</h3>
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <div className="flex items-start gap-3">
-                          <div className="w-5 h-5 flex items-center justify-center mt-0.5">
-                            <FileText className="w-5 h-5 text-[#7a0019]" />
-                          </div>
-                          <div className="flex-1">
-                            <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">
-                              {request.cost_justification}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
+                      <p className="text-gray-700 whitespace-pre-wrap">{request.cost_justification}</p>
                     </div>
                   )}
 
                   {/* Transportation */}
                   {request.transportation_type && (
-                    <div>
+                    <div className="bg-white rounded-lg border border-gray-200 p-6">
                       <h3 className="text-lg font-semibold text-gray-900 mb-3">Transportation</h3>
-                      <div className="flex items-center gap-3">
-                        <Car className="w-5 h-5 text-[#7a0019]" />
-                        <div>
-                          <p className="text-gray-900">
-                            {request.transportation_type === 'pickup' 
-                              ? 'University Vehicle (Pick-up)' 
-                              : 'Own Transportation'
-                            }
-                          </p>
-                          {request.pickup_location && (
-                            <p className="text-sm text-gray-600">
-                              Pick-up: {request.pickup_location}
-                              {request.pickup_time && ` at ${request.pickup_time}`}
-                            </p>
-                          )}
+                      <p className="text-gray-900 mb-1">
+                        {request.transportation_type === 'pickup' 
+                          ? 'University Vehicle (Pick-up)' 
+                          : 'Own Transportation'
+                        }
+                      </p>
+                      {request.pickup_location && (
+                        <p className="text-sm text-gray-600">
+                          Pick-up: {request.pickup_location}
+                          {request.pickup_time && ` at ${request.pickup_time}`}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Seminar Application Details */}
+                  {(() => {
+                    const isSeminar = request.request_type === 'seminar';
+                    const hasSeminarData = !!request.seminar_data;
+                    console.log('[RequestDetailsView] Seminar check:', {
+                      request_type: request.request_type,
+                      isSeminar,
+                      hasSeminarData,
+                      seminar_data: request.seminar_data ? 'EXISTS' : 'MISSING'
+                    });
+                    return isSeminar && hasSeminarData;
+                  })() && (
+                    <div className="border-t border-gray-200 pt-6 mt-6">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Seminar Application Details</h3>
+                      <div className="space-y-4">
+                        {/* Basic Info */}
+                        <div className="bg-white rounded-lg border border-gray-200 p-6">
+                          <h4 className="text-lg font-semibold text-gray-900 mb-4">Basic Information</h4>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <p className="text-xs font-medium text-gray-500 mb-1">Application Date</p>
+                              <p className="text-gray-900">{request.seminar_data.applicationDate ? formatDate(request.seminar_data.applicationDate) : '—'}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs font-medium text-gray-500 mb-1">Training Category</p>
+                              <p className="text-gray-900 capitalize">{request.seminar_data.trainingCategory || '—'}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs font-medium text-gray-500 mb-1">Modality</p>
+                              <p className="text-gray-900">{request.seminar_data.modality || '—'}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs font-medium text-gray-500 mb-1">Sponsor / Partner</p>
+                              <p className="text-gray-900">{request.seminar_data.sponsor || '—'}</p>
+                            </div>
+                            {request.seminar_data.days && (
+                              <div>
+                                <p className="text-xs font-medium text-gray-500 mb-1">Number of Days</p>
+                                <p className="text-gray-900">{request.seminar_data.days} {request.seminar_data.days === 1 ? 'day' : 'days'}</p>
+                              </div>
+                            )}
+                            {request.seminar_data.venue && (
+                              <div>
+                                <p className="text-xs font-medium text-gray-500 mb-1">Venue</p>
+                                <div className="flex items-center gap-2">
+                                  <p className="text-gray-900">{request.seminar_data.venue}</p>
+                                  <button
+                                    onClick={openGoogleMaps}
+                                    className="text-blue-600 hover:text-blue-700 text-xs font-medium flex items-center gap-1"
+                                    title="View on Google Maps"
+                                  >
+                                    <MapPin className="w-3 h-3" />
+                                    Map
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         </div>
+
+                        {/* Type of Training */}
+                        {request.seminar_data.typeOfTraining && request.seminar_data.typeOfTraining.length > 0 && (
+                          <div className="bg-white rounded-lg border border-gray-200 p-6">
+                            <h4 className="text-lg font-semibold text-gray-900 mb-3">Type of Training</h4>
+                            <div className="flex flex-wrap gap-2">
+                              {request.seminar_data.typeOfTraining.map((type: string, idx: number) => (
+                                <span key={idx} className="px-3 py-1 bg-blue-50 text-blue-700 rounded-md text-sm font-medium border border-blue-200">
+                                  {type}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Applicants */}
+                        {request.seminar_data.applicants && request.seminar_data.applicants.length > 0 && (
+                          <div className="bg-white rounded-lg border border-gray-200 p-6">
+                            <h4 className="text-lg font-semibold text-gray-900 mb-4">
+                              Applicants ({request.seminar_data.applicants.length})
+                            </h4>
+                            <div className="space-y-3">
+                              {request.seminar_data.applicants.map((applicant: any, idx: number) => (
+                                <div key={idx} className="p-4 border border-gray-200 rounded-lg">
+                                  <div className="flex items-start justify-between gap-4">
+                                    <div className="flex-1">
+                                      <p className="font-medium text-gray-900 mb-1">{applicant.name || '—'}</p>
+                                      <p className="text-sm text-gray-600 mb-2">{applicant.department || '—'}</p>
+                                      {applicant.availableFdp !== null && applicant.availableFdp !== undefined && (
+                                        <p className="text-xs text-gray-500">FDP: {applicant.availableFdp}</p>
+                                      )}
+                                    </div>
+                                    {applicant.signature && (
+                                      <img 
+                                        src={applicant.signature} 
+                                        alt={`${applicant.name}'s signature`}
+                                        className="h-12 w-32 rounded border border-gray-300 bg-white object-contain"
+                                      />
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Expense Breakdown */}
+                        {request.seminar_data.breakdown && request.seminar_data.breakdown.length > 0 && (
+                          <div className="bg-white rounded-lg border border-gray-200 p-6">
+                            <h4 className="text-lg font-semibold text-gray-900 mb-4">Expense Breakdown</h4>
+                            <div className="space-y-3">
+                              {request.seminar_data.breakdown.map((item: any, idx: number) => (
+                                <div key={idx} className="p-4 border border-gray-200 rounded-lg">
+                                  <div className="flex justify-between items-start gap-4 mb-2">
+                                    <div className="flex-1">
+                                      <p className="font-medium text-gray-900">{item.label || 'Unnamed Expense'}</p>
+                                      {item.description && (
+                                        <p className="text-sm text-gray-600 mt-1">{item.description}</p>
+                                      )}
+                                    </div>
+                                    <p className="text-gray-900 font-semibold">
+                                      {item.amount ? formatCurrency(item.amount) : '₱0.00'}
+                                    </p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                            {/* Summary */}
+                            <div className="mt-4 pt-4 border-t border-gray-200 space-y-2">
+                              {request.seminar_data.registrationCost && (
+                                <div className="flex justify-between text-sm">
+                                  <span className="text-gray-600">Registration Cost:</span>
+                                  <span className="text-gray-900 font-medium">{formatCurrency(request.seminar_data.registrationCost)}</span>
+                                </div>
+                              )}
+                              <div className="flex justify-between pt-2 border-t border-gray-200">
+                                <span className="font-semibold text-gray-900">Total Amount:</span>
+                                <span className="text-[#7a0019] font-bold text-lg">
+                                  {(() => {
+                                    const breakdownTotal = request.seminar_data.breakdown?.reduce((sum: number, item: any) => sum + (item.amount || 0), 0) || 0;
+                                    const registrationCost = request.seminar_data.registrationCost || 0;
+                                    const calculatedTotal = breakdownTotal + registrationCost;
+                                    if (calculatedTotal > 0) {
+                                      return formatCurrency(calculatedTotal);
+                                    } else if (request.seminar_data.totalAmount) {
+                                      return formatCurrency(request.seminar_data.totalAmount);
+                                    } else {
+                                      return '₱0.00';
+                                    }
+                                  })()}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Additional Info */}
+                        {(request.seminar_data.makeUpClassSchedule || request.seminar_data.fundReleaseLine !== null || request.seminar_data.applicantUndertaking) && (
+                          <div className="bg-white rounded-lg border border-gray-200 p-6">
+                            <h4 className="text-lg font-semibold text-gray-900 mb-4">Additional Information</h4>
+                            <div className="space-y-4">
+                              {request.seminar_data.makeUpClassSchedule && (
+                                <div>
+                                  <p className="text-xs font-medium text-gray-500 mb-1">Make-up Class Schedule</p>
+                                  <p className="text-sm text-gray-700 whitespace-pre-wrap">{request.seminar_data.makeUpClassSchedule}</p>
+                                </div>
+                              )}
+                              {request.seminar_data.fundReleaseLine !== null && (
+                                <div>
+                                  <p className="text-xs font-medium text-gray-500 mb-1">Fund Release Line</p>
+                                  <p className="text-gray-900 font-semibold">{formatCurrency(request.seminar_data.fundReleaseLine)}</p>
+                                </div>
+                              )}
+                              {request.seminar_data.applicantUndertaking && (
+                                <div className="pt-2 border-t border-gray-100">
+                                  <p className="text-xs font-medium text-gray-500 mb-1">Applicant's Undertaking</p>
+                                  <p className="text-sm text-gray-700">
+                                    ✓ I agree to liquidate advanced amounts within 5 working days, submit required documents, and serve as a resource speaker in an echo seminar.
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -565,17 +805,6 @@ export default function RequestDetailsView({
                 </motion.div>
               )}
 
-              {/* Attachments Tab */}
-              {activeTab === 'attachments' && (
-                <motion.div
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  className="text-center py-12"
-                >
-                  <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-500">No attachments uploaded</p>
-                </motion.div>
-              )}
             </div>
           </WowCard>
         </div>
@@ -583,18 +812,20 @@ export default function RequestDetailsView({
         {/* Sidebar */}
         <div className="space-y-6">
           {/* Requester Panel */}
-          <WowCard>
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Requested By</h3>
-            <PersonDisplay
-              person={request.requester}
-              size="md"
-              showEmail
-              showPosition
-            />
-            <div className="mt-4 pt-4 border-t border-gray-200">
+          <WowCard className="p-6">
+            <h3 className="text-xl font-bold text-gray-900 mb-6 pb-3 border-b-2 border-gray-200">Requested By</h3>
+            <div className="mb-6">
+              <PersonDisplay
+                person={request.requester}
+                size="md"
+                showEmail
+                showPosition
+              />
+            </div>
+            <div className="pt-4 border-t border-gray-200">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-500">Role</span>
-                <span className="font-medium text-gray-900">Requester</span>
+                <span className="text-gray-600 font-medium">Role</span>
+                <span className="font-bold text-gray-900">Requester</span>
               </div>
             </div>
           </WowCard>
@@ -602,9 +833,9 @@ export default function RequestDetailsView({
           {/* Moved signatures to bottom */}
 
           {/* Actions */}
-          <WowCard>
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Actions</h3>
-            <div className="space-y-3">
+          <WowCard className="p-6">
+            <h3 className="text-xl font-bold text-gray-900 mb-6 pb-3 border-b-2 border-gray-200">Actions</h3>
+            <div className="space-y-4">
               <WowButton 
                 variant="outline" 
                 className="w-full justify-start"
@@ -638,6 +869,7 @@ export default function RequestDetailsView({
           <SignatureStageRail stages={request.signatures} />
         </WowCard>
       </motion.div>
+
     </div>
   );
 }

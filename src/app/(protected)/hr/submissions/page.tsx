@@ -1,0 +1,24 @@
+"use client";
+
+import { Suspense } from "react";
+import { PageHeader, PageBody } from "@/components/common/Page";
+import SubmissionsView from "@/components/user/submissions/SubmissionsViewClean";
+import BackToRequestButton from "@/components/common/buttons/BackToRequestButton.ui";
+
+export default function HRSubmissionsPage() {
+  return (
+    <>
+      <PageHeader
+        title="My Submissions"
+        actions={<BackToRequestButton />}
+      />
+
+      <PageBody>
+        <Suspense fallback={<div className="p-8 text-center">Loading...</div>}>
+          <SubmissionsView />
+        </Suspense>
+      </PageBody>
+    </>
+  );
+}
+

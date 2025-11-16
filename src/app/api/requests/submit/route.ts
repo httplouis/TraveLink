@@ -38,6 +38,7 @@ export async function POST(req: Request) {
         id, 
         email,
         name,
+        department,
         department_id, 
         is_head, 
         is_hr, 
@@ -50,17 +51,34 @@ export async function POST(req: Request) {
     profile = profileResult.data;
     profileError = profileResult.error;
 
+    console.log("[/api/requests/submit] 📋 Initial profile fetch:", {
+      hasProfile: !!profile,
+      hasError: !!profileError,
+      department_id: profile?.department_id,
+      department_text: profile?.department,
+      email: profile?.email,
+      name: profile?.name
+    });
+
     // If join failed, try without join (fallback)
     if (profileError || !profile) {
       console.warn("[/api/requests/submit] Department join failed, trying without join");
       const simpleResult = await supabase
         .from("users")
-        .select("id, email, name, department_id, is_head, is_hr, is_exec")
+        .select("id, email, name, department, department_id, is_head, is_hr, is_exec")
         .eq("auth_user_id", user.id)
         .single();
       
       profile = simpleResult.data;
       profileError = simpleResult.error;
+      
+      console.log("[/api/requests/submit] 📋 Fallback profile fetch:", {
+        hasProfile: !!profile,
+        hasError: !!profileError,
+        department_id: profile?.department_id,
+        department_text: profile?.department,
+        email: profile?.email
+      });
       
       // If we got profile without join, manually fetch department
       if (profile && profile.department_id) {
@@ -72,8 +90,16 @@ export async function POST(req: Request) {
         
         if (dept) {
           profile.department = dept;
+          console.log("[/api/requests/submit] ✅ Manually fetched department:", dept.name);
         }
       }
+    } else if (profile && profile.department_id) {
+      console.log("[/api/requests/submit] ✅ Profile has department_id:", profile.department_id);
+      console.log("[/api/requests/submit] ✅ Department info:", profile.department ? {
+        id: profile.department.id,
+        name: profile.department.name,
+        code: profile.department.code
+      } : "null");
     }
 
     if (profileError) {
@@ -200,10 +226,102 @@ export async function POST(req: Request) {
     }
 
     // Validate department exists
+    // For seminar applications: user IS the requester, so use their department
     // For representative submissions: allow if requesting person has department OR form has department selected, even if submitter doesn't
     // For regular submissions: require submitter to have department
     if (!profile.department_id) {
-      if (mightBeRepresentative && (requestingPersonUser?.department_id || travelOrder.department)) {
+      if (isSeminar) {
+        // For seminar applications, the user is the requester
+        // Try to fetch department from profile API or check if it exists in the database
+        console.log("[/api/requests/submit] ⚠️ Seminar application: User has no department_id, attempting to fetch...");
+        console.log("[/api/requests/submit] 📋 Profile department (text):", profile.department);
+        
+        // If user has department name but no department_id, look it up from departments table
+        if (profile.department && typeof profile.department === 'string') {
+          const departmentName = profile.department.trim();
+          console.log("[/api/requests/submit] 🔍 Looking up department_id for:", departmentName);
+          
+          // Try exact match first
+          let { data: deptData } = await supabase
+            .from("departments")
+            .select("id, code, name, parent_department_id")
+            .eq("name", departmentName)
+            .maybeSingle();
+          
+          // If not found, try matching by code (e.g., "CCMS" might be the code)
+          if (!deptData && departmentName.length <= 10) {
+            console.log("[/api/requests/submit] 🔍 Trying to match by code:", departmentName);
+            const { data: deptByCode } = await supabase
+              .from("departments")
+              .select("id, code, name, parent_department_id")
+              .eq("code", departmentName)
+              .maybeSingle();
+            
+            if (deptByCode) {
+              deptData = deptByCode;
+              console.log("[/api/requests/submit] ✅ Found department by code:", deptByCode.name);
+            }
+          }
+          
+          // If still not found, try partial match (e.g., "CCMS" in "College of Computer and Mathematical Sciences (CCMS)")
+          if (!deptData) {
+            console.log("[/api/requests/submit] 🔍 Trying partial match for:", departmentName);
+            const { data: deptPartial } = await supabase
+              .from("departments")
+              .select("id, code, name, parent_department_id")
+              .or(`name.ilike.%${departmentName}%,code.ilike.%${departmentName}%`)
+              .limit(1)
+              .maybeSingle();
+            
+            if (deptPartial) {
+              deptData = deptPartial;
+              console.log("[/api/requests/submit] ✅ Found department by partial match:", deptPartial.name);
+            }
+          }
+          
+          if (deptData) {
+            profile.department_id = deptData.id;
+            profile.department = {
+              id: deptData.id,
+              code: deptData.code,
+              name: deptData.name,
+              parent_department_id: deptData.parent_department_id
+            };
+            console.log("[/api/requests/submit] ✅ Successfully resolved department_id:", deptData.id, "for", deptData.name);
+          } else {
+            console.warn("[/api/requests/submit] ⚠️ Could not find department_id for:", departmentName);
+          }
+        }
+        
+        // If still no department_id after lookup, check one more time with fresh query
+        if (!profile.department_id) {
+          const { data: freshProfile } = await supabase
+            .from("users")
+            .select("id, department_id, department:departments(id, code, name, parent_department_id)")
+            .eq("auth_user_id", user.id)
+            .single();
+          
+          if (freshProfile?.department_id) {
+            profile.department_id = freshProfile.department_id;
+            profile.department = freshProfile.department;
+            console.log("[/api/requests/submit] ✅ Found department from fresh query:", freshProfile.department_id);
+          }
+        }
+        
+        // Final check - if still no department_id, reject (unless draft)
+        if (!profile.department_id) {
+          if (requestedStatus === "draft") {
+            console.log("[/api/requests/submit] 📝 Draft mode: Allowing seminar draft without department");
+          } else {
+            console.error("[/api/requests/submit] ❌ Seminar user has no department assigned:", profile.email);
+            console.error("[/api/requests/submit] ❌ Department name was:", profile.department);
+            return NextResponse.json({ 
+              ok: false, 
+              error: "Your account is not assigned to a department. Please contact your administrator to assign you to a department before submitting seminar applications." 
+            }, { status: 400 });
+          }
+        }
+      } else if (mightBeRepresentative && (requestingPersonUser?.department_id || travelOrder.department)) {
         // Representative submission: requesting person has department OR form has department selected, so allow it
         console.log("[/api/requests/submit] ℹ️ Submitter has no department, but representative submission detected:");
         console.log("  - Requesting person department_id:", requestingPersonUser?.department_id);

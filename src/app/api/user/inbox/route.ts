@@ -143,7 +143,19 @@ export async function GET() {
       console.log(`[User Inbox] Debug - All requests with requester_name like '${profile.name}':`, debugData);
     }
 
-    return NextResponse.json({ ok: true, data: data || [] });
+    // Parse seminar_data for each request if it exists
+    const parsedData = (data || []).map((req: any) => {
+      if (req.seminar_data && typeof req.seminar_data === 'string') {
+        try {
+          req.seminar_data = JSON.parse(req.seminar_data);
+        } catch (e) {
+          console.warn(`[User Inbox] Failed to parse seminar_data for request ${req.id}:`, e);
+        }
+      }
+      return req;
+    });
+
+    return NextResponse.json({ ok: true, data: parsedData });
   } catch (err: any) {
     console.error("[User Inbox] Unexpected error:", err);
     return NextResponse.json({ ok: false, error: err.message }, { status: 500 });

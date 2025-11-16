@@ -368,7 +368,20 @@ export async function GET(
       
       // History timeline
       history: history || [],
+      
+      // Seminar data (if seminar application)
+      request_type: request.request_type,
+      seminar_data: request.seminar_data || null,
     };
+
+    // Parse seminar_data if it's a string
+    if (trackingData.seminar_data && typeof trackingData.seminar_data === 'string') {
+      try {
+        trackingData.seminar_data = JSON.parse(trackingData.seminar_data);
+      } catch (e) {
+        console.warn('[Tracking API] Failed to parse seminar_data:', e);
+      }
+    }
 
     return NextResponse.json({ ok: true, data: trackingData });
   } catch (err: any) {

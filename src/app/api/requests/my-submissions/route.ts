@@ -74,7 +74,19 @@ export async function GET() {
       return dateB - dateA;
     });
 
-    return NextResponse.json({ ok: true, data: uniqueRequests.slice(0, 100) });
+    // Parse seminar_data for each request if it exists
+    const parsedRequests = uniqueRequests.map((req: any) => {
+      if (req.seminar_data && typeof req.seminar_data === 'string') {
+        try {
+          req.seminar_data = JSON.parse(req.seminar_data);
+        } catch (e) {
+          console.warn(`[GET /api/requests/my-submissions] Failed to parse seminar_data for request ${req.id}:`, e);
+        }
+      }
+      return req;
+    });
+
+    return NextResponse.json({ ok: true, data: parsedRequests.slice(0, 100) });
   } catch (err: any) {
     console.error("[GET /api/requests/my-submissions] Unexpected error:", err);
     return NextResponse.json({ ok: false, error: err.message }, { status: 500 });

@@ -5,19 +5,17 @@ import Link from "next/link";
 import { PageHeader, PageBody } from "@/components/common/Page";
 import FeedbackView from "@/components/user/feedback/FeedbackView";
 
-/* ------------ Types used only by the container ------------ */
 type Form = {
   category: string;
-  rating: number;         // 0–5
+  rating: number;
   subject: string;
   message: string;
   anonymous: boolean;
-  contact: string;        // email or phone (optional if anonymous)
+  contact: string;
   attachment?: File | null;
 };
 type Errors = Partial<Record<keyof Form, string>>;
 
-/* ------------ Simple validators (can be moved to utils) ------------ */
 const isEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 const isPhone = (v: string) => /^(\+?\d{10,15}|0\d{9,10})$/.test(v.replace(/\s|-/g, ""));
 const validate = (f: Form): Errors => {
@@ -55,14 +53,10 @@ export default function HeadFeedbackPage() {
     if (Object.keys(v).length) return;
 
     setSubmitting(true);
-
-    // TODO: replace with real API call — e.g., POST /api/feedback
     await new Promise((r) => setTimeout(r, 700));
-
     setSubmitting(false);
     setSuccessId(`FB-${Math.floor(Math.random() * 90000) + 10000}`);
 
-    // keep contact preference; clear other fields
     setForm((f) => ({
       ...f,
       category: "",
@@ -94,7 +88,7 @@ export default function HeadFeedbackPage() {
         description="Send feedback about the transport service."
         actions={
           <Link
-            href="/head/dashboard"
+            href="/head"
             className="rounded-md border px-3 py-2 text-sm hover:bg-neutral-50"
           >
             Back to Dashboard
@@ -103,7 +97,6 @@ export default function HeadFeedbackPage() {
       />
       <PageBody>
         <FeedbackView
-          /* values */
           category={form.category}
           rating={form.rating}
           subject={form.subject}
@@ -111,12 +104,9 @@ export default function HeadFeedbackPage() {
           anonymous={form.anonymous}
           contact={form.contact}
           attachmentName={form.attachment?.name ?? ""}
-          /* errors */
           errors={errors}
-          /* flags */
           submitting={submitting}
           successId={successId}
-          /* handlers */
           onChangeCategory={(v) => update("category", v)}
           onChangeRating={(v) => update("rating", v)}
           onChangeSubject={(v) => update("subject", v)}
