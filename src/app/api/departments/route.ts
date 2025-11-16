@@ -11,6 +11,7 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
   const name = searchParams.get("name");
+  const code = searchParams.get("code");
 
   // If ID provided, get specific department
   if (id) {
@@ -18,6 +19,22 @@ export async function GET(req: Request) {
       .from("departments")
       .select("id, code, name, type, parent_department_id")
       .eq("id", id)
+      .maybeSingle();
+
+    if (error) {
+      console.error("[API /departments] Error:", error);
+      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true, departments: data ? [data] : [] });
+  }
+
+  // If code provided, search by code (exact match)
+  if (code) {
+    const { data, error } = await supabase
+      .from("departments")
+      .select("id, code, name, type, parent_department_id")
+      .eq("code", code.toUpperCase())
       .maybeSingle();
 
     if (error) {

@@ -17,6 +17,8 @@ type Props = {
   approvalPath: string[];
   firstReceiver: string;
   isSubmitting?: boolean;
+  headName?: string; // Department head name for display
+  isSeminar?: boolean; // Whether this is a seminar application
 };
 
 /**
@@ -121,14 +123,16 @@ export default function SubmitConfirmationDialog({
                   FIRST
                 </span>
                 <span className="text-sm font-medium text-blue-900">
-                  {firstReceiver === "DEPT_HEAD" && headName 
-                    ? `${headName} (${getApproverLabel(firstReceiver)})`
+                  {firstReceiver === "DEPT_HEAD" && headName && headName.trim() !== ""
+                    ? `${headName} - ${getApproverLabel(firstReceiver)}`
                     : getApproverLabel(firstReceiver)}
                 </span>
               </div>
               <p className="text-xs text-blue-700">
-                {firstReceiver === "DEPT_HEAD" && headName
-                  ? `Your request will be sent to ${headName} (${department}) first for approval`
+                {firstReceiver === "DEPT_HEAD" && headName && headName.trim() !== ""
+                  ? `Your request will be sent to ${headName}${department ? ` (${department})` : ''} first for approval`
+                  : firstReceiver === "DEPT_HEAD"
+                  ? `Your request will be sent to your department head${department ? ` (${department})` : ''} first for approval`
                   : `Your request will be sent here first for approval`}
               </p>
             </div>

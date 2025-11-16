@@ -227,9 +227,38 @@ export async function POST(req: Request) {
 
     // Validate department exists
     // For seminar applications: user IS the requester, so use their department
-    // For representative submissions: allow if requesting person has department OR form has department selected, even if submitter doesn't
+    // For representative submissions: use requesting person's department (requester's department), not submitter's
     // For regular submissions: require submitter to have department
-    if (!profile.department_id) {
+    
+    // CRITICAL: For representative submissions, we should use the REQUESTER's department, not the submitter's
+    // The requester is the one who needs the travel, so their department determines the approval path
+    let finalDepartmentId = profile.department_id;
+    let finalDepartment: any = profile.department;
+    
+    // If this is a representative submission and we found the requesting person, use their department
+    if (mightBeRepresentative && !isSeminar && requestingPersonUser?.department_id) {
+      console.log("[/api/requests/submit] ✅ Representative submission: Using REQUESTER's department, not submitter's");
+      console.log("[/api/requests/submit]   - Requester department_id:", requestingPersonUser.department_id);
+      console.log("[/api/requests/submit]   - Submitter department_id:", profile.department_id || "none");
+      
+      // Fetch requester's department info
+      const { data: requesterDept } = await supabase
+        .from("departments")
+        .select("id, code, name, parent_department_id")
+        .eq("id", requestingPersonUser.department_id)
+        .maybeSingle();
+      
+      if (requesterDept) {
+        finalDepartmentId = requesterDept.id;
+        finalDepartment = requesterDept;
+        console.log("[/api/requests/submit] ✅ Using requester's department:", requesterDept.name);
+      } else {
+        console.warn("[/api/requests/submit] ⚠️ Could not fetch requester's department, will use form department");
+      }
+    }
+    
+    // If still no department_id, try to resolve it
+    if (!finalDepartmentId) {
       if (isSeminar) {
         // For seminar applications, the user is the requester
         // Try to fetch department from profile API or check if it exists in the database
@@ -280,13 +309,8 @@ export async function POST(req: Request) {
           }
           
           if (deptData) {
-            profile.department_id = deptData.id;
-            profile.department = {
-              id: deptData.id,
-              code: deptData.code,
-              name: deptData.name,
-              parent_department_id: deptData.parent_department_id
-            };
+            finalDepartmentId = deptData.id;
+            finalDepartment = deptData;
             console.log("[/api/requests/submit] ✅ Successfully resolved department_id:", deptData.id, "for", deptData.name);
           } else {
             console.warn("[/api/requests/submit] ⚠️ Could not find department_id for:", departmentName);
@@ -294,7 +318,7 @@ export async function POST(req: Request) {
         }
         
         // If still no department_id after lookup, check one more time with fresh query
-        if (!profile.department_id) {
+        if (!finalDepartmentId) {
           const { data: freshProfile } = await supabase
             .from("users")
             .select("id, department_id, department:departments(id, code, name, parent_department_id)")
@@ -302,14 +326,14 @@ export async function POST(req: Request) {
             .single();
           
           if (freshProfile?.department_id) {
-            profile.department_id = freshProfile.department_id;
-            profile.department = freshProfile.department;
+            finalDepartmentId = freshProfile.department_id;
+            finalDepartment = freshProfile.department;
             console.log("[/api/requests/submit] ✅ Found department from fresh query:", freshProfile.department_id);
           }
         }
         
         // Final check - if still no department_id, reject (unless draft)
-        if (!profile.department_id) {
+        if (!finalDepartmentId) {
           if (requestedStatus === "draft") {
             console.log("[/api/requests/submit] 📝 Draft mode: Allowing seminar draft without department");
           } else {
@@ -327,6 +351,7 @@ export async function POST(req: Request) {
         console.log("  - Requesting person department_id:", requestingPersonUser?.department_id);
         console.log("  - Form selected department:", travelOrder.department);
         console.log("  - Allowing representative submission");
+        // finalDepartmentId should already be set above if requestingPersonUser has department_id
       } else {
         // Not representative OR requesting person also has no department
         // For drafts, allow saving without department (will be validated on final submit)
@@ -344,61 +369,44 @@ export async function POST(req: Request) {
     }
 
     // Check if department has parent (for office hierarchy)
-    const hasParentDepartment = !!(profile.department as any)?.parent_department_id;
+    const hasParentDepartment = !!(finalDepartment as any)?.parent_department_id;
 
     // Extract request data from body (travelOrder and reason already extracted above)
     const costs = travelOrder.costs ?? {};
     const vehicleMode = body.vehicleMode ?? "owned"; // "owned", "institutional", "rent"
 
-    // Get the department ID from the selected department in the form
-    let departmentId = profile.department_id;
-    let selectedDepartment: any = profile.department;
+    // Get the department ID - use finalDepartmentId (which is requester's department for representative submissions)
+    let departmentId = finalDepartmentId;
+    let selectedDepartment: any = finalDepartment;
     
-    console.log(`[/api/requests/submit] Initial dept: ${(profile.department as any)?.name} (${departmentId})`);
+    console.log(`[/api/requests/submit] Initial dept: ${(finalDepartment as any)?.name} (${departmentId})`);
     console.log(`[/api/requests/submit] Form selected dept: ${travelOrder.department}`);
     
-    // For representative submissions, validate and use requesting person's department
-    if (mightBeRepresentative && requestingPersonUser?.department_id) {
-      // Get requesting person's department info
-      const { data: reqDept } = await supabase
-        .from("departments")
-        .select("id, code, name, parent_department_id")
-        .eq("id", requestingPersonUser.department_id)
-        .maybeSingle();
+    // For representative submissions, validate that form department matches requester's department
+    // (We already set departmentId to requester's department above, so just validate here)
+    if (mightBeRepresentative && requestingPersonUser?.department_id && travelOrder.department) {
+      // Validate that the selected department matches the requesting person's department
+      const selectedDeptName = travelOrder.department?.trim() || "";
+      const requesterDeptName = selectedDepartment?.name?.trim() || "";
+      const requesterDeptCode = selectedDepartment?.code?.trim() || "";
       
-      if (reqDept) {
-        // Validate that the selected department matches the requesting person's department
-        const selectedDeptName = travelOrder.department?.trim() || "";
-        const requesterDeptName = reqDept.name?.trim() || "";
-        const requesterDeptCode = reqDept.code?.trim() || "";
-        
-        // Check if selected department matches (by name or code)
-        const matchesName = selectedDeptName === requesterDeptName;
-        const matchesCode = selectedDeptName.includes(`(${requesterDeptCode})`) || selectedDeptName === requesterDeptCode;
-        const matchesFull = selectedDeptName === `${requesterDeptName} (${requesterDeptCode})`;
-        
-        if (!matchesName && !matchesCode && !matchesFull && selectedDeptName !== "") {
-          console.error(`[/api/requests/submit] ❌ Department mismatch!`);
-          console.error(`  - Requesting person's department: ${requesterDeptName} (${requesterDeptCode})`);
-          console.error(`  - Selected department: ${selectedDeptName}`);
-          return NextResponse.json({ 
-            ok: false, 
-            error: `The selected department "${selectedDeptName}" does not match the requesting person's department "${requesterDeptName}". Please select the correct department for ${requestingPersonName}.` 
-          }, { status: 400 });
-        }
-        
-        // Use requesting person's department
-        departmentId = requestingPersonUser.department_id;
-        selectedDepartment = reqDept;
-        console.log(`[/api/requests/submit] ✅ Representative submission: Using requesting person's department: ${reqDept.name} (${reqDept.code})`);
-      } else {
-        console.error(`[/api/requests/submit] ❌ Could not find requesting person's department (ID: ${requestingPersonUser.department_id})`);
+      // Check if selected department matches (by name or code)
+      const matchesName = selectedDeptName === requesterDeptName;
+      const matchesCode = selectedDeptName.includes(`(${requesterDeptCode})`) || selectedDeptName === requesterDeptCode;
+      const matchesFull = selectedDeptName === `${requesterDeptName} (${requesterDeptCode})`;
+      
+      if (!matchesName && !matchesCode && !matchesFull && selectedDeptName !== "") {
+        console.error(`[/api/requests/submit] ❌ Department mismatch!`);
+        console.error(`  - Requesting person's department: ${requesterDeptName} (${requesterDeptCode})`);
+        console.error(`  - Selected department: ${selectedDeptName}`);
         return NextResponse.json({ 
           ok: false, 
-          error: `The requesting person's department could not be found. Please contact support.` 
+          error: `The selected department "${selectedDeptName}" does not match the requesting person's department "${requesterDeptName}". Please select the correct department for ${requestingPersonName}.` 
         }, { status: 400 });
       }
-    } else if (travelOrder.department && travelOrder.department !== (profile.department as any)?.name) {
+      
+      console.log(`[/api/requests/submit] ✅ Representative submission: Department validated - ${requesterDeptName} (${requesterDeptCode})`);
+    } else if (travelOrder.department && travelOrder.department !== (finalDepartment as any)?.name) {
       // User selected a different department - look it up
       // Try multiple search strategies to handle different name formats
       let deptData = null;

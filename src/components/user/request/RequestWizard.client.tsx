@@ -155,14 +155,105 @@ function RequestWizardContent() {
   }, []);
 
   // Pre-fill requesting person with current user's name - ALWAYS update when user loads
+  // Also pre-fill department if requesting person is current user
   React.useEffect(() => {
-    if (currentUser && currentUser.name) {
+    if (currentUser && currentUser.name && !userLoading) {
       // Only update if empty OR different from current user
       if (!data.travelOrder?.requestingPerson || data.travelOrder.requestingPerson !== currentUser.name) {
         patchTravelOrder({ requestingPerson: currentUser.name });
       }
+      
+      // Also pre-fill department if requesting person matches current user
+      const requestingPersonMatches = !data.travelOrder?.requestingPerson || 
+        data.travelOrder.requestingPerson === currentUser.name ||
+        data.travelOrder.requestingPerson.toLowerCase().trim() === currentUser.name.toLowerCase().trim();
+      
+      // Pre-fill department if requesting person matches current user
+      // Also handle case where department is just a code (like "CCMS")
+      const currentDept = data.travelOrder?.department || "";
+      const needsPreFill = requestingPersonMatches && 
+        (!currentDept || 
+         currentDept.length <= 10 || 
+         currentDept === currentUser.department ||
+         (currentDept === "CCMS" && currentUser.department === "CCMS"));
+      
+      if (needsPreFill) {
+        (async () => {
+          try {
+            let deptId = (currentUser as any).department_id;
+            let dept: any = null;
+            
+            // If has department_id, fetch by ID
+            if (deptId) {
+              const deptResponse = await fetch(`/api/departments?id=${deptId}`);
+              const deptData = await deptResponse.json();
+              if (deptData.ok && deptData.departments?.[0]) {
+                dept = deptData.departments[0];
+              }
+            }
+            
+            // If no department_id but has department text, look it up
+            if (!dept && currentUser.department) {
+              const deptText = currentUser.department.trim();
+              let deptResponse;
+              if (deptText.length <= 10 && deptText === deptText.toUpperCase()) {
+                // Looks like a code
+                deptResponse = await fetch(`/api/departments?code=${encodeURIComponent(deptText)}`);
+              } else {
+                deptResponse = await fetch(`/api/departments?name=${encodeURIComponent(deptText)}`);
+              }
+              
+              const deptData = await deptResponse.json();
+              if (deptData.ok && deptData.departments?.[0]) {
+                dept = deptData.departments[0];
+                deptId = dept.id;
+              }
+            }
+            
+            if (dept) {
+              const deptFormatted = dept.code 
+                ? `${dept.name} (${dept.code})`
+                : dept.name;
+              console.log('[RequestWizard] 🔄 Pre-filling department on initial load:', deptFormatted);
+              
+              // Also fetch department head
+              let headName = "";
+              if (deptId) {
+                const headResponse = await fetch(`/api/approvers?role=head&department_id=${deptId}`);
+                const headData = await headResponse.json();
+                if (headData.ok && headData.data && headData.data.length > 0) {
+                  headName = headData.data[0].name;
+                }
+              }
+              
+              patchTravelOrder({ 
+                department: deptFormatted,
+                ...(headName ? { endorsedByHeadName: headName } : {})
+              });
+              
+              if (headName) {
+                console.log('[RequestWizard] 🔄 Pre-filling department head on initial load:', headName);
+              }
+            }
+          } catch (err) {
+            console.warn('[RequestWizard] Failed to pre-fill department:', err);
+          }
+        })();
+      }
     }
-  }, [currentUser]);
+  }, [currentUser, userLoading]);
+
+  // Clear any hardcoded/incorrect head names on load
+  React.useEffect(() => {
+    const currentHead = data.travelOrder?.endorsedByHeadName || "";
+    if (currentHead && 
+        (currentHead.includes("Engr. Maria") || 
+         currentHead.includes("DeptHead") ||
+         currentHead.includes("Dr. Aileen"))) {
+      console.log('[RequestWizard] 🧹 Detected hardcoded head name, clearing:', currentHead);
+      patchTravelOrder({ endorsedByHeadName: "" });
+    }
+  }, []); // Run once on mount
 
   // Check if requesting person is a head when requesting person or department changes
   React.useEffect(() => {
@@ -178,7 +269,7 @@ function RequestWizardContent() {
       setIsRepresentativeSubmission(false);
       
       // For seminars, requesting person is the current user (organizer)
-      const isCurrentUserHead = currentUser?.role === "head" || currentUser?.is_head === true;
+      const isCurrentUserHead = currentUser?.role === "head" || (currentUser as any)?.is_head === true;
       setRequestingPersonIsHead(isCurrentUserHead);
       
       // Find department head for seminar organizer (current user)
@@ -252,6 +343,241 @@ function RequestWizardContent() {
       }
 
       try {
+        // CRITICAL: First check if requesting person is the current user
+        // If it is, use current user's department (CCMS), not search for another user
+        let actualCurrentUser = currentUser;
+        if (!actualCurrentUser && !userLoading) {
+          try {
+            const currentUserResponse = await fetch("/api/profile");
+            const currentUserData = await currentUserResponse.json();
+            if (currentUserData.ok && currentUserData.data) {
+              actualCurrentUser = {
+                id: currentUserData.data.id,
+                email: currentUserData.data.email,
+                name: currentUserData.data.name,
+                role: currentUserData.data.role,
+                department: currentUserData.data.department,
+                ...(currentUserData.data.department_id && { department_id: currentUserData.data.department_id }),
+                ...(currentUserData.data.is_head !== undefined && { is_head: currentUserData.data.is_head }),
+              } as any;
+              console.log('[RequestWizard] Fetched current user from API:', actualCurrentUser);
+            }
+          } catch (error) {
+            console.warn('[RequestWizard] Failed to fetch current user from API:', error);
+          }
+        }
+        
+        // Check if requesting person matches current user (by name, case-insensitive)
+        const requestingPersonNormalized = requestingPerson.trim().toLowerCase();
+        const currentUserNameNormalized = actualCurrentUser?.name?.trim().toLowerCase() || "";
+        // Check if names match (case-insensitive)
+        const namesMatch = actualCurrentUser?.name && 
+          currentUserNameNormalized === requestingPersonNormalized;
+        
+        const isCurrentUser = actualCurrentUser && namesMatch;
+        
+        console.log('[RequestWizard] 🔍 Checking if requesting person is current user:');
+        console.log('  - Requesting person:', requestingPerson);
+        console.log('  - Requesting person (normalized):', requestingPersonNormalized);
+        console.log('  - Current user name:', actualCurrentUser?.name);
+        console.log('  - Current user name (normalized):', currentUserNameNormalized);
+        console.log('  - Names match?', namesMatch);
+        console.log('  - Is current user?', isCurrentUser);
+        
+        // If it's the current user, use their department directly
+        if (isCurrentUser && actualCurrentUser) {
+          console.log('[RequestWizard] ✅ Requesting person IS current user - using current user\'s department');
+          
+          // Get department name in correct format
+          let requesterDepartment = "";
+          let dept: any = null;
+          let finalDepartmentId = (actualCurrentUser as any).department_id;
+          
+          if ((actualCurrentUser as any).department_id) {
+            // Has department_id - fetch full department info
+            try {
+              const deptResponse = await fetch(`/api/departments?id=${(actualCurrentUser as any).department_id}`);
+              const deptData = await deptResponse.json();
+              if (deptData.ok && deptData.departments?.[0]) {
+                dept = deptData.departments[0];
+                requesterDepartment = dept.code 
+                  ? `${dept.name} (${dept.code})`
+                  : dept.name;
+                finalDepartmentId = dept.id;
+                console.log('[RequestWizard] ✅ Fetched current user\'s department:', requesterDepartment);
+              }
+            } catch (deptErr) {
+              console.error('[RequestWizard] ❌ Failed to fetch current user\'s department:', deptErr);
+            }
+          }
+          
+          // If no department_id but has department text (like "CCMS"), look it up
+          if (!finalDepartmentId && actualCurrentUser.department) {
+            const deptText = actualCurrentUser.department.trim();
+            console.log('[RequestWizard] 🔍 No department_id, looking up by text:', deptText);
+            
+            try {
+              // Try to find by code first (if it's just a code like "CCMS")
+              let deptResponse;
+              if (deptText.length <= 10 && deptText === deptText.toUpperCase()) {
+                // Looks like a code
+                deptResponse = await fetch(`/api/departments?code=${encodeURIComponent(deptText)}`);
+              } else {
+                // Try by name
+                deptResponse = await fetch(`/api/departments?name=${encodeURIComponent(deptText)}`);
+              }
+              
+              const deptData = await deptResponse.json();
+              if (deptData.ok && deptData.departments?.[0]) {
+                dept = deptData.departments[0];
+                requesterDepartment = dept.code 
+                  ? `${dept.name} (${dept.code})`
+                  : dept.name;
+                finalDepartmentId = dept.id;
+                console.log('[RequestWizard] ✅ Found department by lookup:', requesterDepartment, 'ID:', finalDepartmentId);
+              } else {
+                // Fallback to original text
+                requesterDepartment = deptText;
+                console.warn('[RequestWizard] ⚠️ Department not found in database, using text:', deptText);
+              }
+            } catch (deptErr) {
+              console.error('[RequestWizard] ❌ Failed to lookup department:', deptErr);
+              requesterDepartment = deptText;
+            }
+          }
+          
+          // If still no department, use empty string
+          if (!requesterDepartment) {
+            console.warn('[RequestWizard] ⚠️ No department found for current user');
+          }
+          
+          // Store requesting person info (current user)
+          setRequestingPersonInfo({
+            id: actualCurrentUser.id,
+            name: actualCurrentUser.name || requestingPerson,
+            department: requesterDepartment,
+            departmentId: finalDepartmentId || (actualCurrentUser as any).department_id || "",
+          });
+          
+          // Check if current user is a head
+          const isHead = actualCurrentUser.role === "head" || (actualCurrentUser as any).is_head === true;
+          setRequestingPersonIsHead(isHead);
+          setIsRepresentativeSubmission(false); // Not representative if it's the current user
+          
+          // Auto-populate department to current user's department
+          // Force update even if department is already set to ensure it's correct
+          // Also check if current value is just a code (e.g., "CCMS") and needs to be converted
+          const currentDept = data.travelOrder?.department || "";
+          const needsUpdate = !currentDept || 
+            currentDept !== requesterDepartment ||
+            (currentDept.length <= 10 && currentDept === dept?.code); // If it's just a code like "CCMS"
+          
+          if (requesterDepartment && needsUpdate) {
+            console.log('[RequestWizard] 🔄 Auto-populating department to current user\'s department:', requesterDepartment);
+            console.log('[RequestWizard]   - Current department in form:', currentDept);
+            console.log('[RequestWizard]   - Will update to:', requesterDepartment);
+            // Force update the department field
+            patchTravelOrder({ department: requesterDepartment });
+            // Also log after a short delay to verify it was updated
+            setTimeout(() => {
+              console.log('[RequestWizard] ✅ Department should now be:', requesterDepartment);
+            }, 100);
+          } else {
+            console.warn('[RequestWizard] ⚠️ No department found for current user:', actualCurrentUser);
+          }
+          
+          // If current user is NOT a head, find their department head
+          // Use finalDepartmentId (which may have been looked up)
+          if (!isHead && finalDepartmentId) {
+            console.log('[RequestWizard] 🔍 Fetching department head for department_id:', finalDepartmentId);
+            const headResponse = await fetch(`/api/approvers?role=head&department_id=${finalDepartmentId}`);
+            const headData = await headResponse.json();
+            if (headData.ok && headData.data && headData.data.length > 0) {
+              const head = headData.data[0];
+              const headName = head.name || "Department Head";
+              console.log('[RequestWizard] ✅ Found department head:', headName);
+              setRequestingPersonHeadInfo({
+                name: headName,
+                department: head.department || requesterDepartment || "",
+              });
+              
+              // Auto-populate department head name in the form
+              // Always update, even if it's already set, to ensure it's the correct head from database
+              if (headName && headName !== "Department Head") {
+                console.log('[RequestWizard] 🔄 Auto-populating department head name:', headName);
+                console.log('[RequestWizard]   - Current head in form:', data.travelOrder?.endorsedByHeadName);
+                console.log('[RequestWizard]   - Will update to:', headName);
+                patchTravelOrder({ endorsedByHeadName: headName });
+              } else {
+                // Clear any incorrect hardcoded values
+                if (data.travelOrder?.endorsedByHeadName && 
+                    (data.travelOrder.endorsedByHeadName.includes("Engr. Maria") || 
+                     data.travelOrder.endorsedByHeadName.includes("DeptHead"))) {
+                  console.log('[RequestWizard] 🧹 Clearing incorrect hardcoded head name');
+                  patchTravelOrder({ endorsedByHeadName: "" });
+                }
+              }
+            } else {
+              console.warn('[RequestWizard] ⚠️ No department head found for department_id:', finalDepartmentId);
+              console.warn('[RequestWizard] 🔍 DEBUG - API Response:', {
+                ok: headData.ok,
+                error: headData.error,
+                dataLength: headData.data?.length || 0,
+                data: headData.data
+              });
+              
+              // Try alternative: check if there's a head by role instead of is_head flag
+              console.log('[RequestWizard] 🔍 DEBUG - Trying alternative: checking for users with role="head" in department...');
+              try {
+                const altResponse = await fetch(`/api/users?department_id=${finalDepartmentId}&role=head`);
+                const altData = await altResponse.json();
+                console.log('[RequestWizard] 🔍 DEBUG - Alternative query result:', altData);
+                
+                if (altData.ok && altData.users && altData.users.length > 0) {
+                  const head = altData.users[0];
+                  const headName = head.name || "Department Head";
+                  console.log('[RequestWizard] ✅ Found department head via alternative query:', headName);
+                  setRequestingPersonHeadInfo({
+                    name: headName,
+                    department: requesterDepartment || "",
+                  });
+                  if (headName && headName !== "Department Head") {
+                    console.log('[RequestWizard] 🔄 Auto-populating department head name (alternative):', headName);
+                    patchTravelOrder({ endorsedByHeadName: headName });
+                  }
+                  return; // Exit early if we found a head
+                }
+              } catch (altErr) {
+                console.error('[RequestWizard] ❌ Alternative query failed:', altErr);
+              }
+              
+              setRequestingPersonHeadInfo({
+                name: "Department Head",
+                department: requesterDepartment || "",
+              });
+              // Clear any incorrect hardcoded values if no head found
+              if (data.travelOrder?.endorsedByHeadName && 
+                  (data.travelOrder.endorsedByHeadName.includes("Engr. Maria") || 
+                   data.travelOrder.endorsedByHeadName.includes("DeptHead"))) {
+                console.log('[RequestWizard] 🧹 Clearing incorrect hardcoded head name (no head found)');
+                patchTravelOrder({ endorsedByHeadName: "" });
+              }
+            }
+          } else {
+            if (isHead) {
+              console.log('[RequestWizard] ℹ️ Current user is a head, no need to fetch department head');
+            } else {
+              console.warn('[RequestWizard] ⚠️ Cannot fetch department head - no department_id available');
+            }
+            setRequestingPersonHeadInfo(null);
+          }
+          
+          return; // Exit early - we're done
+        }
+        
+        // If NOT current user, search for the user in database
+        console.log('[RequestWizard] 🔍 Requesting person is NOT current user - searching in database');
+        
         // First, get department ID from department name if available
         let deptId = null;
         if (data.travelOrder?.department) {
@@ -394,13 +720,21 @@ function RequestWizardContent() {
           
           // If requesting person is NOT a head, find their department head (requester's department head)
           if (!result.isHead && result.user?.department_id) {
-            const headResponse = await fetch(`/api/approvers?departmentId=${result.user.department_id}`);
+            const headResponse = await fetch(`/api/approvers?role=head&department_id=${result.user.department_id}`);
             const headData = await headResponse.json();
-            if (headData.ok && headData.heads?.[0]) {
+            if (headData.ok && headData.data && headData.data.length > 0) {
+              const head = headData.data[0]; // Use first head if multiple
+              const headName = head.name || "Department Head";
               setRequestingPersonHeadInfo({
-                name: headData.heads[0].name || "Department Head",
-                department: headData.heads[0].department || requesterDepartment || "",
+                name: headName,
+                department: head.department || requesterDepartment || "",
               });
+              
+              // Auto-populate department head name in the form
+              if (headName && headName !== "Department Head") {
+                console.log('[RequestWizard] 🔄 Auto-populating department head name for requester:', headName);
+                patchTravelOrder({ endorsedByHeadName: headName });
+              }
             } else {
               setRequestingPersonHeadInfo({
                 name: "Department Head",
@@ -981,11 +1315,29 @@ function RequestWizardContent() {
         })}
         firstReceiver={firstHop}
         isSubmitting={submitting}
-        headName={
-          requestingPersonIsHead === false && requestingPersonHeadInfo
-            ? requestingPersonHeadInfo.name
-            : requestingPersonHeadInfo?.name
-        }
+        headName={(() => {
+          // Priority: 1. requestingPersonHeadInfo.name (if available and requester is not head)
+          // 2. data.travelOrder?.endorsedByHeadName (auto-populated in form)
+          // 3. requestingPersonHeadInfo?.name (any head info available)
+          let headName = "";
+          
+          if (requestingPersonIsHead === false && requestingPersonHeadInfo?.name) {
+            headName = requestingPersonHeadInfo.name;
+          } else if (data.travelOrder?.endorsedByHeadName) {
+            headName = data.travelOrder.endorsedByHeadName;
+          } else if (requestingPersonHeadInfo?.name) {
+            headName = requestingPersonHeadInfo.name;
+          }
+          
+          console.log('[RequestWizard] 🔍 Head name for confirmation dialog:', {
+            requestingPersonIsHead,
+            requestingPersonHeadInfo: requestingPersonHeadInfo?.name,
+            endorsedByHeadName: data.travelOrder?.endorsedByHeadName,
+            finalHeadName: headName
+          });
+          
+          return headName;
+        })()}
         isSeminar={showSeminar}
       />
     </>
