@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseClient } from "@/lib/supabase/client";
-import { RequestDetailsView } from "@/components/common/RequestDetailsView";
+import RequestDetailsView from "@/components/common/RequestDetailsView";
 import type { RequestData } from "@/components/common/RequestDetailsView";
 
 type Request = {

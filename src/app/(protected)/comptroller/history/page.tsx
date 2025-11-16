@@ -50,8 +50,8 @@ export default function ComptrollerHistory() {
     let result = decisions;
 
     // Filter by status
-    if (filterStatus !== "all") {
-      result = result.filter(d => d.decision === filterStatus);
+    if (filterDecision !== "all") {
+      result = result.filter(d => d.decision === filterDecision);
     }
 
     // Filter by search
@@ -65,7 +65,7 @@ export default function ComptrollerHistory() {
     }
 
     return result;
-  }, [decisions, filterStatus, searchQuery]);
+  }, [decisions, filterDecision, searchQuery]);
 
   if (loading) {
     return (
@@ -106,9 +106,9 @@ export default function ComptrollerHistory() {
         {/* Status Filter */}
         <div className="flex gap-2">
           <button
-            onClick={() => setFilterStatus("all")}
+            onClick={() => setFilterDecision("all")}
             className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              filterStatus === "all"
+              filterDecision === "all"
                 ? "bg-[#7A0010] text-white"
                 : "bg-gray-100 text-gray-700 hover:bg-gray-200"
             }`}
@@ -116,9 +116,9 @@ export default function ComptrollerHistory() {
             All
           </button>
           <button
-            onClick={() => setFilterStatus("approved")}
+            onClick={() => setFilterDecision("approved")}
             className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              filterStatus === "approved"
+              filterDecision === "approved"
                 ? "bg-green-600 text-white"
                 : "bg-gray-100 text-gray-700 hover:bg-gray-200"
             }`}
@@ -126,9 +126,9 @@ export default function ComptrollerHistory() {
             Approved
           </button>
           <button
-            onClick={() => setFilterStatus("rejected")}
+            onClick={() => setFilterDecision("rejected")}
             className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              filterStatus === "rejected"
+              filterDecision === "rejected"
                 ? "bg-red-600 text-white"
                 : "bg-gray-100 text-gray-700 hover:bg-gray-200"
             }`}
