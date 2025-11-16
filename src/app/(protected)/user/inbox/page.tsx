@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Inbox, Search, FileText, Calendar, MapPin, CheckCircle, History, Clock } from "lucide-react";
 import UserRequestModal from "@/components/user/UserRequestModal";
@@ -22,7 +23,7 @@ type Request = {
   created_at?: string;
 };
 
-export default function UserInboxPage() {
+function UserInboxPageContent() {
   const [requests, setRequests] = React.useState<Request[]>([]);
   const [historyRequests, setHistoryRequests] = React.useState<Request[]>([]);
   const [historyCount, setHistoryCount] = React.useState(0);
@@ -532,6 +533,21 @@ export default function UserInboxPage() {
         />
       )}
     </>
+  );
+}
+
+export default function UserInboxPage() {
+  return (
+    <Suspense fallback={
+      <div className="p-6">
+        <div className="animate-pulse space-y-4">
+          <div className="h-8 bg-gray-200 rounded w-1/4"></div>
+          <div className="h-64 bg-gray-200 rounded"></div>
+        </div>
+      </div>
+    }>
+      <UserInboxPageContent />
+    </Suspense>
   );
 }
 
