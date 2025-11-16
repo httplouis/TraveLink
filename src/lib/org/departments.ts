@@ -95,12 +95,14 @@ export const DEPARTMENTS: string[] = [
 ];
 
 /** -----------------------------
- *  Department → Head mapping (sample placeholders)
- *  You can replace these with the actual names later.
+ *  Department → Head mapping (LEGACY/FALLBACK ONLY)
+ *  ⚠️ NOTE: This is a hardcoded fallback. The system should query the database
+ *  automatically from the `users` table (where is_head=true or role='head').
+ *  This mapping is only used as an absolute last resort if no user is found in the database.
  *  ----------------------------- */
 export const DEPARTMENT_HEADS: Record<string, string> = {
   // Academics (samples)
-  "College of Computing and Multimedia Studies (CCMS)": "Dr. Aileen Santos",
+  "College of Computing and Multimedia Studies (CCMS)": "BELSON GABRIEL TAN",
   "College of Criminal Justice and Criminology (CCJC)": "Dean Roberto Cruz",
   "College of Nursing and Allied Health Sciences (CNAHS)": "Dr. Melissa Ramos",
   "College of International Hospitality and Tourism Management (CIHTM)": "Chef Arman Villanueva",

@@ -526,33 +526,10 @@ function RequestWizardContent() {
                 data: headData.data
               });
               
-              // Try alternative: check if there's a head by role instead of is_head flag
-              console.log('[RequestWizard] 🔍 DEBUG - Trying alternative: checking for users with role="head" in department...');
-              try {
-                const altResponse = await fetch(`/api/users?department_id=${finalDepartmentId}&role=head`);
-                const altData = await altResponse.json();
-                console.log('[RequestWizard] 🔍 DEBUG - Alternative query result:', altData);
-                
-                if (altData.ok && altData.users && altData.users.length > 0) {
-                  const head = altData.users[0];
-                  const headName = head.name || "Department Head";
-                  console.log('[RequestWizard] ✅ Found department head via alternative query:', headName);
-                  setRequestingPersonHeadInfo({
-                    name: headName,
-                    department: requesterDepartment || "",
-                  });
-                  if (headName && headName !== "Department Head") {
-                    console.log('[RequestWizard] 🔄 Auto-populating department head name (alternative):', headName);
-                    patchTravelOrder({ endorsedByHeadName: headName });
-                  }
-                  return; // Exit early if we found a head
-                }
-              } catch (altErr) {
-                console.error('[RequestWizard] ❌ Alternative query failed:', altErr);
-              }
-              
+              // No head found - allow manual entry
+              // Don't set a placeholder name, let the user enter it manually
               setRequestingPersonHeadInfo({
-                name: "Department Head",
+                name: "", // Empty so user can enter manually
                 department: requesterDepartment || "",
               });
               // Clear any incorrect hardcoded values if no head found

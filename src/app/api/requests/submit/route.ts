@@ -354,11 +354,63 @@ export async function POST(req: Request) {
         // finalDepartmentId should already be set above if requestingPersonUser has department_id
       } else {
         // Not representative OR requesting person also has no department
+        // Try to look up department_id from department text (same logic as seminar)
+        if (!finalDepartmentId && profile.department && typeof profile.department === 'string') {
+          const departmentName = profile.department.trim();
+          console.log("[/api/requests/submit] 🔍 Regular submission: Looking up department_id for:", departmentName);
+          
+          // Try exact match first
+          let { data: deptData } = await supabase
+            .from("departments")
+            .select("id, code, name, parent_department_id")
+            .eq("name", departmentName)
+            .maybeSingle();
+          
+          // If not found, try matching by code (e.g., "CCMS" might be the code)
+          if (!deptData && departmentName.length <= 10) {
+            console.log("[/api/requests/submit] 🔍 Trying to match by code:", departmentName);
+            const { data: deptByCode } = await supabase
+              .from("departments")
+              .select("id, code, name, parent_department_id")
+              .eq("code", departmentName)
+              .maybeSingle();
+            
+            if (deptByCode) {
+              deptData = deptByCode;
+              console.log("[/api/requests/submit] ✅ Found department by code:", deptByCode.name);
+            }
+          }
+          
+          // If still not found, try partial match (e.g., "CCMS" in "College of Computer and Mathematical Sciences (CCMS)")
+          if (!deptData) {
+            console.log("[/api/requests/submit] 🔍 Trying partial match for:", departmentName);
+            const { data: deptPartial } = await supabase
+              .from("departments")
+              .select("id, code, name, parent_department_id")
+              .or(`name.ilike.%${departmentName}%,code.ilike.%${departmentName}%`)
+              .limit(1)
+              .maybeSingle();
+            
+            if (deptPartial) {
+              deptData = deptPartial;
+              console.log("[/api/requests/submit] ✅ Found department by partial match:", deptPartial.name);
+            }
+          }
+          
+          if (deptData) {
+            finalDepartmentId = deptData.id;
+            finalDepartment = deptData;
+            console.log("[/api/requests/submit] ✅ Successfully resolved department_id:", deptData.id, "for", deptData.name);
+          } else {
+            console.warn("[/api/requests/submit] ⚠️ Could not find department_id for:", departmentName);
+          }
+        }
+        
         // For drafts, allow saving without department (will be validated on final submit)
         if (requestedStatus === "draft") {
           console.log("[/api/requests/submit] 📝 Draft mode: Allowing save without department (will be validated on final submit)");
-        } else {
-          // Not a draft - require submitter to have department
+        } else if (!finalDepartmentId) {
+          // Not a draft and still no department_id - require submitter to have department
           console.error("[/api/requests/submit] User has no department assigned:", profile.email);
           return NextResponse.json({ 
             ok: false, 

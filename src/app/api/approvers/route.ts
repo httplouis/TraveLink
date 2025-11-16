@@ -24,45 +24,59 @@ export async function GET(req: NextRequest) {
       case "head":
         // Fetch department heads (check current department first, then parent if needed)
         if (departmentId) {
-          // Get department info including parent
+          // Get department info including parent and head_name (for fallback)
           const { data: dept } = await supabase
             .from("departments")
-            .select("id, name, code, parent_department_id")
+            .select("id, name, code, parent_department_id, head_name")
             .eq("id", departmentId)
             .single();
 
           console.log(`[GET /api/approvers] Fetching heads for department_id: ${departmentId}`);
           
           // STEP 1: First, try to get heads from CURRENT department
-          // Use more lenient status filter (active OR null/undefined)
+          // CRITICAL: Check BOTH is_head=true AND role='head' (BELSON has both)
+          // Also check department_id match OR department text match
           let { data: currentHeads, error: currentError } = await supabase
             .from("users")
-            .select("id, name, email, profile_picture, phone_number, position_title, department_id, status, role")
+            .select("id, name, email, profile_picture, phone_number, position_title, department_id, status, role, department")
             .eq("department_id", departmentId)
-            .eq("is_head", true)
+            .or("is_head.eq.true,role.eq.head")
             .or("status.eq.active,status.is.null");
 
           let heads: any[] = [];
 
-          // If no heads found with status filter, try without status filter (fallback)
+          // Filter to only those with is_head=true OR role='head'
+          if (!currentError && currentHeads && currentHeads.length > 0) {
+            currentHeads = currentHeads.filter((h: any) => h.is_head === true || h.role === 'head');
+            if (currentHeads.length > 0) {
+              console.log(`[GET /api/approvers] ✅ Found ${currentHeads.length} head(s) in current department (is_head OR role='head')`);
+            }
+          }
+
           if (!currentError && (!currentHeads || currentHeads.length === 0)) {
             console.log(`[GET /api/approvers] No heads found with status filter, trying without status filter...`);
             const { data: allCurrentHeads, error: allError } = await supabase
               .from("users")
-              .select("id, name, email, profile_picture, phone_number, position_title, department_id, status, role")
+              .select("id, name, email, profile_picture, phone_number, position_title, department_id, status, role, department")
               .eq("department_id", departmentId)
-              .eq("is_head", true);
+              .or("is_head.eq.true,role.eq.head");
             
             if (!allError && allCurrentHeads && allCurrentHeads.length > 0) {
-              console.log(`[GET /api/approvers] Found ${allCurrentHeads.length} head(s) without status filter`);
-              currentHeads = allCurrentHeads;
-              currentError = null;
-            } else {
-              // Alternative: Try checking by role='head' instead of is_head flag
-              console.log(`[GET /api/approvers] Trying alternative: checking for role='head' instead of is_head flag...`);
+              // Filter to only those with is_head=true OR role='head'
+              const filteredHeads = allCurrentHeads.filter((h: any) => h.is_head === true || h.role === 'head');
+              if (filteredHeads.length > 0) {
+                console.log(`[GET /api/approvers] ✅ Found ${filteredHeads.length} head(s) without status filter`);
+                currentHeads = filteredHeads;
+                currentError = null;
+              }
+            }
+            
+            if (!currentHeads || currentHeads.length === 0) {
+              // Alternative: Try checking by role='head' specifically
+              console.log(`[GET /api/approvers] Trying alternative: checking for role='head' specifically...`);
               const { data: headsByRole, error: roleError } = await supabase
                 .from("users")
-                .select("id, name, email, profile_picture, phone_number, position_title, department_id, status, role")
+                .select("id, name, email, profile_picture, phone_number, position_title, department_id, status, role, department")
                 .eq("department_id", departmentId)
                 .eq("role", "head")
                 .or("status.eq.active,status.is.null");
@@ -75,7 +89,7 @@ export async function GET(req: NextRequest) {
                 // Try without status filter for role check too
                 const { data: headsByRoleNoStatus, error: roleNoStatusError } = await supabase
                   .from("users")
-                  .select("id, name, email, profile_picture, phone_number, position_title, department_id, status, role")
+                  .select("id, name, email, profile_picture, phone_number, position_title, department_id, status, role, department")
                   .eq("department_id", departmentId)
                   .eq("role", "head");
                 
@@ -83,22 +97,74 @@ export async function GET(req: NextRequest) {
                   console.log(`[GET /api/approvers] ✅ Found ${headsByRoleNoStatus.length} head(s) by role='head' (no status filter)`);
                   currentHeads = headsByRoleNoStatus;
                   currentError = null;
+                } else {
+                  // Final alternative: Check department_heads table (many-to-many relationship)
+                  console.log(`[GET /api/approvers] Trying final alternative: checking department_heads table...`);
+                  const { data: deptHeads, error: deptHeadsError } = await supabase
+                    .from("department_heads")
+                    .select(`
+                      user_id,
+                      users:users!department_heads_user_id_fkey(
+                        id, name, email, profile_picture, phone_number, position_title, status, role
+                      )
+                    `)
+                    .eq("department_id", departmentId)
+                    .is("valid_to", null); // Only active heads (valid_to IS NULL)
+                  
+                  if (!deptHeadsError && deptHeads && deptHeads.length > 0) {
+                    console.log(`[GET /api/approvers] ✅ Found ${deptHeads.length} head(s) in department_heads table`);
+                    currentHeads = deptHeads
+                      .filter((dh: any) => dh.users) // Filter out any null users
+                      .map((dh: any) => ({
+                        ...dh.users,
+                        department_id: departmentId
+                      }));
+                    currentError = null;
+                  } else if (deptHeadsError) {
+                    console.error(`[GET /api/approvers] department_heads query error:`, deptHeadsError);
+                  } else {
+                    // CRITICAL FIX: Check by department TEXT field (BELSON might have department_id=NULL but department='CCMS')
+                    console.log(`[GET /api/approvers] Trying department TEXT field search (for users like BELSON with department_id=NULL)...`);
+                    // First, get all users with is_head=true or role='head'
+                    const { data: allPotentialHeads, error: allPotentialHeadsError } = await supabase
+                      .from("users")
+                      .select("id, name, email, profile_picture, phone_number, position_title, department_id, status, role, department")
+                      .or("is_head.eq.true,role.eq.head");
+                    
+                    // Then filter in JavaScript to find CCMS heads
+                    let headsByDeptText: any[] = [];
+                    if (!allPotentialHeadsError && allPotentialHeads) {
+                      headsByDeptText = allPotentialHeads.filter((h: any) => {
+                        const deptText = h.department?.toLowerCase() || '';
+                        const codeMatch = dept?.code ? deptText.includes(dept.code.toLowerCase()) : false;
+                        const nameMatch = dept?.name ? deptText.includes(dept.name.toLowerCase().substring(0, 20)) : false;
+                        return codeMatch || nameMatch || deptText.includes('ccms') || deptText.includes('computing') || deptText.includes('multimedia');
+                      });
+                    }
+                    const deptTextError = allPotentialHeadsError;
+                    
+                    if (!deptTextError && headsByDeptText && headsByDeptText.length > 0) {
+                      console.log(`[GET /api/approvers] ✅ Found ${headsByDeptText.length} CCMS head(s) by department TEXT field (e.g., BELSON GABRIEL TAN)!`);
+                      currentHeads = headsByDeptText;
+                      currentError = null;
+                    }
+                  }
                 }
               }
             }
           }
 
+          // Fetch department info once (we'll use it multiple times)
+          const { data: deptInfo } = await supabase
+            .from("departments")
+            .select("id, name, code")
+            .eq("id", departmentId)
+            .single();
+
           if (currentError) {
             console.error('[GET /api/approvers] Current department query error:', currentError);
           } else if (currentHeads && currentHeads.length > 0) {
             console.log(`[GET /api/approvers] Found ${currentHeads.length} head(s) in current department`);
-            // Fetch department info separately
-            const { data: deptInfo } = await supabase
-              .from("departments")
-              .select("id, name, code")
-              .eq("id", departmentId)
-              .single();
-
             heads = currentHeads.map((h: any) => ({
               ...h,
               department: deptInfo || null
@@ -189,15 +255,61 @@ export async function GET(req: NextRequest) {
             if (heads.length === 0) {
               const { data: deptCheck } = await supabase
                 .from("departments")
-                .select("id, name, code, parent_department_id")
+                .select("id, name, code, parent_department_id, head_name")
                 .eq("id", departmentId)
                 .single();
               console.log(`[GET /api/approvers] 🔍 DEBUG - Department check:`, deptCheck);
               
+              // Final fallback: Try to find ANY user with is_head=true or role='head' in this department
+              // (even if department_id doesn't match, check by department text field)
+              console.log(`[GET /api/approvers] 🔍 Last resort: Searching all users with is_head=true or role='head'...`);
+              const { data: allHeadsAnywhere, error: allHeadsError } = await supabase
+                .from("users")
+                .select("id, name, email, profile_picture, phone_number, position_title, department_id, status, role, department")
+                .or("is_head.eq.true,role.eq.head");
+              
+              if (!allHeadsError && allHeadsAnywhere) {
+                // Filter by department text match
+                const matchingHeads = allHeadsAnywhere.filter((h: any) => {
+                  const deptText = (h.department || '').toLowerCase();
+                  const deptCode = (deptCheck?.code || '').toLowerCase();
+                  const deptName = (deptCheck?.name || '').toLowerCase();
+                  return deptText.includes(deptCode) || 
+                         deptText.includes(deptName.substring(0, 20)) ||
+                         deptText.includes('ccms') ||
+                         deptText.includes('computing') ||
+                         deptText.includes('multimedia');
+                });
+                
+                if (matchingHeads.length > 0) {
+                  console.log(`[GET /api/approvers] ✅ Found ${matchingHeads.length} head(s) by department text match!`);
+                  heads = matchingHeads.map((h: any) => ({
+                    ...h,
+                    department_id: departmentId, // Set correct department_id
+                    department: { id: deptCheck.id, name: deptCheck.name, code: deptCheck.code }
+                  }));
+                } else if (deptCheck?.head_name) {
+                  // ONLY use head_name as absolute last resort if NO user found at all
+                  console.log(`[GET /api/approvers] ⚠️ Using hardcoded fallback: department.head_name = "${deptCheck.head_name}" (NO USER FOUND IN DATABASE)`);
+                  heads = [{
+                    id: null, // No user ID since it's just a name
+                    name: deptCheck.head_name,
+                    email: null,
+                    profile_picture: null,
+                    phone_number: null,
+                    position_title: "Department Head",
+                    department_id: departmentId,
+                    status: null,
+                    role: null,
+                    department: { id: deptCheck.id, name: deptCheck.name, code: deptCheck.code }
+                  }];
+                }
+              }
+              
               // Debug: Check all users with is_head=true for this department (regardless of status)
               const { data: allHeads } = await supabase
                 .from("users")
-                .select("id, name, email, is_head, status, department_id, role")
+                .select("id, name, email, is_head, status, department_id, role, department")
                 .eq("department_id", departmentId)
                 .eq("is_head", true);
               console.log(`[GET /api/approvers] 🔍 DEBUG - All heads in department (is_head=true, any status):`, allHeads);
@@ -205,26 +317,87 @@ export async function GET(req: NextRequest) {
               // Debug: Check all users in this department (to see what we have)
               const { data: allUsersInDept } = await supabase
                 .from("users")
-                .select("id, name, email, is_head, status, department_id, role")
+                .select("id, name, email, is_head, status, department_id, role, department")
                 .eq("department_id", departmentId)
                 .limit(10);
               console.log(`[GET /api/approvers] 🔍 DEBUG - All users in department (first 10):`, allUsersInDept);
               
+              // IMPORTANT: Also check by department TEXT field (in case department_id is NULL but department text matches)
+              const { data: headsByDeptText } = await supabase
+                .from("users")
+                .select("id, name, email, is_head, status, department_id, role, department")
+                .or(`department.ilike.%${dept?.code || ''}%,department.ilike.%${dept?.name || ''}%`)
+                .eq("is_head", true);
+              console.log(`[GET /api/approvers] 🔍 DEBUG - Heads by department TEXT (CCMS or College of Computing):`, headsByDeptText);
+              
+              // If we found heads by text but not by ID, use them!
+              if (headsByDeptText && headsByDeptText.length > 0 && heads.length === 0) {
+                console.log(`[GET /api/approvers] ✅ Found ${headsByDeptText.length} head(s) by department TEXT field!`);
+                // Filter to only those that match CCMS
+                const ccmsHeads = headsByDeptText.filter((h: any) => 
+                  h.department?.includes('CCMS') || 
+                  h.department?.includes('Computing') ||
+                  h.department?.includes('Multimedia')
+                );
+                if (ccmsHeads.length > 0) {
+                  console.log(`[GET /api/approvers] ✅ Filtered to ${ccmsHeads.length} CCMS head(s)`);
+                  heads = ccmsHeads.map((h: any) => ({
+                    ...h,
+                    department_id: departmentId, // Set the correct department_id
+                    department: deptInfo || { id: deptCheck.id, name: deptCheck.name, code: deptCheck.code }
+                  }));
+                }
+              }
+              
               // Debug: Check if any users have role='head' instead of is_head=true
               const { data: headsByRole } = await supabase
                 .from("users")
-                .select("id, name, email, is_head, status, department_id, role")
+                .select("id, name, email, is_head, status, department_id, role, department")
                 .eq("department_id", departmentId)
                 .eq("role", "head");
               console.log(`[GET /api/approvers] 🔍 DEBUG - Users with role='head' in department:`, headsByRole);
               
-              // Debug: Check all users with is_head=true anywhere (to verify the column works)
-              const { data: allHeadsAnywhere } = await supabase
+              // Also check role='head' by department text
+              const { data: headsByRoleText } = await supabase
                 .from("users")
-                .select("id, name, email, is_head, status, department_id, role")
+                .select("id, name, email, is_head, status, department_id, role, department")
+                .or(`department.ilike.%${dept?.code || ''}%,department.ilike.%${dept?.name || ''}%`)
+                .eq("role", "head");
+              console.log(`[GET /api/approvers] 🔍 DEBUG - Users with role='head' by department TEXT:`, headsByRoleText);
+              
+              // If we found heads by role text but not by ID, use them!
+              if (headsByRoleText && headsByRoleText.length > 0 && heads.length === 0) {
+                console.log(`[GET /api/approvers] ✅ Found ${headsByRoleText.length} head(s) by role='head' and department TEXT!`);
+                const ccmsHeadsByRole = headsByRoleText.filter((h: any) => 
+                  h.department?.includes('CCMS') || 
+                  h.department?.includes('Computing') ||
+                  h.department?.includes('Multimedia')
+                );
+                if (ccmsHeadsByRole.length > 0) {
+                  console.log(`[GET /api/approvers] ✅ Filtered to ${ccmsHeadsByRole.length} CCMS head(s) by role`);
+                  heads = ccmsHeadsByRole.map((h: any) => ({
+                    ...h,
+                    department_id: departmentId,
+                    department: deptInfo || { id: deptCheck.id, name: deptCheck.name, code: deptCheck.code }
+                  }));
+                }
+              }
+              
+              // Debug: Check all users with is_head=true anywhere (to verify the column works)
+              const { data: debugAllHeadsAnywhere } = await supabase
+                .from("users")
+                .select("id, name, email, is_head, status, department_id, role, department")
                 .eq("is_head", true)
+                .limit(10);
+              console.log(`[GET /api/approvers] 🔍 DEBUG - Sample users with is_head=true (any department, first 10):`, debugAllHeadsAnywhere);
+              
+              // Check specifically for BELSON GABRIEL TAN
+              const { data: belsonUser } = await supabase
+                .from("users")
+                .select("id, name, email, is_head, status, department_id, role, department")
+                .ilike("name", "%BELSON%")
                 .limit(5);
-              console.log(`[GET /api/approvers] 🔍 DEBUG - Sample users with is_head=true (any department, first 5):`, allHeadsAnywhere);
+              console.log(`[GET /api/approvers] 🔍 DEBUG - Users named BELSON:`, belsonUser);
             }
           }
 

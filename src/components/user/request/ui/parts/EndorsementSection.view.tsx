@@ -65,10 +65,15 @@ export default function EndorsementSection({
             type="text"
             value={nameValue}
             onChange={(e) => onNameChange(e.target.value)}
-            disabled={!!isHeadRequester || !!nameValue}
+            disabled={!!isHeadRequester}
             className="w-full h-11 rounded-xl border-2 border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 transition-all focus:border-maroon-500 focus:outline-none focus:ring-2 focus:ring-maroon-200 hover:border-gray-300 disabled:bg-gray-100 disabled:text-gray-500"
             placeholder="Department Head Name"
           />
+          {!nameValue && !isHeadRequester && (
+            <p className="mt-1 text-xs text-amber-600">
+              ⚠️ No department head found. Please enter the department head name manually.
+            </p>
+          )}
         </div>
         <div>
           <label className="block text-sm font-semibold text-gray-700 mb-2">
