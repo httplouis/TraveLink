@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import * as React from "react";
 import DashboardView from "./DashboardView";
+import DashboardSkeleton from "@/components/common/skeletons/DashboardSkeleton";
 import CommandPalette from "@/components/common/CommandPalette";
 import type { Trip } from "@/lib/user/schedule/types";
 
@@ -26,30 +27,18 @@ export default function DashboardContainer() {
       try {
         setLoading(true);
 
-        // Fetch in parallel
-        const [profileRes, vehiclesRes, statsRes, analyticsRes, aiInsightsRes, activityRes] = await Promise.all([
-          fetch('/api/profile').catch(() => ({ ok: false })),
-          fetch('/api/vehicles?status=available').catch(() => ({ ok: false })),
-          fetch('/api/user/dashboard/stats').catch(() => ({ ok: false })),
-          fetch('/api/user/dashboard/analytics').catch(() => ({ ok: false })),
-          fetch('/api/user/dashboard/ai-insights').catch(() => ({ ok: false })),
-          fetch('/api/user/dashboard/recent-activity').catch(() => ({ ok: false })),
+        // Fetch critical data first (profile, stats) - these are needed immediately
+        const [profileRes, statsRes] = await Promise.all([
+          fetch('/api/profile', { cache: 'force-cache', next: { revalidate: 60 } }).catch(() => ({ ok: false })),
+          fetch('/api/user/dashboard/stats', { cache: 'no-store' }).catch(() => ({ ok: false })),
         ]);
 
-        // Process profile
         const profileData = await profileRes.json().catch(() => ({ ok: false }));
         if (profileData.ok && profileData.data?.name) {
           const firstName = profileData.data.name.split(' ')[0];
           setUserName(firstName);
         }
 
-        // Process vehicles
-        const vehiclesData = await vehiclesRes.json().catch(() => ({ ok: false }));
-        if (vehiclesData.ok) {
-          setVehicles(vehiclesData.data || []);
-        }
-
-        // Process stats
         const statsData = await statsRes.json().catch(() => ({ ok: false }));
         if (statsData.ok && statsData.data) {
           setKpis([
@@ -57,6 +46,20 @@ export default function DashboardContainer() {
             { label: "Vehicles Online", value: statsData.data.vehiclesOnline || 0 },
             { label: "Pending Approvals", value: statsData.data.pendingApprovals || 0 },
           ]);
+        }
+
+        // Fetch non-critical data in parallel (can load after initial render)
+        const [vehiclesRes, analyticsRes, aiInsightsRes, activityRes] = await Promise.all([
+          fetch('/api/vehicles?status=available', { cache: 'force-cache', next: { revalidate: 300 } }).catch(() => ({ ok: false })),
+          fetch('/api/user/dashboard/analytics', { cache: 'force-cache', next: { revalidate: 300 } }).catch(() => ({ ok: false })),
+          fetch('/api/user/dashboard/ai-insights', { cache: 'force-cache', next: { revalidate: 300 } }).catch(() => ({ ok: false })),
+          fetch('/api/user/dashboard/recent-activity', { cache: 'no-store' }).catch(() => ({ ok: false })),
+        ]);
+
+        // Process vehicles
+        const vehiclesData = await vehiclesRes.json().catch(() => ({ ok: false }));
+        if (vehiclesData.ok) {
+          setVehicles(vehiclesData.data || []);
         }
 
         // Process analytics
@@ -86,6 +89,10 @@ export default function DashboardContainer() {
     fetchDashboardData();
   }, []);
 
+  if (loading) {
+    return <DashboardSkeleton />;
+  }
+
   return (
     <>
       <CommandPalette
@@ -104,7 +111,7 @@ export default function DashboardContainer() {
         analytics={analytics}
         aiInsights={aiInsights}
         recentActivity={recentActivity}
-        loading={loading}
+        loading={false}
         onOpenSchedule={() => router.push("/user/schedule")}
         onNewRequest={() => router.push("/user/request")}
       />
