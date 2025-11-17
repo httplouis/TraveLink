@@ -34,22 +34,39 @@ export default function ChatbotWidget() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Load suggestions when opened
+  // Load suggestions when opened (non-blocking)
   useEffect(() => {
     if (isOpen && suggestions.length === 0) {
+      // Load suggestions asynchronously without blocking UI
       loadSuggestions();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   const loadSuggestions = async () => {
     try {
-      const response = await fetch('/api/ai/chat');
+      // Add timeout to prevent hanging
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+      
+      const response = await fetch('/api/ai/chat', {
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
       const data = await response.json();
       if (data.success) {
-        setSuggestions(data.suggestions);
+        setSuggestions(data.suggestions || []);
       }
     } catch (error) {
-      console.error('Failed to load suggestions:', error);
+      console.error('[ChatbotWidget] Failed to load suggestions:', error);
+      // Don't show error to user, just use empty suggestions
+      // The chat will still work without suggestions
     }
   };
 
@@ -68,15 +85,26 @@ export default function ChatbotWidget() {
     setIsLoading(true);
 
     try {
+      // Add timeout to prevent hanging (30 seconds for AI response)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      
       // Send to AI API
       const response = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           message: textToSend,
           conversationHistory: messages
         })
       });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
 
       const data = await response.json();
 
@@ -85,21 +113,36 @@ export default function ChatbotWidget() {
         const aiMessage: Message = {
           role: 'assistant',
           content: data.message,
-          timestamp: new Date(data.timestamp)
+          timestamp: new Date(data.timestamp || Date.now())
         };
         setMessages(prev => [...prev, aiMessage]);
       } else {
-        throw new Error(data.error || 'Failed to get response');
+        throw new Error(data.error || data.message || 'Failed to get response');
       }
     } catch (error) {
-      console.error('Chat error:', error);
+      console.error('[ChatbotWidget] Chat error:', error);
+      
+      // Provide user-friendly error message
+      let errorMessage = 'Sorry, I encountered an error. Please try again.';
+      
+      if (error instanceof Error) {
+        if (error.name === 'AbortError' || error.message.includes('timeout')) {
+          errorMessage = 'The request took too long. The AI service might be slow right now. Please try again.';
+        } else if (error.message.includes('HTTP')) {
+          errorMessage = 'Unable to connect to the AI service. Please check your connection and try again.';
+        } else if (error.message) {
+          // Use the error message from the API if available
+          errorMessage = error.message;
+        }
+      }
+      
       // Add error message
-      const errorMessage: Message = {
+      const errorMsg: Message = {
         role: 'assistant',
-        content: 'Sorry, I encountered an error. Please try again or contact support.',
+        content: errorMessage,
         timestamp: new Date()
       };
-      setMessages(prev => [...prev, errorMessage]);
+      setMessages(prev => [...prev, errorMsg]);
     } finally {
       setIsLoading(false);
     }

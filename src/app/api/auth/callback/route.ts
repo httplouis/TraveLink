@@ -214,22 +214,105 @@ export async function GET(request: NextRequest) {
         // Note: Removed updated_at - column might not exist or schema cache issue
       };
 
-      if (userDepartment) {
-        // Try to find department by name
-        const { data: dept } = await supabaseAdmin
+      // If user has department text but no department_id, try to resolve it
+      if (!existingUser.department_id && existingUser.department && typeof existingUser.department === 'string') {
+        const existingDeptName = existingUser.department.trim();
+        console.log(`[auth/callback] 🔄 Existing user has department text but no ID, attempting to resolve: "${existingDeptName}"`);
+        
+        // Try exact match first
+        let { data: deptData } = await supabaseAdmin
           .from("departments")
-          .select("id")
-          .ilike("name", `%${userDepartment}%`)
-          .limit(1)
-          .single();
+          .select("id, code, name")
+          .eq("name", existingDeptName)
+          .maybeSingle();
+        
+        // If not found, try matching by code
+        if (!deptData && existingDeptName.length <= 10) {
+          const { data: deptByCode } = await supabaseAdmin
+            .from("departments")
+            .select("id, code, name")
+            .eq("code", existingDeptName.toUpperCase())
+            .maybeSingle();
+          
+          if (deptByCode) {
+            deptData = deptByCode;
+            console.log(`[auth/callback] ✅ Resolved existing department by code: ${deptByCode.name}`);
+          }
+        }
+        
+        // If still not found, try partial match
+        if (!deptData) {
+          const { data: deptPartial } = await supabaseAdmin
+            .from("departments")
+            .select("id, code, name")
+            .or(`name.ilike.%${existingDeptName}%,code.ilike.%${existingDeptName}%`)
+            .limit(1)
+            .maybeSingle();
+          
+          if (deptPartial) {
+            deptData = deptPartial;
+            console.log(`[auth/callback] ✅ Resolved existing department by partial match: ${deptPartial.name}`);
+          }
+        }
+        
+        if (deptData) {
+          updateData.department_id = deptData.id;
+          updateData.department = null; // Clear text field
+          console.log(`[auth/callback] ✅ Backfilled department_id: ${deptData.id} for existing user`);
+        }
+      }
 
-        if (dept) {
-          updateData.department_id = dept.id;
+      if (userDepartment) {
+        const departmentName = userDepartment.trim();
+        console.log(`[auth/callback] 🔍 Looking up department_id for: "${departmentName}"`);
+        
+        // Try exact match first
+        let { data: deptData } = await supabaseAdmin
+          .from("departments")
+          .select("id, code, name")
+          .eq("name", departmentName)
+          .maybeSingle();
+        
+        // If not found, try matching by code (e.g., "CCMS" might be the code)
+        if (!deptData && departmentName.length <= 10) {
+          console.log(`[auth/callback] 🔍 Trying to match by code: "${departmentName}"`);
+          const { data: deptByCode } = await supabaseAdmin
+            .from("departments")
+            .select("id, code, name")
+            .eq("code", departmentName.toUpperCase())
+            .maybeSingle();
+          
+          if (deptByCode) {
+            deptData = deptByCode;
+            console.log(`[auth/callback] ✅ Found department by code: ${deptByCode.name}`);
+          }
+        }
+        
+        // If still not found, try partial match (e.g., "CCMS" in "College of Computing and Multimedia Studies (CCMS)")
+        if (!deptData) {
+          console.log(`[auth/callback] 🔍 Trying partial match for: "${departmentName}"`);
+          const { data: deptPartial } = await supabaseAdmin
+            .from("departments")
+            .select("id, code, name")
+            .or(`name.ilike.%${departmentName}%,code.ilike.%${departmentName}%`)
+            .limit(1)
+            .maybeSingle();
+          
+          if (deptPartial) {
+            deptData = deptPartial;
+            console.log(`[auth/callback] ✅ Found department by partial match: ${deptPartial.name}`);
+          }
+        }
+        
+        if (deptData) {
+          updateData.department_id = deptData.id;
           updateData.department = null; // Clear text field if we have ID
+          console.log(`[auth/callback] ✅ Resolved department_id: ${deptData.id} for "${deptData.name}"`);
         } else {
           // Store as text if department not found
           updateData.department = userDepartment;
           updateData.department_id = null; // Clear ID if not found
+          console.warn(`[auth/callback] ⚠️ Could not find department_id for: "${departmentName}", storing as text`);
         }
       }
 
@@ -262,18 +345,53 @@ export async function GET(request: NextRequest) {
       };
 
       if (userDepartment) {
-        // Try to find department by name
-        const { data: dept } = await supabaseAdmin
+        const departmentName = userDepartment.trim();
+        console.log(`[auth/callback] 🔍 Looking up department_id for new user: "${departmentName}"`);
+        
+        // Try exact match first
+        let { data: deptData } = await supabaseAdmin
           .from("departments")
-          .select("id")
-          .ilike("name", `%${userDepartment}%`)
-          .limit(1)
-          .single();
-
-        if (dept) {
-          insertData.department_id = dept.id;
+          .select("id, code, name")
+          .eq("name", departmentName)
+          .maybeSingle();
+        
+        // If not found, try matching by code (e.g., "CCMS" might be the code)
+        if (!deptData && departmentName.length <= 10) {
+          console.log(`[auth/callback] 🔍 Trying to match by code: "${departmentName}"`);
+          const { data: deptByCode } = await supabaseAdmin
+            .from("departments")
+            .select("id, code, name")
+            .eq("code", departmentName.toUpperCase())
+            .maybeSingle();
+          
+          if (deptByCode) {
+            deptData = deptByCode;
+            console.log(`[auth/callback] ✅ Found department by code: ${deptByCode.name}`);
+          }
+        }
+        
+        // If still not found, try partial match
+        if (!deptData) {
+          console.log(`[auth/callback] 🔍 Trying partial match for: "${departmentName}"`);
+          const { data: deptPartial } = await supabaseAdmin
+            .from("departments")
+            .select("id, code, name")
+            .or(`name.ilike.%${departmentName}%,code.ilike.%${departmentName}%`)
+            .limit(1)
+            .maybeSingle();
+          
+          if (deptPartial) {
+            deptData = deptPartial;
+            console.log(`[auth/callback] ✅ Found department by partial match: ${deptPartial.name}`);
+          }
+        }
+        
+        if (deptData) {
+          insertData.department_id = deptData.id;
+          console.log(`[auth/callback] ✅ Resolved department_id: ${deptData.id} for "${deptData.name}"`);
         } else {
           insertData.department = userDepartment;
+          console.warn(`[auth/callback] ⚠️ Could not find department_id for: "${departmentName}", storing as text`);
         }
       }
 

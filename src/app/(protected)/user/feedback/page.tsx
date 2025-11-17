@@ -56,11 +56,62 @@ export default function UserFeedbackPage() {
 
     setSubmitting(true);
 
-    // TODO: replace with real API call — e.g., POST /api/feedback
-    await new Promise((r) => setTimeout(r, 700));
+    try {
+      // Get request_id from URL params if present
+      const urlParams = new URLSearchParams(window.location.search);
+      const requestId = urlParams.get("request_id");
+      const isLocked = urlParams.get("locked") === "true";
 
-    setSubmitting(false);
-    setSuccessId(`FB-${Math.floor(Math.random() * 90000) + 10000}`);
+      // Get current user
+      const meRes = await fetch("/api/me");
+      const meData = await meRes.json();
+
+      const feedbackData: any = {
+        category: form.category,
+        rating: form.rating,
+        subject: form.subject,
+        message: form.message,
+        anonymous: form.anonymous,
+        contact: form.contact || null,
+      };
+
+      if (requestId) {
+        feedbackData.trip_id = requestId;
+      }
+
+      if (meData?.id) {
+        feedbackData.user_id = meData.id;
+        feedbackData.user_name = form.anonymous ? "Anonymous" : (meData.name || "User");
+        feedbackData.user_email = form.anonymous ? null : (meData.email || null);
+      }
+
+      const res = await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(feedbackData),
+      });
+
+      const result = await res.json();
+
+      if (result.ok) {
+        setSuccessId(result.data?.id || `FB-${Date.now()}`);
+        
+        // If locked, refresh lock status to unlock UI
+        if (isLocked) {
+          // Reload page to remove lock
+          setTimeout(() => {
+            window.location.href = "/user";
+          }, 2000);
+        }
+      } else {
+        throw new Error(result.error || "Failed to submit feedback");
+      }
+    } catch (error: any) {
+      console.error("[User Feedback] Submit error:", error);
+      setErrors({ message: error.message || "Failed to submit feedback. Please try again." });
+    } finally {
+      setSubmitting(false);
+    }
 
     // keep contact preference; clear other fields
     setForm((f) => ({

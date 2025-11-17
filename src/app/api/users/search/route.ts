@@ -28,6 +28,7 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const query = searchParams.get("q") || "";
+    const roleFilter = searchParams.get("role"); // Optional role filter (e.g., "faculty", "head")
 
     // Fetch all active users with department info
     let supabaseQuery = supabase
@@ -41,11 +42,20 @@ export async function GET(request: Request) {
         department_id,
         profile_picture,
         role,
+        is_head,
         status
       `)
       .eq("status", "active")
       .order("name", { ascending: true })
       .limit(100); // Limit to prevent too many results
+
+    // Filter by role if specified
+    if (roleFilter === "faculty") {
+      supabaseQuery = supabaseQuery.eq("role", "faculty");
+    } else if (roleFilter === "head") {
+      // For heads, check both role='head' and is_head=true
+      supabaseQuery = supabaseQuery.or("role.eq.head,is_head.eq.true");
+    }
 
     // If search query provided, filter by name or email
     if (query) {
@@ -87,8 +97,10 @@ export async function GET(request: Request) {
       position: user.position_title,
       department: user.department || departmentsMap[user.department_id]?.name || null,
       departmentCode: departmentsMap[user.department_id]?.code || null,
+      department_id: user.department_id, // Include department_id for requester invitations
       profilePicture: user.profile_picture,
       role: user.role,
+      is_head: user.is_head,
     }));
 
     return NextResponse.json({ ok: true, users: transformedUsers });

@@ -24,7 +24,17 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { requestId, action, signature, notes, editedBudget } = body;
+    const { 
+      requestId, 
+      action, 
+      signature, 
+      notes, 
+      editedBudget,
+      sendToRequester, // NEW: Option to send back to requester for payment
+      paymentConfirmed, // NEW: If payment is confirmed
+      nextApproverId, // NEW: Choice-based sending
+      nextApproverRole // NEW: 'hr' or 'requester'
+    } = body;
 
     if (!requestId || !action) {
       return NextResponse.json(
@@ -36,19 +46,58 @@ export async function POST(request: Request) {
     console.log(`[Comptroller Action] ${action} by ${comptrollerUser.name} on request ${requestId}`);
 
     if (action === "approve") {
-      // Approve and send to HR
+
+      // Get request to check current status
+      const { data: request } = await supabase
+        .from("requests")
+        .select("*")
+        .eq("id", requestId)
+        .single();
+
+      if (!request) {
+        return NextResponse.json({ ok: false, error: "Request not found" }, { status: 404 });
+      }
+
+      const now = getPhilippineTimestamp();
+      let nextStatus: string;
+      let nextApproverRoleFinal: string;
+      let updateData: any = {
+        comptroller_approved_at: now,
+        comptroller_approved_by: comptrollerUser.id,
+        comptroller_signature: signature || null,
+        comptroller_comments: notes || null,
+        comptroller_edited_budget: editedBudget || null,
+        updated_at: now,
+      };
+
+      // Special flow: Comptroller can send to requester for payment confirmation
+      if (sendToRequester && !paymentConfirmed) {
+        // Send back to requester for payment
+        nextStatus = "pending_comptroller"; // Stay in comptroller stage
+        nextApproverRoleFinal = "requester";
+        updateData.payment_required = true;
+        updateData.payment_confirmed = false;
+        updateData.sent_to_requester_for_payment_at = now;
+      } else if (paymentConfirmed || !sendToRequester) {
+        // Payment confirmed or not needed: go to HR
+        nextStatus = "pending_hr";
+        nextApproverRoleFinal = nextApproverRole || "hr";
+        updateData.status = nextStatus;
+        updateData.current_approver_role = nextApproverRoleFinal;
+        updateData.payment_confirmed = paymentConfirmed || false;
+        updateData.payment_confirmed_at = paymentConfirmed ? now : null;
+      } else {
+        // Default: go to HR
+        nextStatus = "pending_hr";
+        nextApproverRoleFinal = "hr";
+        updateData.status = nextStatus;
+        updateData.current_approver_role = nextApproverRoleFinal;
+      }
+
+      // Update request
       const { error: updateError } = await supabase
         .from("requests")
-        .update({
-          status: "pending_hr",
-          current_approver_role: "hr",
-          comptroller_approved_at: getPhilippineTimestamp(),
-          comptroller_approved_by: comptrollerUser.id,
-          comptroller_signature: signature || null,
-          comptroller_comments: notes || null,
-          comptroller_edited_budget: editedBudget || null,
-          updated_at: getPhilippineTimestamp(),
-        })
+        .update(updateData)
         .eq("id", requestId);
 
       if (updateError) {
@@ -56,22 +105,72 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: false, error: updateError.message }, { status: 500 });
       }
 
-      // Log to request history
+      // Log to request history with complete tracking
       await supabase.from("request_history").insert({
         request_id: requestId,
-        action: "approved",
+        action: sendToRequester ? "sent_to_requester_for_payment" : "approved",
         actor_id: comptrollerUser.id,
         actor_role: "comptroller",
-        previous_status: "pending_comptroller",
-        new_status: "pending_hr",
-        comments: notes || "Approved by comptroller",
+        previous_status: request.status,
+        new_status: nextStatus,
+        comments: notes || (sendToRequester ? "Sent to requester for payment confirmation" : "Approved by comptroller"),
+        metadata: {
+          signature_at: now,
+          signature_time: now, // Track signature time
+          receive_time: request.created_at || now, // Track when request was received
+          submission_time: request.created_at || null, // Track original submission time
+          sent_to: nextApproverRoleFinal,
+          sent_to_id: nextApproverId || null,
+          payment_required: sendToRequester || false,
+          payment_confirmed: paymentConfirmed || false,
+          edited_budget: editedBudget || null
+        }
       });
 
-      console.log(`[Comptroller Approve] ✅ Request ${requestId} approved, sent to HR`);
+      // Create notifications
+      try {
+        if (sendToRequester && request.requester_id) {
+          // Notify requester about payment requirement
+          const { createNotification } = await import("@/lib/notifications/helpers");
+          await createNotification({
+            user_id: request.requester_id,
+            notification_type: "payment_required",
+            title: "Payment Confirmation Required",
+            message: `Your travel order request ${request.request_number || ''} requires payment confirmation. Please confirm payment to proceed.`,
+            related_type: "request",
+            related_id: requestId,
+            action_url: `/user/submissions?view=${requestId}`,
+            action_label: "Confirm Payment",
+            priority: "high",
+          });
+        } else if (nextApproverId && nextApproverRoleFinal === "hr") {
+          // Notify HR
+          const { createNotification } = await import("@/lib/notifications/helpers");
+          await createNotification({
+            user_id: nextApproverId,
+            notification_type: "request_pending_signature",
+            title: "Request Requires Your Approval",
+            message: `A travel order request ${request.request_number || ''} has been sent to you for approval.`,
+            related_type: "request",
+            related_id: requestId,
+            action_url: `/hr/inbox?view=${requestId}`,
+            action_label: "Review Request",
+            priority: "high",
+          });
+        }
+      } catch (notifError: any) {
+        console.error("[Comptroller Approve] Failed to create notifications:", notifError);
+      }
+
+      console.log(`[Comptroller Approve] ✅ Request ${requestId} ${sendToRequester ? 'sent to requester for payment' : 'approved, sent to HR'}`);
       
       return NextResponse.json({
         ok: true,
-        message: "Request approved and sent to HR",
+        message: sendToRequester ? "Request sent to requester for payment confirmation" : "Request approved and sent to HR",
+        data: {
+          nextStatus,
+          nextApproverRole: nextApproverRoleFinal
+        }
       });
 
     } else if (action === "reject") {

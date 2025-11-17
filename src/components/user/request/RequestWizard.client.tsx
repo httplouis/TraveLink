@@ -44,6 +44,25 @@ function RequestWizardContent() {
   const toast = useToast();
   const { ask, ui: confirmUI } = useConfirm();
   const { user: currentUser, loading: userLoading } = useCurrentUser();
+  const [currentUserEmail, setCurrentUserEmail] = React.useState<string | undefined>(currentUser?.email);
+
+  // Fetch current user email if not available from hook
+  React.useEffect(() => {
+    if (currentUser?.email) {
+      setCurrentUserEmail(currentUser.email);
+    } else if (!userLoading && !currentUser) {
+      // Fallback: fetch from API if hook doesn't provide it
+      fetch("/api/profile")
+        .then(res => res.json())
+        .then(data => {
+          if (data.ok && data.data?.email) {
+            setCurrentUserEmail(data.data.email);
+            console.log('[RequestWizard] ✅ Fetched current user email from API:', data.data.email);
+          }
+        })
+        .catch(err => console.warn('[RequestWizard] Failed to fetch current user email:', err));
+    }
+  }, [currentUser, userLoading]);
 
   const {
     data,
@@ -1146,6 +1165,9 @@ function RequestWizardContent() {
               isRepresentativeSubmission={isRepresentativeSubmission}
               requestingPersonHeadName={requestingPersonHeadInfo?.name}
               currentUserName={currentUser?.name}
+              requesterRole={data.requesterRole}
+              requestId={currentSubmissionId || currentDraftId || undefined} // Pass request ID for invitations (from submission or draft)
+              currentUserEmail={currentUserEmail} // Pass current user email for auto-confirm
             />
           )}
 

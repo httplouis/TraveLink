@@ -8,11 +8,13 @@ import { sendChatMessage, ChatMessage, getQuickSuggestions } from '@/lib/ai/gemi
 
 export async function POST(request: NextRequest) {
   try {
+    console.log('[POST /api/ai/chat] Request received');
     const body = await request.json();
     const { message, conversationHistory } = body;
 
     // Validate input
     if (!message || typeof message !== 'string') {
+      console.log('[POST /api/ai/chat] Invalid message');
       return NextResponse.json(
         { error: 'Message is required' },
         { status: 400 }
@@ -24,12 +26,22 @@ export async function POST(request: NextRequest) {
       ? conversationHistory 
       : [];
 
-    // Send message to AI
+    console.log('[POST /api/ai/chat] Sending message to AI service');
+    const startTime = Date.now();
+
+    // Send message to AI with timeout
     const response = await sendChatMessage(message, history);
 
+    const duration = Date.now() - startTime;
+    console.log(`[POST /api/ai/chat] AI response received in ${duration}ms`);
+
     if (!response.success) {
+      console.error('[POST /api/ai/chat] AI service error:', response.error);
       return NextResponse.json(
-        { error: response.error || 'AI service error' },
+        { 
+          error: response.error || 'AI service error',
+          message: response.message // Include user-friendly message
+        },
         { status: 500 }
       );
     }
@@ -41,9 +53,12 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Chat API Error:', error);
+    console.error('[POST /api/ai/chat] Error:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { 
+        error: error instanceof Error ? error.message : 'Internal server error',
+        success: false
+      },
       { status: 500 }
     );
   }

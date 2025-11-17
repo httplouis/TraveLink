@@ -14,7 +14,26 @@ interface SendEmailOptions {
 export async function sendEmail({ to, subject, html, from }: SendEmailOptions): Promise<{ success: boolean; error?: string; emailId?: string }> {
   console.log(`[sendEmail] 🚀 Function called with:`, { to, subject: subject.substring(0, 50) + "..." });
   
-  const apiKey = process.env.RESEND_API_KEY;
+  // Support multiple API keys for testing (2 accounts)
+  // Check if recipient matches specific email patterns and use corresponding API key
+  let apiKey = process.env.RESEND_API_KEY;
+  
+  // For testing: Use different API keys for different email patterns
+  // Account 1: a22-34976@student.mseuf.edu.ph -> re_BzA9Y47y_5r42BxxaJW17b6vbxJUQxuC1
+  if (to.toLowerCase().includes('a22-34976@student.mseuf.edu.ph')) {
+    apiKey = process.env.RESEND_API_KEY_1 || 're_BzA9Y47y_5r42BxxaJW17b6vbxJUQxuC1';
+    console.log(`[sendEmail] 🔑 Using API key 1 for a22-34976@student.mseuf.edu.ph`);
+  } 
+  // Account 2: a22-33538@student.mseuf.edu.ph -> re_49ogyV4R_15vDjLYvS3jsomcXy2SHerCf
+  else if (to.toLowerCase().includes('a22-33538@student.mseuf.edu.ph')) {
+    apiKey = process.env.RESEND_API_KEY_2 || 're_49ogyV4R_15vDjLYvS3jsomcXy2SHerCf';
+    console.log(`[sendEmail] 🔑 Using API key 2 for a22-33538@student.mseuf.edu.ph`);
+  }
+  
+  // Fallback to default if no specific key found
+  if (!apiKey) {
+    apiKey = process.env.RESEND_API_KEY;
+  }
   // Use custom domain if verified, otherwise fallback to Resend's test domain
   let fromEmail = from || process.env.EMAIL_FROM || "onboarding@resend.dev";
   

@@ -26,7 +26,20 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ ok: true, departments: data ? [data] : [] });
+    if (!data) {
+      return NextResponse.json({ ok: true, departments: [] });
+    }
+
+    // Get user count
+    const { count } = await supabase
+      .from("users")
+      .select("*", { count: "exact", head: true })
+      .eq("department_id", data.id);
+
+    return NextResponse.json({ 
+      ok: true, 
+      departments: [{ ...data, user_count: count || 0 }] 
+    });
   }
 
   // If code provided, search by code (exact match)
@@ -42,7 +55,20 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ ok: true, departments: data ? [data] : [] });
+    if (!data) {
+      return NextResponse.json({ ok: true, departments: [] });
+    }
+
+    // Get user count
+    const { count } = await supabase
+      .from("users")
+      .select("*", { count: "exact", head: true })
+      .eq("department_id", data.id);
+
+    return NextResponse.json({ 
+      ok: true, 
+      departments: [{ ...data, user_count: count || 0 }] 
+    });
   }
 
   // If name provided, search by name
@@ -58,10 +84,22 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ ok: true, departments: data || [] });
+    // Get user counts for each department
+    const departmentsWithCounts = await Promise.all(
+      (data || []).map(async (dept) => {
+        const { count } = await supabase
+          .from("users")
+          .select("*", { count: "exact", head: true })
+          .eq("department_id", dept.id);
+
+        return { ...dept, user_count: count || 0 };
+      })
+    );
+
+    return NextResponse.json({ ok: true, departments: departmentsWithCounts });
   }
 
-  // Get all departments with parent info
+  // Get all departments with parent info and user counts
   const { data, error } = await supabase
     .from("departments")
     .select("id, code, name, type, parent_department_id")
@@ -72,8 +110,27 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   }
 
-  console.log("[API /departments] Returning", data?.length || 0, "departments");
-  return NextResponse.json({ ok: true, departments: data || [] });
+  // Get user counts for each department
+  const departmentsWithCounts = await Promise.all(
+    (data || []).map(async (dept) => {
+      const { count, error: countError } = await supabase
+        .from("users")
+        .select("*", { count: "exact", head: true })
+        .eq("department_id", dept.id);
+
+      if (countError) {
+        console.warn(`[API /departments] Error counting users for ${dept.name}:`, countError);
+        return { ...dept, user_count: 0 };
+      }
+
+      const userCount = count || 0;
+      console.log(`[API /departments] Department ${dept.code} (${dept.name}): ${userCount} users`);
+      return { ...dept, user_count: userCount };
+    })
+  );
+
+  console.log("[API /departments] Returning", departmentsWithCounts.length, "departments");
+  return NextResponse.json({ ok: true, departments: departmentsWithCounts });
 }
 
 /**

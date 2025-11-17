@@ -25,8 +25,6 @@ export function firstReceiver({
   department?: string;
   hasBudget?: boolean; // Add budget parameter
 }): FirstReceiver {
-  if (requesterRole === "org") return "OSAS_ADMIN";
-  
   // HEAD requesting for own department → skip dept head approval, go to Admin (TM) first
   if (requesterRole === "head") {
     return "TM"; // All head requests go to Admin (TM) first
@@ -72,18 +70,6 @@ export function fullApprovalPath({
 
   // ALL requests go through Admin (TM) first for notes/processing
   // Then Admin routes to Comptroller (if budget) or HRD (if no budget)
-  
-  // Org requests
-  if (requesterRole === "org") {
-    path.push("OSAS_ADMIN");
-    path.push("TM"); // Admin always processes
-    if (hasBudget) path.push("COMPTROLLER");
-    path.push("HRD");
-    path.push("VP");
-    path.push("PRESIDENT/COO");
-    if (needsVeh) path.push("TM(close-out)");
-    return path;
-  }
   
   // Head requests - skip DEPT_HEAD approval since they ARE the department head
   if (isHead) {

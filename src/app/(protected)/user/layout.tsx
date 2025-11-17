@@ -6,6 +6,8 @@ import TopBar from "@/components/user/nav/TopBar";
 import UserLeftNav from "@/components/user/nav/UserLeftNav";
 import PageTitle from "@/components/common/PageTitle";
 import ChatbotWidget from "@/components/ai/ChatbotWidget";
+import FeedbackLockModal from "@/components/common/FeedbackLockModal";
+import { checkFeedbackLock } from "@/lib/feedback/lock";
 import "leaflet/dist/leaflet.css";
 
 // Keep Toasts at this level
@@ -13,6 +15,26 @@ import ToastProvider from "@/components/common/ui/ToastProvider.ui";
 
 export default function UserLayout({ children }: { children: React.ReactNode }) {
   const topbarH = "56px";
+  const [feedbackLock, setFeedbackLock] = React.useState<{
+    locked: boolean;
+    requestId?: string;
+    requestNumber?: string;
+    message?: string;
+  }>({ locked: false });
+
+  // Check for feedback lock on mount and periodically
+  React.useEffect(() => {
+    const checkLock = async () => {
+      const lockStatus = await checkFeedbackLock();
+      setFeedbackLock(lockStatus);
+    };
+
+    checkLock();
+    // Check every 5 minutes
+    const interval = setInterval(checkLock, 5 * 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <ToastProvider>
@@ -41,6 +63,16 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
 
         {/* AI Chatbot Widget */}
         <ChatbotWidget />
+
+        {/* Feedback Lock Modal - Forces feedback before continuing */}
+        {feedbackLock.locked && feedbackLock.requestId && (
+          <FeedbackLockModal
+            open={true}
+            requestId={feedbackLock.requestId}
+            requestNumber={feedbackLock.requestNumber}
+            message={feedbackLock.message}
+          />
+        )}
       </div>
     </ToastProvider>
   );

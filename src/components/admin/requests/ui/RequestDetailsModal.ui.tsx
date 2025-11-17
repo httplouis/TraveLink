@@ -3,7 +3,7 @@
 
 import * as React from "react";
 import { Dialog } from "@headlessui/react";
-import { X, FileDown, CheckCircle, AlertTriangle, MapPin, User, Car } from "lucide-react";
+import { X, FileDown, CheckCircle, AlertTriangle, MapPin, User, Car, CheckCircle2, PenTool, Clock, Users } from "lucide-react";
 
 import type { AdminRequest } from "@/lib/admin/requests/store";
 import { AdminRequestsRepo } from "@/lib/admin/requests/store";
@@ -20,6 +20,9 @@ import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 // 🔹 Submission history component
 import SubmissionHistoryUI from "@/components/admin/requests/ui/SubmissionHistory.ui";
 import { NameWithProfile } from "@/components/common/ProfileHoverCard";
+
+// 🔹 Choice-based sending modal
+import ApproverSelectionModal from "@/components/common/ApproverSelectionModal";
 
 // Drivers and vehicles will be fetched from API
 
@@ -89,6 +92,16 @@ export default function RequestDetailsModalUI({
   const [signOpen, setSignOpen] = React.useState(false);
   const [sigDataUrl, setSigDataUrl] = React.useState<string | null>(null);
   const [isApproving, setIsApproving] = React.useState(false);
+  
+  // Choice-based sending
+  const [showApproverSelection, setShowApproverSelection] = React.useState(false);
+  const [approverOptions, setApproverOptions] = React.useState<any[]>([]);
+  const [selectedApproverId, setSelectedApproverId] = React.useState<string | null>(null);
+  const [selectedApproverRole, setSelectedApproverRole] = React.useState<string | null>(null);
+
+  // Confirmed requesters
+  const [confirmedRequesters, setConfirmedRequesters] = React.useState<any[]>([]);
+  const [loadingRequesters, setLoadingRequesters] = React.useState(false);
 
   // Hydrate local assignment state from the selected row (robust over many shapes)
   React.useEffect(() => {
@@ -199,6 +212,34 @@ export default function RequestDetailsModalUI({
     
     if (open) fetchOptions();
   }, [open]);
+
+  // Fetch confirmed requesters
+  React.useEffect(() => {
+    async function fetchRequesters() {
+      if (!row?.id) {
+        setConfirmedRequesters([]);
+        return;
+      }
+
+      try {
+        setLoadingRequesters(true);
+        const response = await fetch(`/api/requesters/status?request_id=${row.id}`);
+        const data = await response.json();
+        
+        if (data.ok && data.data) {
+          // Filter only confirmed requesters
+          const confirmed = data.data.filter((req: any) => req.status === 'confirmed');
+          setConfirmedRequesters(confirmed);
+        }
+      } catch (err) {
+        console.error('[RequestDetailsModal] Error fetching confirmed requesters:', err);
+      } finally {
+        setLoadingRequesters(false);
+      }
+    }
+    
+    if (open && row?.id) fetchRequesters();
+  }, [open, row?.id]);
 
   // Compute total cost — sum base categories + otherItems + single "other"
   const totalCost = React.useMemo(() => {
@@ -336,13 +377,64 @@ export default function RequestDetailsModalUI({
     setSignOpen(true);
   }
 
+  // Load approver options for choice-based sending
+  React.useEffect(() => {
+    if (showApproverSelection && row?.id) {
+      const loadApprovers = async () => {
+        try {
+          // Fetch comptroller and HR options
+          const [comptrollerRes, hrRes] = await Promise.all([
+            fetch('/api/approvers/list?role=comptroller'),
+            fetch('/api/approvers/list?role=hr'),
+          ]);
+          
+          const comptrollerData = await comptrollerRes.json().catch(() => ({ ok: false, approvers: [] }));
+          const hrData = await hrRes.json().catch(() => ({ ok: false, approvers: [] }));
+          
+          const options: any[] = [];
+          
+          if (comptrollerData.ok && comptrollerData.approvers) {
+            options.push(...comptrollerData.approvers.map((a: any) => ({
+              ...a,
+              role: 'comptroller',
+              roleLabel: 'Comptroller'
+            })));
+          }
+          
+          if (hrData.ok && hrData.approvers) {
+            options.push(...hrData.approvers.map((a: any) => ({
+              ...a,
+              role: 'hr',
+              roleLabel: 'HR'
+            })));
+          }
+          
+          setApproverOptions(options);
+        } catch (error) {
+          console.error('[Admin Approve] Failed to load approvers:', error);
+          setApproverOptions([]);
+        }
+      };
+      
+      loadApprovers();
+    }
+  }, [showApproverSelection, row?.id]);
+
   async function confirmSignature() {
+    if (!row?.id || !sigDataUrl || isApproving) return;
+
+    // Show approver selection modal for choice-based sending
+    setShowApproverSelection(true);
+    setSignOpen(false); // Close signature modal
+  }
+
+  async function proceedWithApproval() {
     if (!row?.id || !sigDataUrl || isApproving) return;
 
     setIsApproving(true); // Disable button to prevent double-click
 
     try {
-      // Call API to approve in database
+      // Call API to approve in database with choice-based sending
       const response = await fetch('/api/admin/approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -353,6 +445,8 @@ export default function RequestDetailsModalUI({
           vehicle,
           adminNotes,
           requiresComptroller,
+          nextApproverId: selectedApproverId,
+          nextApproverRole: selectedApproverRole || (requiresComptroller ? 'comptroller' : 'hr'),
         }),
       });
 
@@ -368,17 +462,20 @@ export default function RequestDetailsModalUI({
       console.log('[Admin Approve] Success:', result.message);
 
       // Show success toast
+      const approverLabel = selectedApproverRole === 'comptroller' ? 'Comptroller' : 
+                            selectedApproverRole === 'hr' ? 'HR' :
+                            requiresComptroller ? 'Comptroller' : 'HR';
       toast({
         kind: "success",
-        message: requiresComptroller 
-          ? 'Request approved and sent to Comptroller!' 
-          : 'Request approved and sent to HR!',
+        message: `Request approved and sent to ${approverLabel}!`,
         timeoutMs: 4000
       });
 
       // Also update localStorage for offline support
       const nowIso = new Date().toISOString();
-      const nextStatus = requiresComptroller ? "pending_comptroller" : "pending_hr";
+      const nextStatus = selectedApproverRole === 'comptroller' ? "pending_comptroller" : 
+                        selectedApproverRole === 'hr' ? "pending_hr" :
+                        requiresComptroller ? "pending_comptroller" : "pending_hr";
       
       const repoAny = AdminRequestsRepo as unknown as {
         upsert: (req: AdminRequest) => void;
@@ -397,6 +494,9 @@ export default function RequestDetailsModalUI({
 
       onApprove?.();
       setSignOpen(false);
+      setShowApproverSelection(false);
+      setSelectedApproverId(null);
+      setSelectedApproverRole(null);
       
       // Close main modal after successful approval
       setTimeout(() => {
@@ -500,47 +600,137 @@ export default function RequestDetailsModalUI({
 
                   <dt className="font-semibold text-slate-600">Requesting Person</dt>
                   <dd>
-                    <div className="flex items-center gap-2">
-                      <User className="h-4 w-4 text-slate-400" />
-                      <NameWithProfile
-                        name={(row as any).requester_name || row.travelOrder?.requestingPerson || "—"}
-                        profile={{
-                          id: (row as any).requester?.id || '',
-                          name: (row as any).requester_name || (row as any).requester?.name || '',
-                          email: (row as any).requester?.email,
-                          department: (row as any).requester?.department || (row as any).department?.name,
-                          position: (row as any).requester?.position_title,
-                          profile_picture: (row as any).requester?.profile_picture,
-                        }}
-                      />
-                    </div>
-                    {(row as any).requester?.name && (row as any).requester.name !== ((row as any).requester_name || row.travelOrder?.requestingPerson) && (
-                      <div className="mt-1.5 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700 flex items-center gap-1.5">
-                        <span className="font-medium">Submitted on behalf by:</span>
+                    <div className="space-y-3">
+                      {/* Main Requester */}
+                      <div className="flex items-center gap-2">
+                        <User className="h-4 w-4 text-slate-400" />
                         <NameWithProfile
-                          name={(row as any).requester.name || (row as any).requester.email}
+                          name={(row as any).requester_name || row.travelOrder?.requestingPerson || "—"}
                           profile={{
                             id: (row as any).requester?.id || '',
-                            name: (row as any).requester.name || '',
-                            email: (row as any).requester.email,
-                            department: (row as any).requester?.department,
+                            name: (row as any).requester_name || (row as any).requester?.name || '',
+                            email: (row as any).requester?.email,
+                            department: (row as any).requester?.department || (row as any).department?.name,
                             position: (row as any).requester?.position_title,
                             profile_picture: (row as any).requester?.profile_picture,
                           }}
                         />
                       </div>
-                    )}
-                    {getRequesterSig(row.travelOrder) && (
-                      <div className="mt-2 p-2 bg-white border border-slate-200 rounded-lg">
-                        <img
-                          src={getRequesterSig(row.travelOrder)!}
-                          alt="Requester signature"
-                          className="h-10 w-auto max-w-[180px] object-contain mx-auto"
-                          title="Requester e-signature"
-                        />
-                        <p className="text-center text-xs text-slate-500 mt-1">Digital Signature</p>
-                      </div>
-                    )}
+                      {(row as any).requester?.name && (row as any).requester.name !== ((row as any).requester_name || row.travelOrder?.requestingPerson) && (
+                        <div className="mt-1.5 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700 flex items-center gap-1.5">
+                          <span className="font-medium">Submitted on behalf by:</span>
+                          <NameWithProfile
+                            name={(row as any).requester.name || (row as any).requester.email}
+                            profile={{
+                              id: (row as any).requester?.id || '',
+                              name: (row as any).requester.name || '',
+                              email: (row as any).requester.email,
+                              department: (row as any).requester?.department,
+                              position: (row as any).requester?.position_title,
+                              profile_picture: (row as any).requester?.profile_picture,
+                            }}
+                          />
+                        </div>
+                      )}
+                      {getRequesterSig(row.travelOrder) && (
+                        <div className="mt-2 p-2 bg-white border border-slate-200 rounded-lg">
+                          <img
+                            src={getRequesterSig(row.travelOrder)!}
+                            alt="Requester signature"
+                            className="h-10 w-auto max-w-[180px] object-contain mx-auto"
+                            title="Requester e-signature"
+                          />
+                          <p className="text-center text-xs text-slate-500 mt-1">Digital Signature</p>
+                        </div>
+                      )}
+
+                      {/* Additional Confirmed Requesters */}
+                      {confirmedRequesters.length > 0 && (
+                        <div className="mt-4 pt-4 border-t border-slate-200">
+                          <div className="flex items-center gap-2 mb-3">
+                            <Users className="h-4 w-4 text-slate-500" />
+                            <span className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
+                              Additional Requesters ({confirmedRequesters.length})
+                            </span>
+                          </div>
+                          <div className="space-y-3">
+                            {loadingRequesters ? (
+                              <div className="text-center py-2">
+                                <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#7A0010] border-t-transparent mx-auto"></div>
+                                <p className="text-xs text-slate-500 mt-1">Loading requesters...</p>
+                              </div>
+                            ) : (
+                              confirmedRequesters.map((requester, index) => (
+                                <div
+                                  key={requester.id || index}
+                                  className="p-3 bg-green-50 border border-green-200 rounded-lg"
+                                >
+                                  {/* Requester Info */}
+                                  <div className="flex items-start gap-2 mb-2">
+                                    <div className="flex-1 min-w-0">
+                                      <p className="font-semibold text-slate-900 text-sm truncate">
+                                        {requester.name || requester.email || 'Unknown Requester'}
+                                      </p>
+                                      {requester.department && (
+                                        <p className="text-xs text-slate-600 mt-0.5">{requester.department}</p>
+                                      )}
+                                      {requester.email && (
+                                        <p className="text-xs text-slate-500 mt-0.5 truncate">{requester.email}</p>
+                                      )}
+                                    </div>
+                                    <div className="flex-shrink-0">
+                                      <div className="flex items-center gap-1 px-2 py-0.5 bg-green-100 rounded-full">
+                                        <CheckCircle2 className="w-3 h-3 text-green-600" />
+                                        <span className="text-xs font-medium text-green-700">Confirmed</span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Signature */}
+                                  {requester.signature && (
+                                    <div className="mt-2 pt-2 border-t border-green-200">
+                                      <div className="flex items-center gap-1.5 mb-1.5">
+                                        <PenTool className="w-3.5 h-3.5 text-green-600" />
+                                        <span className="text-xs font-semibold text-green-900">Signature</span>
+                                      </div>
+                                      <div className="bg-white rounded p-1.5 border border-green-200">
+                                        <img
+                                          src={requester.signature}
+                                          alt={`${requester.name || 'Requester'} signature`}
+                                          className="w-full h-12 object-contain"
+                                        />
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Confirmation Time */}
+                                  {requester.confirmed_at && (
+                                    <div className="mt-2 pt-2 border-t border-green-200">
+                                      <div className="flex items-center gap-1.5">
+                                        <Clock className="w-3 h-3 text-slate-500" />
+                                        <span className="text-xs text-slate-600">
+                                          Confirmed: <span className="font-medium text-slate-900">
+                                            {new Date(requester.confirmed_at).toLocaleString('en-US', {
+                                              timeZone: 'Asia/Manila',
+                                              year: 'numeric',
+                                              month: 'short',
+                                              day: 'numeric',
+                                              hour: 'numeric',
+                                              minute: '2-digit',
+                                              hour12: true
+                                            })}
+                                          </span>
+                                        </span>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </dd>
 
                   <dt className="font-semibold text-slate-600">Department</dt>
@@ -1064,12 +1254,34 @@ export default function RequestDetailsModalUI({
               {isApproving 
                 ? "Processing..." 
                 : sigDataUrl 
-                  ? (requiresComptroller ? "Approve & Send to Comptroller" : "Approve & Send to HR") 
+                  ? "Continue to Select Approver" 
                   : "Approve"}
             </button>
           </div>
         </div>
       </Dialog>
+
+      {/* Approver Selection Modal */}
+      {showApproverSelection && (
+        <ApproverSelectionModal
+          isOpen={showApproverSelection}
+          onClose={() => {
+            setShowApproverSelection(false);
+            setSignOpen(true); // Return to signature modal
+          }}
+          onSelect={(approverId, approverRole) => {
+            setSelectedApproverId(approverId);
+            setSelectedApproverRole(approverRole);
+            setShowApproverSelection(false);
+            proceedWithApproval();
+          }}
+          title="Select Next Approver"
+          description={`Request ${row?.request_number || row?.id} - Choose where to send this request after approval`}
+          options={approverOptions}
+          currentRole="admin"
+          allowReturnToRequester={false}
+        />
+      )}
     </Dialog>
   );
 }

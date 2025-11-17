@@ -22,6 +22,9 @@ type ViewProps = {
   isRepresentativeSubmission?: boolean;
   requestingPersonHeadName?: string; // Head name for requesting person's department
   currentUserName?: string;
+  requesterRole?: "faculty" | "head"; // Role type to determine if multiple requesters are allowed
+  requestId?: string; // Request ID for sending invitations (after saving)
+  currentUserEmail?: string; // Current logged-in user's email (for auto-confirm)
 };
 
 export default function TravelOrderFormView({
@@ -37,6 +40,9 @@ export default function TravelOrderFormView({
   isRepresentativeSubmission,
   requestingPersonHeadName,
   currentUserName,
+  requesterRole,
+  requestId,
+  currentUserEmail,
 }: ViewProps) {
   const c = data?.costs || {};
 
@@ -67,6 +73,9 @@ export default function TravelOrderFormView({
         onDepartmentChange={onDepartmentChange}
         isHeadRequester={isHeadRequester}
         isRepresentativeSubmission={isRepresentativeSubmission}
+        requesterRole={requesterRole}
+        requestId={requestId}
+        currentUserEmail={currentUserEmail}
       />
 
       <CostsSection

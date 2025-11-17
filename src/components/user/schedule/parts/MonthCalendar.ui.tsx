@@ -3,26 +3,26 @@
 
 import * as React from "react";
 
-type AvailabilityMap = Record<string, number>;
+import type { AvailabilityMap, AvailabilityWithStatus } from "@/lib/user/schedule/repo";
 
 export default function MonthCalendar({
   month,
   year,
   availability,
+  availabilityWithStatus = {},
   onPrev,
   onNext,
   onSelectDate,
   selectedISO,
-  pendingRequests = [],
 }: {
   month: number; // 0..11
   year: number;
   availability: AvailabilityMap; // iso => used slots (0..5)
+  availabilityWithStatus?: AvailabilityWithStatus; // Detailed status info
   onPrev: () => void;
   onNext: () => void;
   onSelectDate: (iso: string) => void;
   selectedISO: string | null;
-  pendingRequests?: Array<{id: string; dates: string[]; title: string; status: string}>;
 }) {
   // build grid
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -80,7 +80,7 @@ export default function MonthCalendar({
                   used={availability[iso] ?? 0}
                   selected={selectedISO === iso}
                   onClick={() => onSelectDate(iso)}
-                  hasPending={pendingRequests.some(pr => pr.dates.includes(iso))}
+                  slotStatus={availabilityWithStatus[iso]}
                 />
               ) : (
                 <div key={`blank-${i}-${j}`} />
@@ -124,15 +124,18 @@ function DayCell({
   used,
   selected,
   onClick,
-  hasPending = false,
+  slotStatus,
 }: {
   iso: string;
   used: number;
   selected: boolean;
   onClick: () => void;
-  hasPending?: boolean;
+  slotStatus?: import("@/lib/user/schedule/repo").SlotStatus;
 }) {
   const status = used >= 5 ? "full" : used > 0 ? "partial" : "available";
+  const pending = slotStatus?.pending || 0;
+  const approved = slotStatus?.approved || 0;
+  const available = slotStatus?.available ?? (5 - used);
 
   // badge styles
   const pill =
@@ -144,7 +147,7 @@ function DayCell({
 
   // tile gradient + ring
   const base =
-    "group h-24 rounded-2xl bg-[linear-gradient(180deg,#ffffff,#fafafa)] " +
+    "group h-28 rounded-2xl bg-[linear-gradient(180deg,#ffffff,#fafafa)] " +
     "border border-neutral-200/70 text-left p-2 shadow-sm shadow-black/5 " +
     "hover:shadow-md hover:bg-white transition focus:outline-none " +
     "focus:ring-2 focus:ring-indigo-200";
@@ -158,24 +161,33 @@ function DayCell({
       suppressHydrationWarning
       onClick={onClick}
       aria-pressed={selected}
-      aria-label={`Date ${iso} with ${used} of 5 slots`}
+      aria-label={`Date ${iso} with ${used} of 5 slots, ${pending} pending, ${approved} approved`}
       className={base + sel}
     >
       <div className="flex items-start justify-between text-xs">
         <div className="font-semibold text-neutral-900">{day}</div>
-        <div className="flex items-center gap-1">
-          {hasPending && (
-            <span className="inline-flex items-center gap-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200 px-1.5 py-0.5 text-[10px] font-medium">
+        <div className="flex flex-col items-end gap-1">
+          {pending > 0 && (
+            <span className="inline-flex items-center gap-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200 px-1.5 py-0.5 text-[9px] font-medium">
               <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
-              Pending
+              {pending}
+            </span>
+          )}
+          {approved > 0 && (
+            <span className="inline-flex items-center gap-0.5 rounded-full bg-green-100 text-green-700 border border-green-200 px-1.5 py-0.5 text-[9px] font-medium">
+              <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+              {approved}
             </span>
           )}
           <span className={`rounded-full border px-1.5 py-0.5 text-[10px] ${pill}`}>
-            {status === "available" ? "Available" : status === "partial" ? `${5 - used} left` : "Full"}
+            {status === "available" ? "Available" : status === "partial" ? `${available} left` : "Full"}
           </span>
         </div>
       </div>
-      <div className="mt-3 text-[11px] text-neutral-500">{used}/5</div>
+      <div className="mt-2 text-[11px] text-neutral-500">{used}/5 slots</div>
+      {pending > 0 && (
+        <div className="mt-1 text-[10px] text-blue-600 font-medium">Pending: {pending}</div>
+      )}
     </button>
   );
 }

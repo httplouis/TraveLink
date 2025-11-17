@@ -9,11 +9,20 @@ import Breadcrumbs from "@/components/admin/nav/Breadcrumbs";
 import ProfileMenu from "@/components/admin/nav/ProfileMenu";
 import NotificationBell from "@/components/admin/nav/NotificationBell";
 import PageTitle from "@/components/common/PageTitle";
-import { Search } from "lucide-react";
+import { Search, LogOut } from "lucide-react";
 import ProfileContainer from "@/components/admin/profile/containers/ProfileContainer";
 import ChatbotWidget from "@/components/ai/ChatbotWidget";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      window.location.href = "/login";
+    } catch (error) {
+      console.error("Logout failed:", error);
+    }
+  };
+
   return (
     <>
       <PageTitle title="TraviLink | Admin" />
@@ -95,6 +104,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <div className="absolute right-6 flex items-center gap-3 z-10" suppressHydrationWarning>
             <NotificationBell />
             <ProfileMenu />
+            <button
+              onClick={handleLogout}
+              className="inline-flex h-9 items-center gap-2 rounded-full border border-white/60 bg-red-600 px-3 text-sm text-white shadow-inner transition hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500/70"
+              aria-label="Logout"
+              title="Logout"
+            >
+              <LogOut className="h-4 w-4" />
+              <span className="hidden sm:inline">Logout</span>
+            </button>
           </div>
         </div>
 

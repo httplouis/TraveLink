@@ -78,36 +78,55 @@ export interface ChatResponse {
 
 /**
  * Call Gemini API directly using REST
+ * Includes timeout to prevent hanging requests
  */
-async function callGeminiAPI(prompt: string, apiKey: string): Promise<string> {
+async function callGeminiAPI(prompt: string, apiKey: string, timeoutMs: number = 30000): Promise<string> {
   // Use gemini-2.5-flash-lite (current 2.x model, fast and free)
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
   
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      contents: [{
-        parts: [{ text: prompt }]
-      }],
-      generationConfig: {
-        temperature: 0.9,
-        topK: 40,
-        topP: 0.95,
-        maxOutputTokens: 2048,
-      }
-    })
-  });
+  // Create AbortController for timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        contents: [{
+          parts: [{ text: prompt }]
+        }],
+        generationConfig: {
+          temperature: 0.9,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 2048,
+        }
+      })
+    });
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Gemini API Error: ${response.status} - ${error}`);
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Gemini API Error: ${response.status} - ${error}`);
+    }
+
+    const data = await response.json();
+    return data.candidates[0].content.parts[0].text;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    
+    // Handle timeout specifically
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Request timeout: The AI service took too long to respond. Please try again.');
+    }
+    
+    throw error;
   }
-
-  const data = await response.json();
-  return data.candidates[0].content.parts[0].text;
 }
 
 /**
@@ -155,18 +174,22 @@ export async function sendChatMessage(
     };
 
   } catch (error) {
-    console.error('Gemini AI Error:', error);
+    console.error('[Gemini Service] Error:', error);
     
     // Provide more helpful error messages
     let errorMessage = 'Sorry, I encountered an error. Please try again.';
     
     if (error instanceof Error) {
-      if (error.message.includes('API key')) {
+      if (error.message.includes('timeout') || error.message.includes('too long')) {
+        errorMessage = 'The AI service is taking too long to respond. Please try again in a moment.';
+      } else if (error.message.includes('API key')) {
         errorMessage = 'API key is invalid or not configured. Please check your GEMINI_API_KEY in .env.local';
       } else if (error.message.includes('quota') || error.message.includes('limit')) {
         errorMessage = 'API quota exceeded. Please try again later or upgrade your plan.';
       } else if (error.message.includes('model')) {
         errorMessage = 'The AI model is not available. Please check your API key permissions.';
+      } else if (error.message.includes('network') || error.message.includes('fetch')) {
+        errorMessage = 'Network error. Please check your internet connection and try again.';
       }
     }
     

@@ -5,6 +5,7 @@ import * as React from "react";
 import { Building2, Plus, Edit2, Trash2, Search, Save, X, AlertCircle } from "lucide-react";
 import { useToast } from "@/components/common/ui/Toast";
 import { createSupabaseClient } from "@/lib/supabase/client";
+import { SkeletonTable } from "@/components/common/ui/Skeleton";
 
 interface Department {
   id: string;
@@ -17,6 +18,7 @@ interface Department {
     name: string;
     code: string;
   };
+  user_count?: number;
   created_at?: string;
 }
 
@@ -69,6 +71,8 @@ export default function SuperAdminDepartmentsPage() {
         throw new Error(data.error || "Failed to fetch departments");
       }
 
+      console.log("[Departments Page] Raw API response:", data);
+      
       // Map parent departments
       const departmentsMap = new Map(
         (data.departments || []).map((d: Department) => [d.id, d])
@@ -77,7 +81,15 @@ export default function SuperAdminDepartmentsPage() {
       const departmentsWithParents = (data.departments || []).map((dept: Department) => ({
         ...dept,
         parent: dept.parent_department_id ? departmentsMap.get(dept.parent_department_id) || null : null,
+        // Ensure user_count is preserved
+        user_count: dept.user_count ?? 0,
       }));
+
+      console.log("[Departments Page] Processed departments with counts:", departmentsWithParents.slice(0, 5).map(d => ({
+        code: d.code,
+        name: d.name,
+        user_count: d.user_count
+      })));
 
       setDepartments(departmentsWithParents);
     } catch (err: any) {
@@ -202,10 +214,18 @@ export default function SuperAdminDepartmentsPage() {
     );
   });
 
-  if (loading) {
+  if (loading && departments.length === 0) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-purple-600 border-t-transparent" />
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="h-9 w-64 bg-gray-200 rounded animate-pulse mb-2" />
+            <div className="h-5 w-96 bg-gray-200 rounded animate-pulse" />
+          </div>
+          <div className="h-11 w-48 bg-gray-200 rounded-lg animate-pulse" />
+        </div>
+        <div className="h-12 w-full bg-gray-200 rounded-xl animate-pulse" />
+        <SkeletonTable rows={8} />
       </div>
     );
   }
@@ -251,13 +271,14 @@ export default function SuperAdminDepartmentsPage() {
                 <th className="px-6 py-4 text-left text-sm font-bold min-w-[300px]">Name</th>
                 <th className="px-6 py-4 text-left text-sm font-bold min-w-[120px]">Type</th>
                 <th className="px-6 py-4 text-left text-sm font-bold min-w-[200px]">Parent Department</th>
+                <th className="px-6 py-4 text-center text-sm font-bold min-w-[120px]">Number of Users</th>
                 <th className="px-6 py-4 text-center text-sm font-bold min-w-[120px] sticky right-0 bg-gradient-to-r from-purple-600 to-purple-700">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
               {filteredDepartments.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
                     No departments found
                   </td>
                 </tr>
@@ -332,6 +353,11 @@ export default function SuperAdminDepartmentsPage() {
                       ) : (
                         <span className="text-sm text-gray-400">No parent</span>
                       )}
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <span className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg text-sm font-semibold bg-blue-100 text-blue-800 border-2 border-blue-200">
+                        {dept.user_count ?? 0}
+                      </span>
                     </td>
                     <td className="px-6 py-4 sticky right-0 bg-white z-10">
                       <div className="flex items-center justify-center gap-2">

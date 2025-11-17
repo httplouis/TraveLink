@@ -38,6 +38,8 @@ export async function GET() {
       .eq("submitted_by_user_id", profile.id)
       .order("created_at", { ascending: false })
       .limit(100);
+    
+    // Include payment-related fields for payment confirmation UI
 
     if (submittedError) {
       console.error("[GET /api/requests/my-submissions] Submitted requests error:", submittedError);

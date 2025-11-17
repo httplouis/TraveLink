@@ -5,6 +5,7 @@ import * as React from "react";
 import { Shield, Users, Building2, FileText, TrendingUp, AlertCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createSupabaseClient } from "@/lib/supabase/client";
+import { SkeletonCard } from "@/components/common/ui/Skeleton";
 
 export default function SuperAdminDashboard() {
   const router = useRouter();
@@ -117,8 +118,17 @@ export default function SuperAdminDashboard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-purple-600 border-t-transparent" />
+      <div className="space-y-6">
+        <div>
+          <div className="h-9 w-64 bg-gray-200 rounded animate-pulse mb-2" />
+          <div className="h-5 w-96 bg-gray-200 rounded animate-pulse" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <SkeletonCard key={i} />
+          ))}
+        </div>
+        <div className="h-48 bg-gray-200 rounded-xl animate-pulse" />
       </div>
     );
   }

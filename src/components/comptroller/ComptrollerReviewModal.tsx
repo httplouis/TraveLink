@@ -5,6 +5,7 @@ import React from "react";
 import { X, DollarSign, Edit2, Check, XCircle, FileText, Calendar, User, MapPin, Building2 } from "lucide-react";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import { useToast } from "@/components/common/ui/ToastProvider.ui";
+import ApproverSelectionModal from "@/components/common/ApproverSelectionModal";
 
 type Request = {
   id: string;
@@ -47,6 +48,12 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
   const [signature, setSignature] = React.useState<string | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
   const [showRejectConfirm, setShowRejectConfirm] = React.useState(false);
+  const [showApproverSelection, setShowApproverSelection] = React.useState(false);
+  const [approverOptions, setApproverOptions] = React.useState<any[]>([]);
+  const [sendToRequester, setSendToRequester] = React.useState(false);
+  const [paymentConfirmed, setPaymentConfirmed] = React.useState(false);
+  const [nextApproverId, setNextApproverId] = React.useState<string | null>(null);
+  const [nextApproverRole, setNextApproverRole] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     loadFullRequest();
@@ -87,7 +94,7 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
     return editedExpenses.reduce((sum, exp) => sum + exp.amount, 0);
   }, [editedExpenses]);
 
-  const handleApprove = async () => {
+  const doApprove = async () => {
     console.log("[Comptroller] ========== APPROVE BUTTON CLICKED ==========");
     console.log("[Comptroller] Has signature:", !!signature);
     
@@ -97,6 +104,40 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
       return;
     }
 
+    // Fetch available approvers (HR)
+    try {
+      const approversRes = await fetch("/api/approvers/list?role=hr");
+      const approversData = await approversRes.json();
+      
+      console.log("[Comptroller] Approvers response:", approversData);
+      
+      if (approversData.ok) {
+        const options = (approversData.data || []).map((a: any) => ({
+          ...a,
+          roleLabel: a.roleLabel || "Human Resources"
+        }));
+        
+        console.log("[Comptroller] Approver options count:", options.length);
+        setApproverOptions(options);
+        setShowApproverSelection(true);
+        return;
+      } else {
+        console.error("[Comptroller] Approvers API error:", approversData.error);
+        // Still show modal even if API fails, so user can return to requester
+        setApproverOptions([]);
+        setShowApproverSelection(true);
+        return;
+      }
+    } catch (err) {
+      console.error("[Comptroller] Error fetching approvers:", err);
+      // Still show modal even if fetch fails, so user can return to requester
+      setApproverOptions([]);
+      setShowApproverSelection(true);
+      return;
+    }
+  };
+
+  const proceedWithApproval = async (selectedApproverId?: string | null, selectedApproverRole?: string | null, returnToRequester?: boolean, returnReason?: string) => {
     console.log("[Comptroller] Starting approval process...");
     setSubmitting(true);
     try {
@@ -109,6 +150,10 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
           signature,
           notes: comptrollerNotes,
           editedBudget: calculatedTotal !== request.total_budget ? calculatedTotal : null,
+          sendToRequester: returnToRequester || false,
+          paymentConfirmed: paymentConfirmed || false,
+          nextApproverId: selectedApproverId || nextApproverId,
+          nextApproverRole: selectedApproverRole || nextApproverRole || "hr",
         }),
       });
 
@@ -118,7 +163,10 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
       
       if (json.ok) {
         console.log("[Comptroller Approve] Showing success toast...");
-        toast({ message: "✅ Request approved and sent to HR for review", kind: "success" });
+        const message = returnToRequester 
+          ? "✅ Request sent to requester for payment confirmation"
+          : "✅ Request approved and sent to HR for review";
+        toast({ message, kind: "success" });
         // Delay to show toast before closing (increased to 1500ms to ensure visibility)
         console.log("[Comptroller Approve] Closing modal in 1500ms...");
         setTimeout(() => {
@@ -134,6 +182,7 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
       toast({ message: "Failed to approve request. Please try again.", kind: "error" });
     } finally {
       setSubmitting(false);
+      setShowApproverSelection(false);
     }
   };
 
@@ -522,15 +571,39 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
             Reject & Return to User
           </button>
           <button
-            onClick={handleApprove}
+            onClick={doApprove}
             disabled={submitting || !signature}
             className="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
           >
             <Check className="h-5 w-5" />
-            Approve & Send to HR
+            Approve & Send
           </button>
         </div>
       </div>
+
+      {/* Approver Selection Modal */}
+      {showApproverSelection && (
+        <ApproverSelectionModal
+          isOpen={showApproverSelection}
+          onClose={() => setShowApproverSelection(false)}
+          onSelect={(approverId, approverRole, returnReason) => {
+            const returnToRequester = approverRole === "requester";
+            proceedWithApproval(approverId, approverRole, returnToRequester, returnReason);
+          }}
+          title="Select Next Approver"
+          description="Choose where to send this request after approval. You can send to HR or return to requester for payment confirmation."
+          options={approverOptions}
+          currentRole="comptroller"
+          allowReturnToRequester={true}
+          requesterId={fullRequest?.requester_id}
+          requesterName={fullRequest?.requester_name || request.requester?.name}
+          returnReasons={[
+            { value: 'payment_required', label: 'Payment Confirmation Required' },
+            { value: 'budget_change', label: 'Budget Change Required' },
+            { value: 'other', label: 'Other' }
+          ]}
+        />
+      )}
     </div>
   );
 }

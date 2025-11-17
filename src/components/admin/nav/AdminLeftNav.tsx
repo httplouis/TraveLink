@@ -19,6 +19,7 @@ import {
   Search,
   ChevronLeft,
   X,
+  Building2,
 } from "lucide-react";
 import { useRequestsNavBadge } from "@/components/admin/requests/hooks/useRequestsBadge";
 import { motion } from "framer-motion";
@@ -35,6 +36,7 @@ type Item = { href: string; label: string; Icon: React.ComponentType<any>; secti
 const NAV: Item[] = [
   { href: "/admin", label: "Dashboard", Icon: LayoutDashboard, section: "CORE" },
   { href: "/admin/requests", label: "Requests", Icon: FileText, section: "CORE" },
+  { href: "/admin/org-request", label: "Org Request", Icon: Building2, section: "CORE" },
 
   { href: "/admin/schedule", label: "Schedule", Icon: CalendarDays, section: "MANAGEMENT" },
   { href: "/admin/drivers", label: "Drivers", Icon: Users, section: "MANAGEMENT" },

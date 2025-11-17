@@ -46,10 +46,25 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    // Get user profile
+    // Get user profile with admins relationship to check super_admin
     const { data: profile, error: profileError } = await supabase
       .from("users")
-      .select("id, email, department, role, is_head, is_hr, is_exec, is_vp, is_president, is_admin")
+      .select(`
+        id,
+        email,
+        department,
+        role,
+        is_head,
+        is_hr,
+        is_exec,
+        is_vp,
+        is_president,
+        is_admin,
+        admins (
+          user_id,
+          super_admin
+        )
+      `)
       .eq("auth_user_id", user.id)
       .single();
 
@@ -70,7 +85,16 @@ export async function GET(request: NextRequest) {
   // Check admin by email (since role might be 'faculty' due to trigger restrictions)
   const adminEmails = ["admin@mseuf.edu.ph", "admin.cleofe@mseuf.edu.ph"];
   const isAdmin = userRole === 'admin' || adminEmails.includes(userEmail);
-  const isSuperAdmin = profile.is_admin === true && userRole === 'admin';
+  
+  // Check super_admin from admins table relationship
+  const adminsData = (profile as any).admins;
+  const adminInfo = Array.isArray(adminsData) 
+    ? (adminsData.length > 0 ? adminsData[0] : null)
+    : (adminsData || null);
+  const isSuperAdminFromTable = adminInfo?.super_admin === true;
+  
+  // Super admin: is_admin = true AND role = 'admin' AND admins.super_admin = true
+  const isSuperAdmin = profile.is_admin === true && userRole === 'admin' && isSuperAdminFromTable;
   const isHead = userRole === 'head' || profile.is_head === true;
   const isHr = userRole === 'hr' || profile.is_hr === true;
   const isExec = userRole === 'exec' || profile.is_exec === true;

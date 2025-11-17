@@ -132,19 +132,59 @@ function StatusPill({ status }: { status: "Available" | "Partial" | "Full" }) {
 }
 
 function BookingCard({ b }: { b: Booking }) {
+  const getStatusBadge = (status?: string) => {
+    if (!status) return null;
+    
+    if (status.startsWith("pending_")) {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 text-blue-700 border border-blue-200 px-2 py-0.5 text-[10px] font-medium">
+          <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
+          Pending
+        </span>
+      );
+    } else if (status === "approved") {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-green-100 text-green-700 border border-green-200 px-2 py-0.5 text-[10px] font-medium">
+          <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+          Approved
+        </span>
+      );
+    } else if (status === "rejected") {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-red-100 text-red-700 border border-red-200 px-2 py-0.5 text-[10px] font-medium">
+          Rejected
+        </span>
+      );
+    }
+    return null;
+  };
+
   return (
     <article className="relative overflow-hidden rounded-2xl border border-neutral-200/70 bg-white shadow-sm shadow-black/5 transition hover:shadow-md">
-      <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-neutral-200" />
+      <span className={`absolute left-0 top-3 bottom-3 w-1 rounded-full ${
+        b.status === "approved" ? "bg-green-500" :
+        b.status?.startsWith("pending_") ? "bg-blue-500" :
+        b.status === "rejected" ? "bg-red-500" :
+        "bg-neutral-200"
+      }`} />
       <div className="p-4 sm:p-5">
-        <div className="text-[11px] font-semibold tracking-wide text-neutral-500 uppercase">{b.department}</div>
-        <h3 className="mt-1 text-sm sm:text-base font-semibold text-neutral-900">{b.purpose}</h3>
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <div className="text-[11px] font-semibold tracking-wide text-neutral-500 uppercase">{b.department}</div>
+            <h3 className="mt-1 text-sm sm:text-base font-semibold text-neutral-900">{b.purpose}</h3>
+            {b.request_number && (
+              <div className="mt-0.5 text-[10px] text-neutral-400">#{b.request_number}</div>
+            )}
+          </div>
+          {getStatusBadge(b.status)}
+        </div>
         <div className="mt-1 inline-flex items-center gap-1 text-xs text-neutral-600">
-          <IconMapPin /><span className="truncate">{b.destination}</span>
+          <IconMapPin /><span className="truncate">{b.destination || "No destination specified"}</span>
         </div>
         <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 text-[13px] text-neutral-800">
           <Meta icon={<IconDriver />} label="Driver" value={b.driver || "—"} />
           <Meta icon={<IconVehicle />} label="Vehicle" value={b.vehicle} />
-          <Meta icon={<IconClock />} label="Time" value={`${b.departAt} → ${b.returnAt}`} />
+          <Meta icon={<IconClock />} label="Time" value={b.departAt && b.returnAt ? `${b.departAt} → ${b.returnAt}` : "TBD"} />
         </div>
         <div className="mt-3 text-[11px] text-neutral-500">ID: {b.id}</div>
       </div>

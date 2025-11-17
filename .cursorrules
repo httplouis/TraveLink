@@ -1,0 +1,109 @@
+# TraviLink Project Rules
+
+## Supabase Client Usage
+- Always use `createSupabaseServerClient(true)` for admin/super-admin operations (service_role)
+- Use `createSupabaseServerClient(false)` for regular user operations (authenticated)
+- Never expose service_role key to client-side code
+
+## Password Confirmation
+- All super admin actions (PATCH, DELETE, POST for bulk operations) require password confirmation
+- Use `PasswordConfirmDialog` component for frontend
+- Verify password using anon key client by attempting sign-in
+
+## Role Assignment Patterns
+When updating user roles, always follow this order:
+1. Check if role requires subtable entry:
+   - `admin` → requires entry in `admins` table
+   - `faculty` → requires entry in `faculties` table
+   - `driver` → requires entry in `drivers` table
+2. Use database RPC functions for circular dependencies:
+   - `assign_admin_role(p_user_id)` for admin role
+   - `assign_faculty_role(p_user_id, p_department_id)` for faculty role
+   - `assign_driver_role(p_user_id)` for driver role
+3. Update `role_grants` table for audit trail:
+   - Revoke old role grant (set `revoked_at` and `revoked_by`)
+   - Create new role grant with `granted_at`, `granted_by`, `reason`
+4. Update all `is_*` flags appropriately:
+   - `is_head` for head role
+   - `is_admin` for admin role
+   - `is_hr` for HR role
+   - `is_vp` for VP role (maps to `exec` in database)
+   - `is_president` for President role (maps to `exec` in database)
+5. Set `exec_type` for executive roles:
+   - `'vp'` for Vice President
+   - `'president'` for President/COO
+   - `null` for other roles
+6. Log to `audit_logs` table with full `old_value` and `new_value`
+
+## Role Mapping
+- Frontend roles `vp` and `president` map to database role `exec`
+- `comptroller` maps directly to `comptroller` in database
+- Always check `users_role_chk` constraint when adding new roles
+
+## Foreign Key Constraints
+- Use `ON DELETE SET NULL` for optional references (e.g., `approver_id`, `admin_id`)
+- Use `ON DELETE CASCADE` for required references that should be deleted together
+- Never manually delete/nullify records in application code if FK constraint handles it
+- Always create SQL migrations to modify FK constraints, don't try to work around them
+
+## Department Resolution
+Always check in this order:
+1. `department_id` (direct foreign key)
+2. `department` text field with matching:
+   - Exact match (case-insensitive)
+   - Code match (e.g., "CCMS" matches "College of Computing and Multimedia Studies")
+   - Partial match (contains)
+3. Fallback to `departments.head_name` only as last resort (legacy)
+
+## Row Level Security (RLS)
+- Always allow `service_role` full access for system operations
+- Create policies like: `service_role_all_table_name` for admin operations
+- Use `SECURITY DEFINER` for database functions that need to bypass RLS
+- Test RLS policies after creating them
+
+## Error Handling & Logging
+- Always use `[PREFIX]` format for console logs (e.g., `[PATCH /api/admin/users/[id]]`)
+- Log full error objects including `message`, `code`, `details`, `hint`
+- Include context in error messages (user ID, operation, etc.)
+- Use structured logging for debugging
+
+## Database Migrations
+- Always include verification queries at the end
+- Use `DROP CONSTRAINT IF EXISTS` before recreating
+- Use `CREATE POLICY IF NOT EXISTS` or `DROP POLICY IF EXISTS` for RLS policies
+- Include clear comments explaining the change and why it's needed
+- Test migrations on a copy of production data first
+
+## API Route Patterns
+- Always check authentication first
+- Verify user permissions (admin/super-admin checks)
+- Validate input data
+- Use try-catch for error handling
+- Return consistent JSON format: `{ ok: boolean, error?: string, data?: any }`
+- Include proper HTTP status codes (200, 400, 401, 403, 500)
+
+## TypeScript Patterns
+- Use proper types from Supabase generated types when available
+- Define interfaces for API request/response bodies
+- Use `NextRequest` and `NextResponse` from `next/server`
+- Handle async operations properly with `await`
+
+## UI Patterns
+- Use `PasswordConfirmDialog` for all super admin actions
+- Show loading states during async operations
+- Display clear error messages to users
+- Use consistent badge colors for roles (see `getRoleBadgeColor` function)
+- Implement proper form validation
+
+## Testing Checklist
+Before considering a feature complete:
+1. Test with different user roles (admin, head, faculty, staff, etc.)
+2. Test password confirmation flow
+3. Verify audit logs are created
+4. Check role_grants table is updated
+5. Test error scenarios (invalid input, missing permissions, etc.)
+6. Verify RLS policies don't block legitimate operations
+
+
+
+

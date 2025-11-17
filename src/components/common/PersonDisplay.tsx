@@ -81,6 +81,18 @@ export default function PersonDisplay({
   className = "",
 }: PersonDisplayProps) {
   const sizeClasses = SIZE_CONFIG[size];
+  
+  // Debug: Log profile picture prop
+  React.useEffect(() => {
+    if (profilePicture) {
+      console.log(`[PersonDisplay] Profile picture for ${name}:`, profilePicture);
+    } else {
+      console.log(`[PersonDisplay] No profile picture for ${name}, using generated avatar`);
+    }
+  }, [profilePicture, name]);
+
+  // Use profile picture if available, otherwise generate avatar
+  const imageSrc = profilePicture || generateAvatar(name);
 
   return (
     <motion.div
@@ -92,14 +104,29 @@ export default function PersonDisplay({
       {/* Profile Picture */}
       <div className="relative flex-shrink-0">
         <img
-          src={profilePicture || generateAvatar(name)}
+          src={imageSrc}
           alt={name}
+          onError={(e) => {
+            // Fallback to generated avatar if image fails to load
+            const target = e.target as HTMLImageElement;
+            const fallbackSrc = generateAvatar(name);
+            if (target.src !== fallbackSrc) {
+              console.warn(`[PersonDisplay] Image failed to load for ${name}, falling back to generated avatar. Original src:`, target.src);
+              target.src = fallbackSrc;
+            }
+          }}
+          onLoad={() => {
+            if (profilePicture) {
+              console.log(`[PersonDisplay] ✅ Successfully loaded profile picture for ${name}`);
+            }
+          }}
           className={`
             ${sizeClasses.image} 
             rounded-full object-cover 
             border-2 border-gray-200
             transition-transform duration-200
             hover:scale-105
+            bg-gray-100
           `}
         />
         {isOnline && (

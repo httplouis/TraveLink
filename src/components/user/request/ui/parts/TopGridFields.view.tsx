@@ -11,6 +11,7 @@ import LocationField from "@/components/user/request/ui/LocationField.ui";
 import DepartmentSelect from "@/components/common/inputs/DepartmentSelect.ui";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import UserSearchableSelect from "@/components/user/request/ui/UserSearchableSelect";
+import RequesterInvitationEditor from "@/components/user/request/ui/RequesterInvitationEditor";
 import { UI_TEXT } from "@/lib/user/request/uiText";
 
 type Props = {
@@ -20,6 +21,9 @@ type Props = {
   onDepartmentChange: (dept: string) => void;
   isHeadRequester?: boolean;
   isRepresentativeSubmission?: boolean; // True if requesting person is different from logged-in user
+  requesterRole?: "faculty" | "head"; // Role type to determine if multiple requesters are allowed
+  requestId?: string; // Request ID for sending invitations (after saving)
+  currentUserEmail?: string; // Current logged-in user's email (for auto-confirm)
 };
 
 export default function TopGridFields({
@@ -29,6 +33,9 @@ export default function TopGridFields({
   onDepartmentChange,
   isHeadRequester,
   isRepresentativeSubmission = false,
+  requesterRole,
+  requestId,
+  currentUserEmail,
 }: Props) {
   // Calculate if signature pad should be shown
   const shouldShowSignaturePad = !isHeadRequester && !isRepresentativeSubmission;
@@ -58,18 +65,47 @@ export default function TopGridFields({
         </div>
 
         <div className="flex flex-col h-full">
-          <UserSearchableSelect
-            value={data?.requestingPerson || ""}
-            onChange={(userName) => onChange({ requestingPerson: userName })}
-            placeholder="Type to search user (e.g., name, email)..."
-            label={UI_TEXT.requester.label}
-            required
-            error={errors["travelOrder.requestingPerson"]}
-          />
-          <div className="mt-1 flex items-start gap-1.5 text-xs text-slate-600 min-h-[20px]">
-            <Info className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
-            <span>Search and select a user. You can edit this if you're filling out the form for someone else</span>
-          </div>
+          {/* Show multiple requester editor if requesterRole is faculty or head */}
+          {(requesterRole === "faculty" || requesterRole === "head") ? (
+            <RequesterInvitationEditor
+              requesters={data?.requesters || []}
+              onChange={(requesters) => {
+                // Update requesters array
+                onChange({ requesters });
+                
+                // Also update requestingPerson to first requester's name (for backward compatibility)
+                if (requesters.length > 0 && requesters[0].name) {
+                  onChange({ 
+                    requesters,
+                    requestingPerson: requesters[0].name 
+                  });
+                  
+                  // Auto-fill department from first requester if not set
+                  if (requesters[0].department && !data?.department) {
+                    onDepartmentChange(requesters[0].department);
+                  }
+                }
+              }}
+              requestId={requestId}
+              requesterRole={requesterRole}
+              currentUserEmail={currentUserEmail}
+            />
+          ) : (
+            <>
+              <UserSearchableSelect
+                value={data?.requestingPerson || ""}
+                onChange={(userName) => onChange({ requestingPerson: userName })}
+                placeholder="Type to search user (e.g., name, email)..."
+                label={UI_TEXT.requester.label}
+                required
+                error={errors["travelOrder.requestingPerson"]}
+              />
+              <div className="mt-1 flex items-start gap-1.5 text-xs text-slate-600 min-h-[20px]">
+                <Info className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+                <span>Search and select a user. You can edit this if you're filling out the form for someone else</span>
+              </div>
+            </>
+          )}
         </div>
       </div>
 

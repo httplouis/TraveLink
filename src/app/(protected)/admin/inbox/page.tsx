@@ -91,14 +91,47 @@ export default function AdminInboxPage() {
     loadPending();
     loadHistory();
 
-    // Real-time polling
+    // Set up Supabase Realtime subscription for instant updates
+    const supabase = createSupabaseClient();
+    let mutateTimeout: NodeJS.Timeout | null = null;
+    
+    const channel = supabase
+      .channel("admin-inbox-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "requests",
+        },
+        (payload: any) => {
+          // Debounce: only trigger refetch after 500ms
+          if (mutateTimeout) clearTimeout(mutateTimeout);
+          mutateTimeout = setTimeout(() => {
+            if (activeTab === "pending") {
+              loadPending();
+            } else {
+              loadHistory();
+            }
+          }, 500);
+        }
+      )
+      .subscribe((status: string) => {
+        console.log("[Admin Inbox] Realtime subscription status:", status);
+      });
+
+    // Fallback polling every 30 seconds
     const interval = setInterval(() => {
       if (activeTab === "pending") {
         loadPending();
       }
-    }, 10000); // Poll every 10 seconds
+    }, 30000);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (mutateTimeout) clearTimeout(mutateTimeout);
+      supabase.removeChannel(channel);
+    };
   }, [loadPending, loadHistory, activeTab]);
 
   const markAsViewed = React.useCallback((id: string) => {

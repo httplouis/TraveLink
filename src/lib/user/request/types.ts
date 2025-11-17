@@ -7,7 +7,7 @@ export type Reason =
   | "visit";          // Visit / Coordination
 
 export type VehicleMode = "institutional" | "owned" | "rent";
-export type RequesterRole = "faculty" | "head" | "org";
+export type RequesterRole = "faculty" | "head";
 
 /** Source of truth for UI choices (readonly/frozen) */
 export const REASON_OPTIONS = [
@@ -47,9 +47,23 @@ export type TravelCosts = {
   justification?: string; // Overall justification (for rent/hired drivers requirement)
 };
 
+export interface RequesterInvitation {
+  id: string; // Unique ID for this requester slot
+  name: string; // User's name
+  email?: string; // User's email
+  department?: string; // Auto-filled from user's department
+  department_id?: string; // Department ID
+  user_id?: string; // User ID from database
+  status?: 'pending' | 'confirmed' | 'declined';
+  invitationId?: string; // ID from database after sending invitation
+  signature?: string; // Base64 signature (if confirmed)
+}
+
 export interface TravelOrder {
   date: string;
-  requestingPerson: string;
+  requestingPerson: string; // Single requester (for backward compatibility)
+  /** NEW: Multiple requesters (when requesterRole is faculty or head) */
+  requesters?: RequesterInvitation[];
   /** Base department text (no auto-abbrev stored here) */
   department: string;
   destination: string;

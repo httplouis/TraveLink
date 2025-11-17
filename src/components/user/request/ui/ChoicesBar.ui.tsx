@@ -18,7 +18,6 @@ const VEHICLES: { label: string; value: VehicleMode }[] = [
 const ROLES: { label: string; value: RequesterRole }[] = [
   { label: "Faculty", value: "faculty" },
   { label: "Head", value: "head" },
-  { label: "Org", value: "org" },
 ];
 
 type Props = {
