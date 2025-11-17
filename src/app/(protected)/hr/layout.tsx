@@ -26,14 +26,14 @@ export default function HRLayout({ children }: { children: React.ReactNode }) {
 
       {/* app body */}
       <div className="fixed inset-x-0 bottom-0 top-[var(--topbar-h)] grid grid-cols-[260px_minmax(0,1fr)]">
-        <aside className="overflow-y-auto border-r border-neutral-200 bg-white/90">
-          <div className="p-3">
+        <aside className="overflow-y-auto border-r border-neutral-200 bg-white/90 flex flex-col">
+          <div className="p-3 flex-1 flex flex-col">
             <HRLeftNav />
           </div>
         </aside>
 
-        <main className="overflow-y-auto px-4 md:px-6 bg-gray-50">
-          <div className="mx-auto max-w-7xl py-6">{children}</div>
+        <main className="overflow-y-auto px-4 md:px-6">
+          <div className="mx-auto max-w-6xl py-6">{children}</div>
         </main>
       </div>
 

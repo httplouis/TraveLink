@@ -165,6 +165,11 @@ export default function VPRequestModal({
     }
   };
 
+  // Check if other VP has already signed
+  const otherVPApproved = request.vp_approved_by && request.vp_approved_by !== request.vp2_approved_by;
+  const isSecondVP = !!request.vp_approved_by && !request.vp2_approved_by;
+  const firstVPName = request.vp_approver?.name || "First VP";
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto mx-4">
@@ -173,6 +178,13 @@ export default function VPRequestModal({
           <div>
             <h2 className="text-xl font-bold text-gray-900">VP Review</h2>
             <p className="text-sm text-gray-600">{request.request_number}</p>
+            {isSecondVP && (
+              <div className="mt-2 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-xs font-medium text-blue-900">
+                  ✓ {firstVPName} has already approved this request. Your approval will complete the VP review process.
+                </p>
+              </div>
+            )}
           </div>
           <button
             onClick={onClose}

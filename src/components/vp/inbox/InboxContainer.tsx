@@ -157,11 +157,21 @@ export default function VPInboxContainer() {
                   <div className="flex items-center gap-3 mb-2">
                     <StatusBadge status={item.status} />
                     <span className="text-sm font-semibold text-gray-900">{requestNumber}</span>
+                    {item.vp_approved_by && !item.vp2_approved_by && (
+                      <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
+                        First VP Approved
+                      </span>
+                    )}
                   </div>
                   <p className="text-sm font-medium text-gray-900 mb-1">{purpose}</p>
                   <div className="flex items-center gap-4 text-xs text-gray-500">
                     <PersonDisplay person={{ name: requester, email: item.requester?.email }} size="xs" />
                     <span>{department}</span>
+                    {item.vp_approver && (
+                      <span className="text-blue-600">
+                        ✓ Approved by {item.vp_approver.name}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="ml-4 flex items-center gap-2">

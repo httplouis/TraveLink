@@ -6,6 +6,22 @@ import HeadRequestModal from "@/components/head/HeadRequestModal";
 import { SkeletonRequestCard } from "@/components/common/ui/Skeleton";
 import StatusBadge from "@/components/common/StatusBadge";
 import PersonDisplay from "@/components/common/PersonDisplay";
+import { createSupabaseClient } from "@/lib/supabase/client";
+
+// Format time ago helper
+function formatTimeAgo(date: Date): string {
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return "just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
+}
 
 export default function HeadInboxPage() {
   const [items, setItems] = React.useState<any[]>([]);
@@ -486,6 +502,16 @@ export default function HeadInboxPage() {
             const requestNumber = item.request_number || "—";
             const travelDate = item.travel_start_date ? new Date(item.travel_start_date).toLocaleDateString() : "—";
             
+            // Debug: Log profile picture data
+            if (item.requester) {
+              console.log(`[HeadInbox] Request ${requestNumber} - Requester profile picture:`, {
+                profile_picture: item.requester.profile_picture,
+                avatar_url: item.requester.avatar_url,
+                name: requester,
+                fullRequester: item.requester
+              });
+            }
+            
             // Check if request is new (within last 24 hours AND not viewed yet)
             const createdAt = item.created_at ? new Date(item.created_at) : null;
             const now = new Date();
@@ -519,15 +545,19 @@ export default function HeadInboxPage() {
                   setSelected(item);
                   markAsViewed(item.id);
                 }}
-                className="group flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-5 py-4 text-left shadow-sm transition-all hover:border-[#7A0010]/30 hover:shadow-lg hover:scale-[1.01]"
+                className={`group flex w-full items-center justify-between rounded-xl border px-5 py-4 text-left shadow-sm transition-all hover:shadow-lg hover:scale-[1.01] ${
+                  isNew && activeTab === 'pending' && !viewedRequests.has(item.id)
+                    ? 'border-green-300 bg-green-50/30'
+                    : 'border-slate-200 bg-white hover:border-[#7A0010]/30'
+                }`}
               >
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2.5 mb-2">
+                  <div className="flex items-center gap-2.5 mb-2.5">
                     <span className="rounded-md bg-[#7A0010] px-2.5 py-0.5 text-xs font-bold text-white">
                       {requestNumber}
                     </span>
-                    {isNew && activeTab === 'pending' && (
-                      <span className="flex items-center gap-1 rounded-md bg-green-500 px-2 py-0.5 text-xs font-bold text-white animate-pulse">
+                    {isNew && activeTab === 'pending' && !viewedRequests.has(item.id) && (
+                      <span className="flex items-center gap-1 rounded-md bg-green-500 px-2 py-0.5 text-xs font-bold text-white shadow-sm">
                         <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                         </svg>
@@ -536,14 +566,25 @@ export default function HeadInboxPage() {
                     )}
                     <span className="text-xs text-slate-400">•</span>
                     <span className="text-xs font-medium text-slate-500">{travelDate}</span>
+                    {activeTab === 'pending' && item.received_at && (
+                      <>
+                        <span className="text-xs text-slate-400">•</span>
+                        <span className="text-xs text-slate-500 flex items-center gap-1">
+                          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          {formatTimeAgo(new Date(item.received_at))}
+                        </span>
+                      </>
+                    )}
                   </div>
                   
-                  {/* Use PersonDisplay component */}
+                  {/* Use PersonDisplay component with profile picture */}
                   <PersonDisplay
                     name={requester}
                     position={item.requester?.position_title}
                     department={department}
-                    profilePicture={item.requester?.profile_picture}
+                    profilePicture={item.requester?.profile_picture || item.requester?.avatar_url || null}
                     size="sm"
                   />
                   

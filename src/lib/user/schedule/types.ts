@@ -14,6 +14,8 @@ export type Booking = {
   purpose: string;
   departAt: string;       // "HH:mm" or ISO datetime
   returnAt: string;       // "HH:mm" or ISO datetime
+  status?: string;        // Request status: pending_*, approved, rejected
+  request_number?: string; // Request number for reference
 };
 
 export type UserCalFilters = {

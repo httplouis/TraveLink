@@ -50,6 +50,7 @@ export default function HeadRequestModal({
   const [preferredVehicleName, setPreferredVehicleName] = React.useState<string>("");
   const [showApproverSelection, setShowApproverSelection] = React.useState(false);
   const [approverOptions, setApproverOptions] = React.useState<any[]>([]);
+  const [loadingApprovers, setLoadingApprovers] = React.useState(false);
 
   // Auto-load saved signature and head info
   React.useEffect(() => {
@@ -158,48 +159,148 @@ export default function HeadRequestModal({
     const needsApproverSelection = true; // Always show selection for flexibility
     
     if (needsApproverSelection) {
-      // Fetch available approvers
+      // Fetch available approvers - Head can send to Admin or return to requester
+      // Also check for parent head if department has parent
+      setLoadingApprovers(true);
+      
       try {
-        const approversRes = await fetch(`/api/approvers?role=admin&department_id=${request.department_id || ''}`);
-        const approversData = await approversRes.json();
+        // Fetch admins using the correct endpoint
+        console.log("[HeadRequestModal] Fetching admins from /api/approvers/list?role=admin");
+        const approversRes = await fetch(`/api/approvers/list?role=admin`);
         
-        console.log("[HeadRequestModal] Approvers response:", approversData);
-        
-        if (approversData.ok) {
-          const options = (approversData.data || []).map((a: any) => ({
-            ...a,
-            roleLabel: "Administrator"
-          }));
-          
-          console.log("[HeadRequestModal] Approver options count:", options.length);
-          console.log("[HeadRequestModal] Approver options:", options);
-          
-          // Set options (even if empty, so modal can show "no approvers" message)
-          setApproverOptions(options);
-          setShowApproverSelection(true);
-          return;
-        } else {
-          console.error("[HeadRequestModal] Approvers API error:", approversData.error);
-          
-          // Try debug endpoint to see what's in database
-          try {
-            const debugRes = await fetch('/api/approvers/debug');
-            const debugData = await debugRes.json();
-            console.log("[HeadRequestModal] Debug info:", debugData);
-          } catch (debugErr) {
-            console.error("[HeadRequestModal] Debug endpoint error:", debugErr);
-          }
-          
-          // Still show modal even if API fails, so user can return to requester
+        if (!approversRes.ok) {
+          console.error("[HeadRequestModal] ❌ API request failed:", approversRes.status, approversRes.statusText);
+          const errorText = await approversRes.text();
+          console.error("[HeadRequestModal] Error response:", errorText);
+          toast.warning("Warning", "Could not fetch admin list. You can still return the request to the requester.");
           setApproverOptions([]);
+          setLoadingApprovers(false);
           setShowApproverSelection(true);
           return;
         }
+        
+        const approversData = await approversRes.json();
+        
+        console.log("[HeadRequestModal] Approvers list response:", {
+          ok: approversData.ok,
+          count: approversData.count,
+          dataLength: approversData.data?.length || 0,
+          error: approversData.error,
+          data: approversData.data
+        });
+        
+        let options: any[] = [];
+        
+        // Add admin options
+        if (approversData.ok && approversData.data && approversData.data.length > 0) {
+          // Map admin users to options
+          const adminOptions = approversData.data.map((a: any) => ({
+            id: a.id,
+            name: a.name,
+            email: a.email,
+            profile_picture: a.profile_picture,
+            phone: a.phone,
+            position: a.position || "Administrator",
+            department: a.department,
+            role: "admin",
+            roleLabel: "Administrator"
+          }));
+          
+          options.push(...adminOptions);
+          console.log("[HeadRequestModal] ✅ Admin options count:", adminOptions.length);
+          console.log("[HeadRequestModal] Admin options:", adminOptions.map(o => ({ name: o.name, email: o.email })));
+        } else {
+          console.warn("[HeadRequestModal] ⚠️ No admins found or API error:", {
+            ok: approversData.ok,
+            error: approversData.error,
+            dataLength: approversData.data?.length || 0,
+            count: approversData.count
+          });
+          if (approversData.error) {
+            toast.warning("Warning", `Could not fetch admin list: ${approversData.error}. You can still return the request to the requester.`);
+          } else {
+            toast.warning("Warning", "No administrators found in the system. You can still return the request to the requester.");
+          }
+        }
+        
+        // Add VP options if this is a head request
+        if (isHeadRequest && vpRes) {
+          try {
+            const vpData = await vpRes.json();
+            if (vpData.ok && vpData.data && vpData.data.length > 0) {
+              const vpOptions = vpData.data.map((v: any) => ({
+                id: v.id,
+                name: v.name,
+                email: v.email,
+                profile_picture: v.profile_picture,
+                phone: v.phone,
+                position: v.position || "Vice President",
+                department: v.department,
+                role: "vp",
+                roleLabel: "Vice President"
+              }));
+              
+              options.push(...vpOptions);
+              console.log("[HeadRequestModal] ✅ VP options count:", vpOptions.length);
+              console.log("[HeadRequestModal] VP options:", vpOptions.map(v => ({ name: v.name, email: v.email })));
+            }
+          } catch (vpErr) {
+            console.error("[HeadRequestModal] Error fetching VP options:", vpErr);
+          }
+        }
+        
+        // Also check for parent department head if applicable
+        if (request.department_id) {
+          try {
+            // Fetch department to check for parent
+            const deptRes = await fetch(`/api/departments?id=${request.department_id}`);
+            const deptData = await deptRes.json();
+            
+            const dept = deptData.departments?.[0] || deptData.data?.[0];
+            if (dept?.parent_department_id) {
+              console.log("[HeadRequestModal] Department has parent:", dept.parent_department_id);
+              // Fetch parent department head
+              const parentHeadRes = await fetch(`/api/approvers/list?role=head`);
+              const parentHeadData = await parentHeadRes.json();
+              
+              if (parentHeadData.ok && parentHeadData.data) {
+                const parentHeads = parentHeadData.data
+                  .filter((h: any) => h.department_id === dept.parent_department_id)
+                  .map((h: any) => ({
+                    id: h.id,
+                    name: h.name,
+                    email: h.email,
+                    profile_picture: h.profile_picture,
+                    phone: h.phone,
+                    position: h.position || "Department Head",
+                    department: h.department,
+                    role: "head",
+                    roleLabel: "Parent Department Head"
+                  }));
+                
+                if (parentHeads.length > 0) {
+                  console.log("[HeadRequestModal] ✅ Found parent head(s):", parentHeads.length);
+                  options = [...parentHeads, ...options];
+                }
+              }
+            }
+          } catch (deptErr) {
+            console.error("[HeadRequestModal] Error fetching parent head:", deptErr);
+          }
+        }
+        
+        // Set options (even if empty, so modal can show "no approvers" message)
+        setApproverOptions(options);
+        setLoadingApprovers(false);
+        setShowApproverSelection(true);
+        return;
       } catch (err) {
-        console.error("Error fetching approvers:", err);
+        console.error("[HeadRequestModal] Error fetching approvers:", err);
+        setLoadingApprovers(false);
         // Still show modal even if fetch fails, so user can return to requester
         setApproverOptions([]);
         setShowApproverSelection(true);
+        toast.warning("Warning", "Could not fetch approvers. You can still return the request to the requester.");
         return;
       }
     }
@@ -359,10 +460,30 @@ export default function HeadRequestModal({
               {t.is_representative && t.submitted_by_name ? (
                 <div className="space-y-3">
                   <div className="flex items-start gap-3">
-                    <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
-                      <Users className="h-5 w-5 text-slate-600" />
-                    </div>
-                    <div>
+                    {(t.requester?.profile_picture || t.requester?.avatar_url) ? (
+                      <img 
+                        src={t.requester.profile_picture || t.requester.avatar_url} 
+                        alt={t.requester_name || "Requester"}
+                        className="h-12 w-12 rounded-full object-cover border-2 border-slate-200 flex-shrink-0"
+                        onError={(e) => {
+                          // Fallback to initials if image fails
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                          const parent = target.parentElement;
+                          if (parent && !parent.querySelector('.fallback-avatar')) {
+                            const fallback = document.createElement('div');
+                            fallback.className = 'h-12 w-12 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-lg flex-shrink-0 fallback-avatar';
+                            fallback.textContent = (t.requester_name || "U").charAt(0).toUpperCase();
+                            parent.appendChild(fallback);
+                          }
+                        }}
+                      />
+                    ) : (
+                      <div className="h-12 w-12 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
+                        {(t.requester_name || "U").charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         <p className="text-base font-semibold text-slate-900">
                           <NameWithProfile
@@ -384,31 +505,78 @@ export default function HeadRequestModal({
                       <p className="text-sm text-slate-600">
                         {t.department?.name || t.department?.code || "No department indicated"}
                       </p>
+                      {t.requester?.position_title && (
+                        <p className="text-xs text-slate-500 mt-0.5">{t.requester.position_title}</p>
+                      )}
                     </div>
                   </div>
-                  <div className="pl-[52px] border-l-2 border-slate-100 ml-5">
-                    <p className="text-xs text-slate-500 mb-1">Submitted by</p>
-                    <p className="text-sm font-medium text-slate-900">
-                      <NameWithProfile
-                        name={t.submitted_by_name}
-                        profile={{
-                          id: t.requester?.id || '',
-                          name: t.submitted_by_name,
-                          email: t.requester?.email,
-                          department: t.department?.name || t.department?.code,
-                          position: t.requester?.position_title,
-                          profile_picture: t.requester?.profile_picture,
-                        }}
-                      />
-                    </p>
+                  <div className="pl-[64px] border-l-2 border-slate-200 ml-3 pt-2">
+                    <p className="text-xs text-slate-500 mb-1.5 font-medium">Submitted by</p>
+                    <div className="flex items-center gap-2">
+                      {(t.requester?.profile_picture || t.requester?.avatar_url) ? (
+                        <img 
+                          src={t.requester.profile_picture || t.requester.avatar_url} 
+                          alt={t.submitted_by_name}
+                          className="h-8 w-8 rounded-full object-cover border border-slate-200"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = 'none';
+                            const parent = target.parentElement;
+                            if (parent && !parent.querySelector('.fallback-avatar-small')) {
+                              const fallback = document.createElement('div');
+                              fallback.className = 'h-8 w-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 text-xs font-bold fallback-avatar-small';
+                              fallback.textContent = t.submitted_by_name.charAt(0).toUpperCase();
+                              parent.appendChild(fallback);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <div className="h-8 w-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 text-xs font-bold">
+                          {t.submitted_by_name.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <p className="text-sm font-medium text-slate-900">
+                        <NameWithProfile
+                          name={t.submitted_by_name}
+                          profile={{
+                            id: t.requester?.id || '',
+                            name: t.submitted_by_name,
+                            email: t.requester?.email,
+                            department: t.department?.name || t.department?.code,
+                            position: t.requester?.position_title,
+                            profile_picture: t.requester?.profile_picture,
+                          }}
+                        />
+                      </p>
+                    </div>
                   </div>
                 </div>
               ) : (
                 <div className="flex items-start gap-3">
-                  <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
-                    <User className="h-5 w-5 text-slate-600" />
-                  </div>
-                  <div>
+                  {(t.requester?.profile_picture || t.requester?.avatar_url) ? (
+                    <img 
+                      src={t.requester.profile_picture || t.requester.avatar_url} 
+                      alt={t.requester_name || "Requester"}
+                      className="h-12 w-12 rounded-full object-cover border-2 border-slate-200 flex-shrink-0"
+                      onError={(e) => {
+                        // Fallback to initials if image fails
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = 'none';
+                        const parent = target.parentElement;
+                        if (parent && !parent.querySelector('.fallback-avatar')) {
+                          const fallback = document.createElement('div');
+                          fallback.className = 'h-12 w-12 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-lg flex-shrink-0 fallback-avatar';
+                          fallback.textContent = (t.requester_name || t.requester?.name || "U").charAt(0).toUpperCase();
+                          parent.appendChild(fallback);
+                        }
+                      }}
+                    />
+                  ) : (
+                    <div className="h-12 w-12 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
+                      {(t.requester_name || t.requester?.name || "U").charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div className="flex-1">
                     <p className="text-base font-semibold text-slate-900 mb-1">
                       <NameWithProfile
                         name={t.requester_name || t.requester?.name || t.requester?.email || "Unknown Requester"}
@@ -425,6 +593,9 @@ export default function HeadRequestModal({
                     <p className="text-sm text-slate-600">
                       {t.department?.name || t.department?.code || "No department indicated"}
                     </p>
+                    {t.requester?.position_title && (
+                      <p className="text-xs text-slate-500 mt-0.5">{t.requester.position_title}</p>
+                    )}
                   </div>
                 </div>
               )}
@@ -554,12 +725,19 @@ export default function HeadRequestModal({
               </section>
             </div>
 
-            <section>
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                Trip details
-              </p>
-              <div className="mt-2 flex items-start justify-between gap-3">
-                <p className="text-sm text-slate-800 flex-1">
+            {/* Destination Section */}
+            <section className="rounded-lg bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <svg className="h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <p className="text-xs font-bold uppercase tracking-wide text-blue-700">
+                  Destination
+                </p>
+              </div>
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-sm font-semibold text-slate-900 flex-1">
                   {t.destination || "No destination provided."}
                 </p>
                 {t.destination && (
@@ -568,18 +746,56 @@ export default function HeadRequestModal({
                       const encodedDest = encodeURIComponent(t.destination);
                       window.open(`https://www.google.com/maps/search/?api=1&query=${encodedDest}`, '_blank');
                     }}
-                    className="flex items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-100 transition-colors"
+                    className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors shadow-sm"
                     title="View on Google Maps"
                   >
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                     </svg>
-                    View on Map
+                    View Map
                   </button>
                 )}
               </div>
             </section>
+
+            {/* Participants Section */}
+            {t.participants && Array.isArray(t.participants) && t.participants.length > 0 && (
+              <section className="rounded-lg bg-gradient-to-br from-purple-50 to-pink-50 border-2 border-purple-200 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Users className="h-5 w-5 text-purple-600" />
+                  <p className="text-xs font-bold uppercase tracking-wide text-purple-700">
+                    Travel Participants ({t.participants.length})
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {t.participants.map((participant: any, idx: number) => {
+                    const participantName = typeof participant === 'string' 
+                      ? participant 
+                      : participant?.name || participant?.id || `Participant ${idx + 1}`;
+                    return (
+                      <div key={idx} className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-purple-100">
+                        <div className="h-8 w-8 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
+                          <span className="text-xs font-bold text-purple-700">
+                            {participantName.charAt(0).toUpperCase()}
+                          </span>
+                        </div>
+                        <span className="text-sm font-medium text-slate-900">{participantName}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                {t.head_included && (
+                  <div className="mt-3 pt-3 border-t border-purple-200">
+                    <p className="text-xs text-purple-700 font-medium flex items-center gap-1.5">
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Department Head is included in travel
+                    </p>
+                  </div>
+                )}
+              </section>
+            )}
 
             {/* requester sig */}
             <section className="rounded-lg bg-slate-50 border border-slate-200 p-4">
@@ -687,13 +903,32 @@ export default function HeadRequestModal({
           {/* RIGHT */}
           <div className="space-y-5 rounded-xl border-2 border-[#7A0010]/20 bg-gradient-to-br from-white to-red-50/30 p-6 shadow-lg">
             <div className="flex items-center gap-3 pb-4 border-b-2 border-[#7A0010]/10">
-              <div className="h-14 w-14 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-xl shadow-lg">
-                {headName ? (
-                  headName.charAt(0).toUpperCase()
-                ) : (
-                  'H'
-                )}
-              </div>
+              {(headProfile?.profile_picture || headProfile?.avatar_url) ? (
+                <img 
+                  src={headProfile.profile_picture || headProfile.avatar_url} 
+                  alt={headName || "Head"}
+                  className="h-14 w-14 rounded-full object-cover border-2 border-[#7A0010] shadow-lg flex-shrink-0"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = 'none';
+                    const parent = target.parentElement;
+                    if (parent && !parent.querySelector('.fallback-avatar-head')) {
+                      const fallback = document.createElement('div');
+                      fallback.className = 'h-14 w-14 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-xl shadow-lg flex-shrink-0 fallback-avatar-head';
+                      fallback.textContent = (headName || 'H').charAt(0).toUpperCase();
+                      parent.appendChild(fallback);
+                    }
+                  }}
+                />
+              ) : (
+                <div className="h-14 w-14 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-xl shadow-lg flex-shrink-0">
+                  {headName ? (
+                    headName.charAt(0).toUpperCase()
+                  ) : (
+                    'H'
+                  )}
+                </div>
+              )}
               <div className="flex-1">
                 <p className="text-xs font-bold uppercase tracking-wider text-[#7A0010]/70">
                   Department Head Endorsement
@@ -711,6 +946,9 @@ export default function HeadRequestModal({
                   <p className="text-xs text-slate-600 mt-0.5 font-medium">
                     {headProfile.department.name || headProfile.department.code}
                   </p>
+                )}
+                {headProfile?.position_title && (
+                  <p className="text-xs text-slate-500 mt-0.5">{headProfile.position_title}</p>
                 )}
               </div>
             </div>
@@ -766,10 +1004,23 @@ export default function HeadRequestModal({
             {/* Comments field for approval */}
             {!viewOnly && (
               <div>
-                <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
-                  Comments <span className="text-red-500">*</span>
-                  <span className="text-xs font-normal text-gray-500 ml-2">(Required, minimum 10 characters)</span>
-                </label>
+                <div className="flex items-center justify-between mb-3">
+                  <label className="block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
+                    Comments <span className="text-red-500">*</span>
+                    <span className="text-xs font-normal text-gray-500 ml-2">(Required, minimum 10 characters)</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setComments("Request approved.")}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#7A0010] bg-white border border-[#7A0010]/30 rounded-lg hover:bg-[#7A0010]/5 hover:border-[#7A0010]/50 transition-colors"
+                    title="Quick fill: Request approved"
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    Quick Fill
+                  </button>
+                </div>
                 <textarea
                   value={comments}
                   onChange={(e) => setComments(e.target.value)}
@@ -840,7 +1091,10 @@ export default function HeadRequestModal({
       {showApproverSelection && (
         <ApproverSelectionModal
           isOpen={showApproverSelection}
-          onClose={() => setShowApproverSelection(false)}
+          onClose={() => {
+            setShowApproverSelection(false);
+            setLoadingApprovers(false);
+          }}
           onSelect={(approverId, approverRole, returnReason) => {
             proceedWithApproval(approverId, approverRole, returnReason);
           }}
@@ -850,7 +1104,8 @@ export default function HeadRequestModal({
           currentRole="head"
           allowReturnToRequester={true}
           requesterId={request.requester_id}
-          requesterName={request.requester?.name || "Requester"}
+          requesterName={request.requester?.name || request.requester_name || "Requester"}
+          loading={loadingApprovers}
         />
       )}
 

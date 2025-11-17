@@ -8,7 +8,7 @@ export type OrgUnit = {
 
 /** Academic departments (sample; extend as needed) */
 export const ACADEMIC_DEPARTMENTS: OrgUnit[] = [
-  { id: "cite", name: "College of Information Technology Education (CITE)", type: "academic" },
+  
   { id: "cba",  name: "College of Business Administration (CBA)",           type: "academic" },
   { id: "coe",  name: "College of Engineering (COE)",                       type: "academic" },
   { id: "ccj",  name: "College of Criminal Justice (CCJ)",                  type: "academic" },

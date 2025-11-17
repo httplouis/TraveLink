@@ -74,14 +74,20 @@ export async function GET(req: NextRequest) {
     console.log("[VP Inbox] VP verified, fetching requests...");
 
     // Get requests requiring VP approval
-    // VP reviews requests with status = pending_vp
-    const { data: requests, error: requestsError } = await supabase
+    // VP reviews requests with status = pending_exec (executive approval needed)
+    // Show requests where:
+    // 1. No VP has approved yet (vp_approved_by is null)
+    // 2. OR first VP has approved but second VP hasn't (vp_approved_by is not null, vp2_approved_by is null, and current VP is not the first VP)
+    const { data: allRequests, error: requestsError } = await supabase
       .from("requests")
-      .select("*")
-      .eq("status", "pending_vp")
-      .is("vp_approved_at", null)
+      .select(`
+        *,
+        vp_approver:users!vp_approved_by(id, name, email, position_title),
+        vp2_approver:users!vp2_approved_by(id, name, email, position_title)
+      `)
+      .eq("status", "pending_exec")
       .order("created_at", { ascending: false })
-      .limit(50);
+      .limit(100);
 
     if (requestsError) {
       console.error("[VP Inbox] Request fetch error:", requestsError);
@@ -90,6 +96,13 @@ export async function GET(req: NextRequest) {
         { status: 500 }
       );
     }
+
+    // Filter requests: show if no VP approved OR if first VP approved but second hasn't (and current VP is not the first)
+    const requests = (allRequests || []).filter((req: any) => {
+      const noVPApproved = !req.vp_approved_by;
+      const firstVPApproved = req.vp_approved_by && !req.vp2_approved_by && req.vp_approved_by !== profile.id;
+      return noVPApproved || firstVPApproved;
+    }).slice(0, 50);
 
     console.log(`[VP Inbox] Found ${requests?.length || 0} requests`);
 

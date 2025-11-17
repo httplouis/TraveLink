@@ -4,6 +4,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { WorkflowEngine } from "@/lib/workflow/engine";
 import { sendEmail, generateParticipantInvitationEmail } from "@/lib/email";
 import { createNotification } from "@/lib/notifications/helpers";
+import { getPhilippineTimestamp } from "@/lib/datetime";
 import crypto from "crypto";
 
 export async function POST(req: Request) {
@@ -104,15 +105,68 @@ export async function POST(req: Request) {
 
     if (profileError) {
       console.error("[/api/requests/submit] Profile fetch error:", profileError);
-      return NextResponse.json({ 
-        ok: false, 
-        error: "Profile not found: " + profileError.message 
-      }, { status: 404 });
+      const errorMessage = profileError.message || profileError.code || "Unknown error";
+      
+      // Check if it's a network/gateway error
+      if (errorMessage.includes("Network connection lost") || 
+          errorMessage.includes("gateway error") ||
+          profileError.code === "PGRST301" ||
+          profileError.code === "PGRST302") {
+        console.warn("[/api/requests/submit] ⚠️ Network error detected, retrying profile fetch...");
+        
+        // Retry once with a simple query
+        try {
+          const retryResult = await supabase
+            .from("users")
+            .select("id, email, name, department, department_id, is_head, is_hr, is_exec")
+            .eq("auth_user_id", user.id)
+            .single();
+          
+          if (retryResult.data && !retryResult.error) {
+            profile = retryResult.data;
+            profileError = null;
+            console.log("[/api/requests/submit] ✅ Retry successful, profile fetched");
+            
+            // Manually fetch department if needed
+            if (profile && profile.department_id) {
+              const { data: dept } = await supabase
+                .from("departments")
+                .select("id, code, name, parent_department_id")
+                .eq("id", profile.department_id)
+                .single();
+              
+              if (dept) {
+                profile.department = dept;
+                console.log("[/api/requests/submit] ✅ Manually fetched department:", dept.name);
+              }
+            }
+          } else {
+            return NextResponse.json({ 
+              ok: false, 
+              error: "Failed to fetch profile. Please try again. Error: " + (retryResult.error?.message || errorMessage)
+            }, { status: 500 });
+          }
+        } catch (retryError: any) {
+          console.error("[/api/requests/submit] Retry also failed:", retryError);
+          return NextResponse.json({ 
+            ok: false, 
+            error: "Network error. Please check your connection and try again."
+          }, { status: 500 });
+        }
+      } else {
+        return NextResponse.json({ 
+          ok: false, 
+          error: "Profile not found: " + errorMessage
+        }, { status: 404 });
+      }
     }
 
     if (!profile) {
       console.error("[/api/requests/submit] No profile data returned for user:", user.id);
-      return NextResponse.json({ ok: false, error: "Profile not found" }, { status: 404 });
+      return NextResponse.json({ 
+        ok: false, 
+        error: "Profile not found. Please ensure your account is properly set up." 
+      }, { status: 404 });
     }
 
     // Extract request data early to check if representative submission
@@ -123,9 +177,17 @@ export async function POST(req: Request) {
     
     // Quick check: might this be a representative submission?
     // For travel orders, check if requesting person is different from submitter
+    // Handle multiple requesters (for faculty/head role)
+    const hasMultipleRequesters = !isSeminar && Array.isArray(travelOrder.requesters) && travelOrder.requesters.length > 0;
+    const primaryRequester = hasMultipleRequesters 
+      ? travelOrder.requesters[0] 
+      : null;
+    
     const requestingPersonName = isSeminar
       ? (profile.name || profile.email || "Unknown")
-      : (travelOrder.requestingPerson || profile.name || profile.email || "Unknown");
+      : hasMultipleRequesters
+        ? (primaryRequester?.name || travelOrder.requestingPerson || profile.name || profile.email || "Unknown")
+        : (travelOrder.requestingPerson || profile.name || profile.email || "Unknown");
     const submitterName = profile.name || profile.email || "Unknown";
     const mightBeRepresentative = !isSeminar && 
       requestingPersonName.trim().toLowerCase() !== submitterName.trim().toLowerCase();
@@ -1058,6 +1120,39 @@ export async function POST(req: Request) {
       } : {}),
     };
 
+    // CRITICAL VALIDATION: Faculty alone cannot travel - must have head included
+    // This applies to travel orders only (not seminars)
+    if (!isSeminar && requestedStatus !== "draft") {
+      const headIncluded = participants.some((p: any) => p.is_head) || requestingPersonIsHead || requesterIsHead;
+      
+      if (!requesterIsHead && !requestingPersonIsHead && !headIncluded) {
+        console.error("[/api/requests/submit] ❌ VALIDATION FAILED: Faculty alone cannot travel");
+        return NextResponse.json({
+          ok: false,
+          error: "Faculty members cannot travel alone. The department head must be included in the travel participants. Please add the department head to the participants list."
+        }, { status: 400 });
+      }
+    }
+
+    // VALIDATION: For multiple requesters, check if all are confirmed (for final submission, not draft)
+    if (hasMultipleRequesters && requestedStatus !== "draft" && Array.isArray(travelOrder.requesters)) {
+      const allConfirmed = travelOrder.requesters.every((req: any) => 
+        req.status === 'confirmed' || req.invitationId // Either confirmed or invitation already sent
+      );
+      
+      if (!allConfirmed) {
+        const pendingCount = travelOrder.requesters.filter((req: any) => 
+          req.status !== 'confirmed' && !req.invitationId
+        ).length;
+        
+        console.error("[/api/requests/submit] ❌ VALIDATION FAILED: Not all requesters confirmed");
+        return NextResponse.json({
+          ok: false,
+          error: `Cannot submit request: ${pendingCount} requester(s) have not been confirmed yet. Please send invitations and wait for all requesters to confirm before submitting.`
+        }, { status: 400 });
+      }
+    }
+
     // Final validation: Ensure all NOT NULL fields are present
     const requiredFields = {
       request_type: requestData.request_type,
@@ -1212,6 +1307,7 @@ export async function POST(req: Request) {
       ? `Request submitted on behalf of ${requestingPersonName} by ${submitterName}`
       : "Request created and submitted";
     
+    const now = getPhilippineTimestamp();
     await supabase.from("request_history").insert({
       request_id: data.id,
       action: "created",
@@ -1225,7 +1321,10 @@ export async function POST(req: Request) {
         requester_id: mightBeRepresentative && requestingPersonUser ? requestingPersonUser.id : profile.id,
         requester_name: requestingPersonName,
         submitter_id: profile.id,
-        submitter_name: submitterName
+        submitter_name: submitterName,
+        submission_time: now, // Track submission time
+        signature_time: null, // Will be set when signed
+        receive_time: null // Will be set when received by approver
       }
     });
     
@@ -1237,6 +1336,65 @@ export async function POST(req: Request) {
     });
 
     console.log("[/api/requests/submit] Request created:", data.id, "Status:", initialStatus);
+
+    // Handle multiple requesters (save to requester_invitations table)
+    if (hasMultipleRequesters && Array.isArray(travelOrder.requesters) && travelOrder.requesters.length > 0) {
+      console.log("[/api/requests/submit] 📝 Processing multiple requesters:", travelOrder.requesters.length);
+      
+      try {
+        // Separate requesters into: already invited (have invitationId) and new ones
+        const alreadyInvited = travelOrder.requesters.filter((req: any) => req.invitationId);
+        const newRequesters = travelOrder.requesters.filter((req: any) => !req.invitationId && req.name && req.email);
+        
+        // Update existing invitations to link to this request (if they were created for a draft)
+        if (alreadyInvited.length > 0) {
+          const invitationIds = alreadyInvited.map((req: any) => req.invitationId).filter(Boolean);
+          if (invitationIds.length > 0) {
+            const { error: updateError } = await supabase
+              .from("requester_invitations")
+              .update({ request_id: data.id })
+              .in("id", invitationIds);
+            
+            if (updateError) {
+              console.error("[/api/requests/submit] ❌ Failed to update existing invitations:", updateError);
+            } else {
+              console.log("[/api/requests/submit] ✅ Updated", invitationIds.length, "existing requester invitations");
+            }
+          }
+        }
+        
+        // Create new requester invitations for requesters without invitationId
+        if (newRequesters.length > 0) {
+          const requesterInvitations = newRequesters.map((req: any) => ({
+            request_id: data.id,
+            email: req.email.toLowerCase(),
+            name: req.name,
+            user_id: req.user_id || null,
+            department: req.department || null,
+            department_id: req.department_id || null,
+            invited_by: profile.id,
+            status: 'pending', // Will be confirmed when they accept
+            token: crypto.randomBytes(32).toString('hex'), // Generate new token
+            expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days
+            signature: req.signature || null,
+          }));
+
+          const { error: inviteError } = await supabase
+            .from("requester_invitations")
+            .insert(requesterInvitations);
+
+          if (inviteError) {
+            console.error("[/api/requests/submit] ❌ Failed to create requester invitations:", inviteError);
+            // Don't fail the request creation, just log the error
+          } else {
+            console.log("[/api/requests/submit] ✅ Created", requesterInvitations.length, "new requester invitations");
+          }
+        }
+      } catch (err: any) {
+        console.error("[/api/requests/submit] ❌ Error processing multiple requesters:", err);
+        // Don't fail the request creation
+      }
+    }
 
     // Log to audit_logs
     try {

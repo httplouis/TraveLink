@@ -27,38 +27,48 @@ export default function UserSchedulePage() {
   });
 
   const [availability, setAvailability] = React.useState<AvailabilityMap>({});
+  const [availabilityWithStatus, setAvailabilityWithStatus] = React.useState<import("@/lib/user/schedule/repo").AvailabilityWithStatus>({});
   const [selectedISO, setSelectedISO] = React.useState<string | null>(null);
   const [bookings, setBookings] = React.useState<Booking[]>([]);
   const [modalOpen, setModalOpen] = React.useState(false);
-  const [pendingRequests, setPendingRequests] = React.useState<Array<{id: string; dates: string[]; title: string; status: string}>>([]);
 
-  // fetch availability for visible month
-  const refresh = React.useCallback(() => {
-    setAvailability(
-      UserScheduleRepo.list({
+  // fetch availability for visible month with status
+  const refresh = React.useCallback(async () => {
+    try {
+      // Get basic availability map
+      const basicAvailability = await UserScheduleRepo.list({
         month,
         year,
         vehicle: filters.vehicle,
         q: filters.q,
-      })
-    );
+      });
+      setAvailability(basicAvailability);
+
+      // Get detailed availability with status
+      const detailedAvailability = await UserScheduleRepo.listWithStatus({
+        month,
+        year,
+        vehicle: filters.vehicle,
+        q: filters.q,
+      });
+      setAvailabilityWithStatus(detailedAvailability);
+    } catch (error) {
+      console.error("[Schedule] Refresh error:", error);
+    }
   }, [month, year, filters.vehicle, filters.q]);
 
   React.useEffect(() => {
     refresh();
   }, [refresh]);
 
-  // Fetch pending requests
+  // Real-time updates: Poll every 10 seconds
   React.useEffect(() => {
-    fetch('/api/schedule/user-pending')
-      .then(res => res.json())
-      .then(data => {
-        if (data.ok) {
-          setPendingRequests(data.data || []);
-        }
-      })
-      .catch(err => console.error('Failed to fetch pending requests:', err));
-  }, []);
+    const interval = setInterval(() => {
+      refresh();
+    }, 10000); // 10 seconds
+
+    return () => clearInterval(interval);
+  }, [refresh]);
 
   // === ALL dates of the visible month (do NOT skip available/empty days) ===
   const monthDatesAll = React.useMemo(() => {
@@ -79,9 +89,9 @@ export default function UserSchedulePage() {
   }
 
   // open modal for a date
-  function openDate(iso: string) {
+  async function openDate(iso: string) {
     setSelectedISO(iso);
-    const items = UserScheduleRepo.getBookings(iso, {
+    const items = await UserScheduleRepo.getBookings(iso, {
       vehicle: filters.vehicle,
       q: filters.q,
     });
@@ -168,11 +178,11 @@ export default function UserSchedulePage() {
             month={month}
             year={year}
             availability={filtered}
+            availabilityWithStatus={availabilityWithStatus}
             onPrev={onPrev}
             onNext={onNext}
             onSelectDate={openDate}
             selectedISO={selectedISO}
-            pendingRequests={pendingRequests}
           />
         </div>
       </div>

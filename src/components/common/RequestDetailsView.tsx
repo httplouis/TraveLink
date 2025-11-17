@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   MapPin, 
@@ -14,7 +14,9 @@ import {
   ExternalLink,
   Building2,
   Clock,
-  Route
+  Route,
+  CheckCircle2,
+  PenTool
 } from 'lucide-react';
 import { WowCard, WowButton } from './Modal';
 import ProfilePicture, { PersonDisplay } from './ProfilePicture';
@@ -132,6 +134,33 @@ export default function RequestDetailsView({
   onClose,
   className = ''
 }: RequestDetailsViewProps) {
+  const [confirmedRequesters, setConfirmedRequesters] = useState<any[]>([]);
+  const [loadingRequesters, setLoadingRequesters] = useState(false);
+
+  // Fetch confirmed requesters
+  useEffect(() => {
+    if (request?.id) {
+      fetchConfirmedRequesters();
+    }
+  }, [request?.id]);
+
+  const fetchConfirmedRequesters = async () => {
+    try {
+      setLoadingRequesters(true);
+      const response = await fetch(`/api/requesters/status?request_id=${request.id}`);
+      const data = await response.json();
+      
+      if (data.ok && data.data) {
+        // Filter only confirmed requesters
+        const confirmed = data.data.filter((req: any) => req.status === 'confirmed');
+        setConfirmedRequesters(confirmed);
+      }
+    } catch (err) {
+      console.error('[RequestDetailsView] Error fetching confirmed requesters:', err);
+    } finally {
+      setLoadingRequesters(false);
+    }
+  };
   const [activeTab, setActiveTab] = useState<'details' | 'timeline'>('timeline');
   
   // Function to open Google Maps
@@ -829,6 +858,96 @@ export default function RequestDetailsView({
               </div>
             </div>
           </WowCard>
+
+          {/* Confirmed Requesters Panel */}
+          {confirmedRequesters.length > 0 && (
+            <WowCard className="p-6">
+              <h3 className="text-xl font-bold text-gray-900 mb-6 pb-3 border-b-2 border-gray-200">
+                Additional Requesters
+              </h3>
+              <div className="space-y-4">
+                {loadingRequesters ? (
+                  <div className="text-center py-4">
+                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#7A0010] border-t-transparent mx-auto"></div>
+                    <p className="text-xs text-gray-500 mt-2">Loading requesters...</p>
+                  </div>
+                ) : (
+                  confirmedRequesters.map((requester, index) => (
+                    <motion.div
+                      key={requester.id || index}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.1 }}
+                      className="p-4 bg-green-50 border border-green-200 rounded-lg"
+                    >
+                      {/* Requester Info */}
+                      <div className="flex items-start gap-3 mb-3">
+                        <div className="flex-shrink-0">
+                          {requester.user_id ? (
+                            <ProfilePicture
+                              userId={requester.user_id}
+                              name={requester.name || 'Unknown'}
+                              size="sm"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                              <User className="w-5 h-5 text-green-600" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-gray-900 truncate">
+                            {requester.name || requester.email || 'Unknown Requester'}
+                          </p>
+                          {requester.department && (
+                            <p className="text-xs text-gray-600 mt-0.5">{requester.department}</p>
+                          )}
+                          {requester.email && (
+                            <p className="text-xs text-gray-500 mt-0.5 truncate">{requester.email}</p>
+                          )}
+                        </div>
+                        <div className="flex-shrink-0">
+                          <div className="flex items-center gap-1 px-2 py-1 bg-green-100 rounded-full">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
+                            <span className="text-xs font-medium text-green-700">Confirmed</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Signature */}
+                      {requester.signature && (
+                        <div className="mt-3 pt-3 border-t border-green-200">
+                          <div className="flex items-center gap-2 mb-2">
+                            <PenTool className="w-4 h-4 text-green-600" />
+                            <span className="text-xs font-semibold text-green-900">Signature</span>
+                          </div>
+                          <div className="bg-white rounded-lg p-2 border border-green-200">
+                            <img
+                              src={requester.signature}
+                              alt={`${requester.name || 'Requester'} signature`}
+                              className="w-full h-16 object-contain"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Confirmation Time */}
+                      {requester.confirmed_at && (
+                        <div className="mt-3 pt-3 border-t border-green-200">
+                          <div className="flex items-center gap-2">
+                            <Clock className="w-3.5 h-3.5 text-gray-500" />
+                            <span className="text-xs text-gray-600">
+                              Confirmed: <span className="font-medium text-gray-900">{formatLongDateTime(requester.confirmed_at)}</span>
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </motion.div>
+                  ))
+                )}
+              </div>
+            </WowCard>
+          )}
 
           {/* Moved signatures to bottom */}
 

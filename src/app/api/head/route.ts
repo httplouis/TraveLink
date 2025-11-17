@@ -44,17 +44,56 @@ export async function GET() {
     console.log(`[GET /api/head] Fetching requests for head: ${profile.email}, dept: ${profile.department_id}`);
 
     // Get requests for THIS head's department with status = pending_head or pending_parent_head
+    // Also fetch request_history to get receive_time
     const { data, error } = await supabase
       .from("requests")
       .select(`
         *,
-        requester:users!requester_id(id, name, email),
+        requester:users!requester_id(id, name, email, profile_picture, avatar_url, position_title),
         department:departments!department_id(id, name, code)
       `)
       .in("status", ["pending_head", "pending_parent_head"])
       .eq("department_id", profile.department_id)
       .order("created_at", { ascending: false })
       .limit(50); // Limit to 50 most recent requests
+
+    // Debug: Log profile picture data from database
+    if (data && data.length > 0) {
+      console.log("[GET /api/head] Sample requester data (first request):", {
+        requester_id: data[0].requester_id,
+        requester: data[0].requester,
+        profile_picture: data[0].requester?.profile_picture,
+        avatar_url: data[0].requester?.avatar_url,
+        hasRequester: !!data[0].requester
+      });
+    }
+
+    // Fetch request_history to get receive_time for each request
+    if (data && data.length > 0) {
+      const requestIds = data.map(r => r.id);
+      const { data: historyData } = await supabase
+        .from("request_history")
+        .select("request_id, metadata, created_at")
+        .in("request_id", requestIds)
+        .eq("actor_role", "head")
+        .order("created_at", { ascending: false });
+
+      // Map receive_time to requests
+      if (historyData) {
+        const historyMap = new Map();
+        historyData.forEach((h: any) => {
+          if (!historyMap.has(h.request_id)) {
+            const receiveTime = h.metadata?.receive_time || h.created_at;
+            historyMap.set(h.request_id, receiveTime);
+          }
+        });
+
+        // Add receive_time to each request
+        data.forEach((req: any) => {
+          req.received_at = historyMap.get(req.id) || req.created_at;
+        });
+      }
+    }
 
     if (error) {
       console.error("[GET /api/head] Query error:", error);
@@ -172,6 +211,12 @@ export async function PATCH(req: Request) {
         if (next_approver_role === "admin") {
           nextStatus = "pending_admin";
           nextApproverRole = "admin";
+        } else if (next_approver_role === "vp") {
+          // Head is sending directly to VP (skip admin/comptroller)
+          nextStatus = "pending_exec";
+          nextApproverRole = "vp";
+          // Store which VP to send to
+          updateData.next_vp_id = next_approver_id;
         } else {
           // Default workflow
           const hasParentDepartment = !!(request.department as any)?.parent_department_id;
@@ -208,6 +253,9 @@ export async function PATCH(req: Request) {
       if (next_approver_id && next_approver_role && next_approver_role !== "requester") {
         if (next_approver_role === "admin") {
           updateData.next_admin_id = next_approver_id;
+        } else if (next_approver_role === "vp") {
+          // Head is sending directly to VP
+          updateData.next_vp_id = next_approver_id;
         }
       }
 
@@ -248,7 +296,7 @@ export async function PATCH(req: Request) {
         .single();
       console.log(`[PATCH /api/head] Verification after update:`, verifyData);
 
-      // Log in history
+      // Log in history with complete tracking
       await supabase.from("request_history").insert({
         request_id: id,
         action: "approved",
@@ -257,6 +305,16 @@ export async function PATCH(req: Request) {
         previous_status: request.status,
         new_status: nextStatus,
         comments: comments || "Approved by department head",
+        metadata: {
+          signature_at: now,
+          signature_time: now, // Track signature time
+          receive_time: request.created_at || now, // Track when request was received by head
+          submission_time: request.created_at || null, // Track original submission time
+          sent_to: nextApproverRole,
+          sent_to_id: next_approver_id || null,
+          return_reason: return_reason || null,
+          approval_time: now
+        }
       });
 
       // Create notifications
@@ -288,6 +346,21 @@ export async function PATCH(req: Request) {
             action_url: `/user/submissions?view=${id}`,
             action_label: "View Request",
             priority: "normal",
+          });
+        }
+
+        // Notify next approver (if specified)
+        if (next_approver_id && next_approver_role && next_approver_role !== "requester") {
+          await createNotification({
+            user_id: next_approver_id,
+            notification_type: "request_pending_signature",
+            title: "Request Requires Your Approval",
+            message: `A travel order request ${request.request_number || ''} has been sent to you for approval.`,
+            related_type: "request",
+            related_id: id,
+            action_url: next_approver_role === "admin" ? `/admin/requests?view=${id}` : `/inbox?view=${id}`,
+            action_label: "Review Request",
+            priority: "high",
           });
         }
       } catch (notifError: any) {

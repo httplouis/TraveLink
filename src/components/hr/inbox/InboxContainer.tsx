@@ -8,6 +8,7 @@ import TrackingModal from "@/components/common/TrackingModal";
 import StatusBadge from "@/components/common/StatusBadge";
 import PersonDisplay from "@/components/common/PersonDisplay";
 import { Eye } from "lucide-react";
+import { createSupabaseClient } from "@/lib/supabase/client";
 
 export default function HRInboxContainer() {
   const [items, setItems] = React.useState<any[]>([]);
@@ -41,13 +42,42 @@ export default function HRInboxContainer() {
     load();
   }, []);
 
-  // Real-time polling - refresh every 10 seconds
+  // Real-time updates using Supabase Realtime
   React.useEffect(() => {
-    const interval = setInterval(() => {
-      load(false); // Silent refresh
-    }, 10000);
+    const supabase = createSupabaseClient();
+    let mutateTimeout: NodeJS.Timeout | null = null;
+    
+    const channel = supabase
+      .channel("hr-inbox-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "requests",
+        },
+        (payload: any) => {
+          // Debounce: only trigger refetch after 500ms
+          if (mutateTimeout) clearTimeout(mutateTimeout);
+          mutateTimeout = setTimeout(() => {
+            load(false); // Silent refresh
+          }, 500);
+        }
+      )
+      .subscribe((status: string) => {
+        console.log("[HR Inbox] Realtime subscription status:", status);
+      });
 
-    return () => clearInterval(interval);
+    // Fallback polling every 30 seconds
+    const interval = setInterval(() => {
+      load(false);
+    }, 30000);
+
+    return () => {
+      clearInterval(interval);
+      if (mutateTimeout) clearTimeout(mutateTimeout);
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   function handleApproved(id: string) {

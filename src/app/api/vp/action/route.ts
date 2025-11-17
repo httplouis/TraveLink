@@ -43,25 +43,128 @@ export async function POST(request: Request) {
     console.log(`[VP Action] ${action} by ${vpUser.name} on request ${requestId}`);
 
     if (action === "approve") {
-      // Routing logic: 
-      // - If requester is a Head (Dean/Director), MUST go to President
-      // - Otherwise, also goes to President (final approver)
-      const newStatus = "pending_president";
+      // Get request to check requester type and if other VP has already signed
+      const { data: request } = await supabase
+        .from("requests")
+        .select(`
+          *, 
+          requester:users!requester_id(role, is_head, exec_type),
+          vp_approver:users!vp_approved_by(id, name, email),
+          vp2_approver:users!vp2_approved_by(id, name, email)
+        `)
+        .eq("id", requestId)
+        .single();
 
-      const updateData: any = {
-        status: newStatus,
-        current_approver_role: "president",
-        exec_level: "president",
-        vp_approved_at: getPhilippineTimestamp(),
-        vp_approved_by: vpUser.id,
-        vp_signature: signature || null,
-        vp_comments: notes || null,
-        updated_at: getPhilippineTimestamp(),
-      };
+      if (!request) {
+        return NextResponse.json({ ok: false, error: "Request not found" }, { status: 404 });
+      }
 
-      // If this is a head request, ensure it goes to President
-      if (is_head_request) {
-        updateData.requires_president_approval = true;
+      const requester = request.requester as any;
+      const requesterIsHead = request.requester_is_head || requester?.is_head || false;
+      const requesterRole = requester?.role || "faculty";
+      const headIncluded = request.head_included || false;
+
+      // Check if this VP has already approved
+      const alreadyApprovedByThisVP = 
+        (request.vp_approved_by === vpUser.id) || 
+        (request.vp2_approved_by === vpUser.id);
+      
+      if (alreadyApprovedByThisVP) {
+        return NextResponse.json({ 
+          ok: false, 
+          error: "You have already approved this request" 
+        }, { status: 400 });
+      }
+
+      // Check if other VP has already signed
+      const otherVPApproved = 
+        (request.vp_approved_by && request.vp_approved_by !== vpUser.id) ||
+        (request.vp2_approved_by && request.vp2_approved_by !== vpUser.id);
+      
+      const isFirstVP = !request.vp_approved_by;
+      const isSecondVP = !isFirstVP && !request.vp2_approved_by;
+
+      const now = getPhilippineTimestamp();
+      const { nextApproverId } = body; // For choice-based sending
+
+      // Check if there are multiple requesters from different departments (for tracking)
+      const { data: requesters } = await supabase
+        .from("requester_invitations")
+        .select("department_id")
+        .eq("request_id", requestId)
+        .eq("status", "confirmed");
+      
+      const uniqueDepartments = new Set(
+        (requesters || [])
+          .map((r: any) => r.department_id)
+          .filter(Boolean)
+      );
+
+      let updateData: any = {};
+      let newStatus: string;
+      let nextApproverRole: string;
+      let message: string;
+
+      if (isFirstVP) {
+        // First VP is signing
+        updateData.vp_approved_at = now;
+        updateData.vp_approved_by = vpUser.id;
+        updateData.vp_signature = signature || null;
+        updateData.vp_comments = notes || null;
+        
+        // If multiple departments, wait for second VP
+        if (uniqueDepartments.size > 1) {
+          newStatus = "pending_exec"; // Stay in pending_exec, wait for second VP
+          nextApproverRole = "vp";
+          message = "Request approved. Waiting for second VP approval.";
+        } else {
+          // Single department, proceed with normal flow
+          if (requesterIsHead || requesterRole === "director" || requesterRole === "dean") {
+            newStatus = "pending_exec";
+            nextApproverRole = "president";
+            message = "Request approved and sent to President";
+          } else if (!requesterIsHead && headIncluded) {
+            newStatus = "approved";
+            nextApproverRole = "requester";
+            message = "Request fully approved";
+          } else {
+            newStatus = "approved";
+            nextApproverRole = "requester";
+            message = "Request fully approved";
+          }
+        }
+      } else if (isSecondVP) {
+        // Second VP is signing - both VPs have now approved
+        updateData.vp2_approved_at = now;
+        updateData.vp2_approved_by = vpUser.id;
+        updateData.vp2_signature = signature || null;
+        updateData.vp2_comments = notes || null;
+        updateData.both_vps_approved = true;
+        
+        // Both VPs approved - skip admin/comptroller, go directly to president
+        newStatus = "pending_exec";
+        nextApproverRole = "president";
+        message = "Both VPs have approved. Request sent directly to President (skipping admin/comptroller).";
+      } else {
+        return NextResponse.json({ 
+          ok: false, 
+          error: "Both VPs have already approved this request" 
+        }, { status: 400 });
+      }
+
+      updateData.status = newStatus;
+      updateData.current_approver_role = nextApproverRole;
+      updateData.exec_level = requesterIsHead ? "president" : "vp";
+      updateData.updated_at = now;
+
+      // If going to President, set next president ID
+      if (newStatus === "pending_exec" && nextApproverRole === "president" && nextApproverId) {
+        updateData.next_president_id = nextApproverId;
+      }
+
+      // If fully approved, set final approval timestamp
+      if (newStatus === "approved") {
+        updateData.final_approved_at = now;
       }
 
       const { error: updateError } = await supabase
@@ -74,22 +177,86 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: false, error: updateError.message }, { status: 500 });
       }
 
-      // Log to request history
+      // Log to request history with complete tracking
+      const historyComment = isSecondVP 
+        ? `Second VP approved. Both VPs have now approved. ${notes || ''}`
+        : isFirstVP && uniqueDepartments.size > 1
+        ? `First VP approved. Waiting for second VP. ${notes || ''}`
+        : notes || (newStatus === "approved" ? "Approved by VP - Request fully approved" : "Approved by VP, forwarded to President");
+
       await supabase.from("request_history").insert({
         request_id: requestId,
         action: "approved",
         actor_id: vpUser.id,
         actor_role: "vp",
-        previous_status: "pending_vp",
+        previous_status: request.status || "pending_exec",
         new_status: newStatus,
-        comments: notes || "Approved by VP, forwarded to President",
+        comments: historyComment,
+        metadata: {
+          signature_at: now,
+          signature_time: now,
+          receive_time: request.created_at || now,
+          submission_time: request.created_at || null,
+          sent_to: nextApproverRole,
+          sent_to_id: nextApproverId || null,
+          requester_type: requesterIsHead ? "head" : "faculty",
+          head_included: headIncluded,
+          routing_decision: isSecondVP ? "both_vps_approved_skip_to_president" : (newStatus === "approved" ? "vp_final" : "vp_to_president"),
+          is_first_vp: isFirstVP,
+          is_second_vp: isSecondVP,
+          other_vp_approved: otherVPApproved,
+          both_vps_approved: isSecondVP
+        }
       });
 
-      console.log(`[VP Approve] ✅ Request ${requestId} approved, sent to President`);
+      // Create notifications
+      try {
+        const { createNotification } = await import("@/lib/notifications/helpers");
+        
+        // Notify requester
+        if (request.requester_id) {
+          await createNotification({
+            user_id: request.requester_id,
+            notification_type: newStatus === "approved" ? "request_approved" : "request_status_change",
+            title: newStatus === "approved" ? "Request Fully Approved" : "Request Approved by VP",
+            message: newStatus === "approved" 
+              ? `Your travel order request ${request.request_number || ''} has been fully approved!`
+              : `Your travel order request ${request.request_number || ''} has been approved by VP and is now with President.`,
+            related_type: "request",
+            related_id: requestId,
+            action_url: `/user/submissions?view=${requestId}`,
+            action_label: "View Request",
+            priority: newStatus === "approved" ? "high" : "normal",
+          });
+        }
+
+        // Notify President if going to President
+        if (newStatus === "pending_exec" && nextApproverRole === "president" && nextApproverId) {
+          await createNotification({
+            user_id: nextApproverId,
+            notification_type: "request_pending_signature",
+            title: "Request Requires Your Approval",
+            message: `A travel order request ${request.request_number || ''} has been sent to you for final approval.`,
+            related_type: "request",
+            related_id: requestId,
+            action_url: `/president/inbox?view=${requestId}`,
+            action_label: "Review Request",
+            priority: "high",
+          });
+        }
+      } catch (notifError: any) {
+        console.error("[VP Approve] Failed to create notifications:", notifError);
+      }
+
+      console.log(`[VP Approve] ✅ Request ${requestId} ${newStatus === "approved" ? "fully approved" : "approved, sent to President"}`);
       
       return NextResponse.json({
         ok: true,
-        message: "Approved and sent to President",
+        message: message,
+        data: {
+          nextStatus: newStatus,
+          nextApproverRole: nextApproverRole
+        }
       });
 
     } else if (action === "reject") {

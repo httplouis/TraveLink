@@ -153,9 +153,27 @@ export function validateTravelOrderForm(data: any): Record<string, string> {
   if (dateRangeErrors.startError) errors["travelOrder.departureDate"] = dateRangeErrors.startError;
   if (dateRangeErrors.endError) errors["travelOrder.returnDate"] = dateRangeErrors.endError;
 
-  // Required fields
-  const requesterError = validateRequired(data.requestingPerson, "Requesting person");
-  if (requesterError) errors["travelOrder.requestingPerson"] = requesterError;
+  // Required fields - check for multiple requesters OR single requesting person
+  const hasMultipleRequesters = Array.isArray(data.requesters) && data.requesters.length > 0;
+  if (hasMultipleRequesters) {
+    // Validate multiple requesters
+    if (data.requesters.length === 0) {
+      errors["travelOrder.requesters"] = "At least one requester is required";
+    } else {
+      // Check if at least one requester has a name
+      const hasValidRequester = data.requesters.some((req: any) => req.name && req.name.trim());
+      if (!hasValidRequester) {
+        errors["travelOrder.requesters"] = "At least one requester must have a name";
+      }
+      
+      // Check if all requesters with invitations are confirmed (for submission, not draft)
+      // This validation will be done on the server side during submission
+    }
+  } else {
+    // Single requester validation
+    const requesterError = validateRequired(data.requestingPerson, "Requesting person");
+    if (requesterError) errors["travelOrder.requestingPerson"] = requesterError;
+  }
 
   const deptError = validateRequired(data.department, "Department");
   if (deptError) errors["travelOrder.department"] = deptError;

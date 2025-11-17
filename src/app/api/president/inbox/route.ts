@@ -58,11 +58,17 @@ export async function GET(req: NextRequest) {
     }
 
     // Get requests requiring Presidential approval
-    // President reviews high priority and high budget requests
+    // President reviews:
+    // 1. Requests with status = pending_exec where both VPs have approved (both_vps_approved = true)
+    // 2. Requests with status = pending_president (legacy)
     const { data: requests, error: requestsError } = await supabase
       .from("requests")
-      .select("*")
-      .eq("status", "pending_president")
+      .select(`
+        *,
+        vp_approver:users!vp_approved_by(id, name, email, position_title),
+        vp2_approver:users!vp2_approved_by(id, name, email, position_title)
+      `)
+      .or(`and(status.eq.pending_exec,both_vps_approved.eq.true),status.eq.pending_president`)
       .is("president_approved_at", null)
       .order("created_at", { ascending: false })
       .limit(50);

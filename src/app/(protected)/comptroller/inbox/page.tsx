@@ -6,6 +6,7 @@ import { Search, Clock, User, Building2, MapPin, Calendar, DollarSign, FileText 
 import ComptrollerReviewModal from "@/components/comptroller/ComptrollerReviewModal";
 import { motion } from "framer-motion";
 import PageTitle from "@/components/common/PageTitle";
+import { createSupabaseClient } from "@/lib/supabase/client";
 
 type Request = {
   id: string;
@@ -41,8 +42,40 @@ export default function ComptrollerInboxPage() {
 
   React.useEffect(() => {
     loadRequests();
-    const interval = setInterval(loadRequests, 5000); // Auto-refresh every 5 seconds
-    return () => clearInterval(interval);
+    
+    // Set up Supabase Realtime subscription for instant updates
+    const supabase = createSupabaseClient();
+    let mutateTimeout: NodeJS.Timeout | null = null;
+    
+    const channel = supabase
+      .channel("comptroller-inbox-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "requests",
+        },
+        (payload: any) => {
+          // Debounce: only trigger refetch after 500ms
+          if (mutateTimeout) clearTimeout(mutateTimeout);
+          mutateTimeout = setTimeout(() => {
+            loadRequests();
+          }, 500);
+        }
+      )
+      .subscribe((status: string) => {
+        console.log("[Comptroller Inbox] Realtime subscription status:", status);
+      });
+
+    // Fallback polling every 30 seconds
+    const interval = setInterval(loadRequests, 30000);
+    
+    return () => {
+      clearInterval(interval);
+      if (mutateTimeout) clearTimeout(mutateTimeout);
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const loadRequests = async () => {

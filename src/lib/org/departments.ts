@@ -26,7 +26,7 @@ export const ACADEMIC_DEPARTMENTS = [
 const OFFICES_LONG = [
   "Accounting Department (AD)",
   "Admission Office (AO)",
-  "Audting Department (AuD)", // original spelling kept from your source list
+  "Auditing Department (AuD)",
   "Community Relations Department (CRD)",
   "Corporate Planning and Development Office (CPDO)",
   "Data Protection Office (DPO)",
@@ -119,7 +119,7 @@ export const DEPARTMENT_HEADS: Record<string, string> = {
   // Offices (samples)
   "Accounting Department": "Ms. Paula Reyes",
   "Admission Office": "Ms. Tricia Gomez",
-  "Audting Department": "Mr. Leo Castillo",
+  "Auditing Department": "Mr. Leo Castillo",
   "Community Relations Department": "Ms. Iya Morales",
   "Corporate Planning and Development Office": "Mr. Daniel Lim",
   "Data Protection Office": "Mr. Noel Sarmiento",

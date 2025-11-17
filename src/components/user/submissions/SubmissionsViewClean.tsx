@@ -10,6 +10,7 @@ import RequestCard from "@/components/common/RequestCardWow";
 import RequestDetailsView from "@/components/common/RequestDetailsView";
 import Modal from "@/components/common/Modal";
 import RequestStatusTracker from "@/components/common/RequestStatusTracker";
+import PaymentConfirmationButton from "./PaymentConfirmationButton";
 
 type Request = {
   id: string;
@@ -290,6 +291,22 @@ export default function SubmissionsView() {
                 onView={() => viewDetails(req)}
                 className="hover:shadow-xl transition-all duration-300"
               />
+              
+              {/* Payment Confirmation Button - Show if payment required */}
+              {req.status === "pending_comptroller" && (req as any).payment_required && !(req as any).payment_confirmed && (
+                <div className="px-4 pt-2">
+                  <PaymentConfirmationButton
+                    requestId={req.id}
+                    requestNumber={req.request_number}
+                    totalBudget={req.total_budget || 0}
+                    editedBudget={(req as any).comptroller_edited_budget}
+                    onConfirmed={() => {
+                      // Refresh submissions after payment confirmation
+                      fetchSubmissions();
+                    }}
+                  />
+                </div>
+              )}
               
               {/* Mini Progress Tracker */}
               <div className="px-4 pb-2">

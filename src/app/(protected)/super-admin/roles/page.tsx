@@ -5,6 +5,7 @@ import * as React from "react";
 import { Shield, Search, Clock, UserCheck, X, CheckCircle2, AlertCircle } from "lucide-react";
 import { useToast } from "@/components/common/ui/Toast";
 import { createSupabaseClient } from "@/lib/supabase/client";
+import { SkeletonTable } from "@/components/common/ui/Skeleton";
 
 interface RoleGrant {
   id: string;
@@ -110,15 +111,32 @@ export default function SuperAdminRolesPage() {
         return "bg-amber-100 text-amber-800 border-amber-200";
       case "exec":
         return "bg-red-100 text-red-800 border-red-200";
+      case "comptroller":
+        return "bg-indigo-100 text-indigo-800 border-indigo-200";
+      case "faculty":
+        return "bg-teal-100 text-teal-800 border-teal-200";
+      case "staff":
+        return "bg-cyan-100 text-cyan-800 border-cyan-200";
+      case "driver":
+        return "bg-orange-100 text-orange-800 border-orange-200";
       default:
         return "bg-gray-100 text-gray-800 border-gray-200";
     }
   };
 
-  if (loading) {
+  if (loading && grants.length === 0) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-purple-600 border-t-transparent" />
+      <div className="space-y-6">
+        <div>
+          <div className="h-9 w-64 bg-gray-200 rounded animate-pulse mb-2" />
+          <div className="h-5 w-96 bg-gray-200 rounded animate-pulse" />
+        </div>
+        <div className="flex gap-4">
+          <div className="h-12 flex-1 bg-gray-200 rounded-xl animate-pulse" />
+          <div className="h-12 w-40 bg-gray-200 rounded-xl animate-pulse" />
+          <div className="h-12 w-40 bg-gray-200 rounded-xl animate-pulse" />
+        </div>
+        <SkeletonTable rows={10} />
       </div>
     );
   }
@@ -154,8 +172,11 @@ export default function SuperAdminRolesPage() {
           <option value="admin">Admin</option>
           <option value="head">Head</option>
           <option value="hr">HR</option>
-          <option value="vp">VP</option>
-          <option value="exec">Executive</option>
+          <option value="exec">Executive (VP/President)</option>
+          <option value="comptroller">Comptroller</option>
+          <option value="faculty">Faculty</option>
+          <option value="staff">Staff</option>
+          <option value="driver">Driver</option>
         </select>
         <select
           value={filterStatus}
@@ -171,7 +192,7 @@ export default function SuperAdminRolesPage() {
       {/* Role Grants Table */}
       <div className="bg-white rounded-xl border-2 border-gray-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto -mx-6 px-6">
-          <table className="w-full min-w-[1200px]">
+          <table className="w-full min-w-[1400px]">
             <thead className="bg-gradient-to-r from-purple-600 to-purple-700 text-white">
               <tr>
                 <th className="px-6 py-4 text-left text-sm font-bold min-w-[200px]">User</th>
@@ -180,7 +201,7 @@ export default function SuperAdminRolesPage() {
                 <th className="px-6 py-4 text-left text-sm font-bold min-w-[180px]">Granted At</th>
                 <th className="px-6 py-4 text-left text-sm font-bold min-w-[150px]">Revoked By</th>
                 <th className="px-6 py-4 text-left text-sm font-bold min-w-[180px]">Revoked At</th>
-                <th className="px-6 py-4 text-left text-sm font-bold min-w-[200px]">Reason</th>
+                <th className="px-6 py-4 text-left text-sm font-bold min-w-[300px]">Reason</th>
                 <th className="px-6 py-4 text-center text-sm font-bold min-w-[100px] sticky right-0 bg-gradient-to-r from-purple-600 to-purple-700">Status</th>
               </tr>
             </thead>
@@ -244,7 +265,10 @@ export default function SuperAdminRolesPage() {
                       )}
                     </td>
                     <td className="px-6 py-4">
-                      <div className="text-sm text-gray-700 max-w-[200px] truncate" title={grant.reason || ""}>
+                      <div 
+                        className="text-sm text-gray-700 max-w-[300px] break-words" 
+                        title={grant.reason || ""}
+                      >
                         {grant.reason || "—"}
                       </div>
                     </td>

@@ -28,6 +28,13 @@ interface User {
   status: string;
 }
 
+interface Department {
+  id: string;
+  name: string;
+  code: string;
+  type?: string;
+}
+
 const ROLE_OPTIONS = [
   { value: "faculty", label: "Faculty / Staff", icon: UserCheck },
   { value: "head", label: "Department Head", icon: Shield },
@@ -42,6 +49,7 @@ export default function AdminUsersPage() {
   const router = useRouter();
   const toast = useToast();
   const [users, setUsers] = React.useState<User[]>([]);
+  const [departments, setDepartments] = React.useState<Department[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [editingId, setEditingId] = React.useState<string | null>(null);
@@ -50,7 +58,20 @@ export default function AdminUsersPage() {
 
   React.useEffect(() => {
     fetchUsers();
+    fetchDepartments();
   }, []);
+
+  const fetchDepartments = async () => {
+    try {
+      const response = await fetch("/api/departments");
+      const data = await response.json();
+      if (response.ok && data.ok) {
+        setDepartments(data.departments || []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch departments:", err);
+    }
+  };
 
   const fetchUsers = async () => {
     try {
@@ -80,6 +101,7 @@ export default function AdminUsersPage() {
     setEditingId(user.id);
     setEditData({
       role: user.role,
+      department_id: user.department_id || user.department?.id || undefined, // PRESERVE department_id
       is_head: user.is_head || false,
       is_admin: user.is_admin || false,
       is_vp: user.is_vp || false,
@@ -183,13 +205,11 @@ export default function AdminUsersPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
-          <p className="mt-1 text-sm text-gray-600">
-            Manage user roles and permissions. All users default to Faculty/Staff upon registration.
-          </p>
-        </div>
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
+        <p className="mt-1 text-sm text-gray-600">
+          Manage user roles and permissions. All users default to Faculty/Staff upon registration.
+        </p>
       </div>
 
       {/* Search */}
@@ -249,7 +269,20 @@ export default function AdminUsersPage() {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      {user.department ? (
+                      {editingId === user.id ? (
+                        <select
+                          value={editData.department_id || ""}
+                          onChange={(e) => setEditData({ ...editData, department_id: e.target.value || null })}
+                          className="rounded-lg border-2 border-gray-300 px-3 py-1.5 text-sm font-medium focus:border-[#7A0010] focus:ring-2 focus:ring-[#7A0010]/20 outline-none min-w-[200px]"
+                        >
+                          <option value="">No department</option>
+                          {departments.map((dept) => (
+                            <option key={dept.id} value={dept.id}>
+                              {dept.name} ({dept.code})
+                            </option>
+                          ))}
+                        </select>
+                      ) : user.department ? (
                         <div className="flex items-center gap-2">
                           <Building2 className="h-4 w-4 text-gray-400" />
                           <div>

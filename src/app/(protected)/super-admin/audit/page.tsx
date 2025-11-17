@@ -5,6 +5,7 @@ import * as React from "react";
 import { FileText, Search, Clock, User, Activity, Filter, Download } from "lucide-react";
 import { useToast } from "@/components/common/ui/Toast";
 import { createSupabaseClient } from "@/lib/supabase/client";
+import { SkeletonTable } from "@/components/common/ui/Skeleton";
 
 interface AuditLog {
   id: string;
@@ -179,8 +180,20 @@ export default function SuperAdminAuditPage() {
 
   if (loading && logs.length === 0) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-purple-600 border-t-transparent" />
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="h-9 w-48 bg-gray-200 rounded animate-pulse mb-2" />
+            <div className="h-5 w-96 bg-gray-200 rounded animate-pulse" />
+          </div>
+          <div className="h-11 w-40 bg-gray-200 rounded-lg animate-pulse" />
+        </div>
+        <div className="flex gap-4">
+          <div className="h-12 flex-1 bg-gray-200 rounded-xl animate-pulse" />
+          <div className="h-12 w-40 bg-gray-200 rounded-xl animate-pulse" />
+          <div className="h-12 w-40 bg-gray-200 rounded-xl animate-pulse" />
+        </div>
+        <SkeletonTable rows={10} />
       </div>
     );
   }

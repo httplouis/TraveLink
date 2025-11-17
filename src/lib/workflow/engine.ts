@@ -46,12 +46,16 @@ export class WorkflowEngine {
   /**
    * Determine the next status after an approval
    * @param hasParentDepartment - Whether the department has a parent (for office hierarchy)
+   * @param requesterRole - Role of requester: 'head', 'faculty', 'director', 'dean', etc.
+   * @param headIncluded - Whether head is included in travel (for faculty requests)
    */
   static getNextStatus(
     currentStatus: RequestStatus,
     requesterIsHead: boolean,
     hasBudget: boolean,
-    hasParentDepartment: boolean = false
+    hasParentDepartment: boolean = false,
+    requesterRole?: string,
+    headIncluded: boolean = false
   ): RequestStatus {
     switch (currentStatus) {
       case 'draft':
@@ -82,14 +86,29 @@ export class WorkflowEngine {
 
       case 'pending_comptroller':
         // After comptroller approval, go to HR
+        // NOTE: Comptroller may send back to requester for payment confirmation first
+        // This is handled by the API endpoint, not here
         return 'pending_hr';
 
       case 'pending_hr':
-        // After HR approval, go to executive
-        return 'pending_exec';
+        // After HR approval, determine next based on requester type
+        // Head/Director/Dean → President (via exec)
+        // Faculty + Head → VP only
+        // Faculty alone → Should not reach here (validation prevents)
+        if (requesterIsHead || requesterRole === 'director' || requesterRole === 'dean') {
+          // Head/Director/Dean must go to President
+          return 'pending_exec'; // Will be routed to President
+        } else {
+          // Faculty + Head included → VP only (not President)
+          return 'pending_exec'; // Will be routed to VP
+        }
 
       case 'pending_exec':
-        // After executive approval, request is fully approved
+        // After executive approval, check if head requester
+        // Head requester skips VP → goes directly to President
+        // If already approved by President, fully approved
+        // Otherwise, if VP approved and head requester, go to President
+        // This logic is handled in the API endpoint based on exec_type
         return 'approved';
 
       case 'approved':
@@ -161,6 +180,7 @@ export class WorkflowEngine {
 
   /**
    * Validate if a request can be created based on business rules
+   * CRITICAL RULE: Faculty alone cannot travel - must have head included
    */
   static async validateNewRequest(params: {
     requestDate: Date;
@@ -174,9 +194,9 @@ export class WorkflowEngine {
   }): Promise<{ valid: boolean; errors: string[] }> {
     const errors: string[] = [];
 
-    // Rule 1: Faculty requests must include department head
+    // Rule 1: Faculty requests MUST include department head (cannot travel alone)
     if (!params.requesterIsHead && !params.headIncluded) {
-      errors.push('Faculty requests must include the department head in travel participants');
+      errors.push('Faculty members cannot travel alone. The department head must be included in travel participants.');
     }
 
     // Rule 2: Check daily VEHICLE request limit (5 per day)
