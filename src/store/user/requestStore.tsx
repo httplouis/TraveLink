@@ -70,6 +70,14 @@ function mergeData(base: RequestFormData, patch: Partial<RequestFormData>): Requ
     } as NonNullable<RequestFormData["seminar"]>;
   }
 
+  // transportation (deep)
+  if (patch.transportation) {
+    next.transportation = {
+      ...(base.transportation || {}),
+      ...(patch.transportation || {}),
+    } as NonNullable<RequestFormData["transportation"]>;
+  }
+
   return next;
 }
 
@@ -92,6 +100,7 @@ type Store = {
   patchCosts: (p: Partial<NonNullable<RequestFormData["travelOrder"]["costs"]>>) => void;
   patchSchoolService: (p: Partial<NonNullable<RequestFormData["schoolService"]>>) => void;
   patchSeminar: (p: Partial<NonNullable<RequestFormData["seminar"]>>) => void;
+  patchTransportation: (p: Partial<NonNullable<RequestFormData["transportation"]>>) => void;
 
   // generic deep-merge (safe kahit mali ang tumawag)
   patch: (p: Partial<RequestFormData>) => void;
@@ -148,6 +157,11 @@ export const useRequestStore = create<Store>((set, get) => ({
   patchSeminar: (p) =>
     set((s) => ({
       data: mergeData(s.data, { seminar: p } as Partial<RequestFormData>),
+    })),
+
+  patchTransportation: (p) =>
+    set((s) => ({
+      data: mergeData(s.data, { transportation: p } as Partial<RequestFormData>),
     })),
 
   /* generic deep-merge — para kahit may lumang component na tumatawag ng patch({ travelOrder: { date: ... } })

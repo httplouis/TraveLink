@@ -42,10 +42,12 @@ export default function SeminarApplicationForm({
   data,
   onChange,
   errors,
+  onParticipantsStatusChange,
 }: {
   data: any;
   onChange: (patch: any) => void;
   errors: Errors;
+  onParticipantsStatusChange?: (allConfirmed: boolean) => void; // Callback when all participants are confirmed
 }) {
   const selectedType =
     (data?.typeOfTraining?.[0] as (typeof TRAINING_TYPES)[number]) ?? "";
@@ -355,6 +357,8 @@ export default function SeminarApplicationForm({
               if (data?.allParticipantsConfirmed !== allConfirmed) {
                 onChange({ allParticipantsConfirmed: allConfirmed });
               }
+              // Also notify parent component
+              onParticipantsStatusChange?.(allConfirmed);
             }}
           />
         </div>

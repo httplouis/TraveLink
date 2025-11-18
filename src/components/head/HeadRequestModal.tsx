@@ -51,6 +51,10 @@ export default function HeadRequestModal({
   const [showApproverSelection, setShowApproverSelection] = React.useState(false);
   const [approverOptions, setApproverOptions] = React.useState<any[]>([]);
   const [loadingApprovers, setLoadingApprovers] = React.useState(false);
+  const [multiDeptRequesters, setMultiDeptRequesters] = React.useState<any[]>([]);
+  const [loadingRequesters, setLoadingRequesters] = React.useState(false);
+  const [defaultApproverId, setDefaultApproverId] = React.useState<string | undefined>(undefined);
+  const [defaultApproverName, setDefaultApproverName] = React.useState<string | undefined>(undefined);
 
   // Auto-load saved signature and head info
   React.useEffect(() => {
@@ -79,13 +83,27 @@ export default function HeadRequestModal({
         if (request.requester_signature) {
           setRequesterSignature(request.requester_signature);
         }
+
+        // Load multi-department requesters if this is a multi-department request
+        setLoadingRequesters(true);
+        try {
+          const requesterRes = await fetch(`/api/requesters/status?request_id=${request.id}`);
+          const requesterData = await requesterRes.json();
+          if (requesterData.ok && requesterData.data) {
+            setMultiDeptRequesters(requesterData.data.filter((r: any) => r.status === 'confirmed') || []);
+          }
+        } catch (err) {
+          console.error("[HeadRequestModal] Failed to load multi-department requesters:", err);
+        } finally {
+          setLoadingRequesters(false);
+        }
       } catch (err) {
         console.error("[HeadRequestModal] Failed to load data:", err);
       }
     }
     
     loadData();
-  }, [request.requester_signature]);
+  }, [request.id, request.requester_signature]);
   
   // Load preferred driver/vehicle names
   React.useEffect(() => {
@@ -250,6 +268,8 @@ export default function HeadRequestModal({
         }
         
         // Also check for parent department head if applicable
+        // Note: Parent head can be any of the 4 VPs (SVP Academics, VP External, etc.)
+        // Each VP has different departments under them. For CCMS, parent head is SVP Academics.
         if (request.department_id) {
           try {
             // Fetch department to check for parent
@@ -259,7 +279,7 @@ export default function HeadRequestModal({
             const dept = deptData.departments?.[0] || deptData.data?.[0];
             if (dept?.parent_department_id) {
               console.log("[HeadRequestModal] Department has parent:", dept.parent_department_id);
-              // Fetch parent department head
+              // Fetch parent department head (could be a VP like SVP Academics)
               const parentHeadRes = await fetch(`/api/approvers/list?role=head`);
               const parentHeadData = await parentHeadRes.json();
               
@@ -275,11 +295,12 @@ export default function HeadRequestModal({
                     position: h.position || "Department Head",
                     department: h.department,
                     role: "head",
-                    roleLabel: "Parent Department Head"
+                    roleLabel: "Parent Department Head (VP)" // Note: Parent head is typically a VP
                   }));
                 
                 if (parentHeads.length > 0) {
                   console.log("[HeadRequestModal] ✅ Found parent head(s):", parentHeads.length);
+                  // Put parent heads first in the list (before admins)
                   options = [...parentHeads, ...options];
                 }
               }
@@ -287,6 +308,23 @@ export default function HeadRequestModal({
           } catch (deptErr) {
             console.error("[HeadRequestModal] Error fetching parent head:", deptErr);
           }
+        }
+        
+        // Find Ma'am TM (Trizzia Maree Casino) as default approver for admin selection
+        const maamTM = options.find((opt: any) => 
+          (opt.role === 'admin' || opt.roleLabel === 'Administrator') &&
+          (opt.name?.toLowerCase().includes('trizzia') || 
+           opt.email?.toLowerCase().includes('trizzia') ||
+           opt.name?.toLowerCase().includes('casino'))
+        );
+        
+        if (maamTM) {
+          setDefaultApproverId(maamTM.id);
+          setDefaultApproverName(maamTM.name);
+          console.log("[HeadRequestModal] ✅ Found Ma'am TM as default approver:", maamTM.name);
+        } else {
+          setDefaultApproverId(undefined);
+          setDefaultApproverName(undefined);
         }
         
         // Set options (even if empty, so modal can show "no approvers" message)
@@ -611,6 +649,57 @@ export default function HeadRequestModal({
                 </div>
               )}
             </section>
+
+            {/* Multi-Department Requesters Section */}
+            {multiDeptRequesters.length > 0 && (
+              <section className="rounded-lg bg-blue-50/50 border border-blue-200 p-5 shadow-sm">
+                <p className="text-xs font-medium uppercase tracking-wider text-blue-700 mb-3 flex items-center gap-2">
+                  <Users className="h-4 w-4" />
+                  Additional Requesters ({multiDeptRequesters.length})
+                </p>
+                <div className="space-y-3">
+                  {loadingRequesters ? (
+                    <div className="text-center py-4">
+                      <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-500 border-t-transparent mx-auto"></div>
+                      <p className="text-xs text-blue-600 mt-2">Loading requesters...</p>
+                    </div>
+                  ) : (
+                    multiDeptRequesters.map((requester: any, index: number) => (
+                      <div
+                        key={requester.id || index}
+                        className="bg-white rounded-lg border border-blue-100 p-3"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1">
+                            <p className="font-semibold text-slate-900 text-sm">{requester.name || 'Unknown'}</p>
+                            {requester.department && (
+                              <p className="text-xs text-slate-600 mt-1">{requester.department}</p>
+                            )}
+                            {requester.email && (
+                              <p className="text-xs text-slate-500 mt-0.5">{requester.email}</p>
+                            )}
+                            <div className="mt-2 flex items-center gap-2 text-xs text-green-600">
+                              <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                              Confirmed {requester.confirmed_at ? new Date(requester.confirmed_at).toLocaleDateString() : ''}
+                            </div>
+                          </div>
+                          {requester.signature && (
+                            <img
+                              src={requester.signature}
+                              alt={`${requester.name}'s signature`}
+                              className="h-10 w-24 rounded border border-slate-300 bg-white object-contain"
+                            />
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <p className="text-xs text-blue-600 mt-3 pt-3 border-t border-blue-200">
+                  💡 This request involves multiple departments. You are approving for your department's requesters.
+                </p>
+              </section>
+            )}
             
             {/* Preferred Driver/Vehicle Section - ALWAYS SHOW FOR DEBUG */}
             <section className="rounded-lg bg-white p-5 border border-slate-200 shadow-sm">
@@ -1106,6 +1195,8 @@ export default function HeadRequestModal({
           requesterId={request.requester_id}
           requesterName={request.requester?.name || request.requester_name || "Requester"}
           loading={loadingApprovers}
+          defaultApproverId={defaultApproverId}
+          defaultApproverName={defaultApproverName}
         />
       )}
 

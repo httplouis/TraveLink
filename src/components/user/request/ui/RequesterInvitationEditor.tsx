@@ -112,7 +112,20 @@ export default function RequesterInvitationEditor({
   };
 
   const removeRequester = (id: string) => {
-    onChange(requesters.filter(req => req.id !== id));
+    // Prevent removing if it's the only requester (must have at least 1)
+    if (requesters.length <= 1) {
+      toast.warning("Cannot remove", "At least one requester is required.");
+      return;
+    }
+    
+    const updatedRequesters = requesters.filter(req => req.id !== id);
+    onChange(updatedRequesters);
+    
+    // Also clear any invitation data for this requester if it exists
+    if (requestId) {
+      // Optionally: Delete invitation from database if it exists
+      // This is handled by the backend when the request is saved
+    }
   };
 
   const updateRequester = (id: string, updates: Partial<RequesterInvitation>) => {
@@ -243,45 +256,69 @@ export default function RequesterInvitationEditor({
       const data = await response.json();
 
       if (data.ok && data.data) {
-        const updatedRequesters = requesters.map(req => {
-          const updated = data.data.find((d: any) => 
-            d.email === req.email || 
-            d.id === req.invitationId ||
-            (req.invitationId && d.id === req.invitationId)
-          );
-          if (updated) {
-            // Create a unique key for this requester (use invitationId or email)
-            const requesterKey = updated.id || req.invitationId || req.email || req.id;
-            const previousNotifiedStatus = notifiedStatusRef.current.get(requesterKey);
-            
-            // Only show toast if status changed AND we haven't notified about this specific status change yet
-            if (updated.status !== req.status && updated.status !== previousNotifiedStatus) {
-              // Update the notified status map
-              notifiedStatusRef.current.set(requesterKey, updated.status);
+        // Only update existing requesters - don't add new ones from database
+        // This prevents removed requesters from being restored
+        const updatedRequesters = requesters
+          .map(req => {
+            const updated = data.data.find((d: any) => 
+              d.email === req.email || 
+              d.id === req.invitationId ||
+              (req.invitationId && d.id === req.invitationId)
+            );
+            if (updated) {
+              // Create a unique key for this requester (use invitationId or email)
+              const requesterKey = updated.id || req.invitationId || req.email || req.id;
+              const previousNotifiedStatus = notifiedStatusRef.current.get(requesterKey);
               
-              if (updated.status === 'confirmed') {
-                toast.success("Requester confirmed", `${updated.name || updated.email} has confirmed their participation`);
-              } else if (updated.status === 'declined') {
-                toast.info("Requester declined", `${updated.name || updated.email} has declined the invitation`);
+              // Only show toast if status changed AND we haven't notified about this specific status change yet
+              if (updated.status !== req.status && updated.status !== previousNotifiedStatus) {
+                // Update the notified status map
+                notifiedStatusRef.current.set(requesterKey, updated.status);
+                
+                if (updated.status === 'confirmed') {
+                  toast.success("Requester confirmed", `${updated.name || updated.email} has confirmed their participation`);
+                } else if (updated.status === 'declined') {
+                  toast.info("Requester declined", `${updated.name || updated.email} has declined the invitation`);
+                }
               }
+              
+              // Always update with latest data (name, department, signature, etc.)
+              return { 
+                ...req, 
+                status: updated.status,
+                name: updated.name || req.name,
+                department: updated.department || req.department,
+                department_id: updated.department_id || req.department_id,
+                signature: updated.signature || req.signature, // Include signature
+                invitationId: updated.id || req.invitationId,
+              };
             }
-            
-            // Always update with latest data (name, department, signature, etc.)
-            return { 
-              ...req, 
-              status: updated.status,
-              name: updated.name || req.name,
-              department: updated.department || req.department,
-              department_id: updated.department_id || req.department_id,
-              signature: updated.signature || req.signature, // Include signature
-              invitationId: updated.id || req.invitationId,
-            };
-          }
-          return req;
-        });
+            return req;
+          })
+          // Filter out requesters that were removed (exist in local state but not in database)
+          // Only if they have an invitationId (were saved to database)
+          .filter(req => {
+            if (req.invitationId && req.invitationId !== 'auto-confirmed') {
+              const existsInDb = data.data.some((d: any) => 
+                d.id === req.invitationId || d.email === req.email
+              );
+              // If it was in database but now removed, filter it out
+              return existsInDb;
+            }
+            // Keep requesters without invitationId (not yet saved to database)
+            return true;
+          });
 
-        // Always update to get latest status and signature data
-        onChange(updatedRequesters);
+        // Only update if there are changes (to avoid unnecessary re-renders)
+        const hasChanges = updatedRequesters.length !== requesters.length ||
+          updatedRequesters.some((req, idx) => {
+            const old = requesters[idx];
+            return !old || req.status !== old.status || req.invitationId !== old.invitationId;
+          });
+        
+        if (hasChanges) {
+          onChange(updatedRequesters);
+        }
       }
     } catch (err) {
       console.error("[RequesterInvitationEditor] Error checking requester status:", err);
@@ -650,7 +687,7 @@ export default function RequesterInvitationEditor({
         </div>
       )}
 
-      {/* Link Modal */}
+      {/* Link Modal - Redesigned with Modern UI */}
       {showLinkModal && linkToShow && (
         <Modal
           isOpen={showLinkModal}
@@ -658,106 +695,104 @@ export default function RequesterInvitationEditor({
           title=""
           size="lg"
         >
-          <div className="space-y-6">
-            {/* Header Section */}
-            <div className="relative">
-              <div className="absolute inset-0 bg-gradient-to-r from-[#7A0010]/5 via-transparent to-transparent rounded-t-xl" />
-              <div className="relative flex items-start gap-4 pb-4 border-b border-gray-200">
-                <div className="flex-shrink-0">
-                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center shadow-lg">
-                    <Mail className="h-6 w-6 text-white" />
-                  </div>
+          <div className="space-y-6 p-1">
+            {/* Modern Header with Icon */}
+            <div className="flex items-center gap-4 pb-4 border-b border-gray-100">
+              <div className="flex-shrink-0">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#7A0010] via-[#8a0015] to-[#5e000d] flex items-center justify-center shadow-lg shadow-[#7A0010]/20">
+                  <Mail className="h-7 w-7 text-white" />
                 </div>
-                <div className="flex-1 min-w-0 pt-1">
-                  <h3 className="text-lg font-bold text-gray-900 mb-1">Confirmation Link</h3>
-                  <div className="flex items-center gap-2 mt-2">
-                    <span className="text-xs font-medium text-gray-500">Recipient:</span>
-                    <span className="text-sm font-semibold text-[#7A0010] truncate">{linkToShow.email}</span>
-                  </div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-xl font-bold text-gray-900 mb-2">Confirmation Link</h3>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Recipient</span>
+                  <span className="text-sm font-semibold text-[#7A0010] truncate">{linkToShow.email}</span>
                 </div>
               </div>
             </div>
 
-            {/* Link Input Section */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <label className="block text-sm font-semibold text-gray-900">
-                  Confirmation URL
-                </label>
-                <span className="text-xs text-gray-500 font-medium">Click to select all</span>
-              </div>
+            {/* Link Input Section - Modern Design */}
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-gray-700 mb-3">
+                Confirmation URL
+              </label>
               <div className="group relative">
-                <div className="absolute inset-0 bg-gradient-to-r from-[#7A0010]/10 via-transparent to-transparent rounded-xl opacity-0 group-hover:opacity-100 transition-opacity" />
-                <div className="relative flex items-center gap-3 p-4 bg-gray-50 rounded-xl border-2 border-gray-200 hover:border-[#7A0010]/30 transition-all shadow-sm">
-                  <div className="flex-1 min-w-0">
+                <div className="relative flex items-stretch gap-0 bg-white rounded-xl border-2 border-gray-200 hover:border-[#7A0010]/40 transition-all duration-200 shadow-sm hover:shadow-md overflow-hidden">
+                  <div className="flex-1 min-w-0 p-4">
                     <input
                       type="text"
                       value={linkToShow.link}
                       readOnly
-                      className="w-full text-sm font-mono text-gray-900 bg-transparent border-none outline-none break-all cursor-text"
+                      className="w-full text-sm font-mono text-gray-800 bg-transparent border-none outline-none break-all cursor-text select-all"
                       onClick={(e) => (e.target as HTMLInputElement).select()}
                     />
                   </div>
-                  <div className="flex-shrink-0 w-px h-8 bg-gray-300" />
+                  <div className="flex-shrink-0 w-px h-auto bg-gray-200 my-2" />
                   <button
                     type="button"
                     onClick={copyLink}
-                    className={`flex-shrink-0 px-5 py-2.5 rounded-lg font-semibold text-sm transition-all duration-200 flex items-center gap-2 shadow-sm ${
+                    className={`flex-shrink-0 px-6 py-4 font-semibold text-sm transition-all duration-200 flex items-center gap-2 ${
                       copied
-                        ? "bg-green-500 text-white hover:bg-green-600 scale-105"
-                        : "bg-[#7A0010] text-white hover:bg-[#5e000d] hover:scale-105 active:scale-95"
+                        ? "bg-gradient-to-r from-green-500 to-green-600 text-white hover:from-green-600 hover:to-green-700"
+                        : "bg-gradient-to-r from-[#7A0010] to-[#5e000d] text-white hover:from-[#8a0015] hover:to-[#7A0010]"
                     }`}
                     title={copied ? "Copied to clipboard!" : "Copy to clipboard"}
                   >
                     {copied ? (
                       <>
-                        <Check className="h-4 w-4" />
-                        <span>Copied</span>
+                        <Check className="h-5 w-5" />
+                        <span>Copied!</span>
                       </>
                     ) : (
                       <>
-                        <Copy className="h-4 w-4" />
+                        <Copy className="h-5 w-5" />
                         <span>Copy</span>
                       </>
                     )}
                   </button>
                 </div>
+                <p className="text-xs text-gray-400 mt-2 text-right">Click the URL to select all</p>
               </div>
             </div>
 
-            {/* Info Section */}
-            <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-blue-50 via-indigo-50/50 to-blue-50 border border-blue-200/60 shadow-sm">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-blue-100/30 rounded-full -mr-16 -mt-16 blur-2xl" />
+            {/* Info Section - Enhanced Design */}
+            <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-blue-50 via-blue-50/80 to-indigo-50/50 border border-blue-200/80 shadow-sm">
+              {/* Decorative background elements */}
+              <div className="absolute top-0 right-0 w-40 h-40 bg-blue-100/40 rounded-full -mr-20 -mt-20 blur-3xl" />
+              <div className="absolute bottom-0 left-0 w-32 h-32 bg-indigo-100/30 rounded-full -ml-16 -mb-16 blur-2xl" />
+              
               <div className="relative p-5">
                 <div className="flex items-start gap-4">
-                  <div className="flex-shrink-0 mt-0.5">
-                    <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                      <AlertCircle className="h-5 w-5 text-blue-600" />
+                  <div className="flex-shrink-0">
+                    <div className="w-11 h-11 rounded-xl bg-blue-100 flex items-center justify-center shadow-sm">
+                      <AlertCircle className="h-6 w-6 text-blue-600" />
                     </div>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h4 className="text-sm font-bold text-blue-900 mb-2">
+                    <h4 className="text-sm font-bold text-blue-900 mb-2.5 flex items-center gap-2">
                       Manual Sharing Instructions
                     </h4>
-                    <p className="text-sm text-blue-800 leading-relaxed">
-                      If the email invitation wasn't received, you can copy and share this confirmation link directly with the recipient. The link will remain valid for <span className="font-semibold">7 days</span> from the time it was generated.
+                    <p className="text-sm text-blue-800 leading-relaxed mb-4">
+                      If the email invitation wasn't received, you can copy and share this confirmation link directly with the recipient. The link will remain valid for <span className="font-bold text-blue-900">7 days</span> from the time it was generated.
                     </p>
-                    <div className="mt-3 pt-3 border-t border-blue-200/60">
-                      <p className="text-xs font-medium text-blue-700">
-                        Recipient email: <span className="font-bold text-blue-900">{linkToShow.email}</span>
-                      </p>
+                    <div className="pt-3 border-t border-blue-200/60">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Recipient Email</span>
+                        <span className="text-xs font-bold text-blue-900 bg-blue-100/50 px-2 py-1 rounded-md">{linkToShow.email}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Action Buttons */}
-            <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
+            {/* Action Button - Centered */}
+            <div className="flex justify-center pt-4 border-t border-gray-100">
               <button
                 type="button"
                 onClick={() => setShowLinkModal(false)}
-                className="px-6 py-2.5 text-sm font-semibold text-gray-700 bg-white border-2 border-gray-200 hover:border-gray-300 hover:bg-gray-50 rounded-lg transition-all duration-200 shadow-sm hover:shadow"
+                className="px-8 py-3 text-sm font-semibold text-gray-700 bg-white border-2 border-gray-200 hover:border-gray-300 hover:bg-gray-50 rounded-xl transition-all duration-200 shadow-sm hover:shadow-md min-w-[120px]"
               >
                 Close
               </button>

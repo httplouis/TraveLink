@@ -33,7 +33,9 @@ export default function HeadDashboardContainer() {
 
         const profileData = await profileRes.json().catch(() => ({ ok: false }));
         if (profileData.ok && profileData.data?.name) {
-          const firstName = profileData.data.name.split(' ')[0];
+          // Import name formatting utility
+          const { getFirstName } = await import('@/lib/utils/name-formatting');
+          const firstName = getFirstName(profileData.data.name);
           setUserName(firstName);
         }
 

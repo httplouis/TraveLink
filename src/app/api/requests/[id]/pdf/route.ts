@@ -56,14 +56,18 @@ export async function GET(
       return data || null;
     };
 
-    // Fetch all related data
+    // Fetch all related data including VP signatures
     const [
       requesterName,
       department,
       headApproverName,
+      parentHeadApproverName,
       adminProcessorName,
       comptrollerApproverName,
       hrApproverName,
+      vpApproverName,
+      vp2ApproverName,
+      presidentApproverName,
       execApproverName,
       assignedVehicle,
       assignedDriverName,
@@ -71,13 +75,42 @@ export async function GET(
       fetchUserName(request.requester_id),
       fetchDepartment(request.department_id),
       fetchUserName(request.head_approved_by),
+      fetchUserName(request.parent_head_approved_by),
       fetchUserName(request.admin_processed_by),
       fetchUserName(request.comptroller_approved_by),
       fetchUserName(request.hr_approved_by),
+      fetchUserName(request.vp_approved_by),
+      fetchUserName(request.vp2_approved_by),
+      fetchUserName(request.president_approved_by),
       fetchUserName(request.exec_approved_by),
       fetchVehicle(request.assigned_vehicle_id),
       fetchUserName(request.assigned_driver_id),
     ]);
+
+    // Fetch multiple requesters from requester_invitations
+    let multiDeptRequesters: any[] = [];
+    try {
+      const { data: requesterInvitations } = await supabase
+        .from("requester_invitations")
+        .select(`
+          *,
+          user:users!user_id(id, name, email),
+          department:departments!department_id(id, name, code)
+        `)
+        .eq("request_id", requestId)
+        .eq("status", "confirmed")
+        .order("confirmed_at", { ascending: true });
+      
+      if (requesterInvitations) {
+        multiDeptRequesters = requesterInvitations.map((inv: any) => ({
+          name: inv.name || inv.user?.name || 'Unknown',
+          department: inv.department?.name || inv.department || 'Unknown',
+          signature: inv.signature,
+        }));
+      }
+    } catch (err) {
+      console.error("[PDF] Error fetching multi-department requesters:", err);
+    }
 
     // Load PDF template from public folder
     const templatePath = path.join(process.cwd(), 'public', 'Travel-Order_Rev12_Jan2024.pdf');
@@ -149,15 +182,27 @@ export async function GET(
     
     // Fill in using exact coordinates from pdfWithTemplate.ts
     const reqName = requesterName || request.requester_name || "Unknown";
-    const deptName = department?.name || "Unknown";
+    let deptName = department?.name || "Unknown";
+    
+    // If multiple requesters, combine names and departments
+    if (multiDeptRequesters.length > 0) {
+      const allNames = [reqName, ...multiDeptRequesters.map((r: any) => r.name)].filter(Boolean);
+      const allDepts = new Set([deptName]);
+      multiDeptRequesters.forEach((r: any) => {
+        if (r.department) allDepts.add(r.department);
+      });
+      deptName = Array.from(allDepts).join(", ");
+      // Show all requesters' names
+      const requestingPersons = allNames.join(", ");
+      drawInRect(requestingPersons, 150, 180, 210, 14, 9); // Smaller font if multiple
+    } else {
+      drawInRect(reqName, 150, 180, 210, 14, 10);
+    }
     
     // Created date
     drawInRect(fmtLongDate(request.created_at), 100, 123, 150, 14, 10);
     
-    // Requesting person
-    drawInRect(reqName, 150, 180, 210, 14, 10);
-    
-    // Department
+    // Department(s) - show all if multiple
     drawInRect(deptName, 450, 169, 146, 42, 10);
     
     // Destination
@@ -170,12 +215,39 @@ export async function GET(
     // Purpose of travel
     drawInRect(request.purpose || "", 150, 260, 446, 26, 9);
     
-    // Head name and signature (LEFT)
+    // Travel Cost breakdown (if exists) - match template format
+    if (request.expense_breakdown && Array.isArray(request.expense_breakdown)) {
+      let costY = 295;
+      const maxItems = 12; // Limit to fit on page
+      request.expense_breakdown.slice(0, maxItems).forEach((item: any) => {
+        const label = item.category || item.label || "Other";
+        const amount = item.amount || 0;
+        if (amount > 0) {
+          const costText = `${label} - Php ${amount.toLocaleString()}`;
+          drawInRect(costText, 150, costY, 446, 8, 8);
+          costY += 8;
+        }
+      });
+      
+      // Total if available
+      if (request.total_budget) {
+        drawInRect(`Total: Php ${request.total_budget.toLocaleString()}`, 150, costY + 4, 446, 10, 9, true);
+      }
+    }
+    
+    // Head name and signature (LEFT) - Department Head endorsement
     if (headApproverName) {
       drawInRect(headApproverName, 125, 400, 260, 14, 10);
     }
     if (request.head_signature) {
       await drawSignature(request.head_signature, 85, 380, 180, 34);
+    }
+    
+    // Parent Head signature if exists (for parent department approval)
+    if (parentHeadApproverName && request.parent_head_signature) {
+      // Draw below main head signature if parent head exists
+      drawInRect(parentHeadApproverName, 125, 360, 260, 14, 10);
+      await drawSignature(request.parent_head_signature, 85, 340, 180, 34);
     }
     
     // Driver and vehicle
@@ -191,19 +263,59 @@ export async function GET(
       await drawSignature(request.admin_signature, 340, 455, 200, 34);
     }
     
-    // HR signature
-    if (request.hr_signature) {
-      await drawSignature(request.hr_signature, 200, 750, 150, 30);
+    // President/COO signature (Approved by section)
+    if (presidentApproverName) {
+      drawInRect(presidentApproverName, 125, 550, 260, 14, 10);
+    }
+    if (request.president_signature) {
+      await drawSignature(request.president_signature, 85, 530, 180, 34);
     }
     
-    // Executive signature
-    if (request.exec_signature) {
-      await drawSignature(request.exec_signature, 200, 820, 150, 30);
+    // Executive signature (fallback if president_signature not available)
+    if (!request.president_signature && request.exec_signature) {
+      if (execApproverName) {
+        drawInRect(execApproverName, 125, 550, 260, 14, 10);
+      }
+      await drawSignature(request.exec_signature, 85, 530, 180, 34);
     }
     
-    // Comptroller signature
+    // Comptroller signature and name (For Travel Cost - Recommending Approval)
+    if (comptrollerApproverName) {
+      drawInRect(comptrollerApproverName, 480, 600, 200, 14, 10);
+    }
     if (request.comptroller_signature) {
       await drawSignature(request.comptroller_signature, 480, 570, 150, 30);
+    }
+    
+    // Comptroller recommended amount if exists
+    if (request.comptroller_edited_budget) {
+      const recAmount = `Rec Amt: ${request.comptroller_edited_budget.toLocaleString()} subject to liquidation`;
+      drawInRect(recAmount, 480, 620, 200, 14, 9);
+    }
+    
+    // VP signatures (Recommending Approval section)
+    // First VP
+    if (vpApproverName) {
+      drawInRect(vpApproverName, 125, 750, 260, 14, 10);
+    }
+    if (request.vp_signature) {
+      await drawSignature(request.vp_signature, 85, 730, 180, 34);
+    }
+    
+    // Second VP (if both VPs approved - for multi-department requests)
+    if (request.both_vps_approved && vp2ApproverName) {
+      drawInRect(vp2ApproverName, 125, 700, 260, 14, 10);
+    }
+    if (request.vp2_signature) {
+      await drawSignature(request.vp2_signature, 85, 680, 180, 34);
+    }
+    
+    // HR Director signature (Noted by section)
+    if (hrApproverName) {
+      drawInRect(hrApproverName, 125, 650, 260, 14, 10);
+    }
+    if (request.hr_signature) {
+      await drawSignature(request.hr_signature, 85, 630, 180, 34);
     }
     
     // Save the PDF

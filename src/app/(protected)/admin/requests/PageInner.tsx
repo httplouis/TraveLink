@@ -26,6 +26,7 @@ import {
 } from "@/lib/admin/requests/notifs";
 
 import { useRequestsFromSupabase } from "@/lib/admin/requests/useRequestsFromSupabase";
+import { fetchRequest } from "@/lib/admin/requests/api";
 
 /* helpers -------------------------------------------------- */
 type RowStatus = RequestRow["status"];
@@ -500,12 +501,20 @@ export default function PageInner() {
     } else {
       // Fallback to localStorage
       console.log("⚠️ Using LOCALSTORAGE data (Supabase data not found)");
-      const full = AdminRequestsRepo.get(r.id);
-      if (full) {
-        console.log("📦 LocalStorage data:", full.travelOrder?.requestingPerson || full.requesterName);
-        setActiveRow(full);
-      } else {
-        console.log("❌ No data found in localStorage either");
+      // Fetch full request details from API instead of localStorage
+      try {
+        const fullRequest = await fetchRequest(r.id);
+        if (fullRequest) {
+          const full = transformToAdminRequest(fullRequest);
+          console.log("📦 Fetched from API:", full.travelOrder?.requestingPerson || full.requesterName);
+          setActiveRow(full);
+        } else {
+          console.log("❌ No data found in API");
+          toast({ message: "Request not found", kind: "error" });
+        }
+      } catch (err: any) {
+        console.error("❌ Error fetching request:", err);
+        toast({ message: `Error loading request: ${err.message}`, kind: "error" });
       }
     }
     
@@ -542,13 +551,16 @@ export default function PageInner() {
     toast({ message: "Marked as read", kind: "success" });
   };
 
-  const deleteSelected = () => {
+  const deleteSelected = async () => {
     const ids = Array.from(selected);
     if (!ids.length) return;
 
-    const items = ids
-      .map((id) => AdminRequestsRepo.get(id))
-      .filter(Boolean) as AdminRequest[];
+    // Fetch items from API instead of localStorage
+    const requestPromises = ids.map(async (id) => {
+      const request = await fetchRequest(id);
+      return request ? transformToAdminRequest(request) : null;
+    });
+    const items = (await Promise.all(requestPromises)).filter((r): r is AdminRequest => r !== null);
 
     if (items.length) {
       TrashRepo.addMany(
@@ -556,18 +568,14 @@ export default function PageInner() {
       );
     }
 
-    const repoAny = AdminRequestsRepo as unknown as {
-      remove?: (id: string) => void;
-      removeMany?: (ids: string[]) => void;
-    };
-    if (repoAny.removeMany) repoAny.removeMany(ids);
-    else if (repoAny.remove) ids.forEach((id) => repoAny.remove!(id));
-
-    const list = AdminRequestsRepo.list()
-      .filter((r) => r.status !== "pending_head" && r.status !== "head_rejected")
-      .map(toRequestRowLocal);
-    setAllRows(list);
-    setFilteredRows(list);
+    // Note: Deletion is now handled by API - requests are soft-deleted or archived
+    // The list will update automatically via useRequestsFromSupabase hook
+    
+    // Update local state to remove deleted items
+    setAllRows((prev) => prev.filter((r) => !ids.includes(r.id)));
+    setFilteredRows((prev) => prev.filter((r) => !ids.includes(r.id)));
+    setHistoryRows((prev) => prev.filter((r) => !ids.includes(r.id)));
+    setFilteredHistoryRows((prev) => prev.filter((r) => !ids.includes(r.id)));
     setSelected(new Set());
     toast({
       message: `Moved ${ids.length} to Trash (kept for 30 days)`,

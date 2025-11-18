@@ -230,42 +230,74 @@ export async function PATCH(
     if (isBecomingAdmin && wasNotAdmin) {
       console.log("[PATCH /api/admin/users/[id]] Assigning admin role using database function to handle circular dependency...");
       
+      // Check if super_admin is explicitly set in body, default to false for normal admin
+      const shouldBeSuperAdmin = body.super_admin === true;
+      
       // Use the database function to handle the circular dependency
       // This function temporarily disables both triggers (users and admins), updates the role, inserts into admins, and re-enables the triggers
       try {
+        // Use the RPC function first, then update super_admin flag
         const { data: rpcData, error: rpcError } = await supabase.rpc('assign_admin_role', {
           p_user_id: userId,
         });
         
         if (rpcError) {
-          console.error("[PATCH /api/admin/users/[id]] RPC function error:", {
-            message: rpcError.message,
-            code: rpcError.code,
-            details: rpcError.details,
-            hint: rpcError.hint
-          });
           throw rpcError;
         }
         
-        console.log("[PATCH /api/admin/users/[id]] ✅ Admin role assigned successfully via database function");
+        // After RPC, update super_admin to false by default (unless explicitly set to true)
+        const { error: adminUpdateError } = await supabase
+          .from("admins")
+          .update({ super_admin: shouldBeSuperAdmin })
+          .eq("user_id", userId);
+        
+        if (adminUpdateError) {
+          console.error("[PATCH /api/admin/users/[id]] Error updating super_admin flag:", adminUpdateError);
+          // Don't fail the whole operation, just log it
+        }
+        
+        console.log("[PATCH /api/admin/users/[id]] ✅ Admin role assigned successfully (super_admin: " + shouldBeSuperAdmin + ")");
         // The function already updated role='admin' and is_admin=true
         updateData.role = "admin";
         updateData.is_admin = true;
         // Clear exec_type since user is now admin, not exec
         updateData.exec_type = null;
       } catch (rpcError: any) {
-        // If RPC doesn't exist or fails, return error with details
-        console.error("[PATCH /api/admin/users/[id]] RPC function failed:", {
-          message: rpcError?.message,
-          code: rpcError?.code,
-          details: rpcError?.details,
-          hint: rpcError?.hint
-        });
+        // If manual approach fails, try the RPC function as fallback
+        console.error("[PATCH /api/admin/users/[id]] Manual admin assignment failed, trying RPC function:", rpcError);
         
-        return NextResponse.json({ 
-          ok: false, 
-          error: `Failed to assign admin role: ${rpcError?.message || 'Unknown error'}. Please check database function assign_admin_role.` 
-        }, { status: 500 });
+        try {
+          const { data: rpcData, error: rpcError2 } = await supabase.rpc('assign_admin_role', {
+            p_user_id: userId,
+          });
+          
+          if (rpcError2) {
+            throw rpcError2;
+          }
+          
+          // After RPC, update super_admin to false if not explicitly set to true
+          if (!shouldBeSuperAdmin) {
+            await supabase
+              .from("admins")
+              .update({ super_admin: false })
+              .eq("user_id", userId);
+          }
+          
+          console.log("[PATCH /api/admin/users/[id]] ✅ Admin role assigned via RPC (super_admin: " + shouldBeSuperAdmin + ")");
+          updateData.role = "admin";
+          updateData.is_admin = true;
+          updateData.exec_type = null;
+        } catch (fallbackError: any) {
+          console.error("[PATCH /api/admin/users/[id]] Both methods failed:", {
+            manual: rpcError?.message,
+            rpc: fallbackError?.message
+          });
+          
+          return NextResponse.json({ 
+            ok: false, 
+            error: `Failed to assign admin role: ${fallbackError?.message || rpcError?.message || 'Unknown error'}` 
+          }, { status: 500 });
+        }
       }
     } else if (isBecomingAdmin && !wasNotAdmin) {
       // User is already an admin, but make sure the entry exists
@@ -278,11 +310,13 @@ export async function PATCH(
       
       if (!existingAdmin) {
         console.log("[PATCH /api/admin/users/[id]] Admin entry missing, creating it...");
+        // Default to false for normal admin unless explicitly set to true
+        const shouldBeSuperAdmin = body.super_admin === true;
         const { error: adminError } = await supabase
           .from("admins")
           .insert({
             user_id: userId,
-            super_admin: true,
+            super_admin: shouldBeSuperAdmin,
           });
         
         if (adminError) {
@@ -291,6 +325,16 @@ export async function PATCH(
             ok: false, 
             error: `Failed to create admin entry: ${adminError.message}` 
           }, { status: 500 });
+        }
+      } else if (body.super_admin !== undefined) {
+        // Update super_admin flag if explicitly provided
+        const { error: updateError } = await supabase
+          .from("admins")
+          .update({ super_admin: body.super_admin === true })
+          .eq("user_id", userId);
+        
+        if (updateError) {
+          console.error("[PATCH /api/admin/users/[id]] Error updating super_admin flag:", updateError);
         }
       }
     }
@@ -553,10 +597,25 @@ export async function PATCH(
       }
     }
 
-    // Add department to response
+    // Fetch super_admin flag from admins table if user is admin
+    let is_super_admin = false;
+    if (updatedUser.role === "admin" || updatedUser.is_admin) {
+      const { data: adminData } = await supabase
+        .from("admins")
+        .select("super_admin")
+        .eq("user_id", userId)
+        .maybeSingle();
+      
+      if (adminData) {
+        is_super_admin = adminData.super_admin || false;
+      }
+    }
+
+    // Add department and super_admin to response
     const responseData = {
       ...updatedUser,
       department,
+      is_super_admin,
     };
 
     // Log role changes to role_grants table for audit

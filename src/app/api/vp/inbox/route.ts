@@ -78,12 +78,14 @@ export async function GET(req: NextRequest) {
     // Show requests where:
     // 1. No VP has approved yet (vp_approved_by is null)
     // 2. OR first VP has approved but second VP hasn't (vp_approved_by is not null, vp2_approved_by is null, and current VP is not the first VP)
+    // IMPORTANT: Exclude requests where parent head (who is a VP) already signed - these should go directly to President
     const { data: allRequests, error: requestsError } = await supabase
       .from("requests")
       .select(`
         *,
         vp_approver:users!vp_approved_by(id, name, email, position_title),
-        vp2_approver:users!vp2_approved_by(id, name, email, position_title)
+        vp2_approver:users!vp2_approved_by(id, name, email, position_title),
+        parent_head_approver:users!parent_head_approved_by(id, is_vp, exec_type, role)
       `)
       .eq("status", "pending_exec")
       .order("created_at", { ascending: false })
@@ -97,8 +99,22 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Filter requests: show if no VP approved OR if first VP approved but second hasn't (and current VP is not the first)
+    // Filter requests: 
+    // 1. Exclude if parent head (who is a VP) already signed - these should go to President, not VP
+    // 2. Show if no VP approved OR if first VP approved but second hasn't (and current VP is not the first)
     const requests = (allRequests || []).filter((req: any) => {
+      // Skip if parent head VP already signed (should go to President, not VP)
+      const parentHeadSigned = !!(req.parent_head_approved_at || req.parent_head_signature);
+      const parentHeadApprover = req.parent_head_approver as any;
+      const parentHeadIsVP = parentHeadApprover?.is_vp === true || 
+                             parentHeadApprover?.exec_type === 'vp' || 
+                             parentHeadApprover?.role === 'exec';
+      
+      if (parentHeadSigned && parentHeadIsVP) {
+        console.log(`[VP Inbox] Skipping request ${req.id} - parent head VP already signed`);
+        return false; // Skip this request - should go to President, not VP
+      }
+      
       const noVPApproved = !req.vp_approved_by;
       const firstVPApproved = req.vp_approved_by && !req.vp2_approved_by && req.vp_approved_by !== profile.id;
       return noVPApproved || firstVPApproved;

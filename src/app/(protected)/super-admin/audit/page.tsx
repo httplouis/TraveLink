@@ -255,12 +255,13 @@ export default function SuperAdminAuditPage() {
           className="px-4 py-2.5 rounded-xl border-2 border-gray-300 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none"
         >
           <option value="all">All Entities</option>
-          <option value="users">Users</option>
-          <option value="requests">Requests</option>
+          <option value="user">Users</option>
+          <option value="request">Requests</option>
           <option value="role_grants">Role Grants</option>
-          <option value="departments">Departments</option>
-          <option value="vehicles">Vehicles</option>
-          <option value="drivers">Drivers</option>
+          <option value="department">Departments</option>
+          <option value="vehicle">Vehicles</option>
+          <option value="driver">Drivers</option>
+          <option value="auth">Auth</option>
         </select>
       </div>
 

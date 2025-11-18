@@ -35,74 +35,112 @@ export default function TransportationForm({
     });
   };
 
+  // If transportation_type is already set, don't show the selection buttons
+  // Just show the details form (pickup details or self transport details)
+  const showTypeSelection = !transportType;
+
   return (
     <div className={`space-y-6 ${className}`}>
-      {/* Transportation Type Selection */}
-      <div className="space-y-3">
-        <label className="block text-sm font-medium text-gray-700">
-          Transportation Arrangement *
-        </label>
+      {/* Transportation Type Selection - Only show if not already selected */}
+      {showTypeSelection && (
+        <div className="space-y-3">
+          <label className="block text-sm font-medium text-gray-700">
+            Transportation Arrangement *
+          </label>
 
-        <div className="grid grid-cols-2 gap-4">
-          {/* Pickup Option */}
-          <motion.button
-            type="button"
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => handleChange("transportation_type", "pickup")}
-            className={`
-              p-6 border-2 rounded-lg transition-all
-              flex flex-col items-center gap-3
-              ${
-                transportType === "pickup"
-                  ? "border-[#7a0019] bg-red-50 shadow-md"
-                  : "border-gray-200 hover:border-gray-300"
-              }
-            `}
-          >
-            <Bus
-              className={`w-8 h-8 ${
-                transportType === "pickup" ? "text-[#7a0019]" : "text-gray-400"
-              }`}
-            />
-            <div className="text-center">
-              <p className="font-semibold text-gray-900">Pick me up</p>
-              <p className="text-xs text-gray-500 mt-1">
-                University vehicle will pick you up
-              </p>
-            </div>
-          </motion.button>
+          <div className="grid grid-cols-2 gap-4">
+            {/* Pickup Option */}
+            <motion.button
+              type="button"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => handleChange("transportation_type", "pickup")}
+              className={`
+                p-6 border-2 rounded-lg transition-all
+                flex flex-col items-center gap-3
+                ${
+                  transportType === "pickup"
+                    ? "border-[#7a0019] bg-red-50 shadow-md"
+                    : "border-gray-200 hover:border-gray-300"
+                }
+              `}
+            >
+              <Bus
+                className={`w-8 h-8 ${
+                  transportType === "pickup" ? "text-[#7a0019]" : "text-gray-400"
+                }`}
+              />
+              <div className="text-center">
+                <p className="font-semibold text-gray-900">Pick me up</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  University vehicle will pick you up
+                </p>
+              </div>
+            </motion.button>
 
-          {/* Self Transport Option */}
-          <motion.button
-            type="button"
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => handleChange("transportation_type", "self")}
-            className={`
-              p-6 border-2 rounded-lg transition-all
-              flex flex-col items-center gap-3
-              ${
-                transportType === "self"
-                  ? "border-[#7a0019] bg-red-50 shadow-md"
-                  : "border-gray-200 hover:border-gray-300"
-              }
-            `}
-          >
-            <Car
-              className={`w-8 h-8 ${
-                transportType === "self" ? "text-[#7a0019]" : "text-gray-400"
-              }`}
-            />
-            <div className="text-center">
-              <p className="font-semibold text-gray-900">Go myself</p>
-              <p className="text-xs text-gray-500 mt-1">
-                I will use my own transportation
-              </p>
-            </div>
-          </motion.button>
+            {/* Self Transport Option */}
+            <motion.button
+              type="button"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => handleChange("transportation_type", "self")}
+              className={`
+                p-6 border-2 rounded-lg transition-all
+                flex flex-col items-center gap-3
+                ${
+                  transportType === "self"
+                    ? "border-[#7a0019] bg-red-50 shadow-md"
+                    : "border-gray-200 hover:border-gray-300"
+                }
+              `}
+            >
+              <Car
+                className={`w-8 h-8 ${
+                  transportType === "self" ? "text-[#7a0019]" : "text-gray-400"
+                }`}
+              />
+              <div className="text-center">
+                <p className="font-semibold text-gray-900">Go myself</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  I will use my own transportation
+                </p>
+              </div>
+            </motion.button>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Show selected type indicator if already selected */}
+      {!showTypeSelection && (
+        <div className="rounded-lg border-2 border-[#7a0019]/20 bg-red-50/50 p-4">
+          <div className="flex items-center gap-3">
+            {transportType === "pickup" ? (
+              <>
+                <Bus className="w-6 h-6 text-[#7a0019]" />
+                <div>
+                  <p className="font-semibold text-gray-900">Pick me up</p>
+                  <p className="text-xs text-gray-600">University vehicle will pick you up</p>
+                </div>
+              </>
+            ) : (
+              <>
+                <Car className="w-6 h-6 text-[#7a0019]" />
+                <div>
+                  <p className="font-semibold text-gray-900">Go myself</p>
+                  <p className="text-xs text-gray-600">I will use my own transportation</p>
+                </div>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => handleChange("transportation_type", undefined)}
+              className="ml-auto text-xs text-gray-500 hover:text-gray-700 underline"
+            >
+              Change
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Pickup Details (if pickup selected) */}
       <AnimatePresence mode="wait">

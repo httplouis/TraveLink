@@ -52,18 +52,18 @@ export default function SubmitBar({
   // Determine button text based on role and requesting person
   // If representative submission (requesting person ≠ submitter), send to requesting person first
   // If requesting person is NOT a head, send to their department head first
-  // If requesting person IS a head, can go directly to admin
+  // If requesting person IS a head, show "Send to..." (will show approver selection modal)
   const submitButtonText = isRepresentativeSubmission
     ? `Send to ${requestingPersonName || "Requesting Person"}`
     : requestingPersonIsHead === true || isHeadRequester
-    ? (vehicleMode === "institutional" ? "Send to Transport Manager" : "Send to Admin")
+    ? "Send to..." // Head requester will see approver selection modal
     : "Send to Department Head";
   
   // Determine helper text
   const helperRecipient = isRepresentativeSubmission
     ? requestingPersonName || "requesting person"
     : requestingPersonIsHead === true || isHeadRequester
-    ? (vehicleMode === "institutional" ? "Transport Manager" : "Admin")
+    ? "Select approver" // Head requester will choose who to send to
     : "department head";
   
   return (
@@ -80,7 +80,7 @@ export default function SubmitBar({
           ) : requestingPersonIsHead === true || isHeadRequester ? (
             <p className="flex items-center gap-1.5 text-xs text-gray-500">
               <Send className="h-3.5 w-3.5" />
-              Request will be sent to {helperRecipient}
+              You will choose who to send this request to (parent head, admin, etc.)
             </p>
           ) : requestingPersonIsHead === false && headName && department ? (
             <p className="flex items-center gap-1.5 text-xs text-gray-500">

@@ -170,6 +170,7 @@ interface ProfileData {
   employee_id?: string;
   bio?: string;
   profile_picture?: string | null;
+  exec_type?: string | null;
   roles?: {
     is_user?: boolean;
     is_head?: boolean;
@@ -177,6 +178,8 @@ interface ProfileData {
     is_comptroller?: boolean;
     is_hr?: boolean;
     is_executive?: boolean;
+    is_vp?: boolean;
+    is_president?: boolean;
   };
 }
 
@@ -353,10 +356,28 @@ export default function ProfilePage({
 
   const getRoleBadges = () => {
     const roles = [];
-    if (profileData.roles?.is_executive) roles.push({ 
-      label: "Executive", 
-      className: "bg-gradient-to-r from-purple-50 to-purple-100 text-purple-700 border-purple-200/50"
-    });
+    
+    // Executive roles - show first, and use position_title if available
+    if (profileData.roles?.is_executive) {
+      // For exec accounts, show their actual title (President/COO, VP, etc.) instead of "Department Head"
+      if (profileData.roles?.is_president) {
+        roles.push({ 
+          label: profileData.position_title || "President/COO", 
+          className: "bg-gradient-to-r from-purple-50 to-purple-100 text-purple-700 border-purple-200/50"
+        });
+      } else if (profileData.roles?.is_vp) {
+        roles.push({ 
+          label: profileData.position_title || "Vice President", 
+          className: "bg-gradient-to-r from-indigo-50 to-indigo-100 text-indigo-700 border-indigo-200/50"
+        });
+      } else {
+        roles.push({ 
+          label: "Executive", 
+          className: "bg-gradient-to-r from-purple-50 to-purple-100 text-purple-700 border-purple-200/50"
+        });
+      }
+    }
+    
     if (profileData.roles?.is_hr) roles.push({ 
       label: "HR", 
       className: "bg-gradient-to-r from-indigo-50 to-indigo-100 text-indigo-700 border-indigo-200/50"
@@ -369,14 +390,28 @@ export default function ProfilePage({
       label: "Admin", 
       className: "bg-gradient-to-r from-cyan-50 to-cyan-100 text-cyan-700 border-cyan-200/50"
     });
-    if (profileData.roles?.is_head) roles.push({ 
-      label: "Department Head", 
-      className: "bg-gradient-to-r from-teal-50 to-teal-100 text-teal-700 border-teal-200/50"
-    });
-    if (profileData.roles?.is_user) roles.push({ 
-      label: "Faculty/Staff", 
-      className: "bg-gradient-to-r from-gray-50 to-gray-100 text-gray-700 border-gray-200/50"
-    });
+    
+    // Only show "Department Head" if they're head but NOT exec
+    if (profileData.roles?.is_head && !profileData.roles?.is_executive) {
+      roles.push({ 
+        label: "Department Head", 
+        className: "bg-gradient-to-r from-teal-50 to-teal-100 text-teal-700 border-teal-200/50"
+      });
+    }
+    
+    // Only show "Faculty/Staff" if they're not exec, head, admin, hr, or comptroller
+    if (profileData.roles?.is_user && 
+        !profileData.roles?.is_executive && 
+        !profileData.roles?.is_head && 
+        !profileData.roles?.is_admin && 
+        !profileData.roles?.is_hr && 
+        !profileData.roles?.is_comptroller) {
+      roles.push({ 
+        label: "Faculty/Staff", 
+        className: "bg-gradient-to-r from-gray-50 to-gray-100 text-gray-700 border-gray-200/50"
+      });
+    }
+    
     return roles;
   };
 

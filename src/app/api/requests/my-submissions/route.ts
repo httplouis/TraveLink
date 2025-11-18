@@ -29,38 +29,69 @@ export async function GET() {
     //    This ensures representative submissions only appear for requester AFTER they sign
     
     // Query 1: Requests submitted by this user
-    const { data: submittedRequests, error: submittedError } = await supabase
-      .from("requests")
-      .select(`
-        *,
-        department:departments!department_id(id, code, name)
-      `)
-      .eq("submitted_by_user_id", profile.id)
-      .order("created_at", { ascending: false })
-      .limit(100);
+    let submittedRequests: any[] = [];
+    let submittedError: any = null;
     
-    // Include payment-related fields for payment confirmation UI
+    try {
+      const result = await supabase
+        .from("requests")
+        .select(`
+          *,
+          department:departments!department_id(id, code, name)
+        `)
+        .eq("submitted_by_user_id", profile.id)
+        .neq("status", "draft") // Exclude drafts from submissions view
+        .order("created_at", { ascending: false })
+        .limit(100);
+      
+      submittedRequests = result.data || [];
+      submittedError = result.error;
+    } catch (err: any) {
+      console.error("[GET /api/requests/my-submissions] Exception in submitted requests query:", err);
+      submittedError = err;
+    }
 
     if (submittedError) {
       console.error("[GET /api/requests/my-submissions] Submitted requests error:", submittedError);
-      return NextResponse.json({ ok: false, error: submittedError.message }, { status: 500 });
+      // Don't fail completely - try to continue with empty array
+      submittedRequests = [];
     }
 
     // Query 2: Requests where user is requester AND has signed (representative submissions)
-    const { data: signedRequests, error: signedError } = await supabase
-      .from("requests")
-      .select(`
-        *,
-        department:departments!department_id(id, code, name)
-      `)
-      .eq("requester_id", profile.id)
-      .not("requester_signature", "is", null)
-      .order("created_at", { ascending: false })
-      .limit(100);
+    let signedRequests: any[] = [];
+    let signedError: any = null;
+    
+    try {
+      const result = await supabase
+        .from("requests")
+        .select(`
+          *,
+          department:departments!department_id(id, code, name)
+        `)
+        .eq("requester_id", profile.id)
+        .not("requester_signature", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      
+      signedRequests = result.data || [];
+      signedError = result.error;
+    } catch (err: any) {
+      console.error("[GET /api/requests/my-submissions] Exception in signed requests query:", err);
+      signedError = err;
+    }
 
     if (signedError) {
       console.error("[GET /api/requests/my-submissions] Signed requests error:", signedError);
-      return NextResponse.json({ ok: false, error: signedError.message }, { status: 500 });
+      // Don't fail completely - continue with what we have
+      signedRequests = [];
+    }
+    
+    // If both queries failed, return error
+    if (submittedError && signedError) {
+      return NextResponse.json({ 
+        ok: false, 
+        error: `Failed to fetch requests: ${submittedError.message || signedError.message}` 
+      }, { status: 500 });
     }
 
     // Combine and deduplicate by ID (in case a request matches both conditions)

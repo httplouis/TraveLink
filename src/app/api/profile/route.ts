@@ -78,7 +78,10 @@ export async function GET(request: Request) {
       is_admin: data.is_admin || false,
       is_comptroller: data.is_comptroller || false,
       is_hr: data.is_hr || false,
-      is_executive: data.is_executive || false,
+      is_executive: (data.role === 'exec' || data.is_vp || data.is_president) || false,
+      is_vp: data.is_vp || false,
+      is_president: data.is_president || false,
+      exec_type: data.exec_type || null,
     };
     
     console.log('[GET /api/profile] Returning profile:', {

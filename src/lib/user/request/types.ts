@@ -128,6 +128,23 @@ export interface SeminarApplication {
   fundReleaseLine?: number | null;
 }
 
+/* ---------- Transportation (for institutional vehicles) ---------- */
+
+export interface Transportation {
+  transportation_type?: "pickup" | "self";
+  pickup_location?: string;
+  pickup_location_lat?: number;
+  pickup_location_lng?: number;
+  pickup_time?: string;
+  pickup_contact_number?: string;
+  pickup_special_instructions?: string;
+  return_transportation_same?: boolean;
+  dropoff_location?: string;
+  dropoff_time?: string;
+  parking_required?: boolean;
+  own_vehicle_details?: string;
+}
+
 /* ---------- Whole request ---------- */
 
 export interface RequestFormData {
@@ -137,4 +154,5 @@ export interface RequestFormData {
   travelOrder: TravelOrder;
   schoolService?: SchoolService;
   seminar?: SeminarApplication;
+  transportation?: Transportation;
 }

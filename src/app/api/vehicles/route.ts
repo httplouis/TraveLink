@@ -12,6 +12,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status") || "available";
     const type = searchParams.get("type"); // Optional filter by type
+    const date = searchParams.get("date"); // Optional date filter for coding day
 
     let query = supabase
       .from("vehicles")
@@ -25,6 +26,22 @@ export async function GET(request: Request) {
 
     if (type) {
       query = query.eq("type", type);
+    }
+
+    // Filter by coding day if date is provided
+    // If a vehicle has a coding_day, it's NOT available on that day
+    if (date) {
+      const dateObj = new Date(date);
+      // Get day of week as lowercase (0 = Sunday, 1 = Monday, etc.)
+      const dayIndex = dateObj.getDay();
+      const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+      const dayOfWeek = daysOfWeek[dayIndex];
+      
+      // Exclude vehicles where coding_day matches the requested date's day
+      // Vehicles with coding_day = null are always available
+      query = query.or(`coding_day.is.null,coding_day.neq.${dayOfWeek}`);
+      
+      console.log(`[GET /api/vehicles] Filtering by date: ${date} (${dayOfWeek}), excluding vehicles with coding_day = ${dayOfWeek}`);
     }
 
     const { data, error } = await query;
@@ -49,6 +66,7 @@ export async function GET(request: Request) {
       status: v.status,
       notes: v.notes,
       photo_url: v.photo_url || v.photoUrl,  // Include photo URL
+      coding_day: v.coding_day,  // Include coding day
     }));
 
     return NextResponse.json({ ok: true, data: vehicles });

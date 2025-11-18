@@ -181,11 +181,30 @@ export default function SuperAdminUsersPage() {
         throw new Error(data.error || "Failed to update user");
       }
 
+      // Update local state instead of refetching all users
+      setUsers(prevUsers => 
+        prevUsers.map(user => {
+          if (user.id === userId) {
+            // Merge the updated data from API response
+            const updatedUser = data.data || {};
+            return {
+              ...user,
+              ...updatedUser,
+              // Ensure department is properly set
+              department: updatedUser.department || user.department,
+              department_id: updatedUser.department_id || user.department_id,
+              // Update super_admin flag if present
+              is_super_admin: updatedUser.is_super_admin !== undefined ? updatedUser.is_super_admin : (user as any).is_super_admin,
+            };
+          }
+          return user;
+        })
+      );
+
       toast.success("User updated", "Role and permissions have been updated successfully");
       setEditingId(null);
       setEditData({});
       setConfirmDialog({ open: false, title: "", message: "", action: null });
-      fetchUsers();
     } catch (err: any) {
       toast.error("Error", err.message || "Failed to update user");
       throw err; // Re-throw to show error in dialog
@@ -461,8 +480,8 @@ export default function SuperAdminUsersPage() {
       </div>
 
       {/* Users Table */}
-      <div className="bg-white rounded-xl border-2 border-gray-200 shadow-sm overflow-visible">
-        <div className="overflow-x-auto overflow-y-visible">
+      <div className="bg-white rounded-xl border-2 border-gray-200 shadow-sm">
+        <div className="overflow-x-auto">
           <table className="w-full min-w-[1200px] relative">
             <thead className="bg-gradient-to-r from-purple-600 to-purple-700 text-white sticky top-0 z-10">
               <tr>
@@ -782,9 +801,9 @@ export default function SuperAdminUsersPage() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 relative z-30">
+                    <td className="px-6 py-4">
                       {editingId === user.id ? (
-                        <div className="relative z-[9999]">
+                        <div className="relative" style={{ zIndex: 9999 }}>
                           <SearchableSelect
                             options={[
                               { value: "", label: "No department" },

@@ -2,12 +2,12 @@
 import type { RequestFormData } from "@/lib/user/request/types";
 import { REASON_OPTIONS } from "@/lib/user/request/types";
 import { firstReceiver, fullApprovalPath } from "@/lib/user/request/routing";
-import { AdminRequestsRepo } from "@/lib/admin/requests/store";
+// AdminRequestsRepo import removed - no longer needed (using API now)
 
 /* ---------- LocalStorage helpers ---------- */
 
 const DRAFTS_KEY = "travilink_user_request_drafts";
-const SUBMITS_KEY = "travilink_user_request_submissions";
+// SUBMITS_KEY removed - submissions now stored in database, not localStorage
 
 function safeRead<T>(key: string): T[] {
   if (typeof window === "undefined") return [];
@@ -174,41 +174,57 @@ export async function createSubmission(data: RequestFormData, forcedId?: string)
 }
 
 export async function updateSubmission(id: string, data: RequestFormData) {
-  const list = safeRead<Submission>(SUBMITS_KEY);
-  const i = list.findIndex((s) => s.id === id);
-  if (i < 0) throw new Error("Submission not found");
-  if (list[i].status !== "pending") throw new Error("Only pending submissions can be edited");
+  // Use API to update request instead of localStorage
+  try {
+    const response = await fetch(`/api/requests/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        // Map form data to request fields
+        purpose: data.travelOrder?.purposeOfTravel,
+        destination: data.travelOrder?.destination,
+        travel_start_date: data.travelOrder?.departureDate,
+        travel_end_date: data.travelOrder?.returnDate,
+        requester_name: data.travelOrder?.requestingPerson,
+        // Add other fields as needed
+      }),
+    });
 
-  const now = new Date().toISOString();
-  const title = buildTitle(data);
-  const first = firstReceiver({
-    requesterRole: data.requesterRole,
-    vehicleMode: data.vehicleMode,
-    reason: data.reason,
-  });
-  const path = fullApprovalPath({
-    requesterRole: data.requesterRole,
-    vehicleMode: data.vehicleMode,
-  });
+    const result = await response.json();
+    if (!result.ok) {
+      throw new Error(result.error || "Failed to update request");
+    }
 
-  list[i] = { ...list[i], title, data, firstReceiver: first, approvalPath: path, updatedAt: now };
-  safeWrite<Submission>(SUBMITS_KEY, list);
-  return { id, updatedAt: now };
+    return { id, updatedAt: result.data?.updated_at || new Date().toISOString() };
+  } catch (error: any) {
+    console.error("[updateSubmission] Error:", error);
+    throw new Error(error.message || "Failed to update submission");
+  }
 }
 
 /** Cancel a pending submission:
- * - mark it as `cancelled` in user history
- * - and remove the corresponding row from AdminRequestsRepo */
+ * - Updates request status to 'cancelled' in database via PATCH */
 export async function cancelSubmission(id: string) {
-  const list = safeRead<Submission>(SUBMITS_KEY);
-  const i = list.findIndex((s) => s.id === id);
-  if (i >= 0) {
-    list[i] = { ...list[i], status: "cancelled", updatedAt: new Date().toISOString() };
-    safeWrite<Submission>(SUBMITS_KEY, list);
-  }
+  // Use API to cancel request instead of localStorage
+  try {
+    // Use PATCH to update status to cancelled
+    const response = await fetch(`/api/requests/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        status: "cancelled",
+        // Add cancellation metadata if needed
+      }),
+    });
 
-  // Also remove from Admin list; if you prefer to keep it with 'cancelled' status,
-  // replace this with a repo method that updates status instead of removing.
-  const repoAny = AdminRequestsRepo as unknown as { remove?: (rid: string) => void };
-  repoAny.remove?.(id);
+    const result = await response.json();
+    if (!result.ok) {
+      throw new Error(result.error || "Failed to cancel request");
+    }
+
+    return { id, cancelledAt: result.data?.updated_at || new Date().toISOString() };
+  } catch (error: any) {
+    console.error("[cancelSubmission] Error:", error);
+    throw new Error(error.message || "Failed to cancel submission");
+  }
 }

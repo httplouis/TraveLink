@@ -43,7 +43,16 @@ export interface RequestData {
   }>;
   transportation_type?: 'pickup' | 'self';
   pickup_location?: string;
+  pickup_location_lat?: number;
+  pickup_location_lng?: number;
   pickup_time?: string;
+  pickup_contact_number?: string;
+  pickup_special_instructions?: string;
+  return_transportation_same?: boolean;
+  dropoff_location?: string;
+  dropoff_time?: string;
+  parking_required?: boolean;
+  own_vehicle_details?: string;
   cost_justification?: string;
   preferred_vehicle?: string;
   preferred_driver?: string;
@@ -463,22 +472,111 @@ export default function RequestDetailsView({
                     </div>
                   )}
 
-                  {/* Transportation */}
+                  {/* Transportation Details */}
                   {request.transportation_type && (
                     <div className="bg-white rounded-lg border border-gray-200 p-6">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Transportation</h3>
-                      <p className="text-gray-900 mb-1">
-                        {request.transportation_type === 'pickup' 
-                          ? 'University Vehicle (Pick-up)' 
-                          : 'Own Transportation'
-                        }
-                      </p>
-                      {request.pickup_location && (
-                        <p className="text-sm text-gray-600">
-                          Pick-up: {request.pickup_location}
-                          {request.pickup_time && ` at ${request.pickup_time}`}
-                        </p>
-                      )}
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                        <Car className="w-5 h-5 text-[#7a0019]" />
+                        Transportation Arrangement
+                      </h3>
+                      <div className="space-y-4">
+                        <div>
+                          <p className="text-xs font-medium text-gray-500 mb-1">Transportation Type</p>
+                          <p className="text-gray-900 font-medium">
+                            {request.transportation_type === 'pickup' 
+                              ? 'University Vehicle (Pick-up Service)' 
+                              : 'Own Transportation'
+                            }
+                          </p>
+                        </div>
+
+                        {request.transportation_type === 'pickup' && (
+                          <>
+                            {request.pickup_location && (
+                              <div>
+                                <p className="text-xs font-medium text-gray-500 mb-1">Pick-up Location</p>
+                                <div className="flex items-center gap-2">
+                                  <p className="text-gray-900">{request.pickup_location}</p>
+                                  {(request.pickup_location_lat && request.pickup_location_lng) && (
+                                    <button
+                                      onClick={() => {
+                                        const url = `https://www.google.com/maps?q=${request.pickup_location_lat},${request.pickup_location_lng}`;
+                                        window.open(url, '_blank');
+                                      }}
+                                      className="text-blue-600 hover:text-blue-700 text-xs font-medium flex items-center gap-1"
+                                      title="View on Google Maps"
+                                    >
+                                      <MapPin className="w-3 h-3" />
+                                      Map
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                            
+                            {request.pickup_time && (
+                              <div>
+                                <p className="text-xs font-medium text-gray-500 mb-1">Pick-up Time</p>
+                                <p className="text-gray-900">{request.pickup_time}</p>
+                              </div>
+                            )}
+
+                            {request.pickup_contact_number && (
+                              <div>
+                                <p className="text-xs font-medium text-gray-500 mb-1">Contact Number</p>
+                                <p className="text-gray-900">{request.pickup_contact_number}</p>
+                              </div>
+                            )}
+
+                            {request.pickup_special_instructions && (
+                              <div>
+                                <p className="text-xs font-medium text-gray-500 mb-1">Special Instructions</p>
+                                <p className="text-gray-700 whitespace-pre-wrap">{request.pickup_special_instructions}</p>
+                              </div>
+                            )}
+
+                            {request.return_transportation_same !== undefined && (
+                              <div>
+                                <p className="text-xs font-medium text-gray-500 mb-1">Return Transportation</p>
+                                <p className="text-gray-900">
+                                  {request.return_transportation_same 
+                                    ? 'Same as pick-up location' 
+                                    : 'Different location'
+                                  }
+                                </p>
+                              </div>
+                            )}
+
+                            {!request.return_transportation_same && request.dropoff_location && (
+                              <div>
+                                <p className="text-xs font-medium text-gray-500 mb-1">Drop-off Location</p>
+                                <p className="text-gray-900">{request.dropoff_location}</p>
+                              </div>
+                            )}
+
+                            {!request.return_transportation_same && request.dropoff_time && (
+                              <div>
+                                <p className="text-xs font-medium text-gray-500 mb-1">Drop-off Time</p>
+                                <p className="text-gray-900">{request.dropoff_time}</p>
+                              </div>
+                            )}
+
+                            {request.parking_required && (
+                              <div>
+                                <p className="text-xs font-medium text-gray-500 mb-1">Parking Required</p>
+                                <p className="text-gray-900">Yes</p>
+                              </div>
+                            )}
+                          </>
+                        )}
+
+                        {request.transportation_type === 'self' && request.own_vehicle_details && (
+                          <div>
+                            <p className="text-xs font-medium text-gray-500 mb-1">Vehicle Details</p>
+                            <p className="text-gray-700 whitespace-pre-wrap">{request.own_vehicle_details}</p>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
 

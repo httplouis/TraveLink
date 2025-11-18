@@ -233,6 +233,57 @@ export default function TrackingModal({ isOpen, onClose, requestId }: TrackingMo
                 )}
               </div>
 
+              {/* Multiple Requesters Section */}
+              {data.has_multiple_requesters && data.requester_tracking && data.requester_tracking.length > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                    <UsersIcon className="w-5 h-5 text-blue-600" />
+                    Additional Requesters ({data.requester_tracking.length})
+                  </h3>
+                  <div className="space-y-3">
+                    {data.requester_tracking.map((requester: any, index: number) => (
+                      <div
+                        key={requester.id || index}
+                        className="bg-white rounded-lg border border-blue-100 p-4"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1">
+                            <p className="font-semibold text-gray-900">{requester.name || 'Unknown'}</p>
+                            {requester.department_name && (
+                              <p className="text-sm text-gray-600 mt-1">{requester.department_name}</p>
+                            )}
+                            {requester.email && (
+                              <p className="text-xs text-gray-500 mt-1">{requester.email}</p>
+                            )}
+                            <div className="mt-2 flex items-center gap-4 text-xs text-gray-500">
+                              {requester.status === 'confirmed' && requester.confirmed_at && (
+                                <span className="flex items-center gap-1">
+                                  <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                                  Confirmed {new Date(requester.confirmed_at).toLocaleDateString()}
+                                </span>
+                              )}
+                              {requester.status === 'declined' && requester.declined_at && (
+                                <span className="flex items-center gap-1 text-red-600">
+                                  <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+                                  Declined {new Date(requester.declined_at).toLocaleDateString()}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          {requester.signature && (
+                            <img
+                              src={requester.signature}
+                              alt={`${requester.name}'s signature`}
+                              className="h-12 w-32 rounded border border-gray-300 bg-white object-contain"
+                            />
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Approval Timeline */}
               <div className="border-t border-gray-200 pt-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">

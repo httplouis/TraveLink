@@ -32,6 +32,8 @@ interface ApproverSelectionModalProps {
   requesterName?: string;
   returnReasons?: Array<{ value: string; label: string }>;
   loading?: boolean;
+  defaultApproverId?: string; // For defaulting to specific approver (e.g., Ma'am TM)
+  defaultApproverName?: string; // For display purposes
 }
 
 export default function ApproverSelectionModal({
@@ -51,7 +53,9 @@ export default function ApproverSelectionModal({
     { value: 'details_change', label: 'Request Details Need Revision' },
     { value: 'other', label: 'Other' }
   ],
-  loading = false
+  loading = false,
+  defaultApproverId,
+  defaultApproverName
 }: ApproverSelectionModalProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -66,12 +70,16 @@ export default function ApproverSelectionModal({
       setReturnReason('');
       setIsReturning(false);
     } else {
-      // Auto-select if only one option available (but allow change)
-      if (options.length === 1 && !allowReturnToRequester) {
+      // Priority: defaultApproverId > single option > no selection
+      if (defaultApproverId && options.some(opt => opt.id === defaultApproverId)) {
+        // Default approver exists in options, auto-select it
+        setSelectedId(defaultApproverId);
+      } else if (options.length === 1 && !allowReturnToRequester) {
+        // Auto-select if only one option available (but allow change)
         setSelectedId(options[0].id);
       }
     }
-  }, [isOpen, options, allowReturnToRequester]);
+  }, [isOpen, options, allowReturnToRequester, defaultApproverId]);
 
   const filteredOptions = options.filter(option => {
     if (!searchQuery.trim()) return true;

@@ -19,6 +19,7 @@ export async function GET() {
         admin_approver:users!requests_admin_processed_by_fkey(id, email, name)
       `)
       .in("status", ["pending_admin", "head_approved"])
+      // Note: both_vps_approved is just an acknowledgment - requests still go through admin/comptroller
       .order("created_at", { ascending: false })
       .limit(50); // Limit to 50 most recent requests
 

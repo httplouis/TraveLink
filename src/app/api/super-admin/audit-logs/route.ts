@@ -61,14 +61,26 @@ export async function GET(req: NextRequest) {
     const { data: logs, error: logsError, count } = await query.range(offset, offset + limit - 1);
 
     if (logsError) {
-      console.error("[GET /api/super-admin/audit-logs] Error:", logsError);
-      console.error("[GET /api/super-admin/audit-logs] Error details:", JSON.stringify(logsError, null, 2));
-      return NextResponse.json({ ok: false, error: logsError.message }, { status: 500 });
+      console.error("[GET /api/super-admin/audit-logs] ❌ Query Error:", logsError);
+      console.error("[GET /api/super-admin/audit-logs] Error code:", logsError.code);
+      console.error("[GET /api/super-admin/audit-logs] Error message:", logsError.message);
+      console.error("[GET /api/super-admin/audit-logs] Error details:", logsError.details);
+      console.error("[GET /api/super-admin/audit-logs] Error hint:", logsError.hint);
+      return NextResponse.json({ 
+        ok: false, 
+        error: logsError.message || "Failed to fetch audit logs",
+        details: logsError.details,
+        hint: logsError.hint
+      }, { status: 500 });
     }
 
-    console.log("[GET /api/super-admin/audit-logs] Query result:", {
+    console.log("[GET /api/super-admin/audit-logs] ✅ Query result:", {
       logsCount: logs?.length || 0,
       totalCount: count || 0,
+      page,
+      limit,
+      offset,
+      hasLogs: (logs && logs.length > 0),
     });
 
     // Get unique user IDs

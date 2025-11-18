@@ -48,7 +48,7 @@ export default function SearchableSelect({
   // Get selected option
   const selectedOption = options.find((opt) => opt.value === value);
 
-  // Close dropdown when clicking outside
+  // Close dropdown when clicking outside or pressing Escape
   React.useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (selectRef.current && !selectRef.current.contains(event.target as Node)) {
@@ -57,9 +57,20 @@ export default function SearchableSelect({
       }
     }
 
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape" && isOpen) {
+        setIsOpen(false);
+        setSearchQuery("");
+      }
+    }
+
     if (isOpen) {
       document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
+      document.addEventListener("keydown", handleEscape);
+      return () => {
+        document.removeEventListener("mousedown", handleClickOutside);
+        document.removeEventListener("keydown", handleEscape);
+      };
     }
   }, [isOpen]);
 
@@ -85,9 +96,9 @@ export default function SearchableSelect({
           ${isOpen ? "border-purple-500" : "border-gray-300"}
         `}
       >
-        <span className={selectedOption ? "text-gray-900" : "text-gray-400"}>
+        <span className={`truncate ${selectedOption ? "text-gray-900" : "text-gray-400"}`}>
           {selectedOption ? (
-            <span>
+            <span className="truncate">
               {selectedOption.label}
               {selectedOption.code && (
                 <span className="text-gray-500 ml-1">({selectedOption.code})</span>
@@ -98,13 +109,22 @@ export default function SearchableSelect({
           )}
         </span>
         <ChevronDown
-          className={`h-4 w-4 text-gray-400 transition-transform ${isOpen ? "rotate-180" : ""}`}
+          className={`h-4 w-4 text-gray-400 transition-transform flex-shrink-0 ml-2 ${isOpen ? "rotate-180" : ""}`}
         />
       </button>
 
       {/* Dropdown */}
       {isOpen && (
-        <div className="absolute z-[9999] w-full mt-1 bg-white border-2 border-gray-300 rounded-lg shadow-2xl max-h-80 overflow-hidden">
+        <div 
+          className="absolute z-[99999] mt-1 bg-white border-2 border-gray-300 rounded-lg shadow-2xl max-h-80 overflow-hidden"
+          style={{ 
+            top: '100%',
+            left: 0,
+            right: 0,
+            minWidth: '250px',
+            width: '100%'
+          }}
+        >
           {/* Search Input */}
           <div className="p-2 border-b border-gray-200 sticky top-0 bg-white">
             <div className="relative">

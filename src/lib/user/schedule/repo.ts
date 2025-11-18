@@ -40,7 +40,8 @@ type ListArgs = {
   q: string;
 };
 
-const LS_KEY = "travilink_user_bookings_v1"; // Kept for fallback
+// Note: localStorage removed - all data now comes from database via API
+// const LS_KEY = "travilink_user_bookings_v1"; // REMOVED - using database now
 
 // Cache for API data
 let cachedAvailability: AvailabilityWithStatus | null = null;
@@ -250,20 +251,12 @@ export const UserScheduleRepo = {
 };
 
 /* ---------------- seed/demo ---------------- */
-
-function ensureSeed(): BookingsByDate {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  const seeded = seedBookings();
-  try {
-    localStorage.setItem(LS_KEY, JSON.stringify(seeded));
-  } catch {}
-  return seeded;
-}
+// NOTE: Seeding removed - all data now comes from database
+// If you need demo data, use the database seed scripts instead
 
 function seedBookings(): BookingsByDate {
+  // This function is kept for reference but should not be used
+  // All booking data should come from the database via /api/schedule/availability
   const now = new Date();
   const out: BookingsByDate = {};
   const depts = ["Transport Office","CBA","COE","COED","HR","Comptroller","ITSO","Liberal Arts"];
