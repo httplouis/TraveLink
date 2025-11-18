@@ -269,6 +269,43 @@ export async function GET(
       history = [];
     }
 
+    // Get comprehensive requester-level tracking (multiple requesters from different departments)
+    let requesterTracking = [];
+    try {
+      const { data: requesterInvitations, error: requesterError } = await supabase
+        .from("requester_invitations")
+        .select(`
+          *,
+          user:users!user_id(id, name, email, department_id),
+          department:departments!department_id(id, name, code)
+        `)
+        .eq("request_id", requestId)
+        .order("confirmed_at", { ascending: true });
+      
+      if (requesterError) {
+        console.error('[Tracking API] Error fetching requester invitations:', requesterError);
+      } else {
+        requesterTracking = (requesterInvitations || []).map((inv: any) => ({
+          id: inv.id,
+          name: inv.name || inv.user?.name,
+          email: inv.email || inv.user?.email,
+          department: inv.department || inv.department_id,
+          department_name: inv.department?.name || null,
+          department_code: inv.department?.code || null,
+          status: inv.status,
+          invited_at: inv.invited_at,
+          confirmed_at: inv.confirmed_at,
+          declined_at: inv.declined_at,
+          declined_reason: inv.declined_reason,
+          signature: inv.signature,
+          user_id: inv.user_id,
+        }));
+      }
+    } catch (err) {
+      console.error('[Tracking API] Exception fetching requester tracking:', err);
+      requesterTracking = [];
+    }
+
     // Build tracking data
     const trackingData = {
       request_number: request.request_number,
@@ -368,6 +405,10 @@ export async function GET(
       
       // History timeline
       history: history || [],
+      
+      // Requester-level tracking (multiple requesters from different departments)
+      requester_tracking: requesterTracking || [],
+      has_multiple_requesters: (requesterTracking || []).length > 0,
       
       // Seminar data (if seminar application)
       request_type: request.request_type,

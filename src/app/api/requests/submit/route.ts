@@ -763,8 +763,9 @@ export async function POST(req: Request) {
         initialStatus = "pending_requester_signature"; // Need requesting person's signature first
       }
     } else if (requestingPersonIsHead) {
-      // Requesting person is a head, can go directly to admin
-      initialStatus = "pending_admin";
+      // Requesting person is a head: they sign first, then send to parent head (if exists) or admin
+      // Status will be pending_head so they can sign their own request first
+      initialStatus = "pending_head";
     } else {
       // Requesting person is NOT a head, send to their department head first
       initialStatus = "pending_head";
@@ -1025,6 +1026,10 @@ export async function POST(req: Request) {
       }
     }
     
+    // Get selected approver from body (for head requesters - messenger-style routing)
+    const { nextApproverId, nextApproverRole } = body;
+    console.log("[/api/requests/submit] 📋 Selected approver:", { nextApproverId, nextApproverRole });
+    
     const requestData = {
       request_type: requestType,
       title: finalTitle,
@@ -1088,8 +1093,35 @@ export async function POST(req: Request) {
       ...(preferredDriverId ? { preferred_driver_id: preferredDriverId } : {}),
       ...(preferredVehicleId ? { preferred_vehicle_id: preferredVehicleId } : {}),
       
+      // Transportation fields (for institutional vehicles)
+      ...(body.transportation ? {
+        transportation_type: body.transportation.transportation_type || null,
+        pickup_location: body.transportation.pickup_location || null,
+        pickup_location_lat: body.transportation.pickup_location_lat || null,
+        pickup_location_lng: body.transportation.pickup_location_lng || null,
+        pickup_time: body.transportation.pickup_time || null,
+        pickup_contact_number: body.transportation.pickup_contact_number || null,
+        pickup_special_instructions: body.transportation.pickup_special_instructions || null,
+        return_transportation_same: body.transportation.return_transportation_same ?? true,
+        dropoff_location: body.transportation.dropoff_location || null,
+        dropoff_time: body.transportation.dropoff_time || null,
+        parking_required: body.transportation.parking_required ?? false,
+        own_vehicle_details: body.transportation.own_vehicle_details || null,
+      } : {}),
+      
       status: initialStatus,
       current_approver_role: WorkflowEngine.getApproverRole(initialStatus),
+      
+      // Store selected approver for head requesters (messenger-style routing)
+      // This will be used when the head approves the request
+      ...(nextApproverId && nextApproverRole ? {
+        next_approver_id: nextApproverId,
+        next_approver_role: nextApproverRole,
+        // Also set specific fields based on role for backward compatibility
+        ...(nextApproverRole === 'vp' ? { next_vp_id: nextApproverId } : {}),
+        ...(nextApproverRole === 'admin' ? { next_admin_id: nextApproverId } : {}),
+        ...(nextApproverRole === 'president' ? { next_president_id: nextApproverId } : {}),
+      } : {}),
       
       // For seminar requests, save full seminar data including applicants
       ...(isSeminar ? {
@@ -1342,9 +1374,51 @@ export async function POST(req: Request) {
       console.log("[/api/requests/submit] 📝 Processing multiple requesters:", travelOrder.requesters.length);
       
       try {
+        // Get all current invitation IDs from the requesters array
+        const currentInvitationIds = travelOrder.requesters
+          .map((req: any) => req.invitationId)
+          .filter((id: any) => id && id !== 'auto-confirmed'); // Filter out auto-confirmed and empty
+        
+        // Get all existing invitation IDs for this request from database
+        const { data: existingInvitations } = await supabase
+          .from("requester_invitations")
+          .select("id")
+          .eq("request_id", data.id);
+        
+        const existingIds = (existingInvitations || []).map((inv: any) => inv.id);
+        
+        // Find invitations to delete (exist in DB but not in current requesters)
+        const idsToDelete = existingIds.filter((id: string) => !currentInvitationIds.includes(id));
+        
+        // Delete removed requester invitations
+        if (idsToDelete.length > 0) {
+          const { error: deleteError } = await supabase
+            .from("requester_invitations")
+            .delete()
+            .in("id", idsToDelete);
+          
+          if (deleteError) {
+            console.error("[/api/requests/submit] ❌ Failed to delete removed invitations:", deleteError);
+          } else {
+            console.log("[/api/requests/submit] ✅ Deleted", idsToDelete.length, "removed requester invitation(s)");
+          }
+        } else if (existingIds.length > 0 && currentInvitationIds.length === 0) {
+          // If we had invitations but now have none, delete all
+          const { error: deleteAllError } = await supabase
+            .from("requester_invitations")
+            .delete()
+            .eq("request_id", data.id);
+          
+          if (deleteAllError) {
+            console.error("[/api/requests/submit] ❌ Failed to delete all invitations:", deleteAllError);
+          } else {
+            console.log("[/api/requests/submit] ✅ Deleted all requester invitations (all were removed)");
+          }
+        }
+        
         // Separate requesters into: already invited (have invitationId) and new ones
-        const alreadyInvited = travelOrder.requesters.filter((req: any) => req.invitationId);
-        const newRequesters = travelOrder.requesters.filter((req: any) => !req.invitationId && req.name && req.email);
+        const alreadyInvited = travelOrder.requesters.filter((req: any) => req.invitationId && req.invitationId !== 'auto-confirmed');
+        const newRequesters = travelOrder.requesters.filter((req: any) => !req.invitationId || req.invitationId === 'auto-confirmed');
         
         // Update existing invitations to link to this request (if they were created for a draft)
         if (alreadyInvited.length > 0) {
@@ -1363,9 +1437,10 @@ export async function POST(req: Request) {
           }
         }
         
-        // Create new requester invitations for requesters without invitationId
-        if (newRequesters.length > 0) {
-          const requesterInvitations = newRequesters.map((req: any) => ({
+        // Create new requester invitations for requesters without invitationId (or auto-confirmed)
+        const requestersToCreate = newRequesters.filter((req: any) => req.name && req.email);
+        if (requestersToCreate.length > 0) {
+          const requesterInvitations = requestersToCreate.map((req: any) => ({
             request_id: data.id,
             email: req.email.toLowerCase(),
             name: req.name,
@@ -1373,7 +1448,7 @@ export async function POST(req: Request) {
             department: req.department || null,
             department_id: req.department_id || null,
             invited_by: profile.id,
-            status: 'pending', // Will be confirmed when they accept
+            status: req.invitationId === 'auto-confirmed' ? 'confirmed' : 'pending', // Auto-confirmed if current user
             token: crypto.randomBytes(32).toString('hex'), // Generate new token
             expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days
             signature: req.signature || null,
@@ -1393,6 +1468,19 @@ export async function POST(req: Request) {
       } catch (err: any) {
         console.error("[/api/requests/submit] ❌ Error processing multiple requesters:", err);
         // Don't fail the request creation
+      }
+    } else {
+      // If no multiple requesters, delete all existing invitations for this request
+      // (in case requesters were removed)
+      const { error: deleteError } = await supabase
+        .from("requester_invitations")
+        .delete()
+        .eq("request_id", data.id);
+      
+      if (deleteError) {
+        console.error("[/api/requests/submit] ❌ Failed to delete requester invitations:", deleteError);
+      } else {
+        console.log("[/api/requests/submit] ✅ Deleted all requester invitations (no multiple requesters)");
       }
     }
 
@@ -1474,6 +1562,45 @@ export async function POST(req: Request) {
           action_label: "Sign Request",
           priority: "high",
         });
+      }
+
+      // 3. If request goes directly to admin (head requester or head approved), notify all admins
+      if (initialStatus === "pending_admin") {
+        console.log("[/api/requests/submit] 📧 Notifying admins about new pending request");
+        
+        // Find all active admin users
+        const { data: admins, error: adminsError } = await supabase
+          .from("users")
+          .select("id, name, email")
+          .eq("role", "admin")
+          .eq("is_admin", true)
+          .eq("status", "active");
+
+        if (adminsError) {
+          console.error("[/api/requests/submit] ❌ Failed to fetch admins:", adminsError);
+        } else if (admins && admins.length > 0) {
+          console.log(`[/api/requests/submit] ✅ Found ${admins.length} admin(s) to notify`);
+          
+          // Notify each admin
+          const adminNotifications = admins.map((admin: any) =>
+            createNotification({
+              user_id: admin.id,
+              notification_type: "request_pending_signature",
+              title: "New Request Requires Review",
+              message: `A travel order request ${data.request_number || ''} from ${requestingPersonName || submitterName} requires your review.`,
+              related_type: "request",
+              related_id: data.id,
+              action_url: `/admin/inbox?view=${data.id}`,
+              action_label: "Review Request",
+              priority: "high",
+            })
+          );
+
+          await Promise.allSettled(adminNotifications);
+          console.log("[/api/requests/submit] ✅ Admin notifications sent");
+        } else {
+          console.warn("[/api/requests/submit] ⚠️ No active admins found to notify");
+        }
       }
     } catch (notifError: any) {
       console.error("[/api/requests/submit] Failed to create notifications:", notifError);

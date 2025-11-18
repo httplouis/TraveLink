@@ -25,6 +25,7 @@ type ViewProps = {
   requesterRole?: "faculty" | "head"; // Role type to determine if multiple requesters are allowed
   requestId?: string; // Request ID for sending invitations (after saving)
   currentUserEmail?: string; // Current logged-in user's email (for auto-confirm)
+  onRequestersStatusChange?: (allConfirmed: boolean) => void; // Callback when all requesters are confirmed
 };
 
 export default function TravelOrderFormView({
@@ -43,6 +44,7 @@ export default function TravelOrderFormView({
   requesterRole,
   requestId,
   currentUserEmail,
+  onRequestersStatusChange,
 }: ViewProps) {
   const c = data?.costs || {};
 
@@ -76,6 +78,7 @@ export default function TravelOrderFormView({
         requesterRole={requesterRole}
         requestId={requestId}
         currentUserEmail={currentUserEmail}
+        onRequestersStatusChange={onRequestersStatusChange}
       />
 
       <CostsSection

@@ -28,6 +28,8 @@ export default function HRRequestModal({
   const [hasSignature, setHasSignature] = useState(false);
   const [showVPSelection, setShowVPSelection] = useState(false);
   const [vpOptions, setVPOptions] = useState<any[]>([]);
+  const [selectedApproverId, setSelectedApproverId] = useState<string | null>(null);
+  const [selectedApproverRole, setSelectedApproverRole] = useState<string | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -107,25 +109,48 @@ export default function HRRequestModal({
       return;
     }
 
-    // Fetch VPs for selection
+    // Fetch VPs and Presidents for selection (messenger-style)
     try {
-      const vpsRes = await fetch("/api/approvers?role=vp");
-      const vpsData = await vpsRes.json();
+      const [vpsRes, presidentsRes] = await Promise.all([
+        fetch("/api/approvers/list?role=vp"),
+        fetch("/api/approvers/list?role=president")
+      ]);
       
-      if (vpsData.ok && vpsData.data.length > 0) {
-        setVPOptions(vpsData.data);
+      const vpsData = await vpsRes.json();
+      const presidentsData = await presidentsRes.json();
+      
+      const options: any[] = [];
+      
+      if (vpsData.ok && vpsData.data) {
+        options.push(...vpsData.data.map((v: any) => ({
+          ...v,
+          role: 'vp',
+          roleLabel: v.roleLabel || 'Vice President'
+        })));
+      }
+      
+      if (presidentsData.ok && presidentsData.data) {
+        options.push(...presidentsData.data.map((p: any) => ({
+          ...p,
+          role: 'president',
+          roleLabel: p.roleLabel || 'President'
+        })));
+      }
+      
+      if (options.length > 0) {
+        setVPOptions(options);
         setShowVPSelection(true);
         return;
       }
     } catch (err) {
-      console.error("Error fetching VPs:", err);
+      console.error("[HR] Error fetching approvers:", err);
     }
 
-    // If no VPs found or error, proceed with default
+    // If no approvers found or error, proceed with default
     proceedWithApproval(null);
   };
 
-  const proceedWithApproval = async (selectedVPId: string | null) => {
+  const proceedWithApproval = async (selectedApproverId: string | null = null, selectedRole: string | null = null) => {
     setSubmitting(true);
     try {
       const signatureData = getSignatureData();
@@ -137,7 +162,9 @@ export default function HRRequestModal({
           action: "approve",
           signature: signatureData,
           notes: notes.trim(),
-          next_vp_id: selectedVPId,
+          next_vp_id: selectedApproverId && (selectedRole === 'vp' || !selectedRole) ? selectedApproverId : null,
+          next_president_id: selectedApproverId && selectedRole === 'president' ? selectedApproverId : null,
+          next_approver_role: selectedRole || 'vp',
         }),
       });
 
@@ -768,11 +795,13 @@ export default function HRRequestModal({
         <ApproverSelectionModal
           isOpen={showVPSelection}
           onClose={() => setShowVPSelection(false)}
-          onSelect={(vpId, role) => {
-            proceedWithApproval(vpId);
+          onSelect={(approverId, role) => {
+            setSelectedApproverId(approverId);
+            setSelectedApproverRole(role);
+            proceedWithApproval(approverId, role);
           }}
-          title="Select Vice President"
-          description={`Request ${request.request_number || request.id} - Choose which VP should approve this request`}
+          title="Select Next Approver"
+          description={`Request ${request.request_number || request.id} - Choose VP or President to approve this request`}
           options={vpOptions}
           currentRole="hr"
           allowReturnToRequester={false}

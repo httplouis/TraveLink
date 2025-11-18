@@ -112,39 +112,45 @@ export async function POST(request: Request) {
         updateData.vp_signature = signature || null;
         updateData.vp_comments = notes || null;
         
-        // If multiple departments, wait for second VP
+        // Check if multiple departments - if so, need both VPs to approve
+        // Request should have already gone through: Head → Admin → Comptroller → HR → VP
         if (uniqueDepartments.size > 1) {
+          // Multiple departments - wait for second VP
           newStatus = "pending_exec"; // Stay in pending_exec, wait for second VP
           nextApproverRole = "vp";
-          message = "Request approved. Waiting for second VP approval.";
+          message = "First VP approved. Waiting for second VP approval (multiple departments).";
         } else {
-          // Single department, proceed with normal flow
+          // Single department - one VP approval is enough
+          // Request should have already gone through Admin/Comptroller/HR before reaching VP
+          // Route based on requester type
           if (requesterIsHead || requesterRole === "director" || requesterRole === "dean") {
+            // Head/Director/Dean requester → Must go to President
             newStatus = "pending_exec";
             nextApproverRole = "president";
-            message = "Request approved and sent to President";
-          } else if (!requesterIsHead && headIncluded) {
-            newStatus = "approved";
-            nextApproverRole = "requester";
-            message = "Request fully approved";
+            message = "VP approved. Request sent to President.";
           } else {
+            // Faculty requester (with head included) → Fully approved after VP
             newStatus = "approved";
             nextApproverRole = "requester";
-            message = "Request fully approved";
+            updateData.final_approved_at = now;
+            message = "Request fully approved by VP.";
           }
         }
       } else if (isSecondVP) {
         // Second VP is signing - both VPs have now approved
+        // This is just an acknowledgment that both departments' heads have been approved by their respective VPs
+        // Request should have already gone through: Head → Admin → Comptroller → HR → VP
         updateData.vp2_approved_at = now;
         updateData.vp2_approved_by = vpUser.id;
         updateData.vp2_signature = signature || null;
         updateData.vp2_comments = notes || null;
         updateData.both_vps_approved = true;
         
-        // Both VPs approved - skip admin/comptroller, go directly to president
+        // Both VPs approved - request should have already gone through Admin/Comptroller/HR
+        // Now route to President (both VPs approved means both departments acknowledged)
         newStatus = "pending_exec";
         nextApproverRole = "president";
-        message = "Both VPs have approved. Request sent directly to President (skipping admin/comptroller).";
+        message = "Both VPs have approved. Request sent to President.";
       } else {
         return NextResponse.json({ 
           ok: false, 

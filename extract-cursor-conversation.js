@@ -34,20 +34,22 @@ if (!fs.existsSync(dbPath)) {
   process.exit(1);
 }
 
-// Try to read the database
-try {
-  // Check if sqlite3 is available
-  let sqlite3;
+  // Try to read the database
   try {
-    sqlite3 = require('sqlite3');
-  } catch (e) {
-    console.error('❌ sqlite3 module not found.');
-    console.log('\n📦 Install it with: npm install sqlite3');
-    console.log('\n💡 Alternative: Use a SQLite browser tool like DB Browser for SQLite');
-    console.log('   Download: https://sqlitebrowser.org/');
-    console.log('\n   Then open:', dbPath);
-    process.exit(1);
-  }
+    // Check if sqlite3 is available
+    let sqlite3;
+    try {
+      sqlite3 = require('sqlite3');
+    } catch (e) {
+      console.error('❌ sqlite3 module not found.');
+      console.log('\n💡 RECOMMENDED: Use DB Browser for SQLite (no npm needed!)');
+      console.log('   Download: https://sqlitebrowser.org/');
+      console.log('   Then open:', dbPath);
+      console.log('\n📦 Or install sqlite3 with:');
+      console.log('   npm install sqlite3 --build-from-source=false');
+      console.log('   (This uses prebuilt binaries and is faster)');
+      process.exit(1);
+    }
 
   const { Database } = require('sqlite3').verbose();
   

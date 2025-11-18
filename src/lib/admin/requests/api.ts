@@ -57,9 +57,24 @@ export async function fetchRequest(id: string): Promise<AdminRequest | null> {
  */
 export async function updateRequest(id: string, updates: Partial<AdminRequest>): Promise<boolean> {
   try {
-    // For now, just log - we'll implement the PATCH endpoint if needed
-    console.log("[Admin Requests API] Update request:", id, updates);
-    // TODO: Implement PATCH /api/requests/[id] endpoint
+    console.log("[Admin Requests API] Updating request:", id, updates);
+    
+    const response = await fetch(`/api/requests/${id}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(updates),
+    });
+
+    const result = await response.json();
+    
+    if (!result.ok) {
+      console.error("[Admin Requests API] Update failed:", result.error);
+      return false;
+    }
+
+    console.log("[Admin Requests API] Request updated successfully");
     return true;
   } catch (error) {
     console.error("[Admin Requests API] Error updating request:", error);
@@ -121,7 +136,7 @@ export async function rejectRequest(id: string, data: {
 /**
  * Transform database request to AdminRequest format
  */
-function transformToAdminRequest(dbReq: any): AdminRequest {
+export function transformToAdminRequest(dbReq: any): AdminRequest {
   return {
     id: dbReq.id,
     createdAt: dbReq.created_at,

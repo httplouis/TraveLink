@@ -287,7 +287,7 @@ export default function OrgRequestPage() {
                   onChange={(e) => setDepartment(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-transparent"
                 >
-                  <option value="">Select Department</option>
+                  <option key="dept-empty" value="">Select Department</option>
                   {DEPARTMENTS.map((dept) => (
                     <option key={dept.code} value={dept.name}>
                       {dept.name} ({dept.code})
@@ -504,11 +504,11 @@ export default function OrgRequestPage() {
                       onChange={(e) => setVehicleType(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-transparent"
                     >
-                      <option value="">Select Type</option>
-                      <option value="Van">Van</option>
-                      <option value="Bus">Bus</option>
-                      <option value="Car">Car</option>
-                      <option value="Motorcycle">Motorcycle</option>
+                      <option key="vehicle-empty" value="">Select Type</option>
+                      <option key="vehicle-van" value="Van">Van</option>
+                      <option key="vehicle-bus" value="Bus">Bus</option>
+                      <option key="vehicle-car" value="Car">Car</option>
+                      <option key="vehicle-motorcycle" value="Motorcycle">Motorcycle</option>
                     </select>
                   </div>
                   <div>

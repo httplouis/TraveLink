@@ -47,10 +47,14 @@ export async function POST(request: Request) {
     console.log(`[HR Action] ${action} by ${hrUser.name} on request ${requestId}`);
 
     if (action === "approve") {
-      // Get request to check requester type
+      // Get request to check requester type and parent head status
       const { data: request } = await supabase
         .from("requests")
-        .select("*, requester:users!requester_id(role, is_head, exec_type)")
+        .select(`
+          *, 
+          requester:users!requester_id(role, is_head, exec_type),
+          parent_head_approver:users!parent_head_approved_by(id, is_vp, exec_type, role)
+        `)
         .eq("id", requestId)
         .single();
 
@@ -62,10 +66,23 @@ export async function POST(request: Request) {
       const requesterIsHead = request.requester_is_head || requester?.is_head || false;
       const requesterRole = requester?.role || "faculty";
       const headIncluded = request.head_included || false;
+      
+      // Check if parent head (any VP) already signed - if so, skip VP stage
+      // Parent head can be any of the 4 VPs (SVP Academics, VP External, etc.)
+      const parentHeadSigned = !!(request.parent_head_approved_at || request.parent_head_signature);
+      const parentHeadApprover = request.parent_head_approver as any;
+      const parentHeadIsVP = parentHeadApprover?.is_vp === true || 
+                             parentHeadApprover?.exec_type === 'vp' || 
+                             parentHeadApprover?.role === 'exec';
+      
+      console.log(`[HR Action] Parent head signed: ${parentHeadSigned}, parent_head_approved_at: ${request.parent_head_approved_at}`);
+      console.log(`[HR Action] Parent head is VP: ${parentHeadIsVP}, parent_head_approver:`, parentHeadApprover?.id);
 
-      // Routing logic based on requester type:
-      // - Head/Director/Dean → Must go to President (skip VP if head requester)
-      // - Faculty + Head → VP only (not President)
+      // Routing logic based on requester type and parent head status:
+      // - Head/Director/Dean → Must go to President (skip VP if head requester OR parent head VP signed)
+      // - Parent head (any VP: SVP Academics, VP External, etc.) already signed → Skip VP, go directly to President
+      //   Note: Each VP has different departments under them. For CCMS, parent head is SVP Academics.
+      // - Faculty + Head → VP only (not President) - UNLESS parent head VP signed
       // - Faculty alone → Should not reach here (validation prevents)
       
       let newStatus: string;
@@ -73,13 +90,18 @@ export async function POST(request: Request) {
       let approverRole: string;
       let message: string;
 
-      if (requesterIsHead || requesterRole === "director" || requesterRole === "dean") {
-        // Head/Director/Dean → Must go to President
-        // Head requester skips VP → goes directly to President
+      // Skip VP if parent head (who is a VP) already signed
+      const shouldSkipVP = parentHeadSigned && parentHeadIsVP;
+
+      if (requesterIsHead || requesterRole === "director" || requesterRole === "dean" || shouldSkipVP) {
+        // Head/Director/Dean OR parent head VP already signed → Must go to President
+        // Skip VP since parent head (VP) already signed
         newStatus = "pending_exec";
         execLevel = "president";
         approverRole = "president";
-        message = "Request approved and sent to President";
+        message = shouldSkipVP 
+          ? `Request approved and sent to President (VP skipped - parent head VP already signed)`
+          : "Request approved and sent to President";
       } else if (!requesterIsHead && headIncluded) {
         // Faculty + Head → VP only (not President)
         newStatus = "pending_exec";
@@ -145,7 +167,10 @@ export async function POST(request: Request) {
           sent_to_id: nextApproverId || null,
           requester_type: requesterIsHead ? "head" : "faculty",
           head_included: headIncluded,
-          routing_decision: requesterIsHead ? "skip_vp_to_president" : "vp_only"
+          routing_decision: requesterIsHead || shouldSkipVP ? "skip_vp_to_president" : "vp_only",
+          parent_head_is_vp: parentHeadIsVP,
+          parent_head_signed: parentHeadSigned,
+          parent_head_approver_id: parentHeadApprover?.id || null
         }
       });
 

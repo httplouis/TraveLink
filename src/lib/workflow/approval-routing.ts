@@ -118,19 +118,24 @@ export function routeAfterHRApproval(params: {
   requesterRole?: string; // 'head', 'director', 'dean', 'faculty'
   headIncluded: boolean;
   nextApproverId?: string;
+  parentHeadSigned?: boolean; // Whether parent head already signed
+  parentHeadIsVP?: boolean; // Whether parent head who signed is a VP
 }): RoutingDecision {
-  // Head/Director/Dean → Must go to President
-  if (params.requesterIsHead || params.requesterRole === 'director' || params.requesterRole === 'dean') {
+  // Check if parent head (who is a VP) already signed - if so, skip VP
+  const shouldSkipVP = params.parentHeadSigned && params.parentHeadIsVP;
+  
+  // Head/Director/Dean OR parent head VP already signed → Must go to President
+  if (params.requesterIsHead || params.requesterRole === 'director' || params.requesterRole === 'dean' || shouldSkipVP) {
     return {
       nextStatus: 'pending_exec',
       nextApproverRole: 'president',
       requiresChoice: params.nextApproverId ? false : true,
       availableOptions: [], // Will be populated with President/COO
-      skipVP: true // Head requester skips VP
+      skipVP: true // Head requester or parent head VP already signed - skip VP
     };
   }
 
-  // Faculty + Head included → VP only (not President)
+  // Faculty + Head included → VP only (not President) - UNLESS parent head VP signed
   if (!params.requesterIsHead && params.headIncluded) {
     return {
       nextStatus: 'pending_exec',
@@ -152,13 +157,36 @@ export function routeAfterHRApproval(params: {
 
 /**
  * Determine routing after VP approval
+ * Handles both single VP approval and dual VP approval scenarios
  */
 export function routeAfterVPApproval(params: {
   requesterIsHead: boolean;
   requesterRole?: string;
+  bothVPsApproved?: boolean;
+  multipleDepartments?: boolean;
 }): RoutingDecision {
-  // If head/director/dean, should have gone to President already
-  // VP approval means it's a faculty request, so fully approved
+  // If both VPs approved (multi-department request), go to President
+  // Note: Request should have already gone through Admin/Comptroller/HR before reaching VP
+  if (params.bothVPsApproved) {
+    return {
+      nextStatus: 'pending_exec',
+      nextApproverRole: 'president',
+      requiresChoice: false,
+      availableOptions: []
+    };
+  }
+  
+  // If head/director/dean requester, should go to President
+  if (params.requesterIsHead || params.requesterRole === 'director' || params.requesterRole === 'dean') {
+    return {
+      nextStatus: 'pending_exec',
+      nextApproverRole: 'president',
+      requiresChoice: false,
+      availableOptions: []
+    };
+  }
+  
+  // Faculty requester with single VP approval - fully approved
   return {
     nextStatus: 'approved',
     nextApproverRole: 'requester', // Final approval

@@ -2,8 +2,35 @@
 
 import Link from "next/link";
 import HeadNotificationDropdown from "./HeadNotificationDropdown";
+import { useState, useEffect } from "react";
 
 export default function HeadTopBar() {
+  const [portalName, setPortalName] = useState("Head Portal");
+
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      try {
+        const res = await fetch("/api/profile");
+        const data = await res.json();
+        if (data.ok && data.data) {
+          // Check if user is exec (president or VP)
+          if (data.data.is_president) {
+            setPortalName("President Portal");
+          } else if (data.data.is_vp) {
+            setPortalName("VP Portal");
+          } else if (data.data.is_executive || data.data.role === 'exec') {
+            setPortalName("Executive Portal");
+          } else {
+            setPortalName("Head Portal");
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch profile for portal name:", err);
+      }
+    };
+    fetchUserProfile();
+  }, []);
+
   return (
     <header className="fixed inset-x-0 top-0 z-50 h-14 bg-[#7a0019] text-white">
       <div className="flex h-full items-center justify-between px-4 md:px-6">
@@ -22,7 +49,7 @@ export default function HeadTopBar() {
             </div>
           </Link>
           <span className="h-6 w-px bg-white/30" />
-          <span className="opacity-90 text-sm font-medium">Head Portal</span>
+          <span className="opacity-90 text-sm font-medium">{portalName}</span>
         </div>
 
         {/* Actions - Only Notifications */}

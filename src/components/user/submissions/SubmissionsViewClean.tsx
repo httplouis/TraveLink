@@ -77,9 +77,25 @@ export default function SubmissionsView() {
       
       if (!res.ok) {
         // Try to get error details from response
-        const errorText = await res.text();
-        console.error("API Error Response:", errorText);
-        throw new Error(`HTTP ${res.status}: ${res.statusText} - ${errorText}`);
+        let errorText = '';
+        try {
+          errorText = await res.text();
+          // Try to parse as JSON first
+          try {
+            const errorJson = JSON.parse(errorText);
+            if (errorJson.error) {
+              throw new Error(errorJson.error);
+            }
+          } catch {
+            // Not JSON, might be HTML (Cloudflare error page)
+            if (errorText.includes('<!DOCTYPE html>') || errorText.includes('Internal server error')) {
+              throw new Error(`Server error (${res.status}). Please try again in a moment.`);
+            }
+            throw new Error(errorText.substring(0, 200)); // Limit error message length
+          }
+        } catch (parseErr: any) {
+          throw new Error(parseErr.message || `HTTP ${res.status}: ${res.statusText}`);
+        }
       }
       
       const json = await res.json();
@@ -91,12 +107,19 @@ export default function SubmissionsView() {
         console.log("Successfully loaded", json.data?.length || 0, "requests");
       } else {
         console.error("API returned error:", json.error);
-        throw new Error(json.error || "Unknown API error");
+        // Clean up error message if it contains HTML
+        let errorMsg = json.error || "Unknown API error";
+        if (typeof errorMsg === 'string' && (errorMsg.includes('<!DOCTYPE html>') || errorMsg.includes('Internal server error'))) {
+          errorMsg = "Server error. Please try again in a moment.";
+        }
+        throw new Error(errorMsg);
       }
     } catch (err) {
       console.error("Failed to fetch submissions:", err);
-      // Show user-friendly error
-      alert(`Error loading submissions: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      // Show user-friendly error (limit message length)
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+      const cleanMsg = errorMsg.length > 200 ? errorMsg.substring(0, 200) + '...' : errorMsg;
+      alert(`Error loading submissions: ${cleanMsg}`);
     } finally {
       setLoading(false);
     }
@@ -318,7 +341,7 @@ export default function SubmissionsView() {
                   requesterIsHead={(req as any).requester_is_head || false}
                   hasBudget={req.has_budget}
                   hasParentHead={(req as any).has_parent_head || false}
-                  requiresPresidentApproval={req.total_budget > 50000} // Example: President approval required for budget > 50k
+                  requiresPresidentApproval={(req as any).requester_is_head || req.total_budget > 50000} // Head requests always go to President
                   compact={true}
                 />
               </div>
@@ -461,7 +484,14 @@ export default function SubmissionsView() {
               participants: fullRequestData?.participants || [],
               
               // Complete signature workflow chain
-              signatures: [
+              // For head requests: skip head signature (dual-signature - same as requester)
+              // For head requests: must go through VP and President (both required)
+              signatures: (() => {
+                const requesterIsHead = fullRequestData?.requester_is_head || false;
+                const hasBudget = fullRequestData?.has_budget || false;
+                const requiresPresidentApproval = requesterIsHead || ((fullRequestData?.total_budget || 0) > 50000);
+                
+                const signatures: any[] = [
                 {
                   id: 'requester',
                   label: 'Requesting Person',
@@ -472,12 +502,17 @@ export default function SubmissionsView() {
                     name: selectedRequest.requester_name || 'Unknown User',
                     profile_picture: undefined,
                     department: selectedRequest.department?.name || 'No Department',
-                    position: 'Faculty/Staff'
+                    position: requesterIsHead ? 'Department Head' : 'Faculty/Staff'
                   },
                   signature: fullRequestData?.requester_signature || null,
                   approved_at: selectedRequest.created_at
                 },
-                {
+              ];
+              
+              // Only add head signature stage if requester is NOT a head
+              // (Head requests use dual-signature - requester signature appears in both places)
+              if (!requesterIsHead) {
+                signatures.push({
                   id: 'head',
                   label: 'Department Head',
                   role: 'Head',
@@ -490,22 +525,45 @@ export default function SubmissionsView() {
                   } : undefined,
                   signature: fullRequestData?.head_signature || null,
                   approved_at: fullRequestData?.head_approved_at || null
-                },
-                {
+                });
+              } else {
+                // For head requests, show head signature as approved (dual-signature with requester)
+                signatures.push({
+                  id: 'head',
+                  label: 'Department Head',
+                  role: 'Head',
+                  status: 'approved',
+                  approver: {
+                    id: 'current-user',
+                    name: selectedRequest.requester_name || 'Unknown User',
+                    position: 'Department Head',
+                    department: selectedRequest.department?.name || 'No Department'
+                  },
+                  signature: fullRequestData?.requester_signature || null, // Use requester signature (dual-signature)
+                  approved_at: selectedRequest.created_at,
+                  skip_reason: 'Dual-signature: Same as requesting person'
+                });
+              }
+              
+              // Admin - always required
+              signatures.push({
+                id: 'admin',
+                label: 'Administrator',
+                role: 'Admin',
+                status: fullRequestData?.admin_processed_at ? 'approved' : 'pending',
+                approver: fullRequestData?.admin_processed_at ? {
                   id: 'admin',
-                  label: 'Administrator',
-                  role: 'Admin',
-                  status: fullRequestData?.admin_processed_at ? 'approved' : 'pending',
-                  approver: fullRequestData?.admin_processed_at ? {
-                    id: 'admin',
-                    name: fullRequestData?.admin_processed_by || 'Administrator',
-                    position: 'Administrative Officer',
-                    department: 'Administration'
-                  } : undefined,
-                  signature: fullRequestData?.admin_signature || null,
-                  approved_at: fullRequestData?.admin_processed_at || null
-                },
-                {
+                  name: fullRequestData?.admin_processed_by || 'Administrator',
+                  position: 'Administrative Officer',
+                  department: 'Administration'
+                } : undefined,
+                signature: fullRequestData?.admin_signature || null,
+                approved_at: fullRequestData?.admin_processed_at || null
+              });
+              
+              // Comptroller - only if has budget
+              if (hasBudget) {
+                signatures.push({
                   id: 'comptroller',
                   label: 'Comptroller',
                   role: 'Comptroller',
@@ -518,36 +576,44 @@ export default function SubmissionsView() {
                   } : undefined,
                   signature: fullRequestData?.comptroller_signature || null,
                   approved_at: fullRequestData?.comptroller_approved_at || null
-                },
-                {
+                });
+              }
+              
+              // HR - always required
+              signatures.push({
+                id: 'hr',
+                label: 'Human Resources',
+                role: 'HR',
+                status: fullRequestData?.hr_signature ? 'approved' : 'pending',
+                approver: fullRequestData?.hr_signature ? {
                   id: 'hr',
-                  label: 'Human Resources',
-                  role: 'HR',
-                  status: fullRequestData?.hr_signature ? 'approved' : 'pending',
-                  approver: fullRequestData?.hr_signature ? {
-                    id: 'hr',
-                    name: fullRequestData?.hr_approved_by || 'HR Manager',
-                    position: 'HR Manager',
-                    department: 'Human Resources'
-                  } : undefined,
-                  signature: fullRequestData?.hr_signature || null,
-                  approved_at: fullRequestData?.hr_approved_at || null
-                },
-                {
+                  name: fullRequestData?.hr_approved_by || 'HR Manager',
+                  position: 'HR Manager',
+                  department: 'Human Resources'
+                } : undefined,
+                signature: fullRequestData?.hr_signature || null,
+                approved_at: fullRequestData?.hr_approved_at || null
+              });
+              
+              // VP - always required (head requests go through VP then President)
+              signatures.push({
+                id: 'vp',
+                label: 'Vice President',
+                role: 'VP',
+                status: fullRequestData?.vp_signature ? 'approved' : 'pending',
+                approver: fullRequestData?.vp_signature ? {
                   id: 'vp',
-                  label: 'Vice President',
-                  role: 'VP',
-                  status: fullRequestData?.vp_signature ? 'approved' : 'pending',
-                  approver: fullRequestData?.vp_signature ? {
-                    id: 'vp',
-                    name: fullRequestData?.vp_approved_by || 'Vice President',
-                    position: 'Vice President for Academic Affairs',
-                    department: 'Executive'
-                  } : undefined,
-                  signature: fullRequestData?.vp_signature || null,
-                  approved_at: fullRequestData?.vp_approved_at || null
-                },
-                {
+                  name: fullRequestData?.vp_approved_by || 'Vice President',
+                  position: 'Vice President for Academic Affairs',
+                  department: 'Executive'
+                } : undefined,
+                signature: fullRequestData?.vp_signature || null,
+                approved_at: fullRequestData?.vp_approved_at || null
+              });
+              
+              // President - required for head requests OR high-value requests (>50k)
+              if (requiresPresidentApproval) {
+                signatures.push({
                   id: 'president',
                   label: 'University President',
                   role: 'President',
@@ -560,8 +626,11 @@ export default function SubmissionsView() {
                   } : undefined,
                   signature: fullRequestData?.president_signature || null,
                   approved_at: fullRequestData?.president_approved_at || null
-                }
-              ],
+                });
+              }
+              
+              return signatures;
+            })(),
               
               // Mock timeline for now - replace with real data from API
               timeline: [
@@ -589,7 +658,7 @@ export default function SubmissionsView() {
               requesterIsHead: fullRequestData?.requester_is_head || false,
               hasBudget: fullRequestData?.has_budget || false,
               hasParentHead: fullRequestData?.has_parent_head || false,
-              requiresPresidentApproval: (fullRequestData?.total_budget || 0) > 50000,
+              requiresPresidentApproval: (fullRequestData?.requester_is_head || false) || ((fullRequestData?.total_budget || 0) > 50000), // Head requests always go to President
               headApprovedAt: fullRequestData?.head_approved_at || null,
               headApprovedBy: fullRequestData?.head_approved_by || null,
               parentHeadApprovedAt: fullRequestData?.parent_head_approved_at || null,

@@ -2,7 +2,9 @@
 
 import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
-import { AdminRequestsRepo } from "@/lib/admin/requests/store";
+import { fetchRequest } from "@/lib/admin/requests/api";
+import { transformToAdminRequest } from "@/lib/admin/requests/api";
+import type { AdminRequest } from "@/lib/admin/requests/store";
 
 /* Simple inline signature pad (self-contained) */
 function SignaturePad({
@@ -81,51 +83,102 @@ export default function HeadReviewPage() {
   // TODO: wire real auth and head check; for now assume current user is a head
   const currentHead = { id: "HEAD-USER-ID", name: "Department Head" };
 
-  const [req, setReq] = React.useState(() => (id ? AdminRequestsRepo.get(String(id)) : undefined));
+  const [req, setReq] = React.useState<AdminRequest | undefined>(undefined);
   const [sig, setSig] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
+  const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
-    if (!id) { setReq(undefined); return; }
-    const r = AdminRequestsRepo.get(String(id));
-    setReq(r);
-    setSig((r as any)?.travelOrder?.endorsedByHeadSignature ?? null);
+    async function loadRequest() {
+      if (!id) { 
+        setReq(undefined); 
+        setLoading(false);
+        return; 
+      }
+      
+      try {
+        setLoading(true);
+        const request = await fetchRequest(String(id));
+        if (request) {
+          const transformed = transformToAdminRequest(request);
+          setReq(transformed);
+          setSig((transformed as any)?.travelOrder?.endorsedByHeadSignature ?? null);
+        } else {
+          setReq(undefined);
+        }
+      } catch (err) {
+        console.error("[HeadReview] Error loading request:", err);
+        setReq(undefined);
+      } finally {
+        setLoading(false);
+      }
+    }
+    
+    loadRequest();
   }, [id]);
 
+  if (loading) return <div className="p-6">Loading request...</div>;
   if (!id) return <div className="p-6">Invalid request.</div>;
-  if (!req) return <div className="p-6">Not found.</div>;
-  if (req.status !== "pending_head") return <div className="p-6">Already processed.</div>;
+  if (!req) return <div className="p-6">Request not found.</div>;
+  if (req.status !== "pending_head" && req.status !== "pending_parent_head") {
+    return <div className="p-6">Request already processed. Status: {req.status}</div>;
+  }
 
   const t = req.travelOrder as any;
   const c = t?.costs || {};
 
-  const approve = () => {
+  const approve = async () => {
     if (!sig) { alert("Please add a signature first."); return; }
     setBusy(true);
-    AdminRequestsRepo.upsert({
-      ...req,
-      status: "head_approved",
-      updatedAt: new Date().toISOString(),
-      travelOrder: {
-        ...t,
-        endorsedByHeadName: currentHead.name,
-        endorsedByHeadSignature: sig,
-        endorsedAt: new Date().toISOString(),
-      },
-    });
-    setBusy(false);
-    router.replace("/head/inbox");
+    try {
+      const response = await fetch(`/api/head`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: req.id,
+          action: "approve",
+          signature: sig,
+          comments: "Approved by department head",
+        }),
+      });
+      
+      const result = await response.json();
+      if (!result.ok) {
+        throw new Error(result.error || "Failed to approve");
+      }
+      
+      router.replace("/head/inbox");
+    } catch (err: any) {
+      console.error("[HeadReview] Approval error:", err);
+      alert(`Failed to approve: ${err.message}`);
+      setBusy(false);
+    }
   };
 
-  const reject = () => {
+  const reject = async () => {
     setBusy(true);
-    AdminRequestsRepo.upsert({
-      ...req,
-      status: "head_rejected",
-      updatedAt: new Date().toISOString(),
-    });
-    setBusy(false);
-    router.replace("/head/inbox");
+    try {
+      const response = await fetch(`/api/head`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: req.id,
+          action: "reject",
+          return_reason: "Rejected by department head",
+        }),
+      });
+      
+      const result = await response.json();
+      if (!result.ok) {
+        throw new Error(result.error || "Failed to reject");
+      }
+      
+      router.replace("/head/inbox");
+    } catch (err: any) {
+      console.error("[HeadReview] Rejection error:", err);
+      alert(`Failed to reject: ${err.message}`);
+      setBusy(false);
+    }
   };
 
   return (

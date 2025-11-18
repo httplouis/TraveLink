@@ -54,8 +54,12 @@ export default function ProfilePage() {
             is_admin: data.data.is_admin || false,
             is_comptroller: data.data.is_comptroller || false,
             is_hr: data.data.is_hr || false,
-            is_executive: data.data.is_executive || false
-          }
+            is_executive: data.data.is_executive || false,
+            is_vp: data.data.is_vp || false,
+            is_president: data.data.is_president || false,
+          },
+          position_title: data.data.position_title || null,
+          exec_type: data.data.exec_type || null,
         };
         console.log('[ProfilePage] Transformed data:', transformed);
         setProfileData(transformed);

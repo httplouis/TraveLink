@@ -11,6 +11,7 @@ import SchoolServiceSection from "@/components/user/request/ui/SchoolServiceSect
 import SeminarApplicationForm from "@/components/user/request/ui/SeminarApplicationForm.ui";
 import SummarySidebar from "@/components/user/request/ui/SummarySidebar.ui";
 import SubmitBar from "@/components/user/request/ui/SubmitBar.ui";
+import TransportationForm from "@/components/common/TransportationForm";
 
 import { useRequestStore } from "@/store/user/requestStore";
 import { canSubmit } from "@/lib/user/request/validation";
@@ -35,9 +36,9 @@ import {
 } from "@/components/user/request/dev/QuickFillButton.ui";
 import SuccessModal from "@/components/user/request/SuccessModal";
 import SubmitConfirmationDialog from "@/components/user/request/SubmitConfirmationDialog";
+import ApproverSelectionModal from "@/components/common/ApproverSelectionModal";
 
-// Admin list sink (mock inbox)
-import { AdminRequestsRepo } from "@/lib/admin/requests/store";
+// Note: AdminRequestsRepo import removed - no longer needed (using API now)
 
 function RequestWizardContent() {
   const search = useSearchParams();
@@ -76,6 +77,7 @@ function RequestWizardContent() {
     patchCosts,
     patchSchoolService,
     patchSeminar,
+    patchTransportation,
 
     hardSet,
     currentDraftId,
@@ -100,9 +102,21 @@ function RequestWizardContent() {
     departmentId: string;
   } | null>(null);
   const [isRepresentativeSubmission, setIsRepresentativeSubmission] = React.useState(false);
+  
+  // Approver selection for head requesters (messenger-style)
+  const [showApproverSelection, setShowApproverSelection] = React.useState(false);
+  const [approverOptions, setApproverOptions] = React.useState<any[]>([]);
+  const [loadingApprovers, setLoadingApprovers] = React.useState(false);
+  const [selectedApproverId, setSelectedApproverId] = React.useState<string | null>(null);
+  const [selectedApproverRole, setSelectedApproverRole] = React.useState<string | null>(null);
+  const [defaultApproverId, setDefaultApproverId] = React.useState<string | undefined>(undefined);
+  const [defaultApproverName, setDefaultApproverName] = React.useState<string | undefined>(undefined);
 
   const showSeminar = data.reason === "seminar";
   const showSchoolService = data.vehicleMode === "institutional";
+  
+  // Check if current user is head requester
+  const isHeadRequester = requestingPersonIsHead === true || currentUser?.role === "head";
 
   // -------- restore on first mount only --------
   const didHydrateRef = React.useRef(false);
@@ -991,6 +1005,10 @@ function RequestWizardContent() {
   const [showSuccessModal, setShowSuccessModal] = React.useState(false);
   const [submittedData, setSubmittedData] = React.useState<any>(null);
   const [showConfirmDialog, setShowConfirmDialog] = React.useState(false);
+  
+  // Track confirmation status for requesters and participants
+  const [allRequestersConfirmed, setAllRequestersConfirmed] = React.useState<boolean | undefined>(undefined);
+  const [allParticipantsConfirmed, setAllParticipantsConfirmed] = React.useState<boolean | undefined>(undefined);
 
   async function handleSubmit() {
     // library validation
@@ -998,6 +1016,7 @@ function RequestWizardContent() {
     console.log('  - isRepresentativeSubmission state:', isRepresentativeSubmission);
     console.log('  - requestingPerson:', data.travelOrder?.requestingPerson);
     console.log('  - currentUser?.name:', currentUser?.name);
+    console.log('  - isHeadRequester:', isHeadRequester);
     const v = canSubmit(data, { 
       isRepresentativeSubmission,
       currentUserName: currentUser?.name,
@@ -1015,9 +1034,105 @@ function RequestWizardContent() {
       return;
     }
 
-    // Show confirmation dialog instead of submitting immediately
+    // For head requesters: show approver selection modal (messenger-style)
+    if (isHeadRequester) {
+      console.log('[RequestWizard] 🎯 Head requester - showing approver selection');
+      setLoadingApprovers(true);
+      
+      try {
+        // Fetch ALL available approvers: VPs, admins, parent head (if exists)
+        const [vpRes, adminRes, parentHeadRes] = await Promise.all([
+          fetch('/api/approvers/list?role=vp').catch(() => ({ ok: false, data: [] })),
+          fetch('/api/approvers/list?role=admin').catch(() => ({ ok: false, data: [] })),
+          // Check if department has parent head
+          data.travelOrder?.department ? fetch(`/api/departments?name=${encodeURIComponent(data.travelOrder.department)}`).then(r => r.json()).catch(() => ({ ok: false, data: [] })) : Promise.resolve({ ok: false, data: [] })
+        ]);
+        
+        const options: any[] = [];
+        
+        // Add ALL VPs (not just parent head)
+        const vpData = await vpRes.json().catch(() => ({ ok: false, data: [] }));
+        if (vpData.ok && vpData.data && vpData.data.length > 0) {
+          options.push(...vpData.data.map((vp: any) => ({
+            ...vp,
+            role: 'vp',
+            roleLabel: vp.roleLabel || 'Vice President'
+          })));
+          console.log('[RequestWizard] ✅ Found VPs:', vpData.data.length);
+        }
+        
+        // Add parent head if department has parent (as a separate option, labeled as parent head)
+        if (parentHeadRes.ok && parentHeadRes.data?.[0]?.parent_department_id) {
+          const dept = parentHeadRes.data[0];
+          const parentHeadListRes = await fetch(`/api/approvers/list?role=head`).then(r => r.json()).catch(() => ({ ok: false, data: [] }));
+          
+          if (parentHeadListRes.ok && parentHeadListRes.data) {
+            const parentHeads = parentHeadListRes.data
+              .filter((h: any) => h.department_id === dept.parent_department_id)
+              .map((h: any) => ({
+                ...h,
+                role: 'head',
+                roleLabel: 'Parent Department Head (VP)'
+              }));
+            
+            // Only add if not already in VPs list
+            parentHeads.forEach((ph: any) => {
+              if (!options.some(opt => opt.id === ph.id)) {
+                options.push(ph);
+              }
+            });
+          }
+        }
+        
+        // Add admin options
+        const adminData = await adminRes.json().catch(() => ({ ok: false, data: [] }));
+        if (adminData.ok && adminData.data && adminData.data.length > 0) {
+          options.push(...adminData.data.map((a: any) => ({
+            ...a,
+            role: 'admin',
+            roleLabel: 'Administrator'
+          })));
+          
+          // Find Ma'am TM as default
+          const maamTM = adminData.data.find((a: any) => 
+            a.name?.toLowerCase().includes('trizzia') || 
+            a.email?.toLowerCase().includes('trizzia')
+          );
+          
+          if (maamTM) {
+            setDefaultApproverId(maamTM.id);
+            setDefaultApproverName(maamTM.name);
+          }
+          
+          console.log('[RequestWizard] ✅ Found admins:', adminData.data.length);
+        }
+        
+        console.log('[RequestWizard] ✅ Total approvers found:', options.length);
+        setApproverOptions(options);
+        setLoadingApprovers(false);
+        setShowApproverSelection(true);
+        return;
+      } catch (err) {
+        console.error('[RequestWizard] Error fetching approvers:', err);
+        setLoadingApprovers(false);
+        // Fallback: show confirmation dialog
+        setShowConfirmDialog(true);
+      }
+    }
+
+    // For non-head requesters: show confirmation dialog
     setShowConfirmDialog(true);
   }
+  
+  // Handle approver selection and proceed with submission
+  const handleApproverSelected = (approverId: string, approverRole: string) => {
+    console.log('[RequestWizard] ✅ Approver selected:', { approverId, approverRole });
+    setSelectedApproverId(approverId);
+    setSelectedApproverRole(approverRole);
+    setShowApproverSelection(false);
+    // Now show confirmation dialog with selected approver info
+    setShowConfirmDialog(true);
+  };
 
   async function handleConfirmedSubmit() {
     setShowConfirmDialog(false);
@@ -1036,6 +1151,9 @@ function RequestWizardContent() {
           vehicleMode: data.vehicleMode,
           schoolService: data.schoolService, // ✅ NOW INCLUDED!
           seminar: data.seminar,
+          // Pass selected approver for head requesters (messenger-style routing)
+          nextApproverId: selectedApproverId || undefined,
+          nextApproverRole: selectedApproverRole || undefined,
         }),
       });
 
@@ -1083,10 +1201,32 @@ function RequestWizardContent() {
     reason: data.reason,
     hasBudget,
   });
+  // Check if all requesters are confirmed (for travel orders with multiple requesters)
+  const hasMultipleRequesters = Array.isArray(data.travelOrder?.requesters) && data.travelOrder.requesters.length > 1;
+  const hasSentRequesterInvitations = hasMultipleRequesters && data.travelOrder?.requesters?.some((req: any) => req.invitationId && req.invitationId !== 'auto-confirmed');
+  
+  // Only require confirmation if invitations were sent
+  const requestersAllConfirmed = hasMultipleRequesters && hasSentRequesterInvitations
+    ? (allRequestersConfirmed ?? data.travelOrder?.requesters?.every((req: any) => 
+        req.status === 'confirmed' || (req.invitationId === 'auto-confirmed' && req.status === 'confirmed')
+      ) ?? false)
+    : true; // If no multiple requesters or no invitations sent, consider as confirmed
+  
+  // Check if all participants are confirmed (for seminars)
+  const hasParticipants = Array.isArray(data.seminar?.participantInvitations) && data.seminar.participantInvitations.length > 0;
+  const hasSentParticipantInvitations = hasParticipants && data.seminar?.participantInvitations?.some((inv: any) => inv.invitationId);
+  
+  // Only require confirmation if invitations were sent
+  const participantsAllConfirmed = hasParticipants && hasSentParticipantInvitations
+    ? (allParticipantsConfirmed ?? data.seminar?.participantInvitations?.every((inv: any) => inv.status === 'confirmed') ?? false)
+    : true; // If no participants or no invitations sent, consider as confirmed
+  
   const validation = canSubmit(data, { 
     isRepresentativeSubmission,
     currentUserName: currentUser?.name,
     requestingPersonName: data.travelOrder?.requestingPerson,
+    allRequestersConfirmed: hasMultipleRequesters ? requestersAllConfirmed : undefined,
+    allParticipantsConfirmed: hasParticipants ? participantsAllConfirmed : undefined,
   });
 
   return (
@@ -1168,6 +1308,7 @@ function RequestWizardContent() {
               requesterRole={data.requesterRole}
               requestId={currentSubmissionId || currentDraftId || undefined} // Pass request ID for invitations (from submission or draft)
               currentUserEmail={currentUserEmail} // Pass current user email for auto-confirm
+              onRequestersStatusChange={setAllRequestersConfirmed}
             />
           )}
 
@@ -1177,7 +1318,21 @@ function RequestWizardContent() {
               data={data.schoolService}
               onChange={onChangeSchoolService}
               errors={errors}
+              departureDate={data.travelOrder?.departureDate} // Pass departure date for coding day filtering
             />
+          )}
+
+          {/* Show Transportation Form for institutional vehicles */}
+          {showSchoolService && (
+            <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                Transportation Arrangement
+              </h3>
+              <TransportationForm
+                value={data.transportation || {}}
+                onChange={(value) => patchTransportation(value)}
+              />
+            </div>
           )}
 
           {/* Show Seminar form only when seminar is selected */}
@@ -1186,6 +1341,7 @@ function RequestWizardContent() {
               data={data.seminar}
               onChange={onChangeSeminar}
               errors={errors}
+              onParticipantsStatusChange={setAllParticipantsConfirmed}
             />
           )}
 
@@ -1270,6 +1426,26 @@ function RequestWizardContent() {
       </div>
 
       {confirmUI}
+
+      {/* Approver Selection Modal for Head Requesters */}
+      {showApproverSelection && (
+        <ApproverSelectionModal
+          isOpen={showApproverSelection}
+          onClose={() => {
+            setShowApproverSelection(false);
+            setLoadingApprovers(false);
+          }}
+          onSelect={handleApproverSelected}
+          title="Select Next Approver"
+          description={`Choose who to send this request to after you sign it. You can select your parent head (VP) or an administrator.`}
+          options={approverOptions}
+          currentRole="head"
+          allowReturnToRequester={false}
+          loading={loadingApprovers}
+          defaultApproverId={defaultApproverId}
+          defaultApproverName={defaultApproverName}
+        />
+      )}
 
       {/* Confirmation Dialog */}
       <SubmitConfirmationDialog

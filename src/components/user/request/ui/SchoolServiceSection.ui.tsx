@@ -8,16 +8,19 @@ export default function SchoolServiceSection({
   data,
   onChange,
   errors,
+  departureDate, // Travel departure date for coding day filtering
 }: {
   data: any;
   onChange: (patch: any) => void;
   errors: Record<string, string>;
+  departureDate?: string; // Optional: travel departure date
 }) {
   const [drivers, setDrivers] = React.useState<{ value: string; label: string; id: string }[]>([]);
   const [vehicles, setVehicles] = React.useState<{ value: string; label: string; id: string }[]>([]);
   const [loading, setLoading] = React.useState(true);
 
   // Fetch drivers and vehicles from API
+  // Re-fetch vehicles when departureDate changes (for coding day filtering)
   React.useEffect(() => {
     async function fetchData() {
       try {
@@ -36,8 +39,12 @@ export default function SchoolServiceSection({
           setDrivers(driverOptions);
         }
 
-        // Fetch vehicles
-        const vehiclesRes = await fetch("/api/vehicles?status=available");
+        // Fetch vehicles - include date parameter if available for coding day filtering
+        const vehiclesUrl = departureDate 
+          ? `/api/vehicles?status=available&date=${encodeURIComponent(departureDate)}`
+          : `/api/vehicles?status=available`;
+        
+        const vehiclesRes = await fetch(vehiclesUrl);
         const vehiclesData = await vehiclesRes.json();
         
         if (vehiclesData.ok && vehiclesData.data) {
@@ -47,6 +54,7 @@ export default function SchoolServiceSection({
             id: vehicle.id,
           }));
           setVehicles(vehicleOptions);
+          console.log(`[SchoolServiceSection] Loaded ${vehicleOptions.length} vehicles${departureDate ? ` for date ${departureDate}` : ''}`);
         }
       } catch (error) {
         console.error("Error fetching drivers/vehicles:", error);
@@ -57,7 +65,7 @@ export default function SchoolServiceSection({
     }
 
     fetchData();
-  }, []);
+  }, [departureDate]); // Re-fetch when departureDate changes
   return (
     <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
       <div className="mb-4">

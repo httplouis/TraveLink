@@ -37,10 +37,12 @@ export default function RequestDetailsPage({ requestId }: RequestDetailsPageProp
       // Extract nested approver data
       const requester = data.requester || {};
       const headApprover = data.head_approver || {};
+      const parentHeadApprover = data.parent_head_approver || {};
       const adminApprover = data.admin_approver || {};
       const comptrollerApprover = data.comptroller_approver || {};
       const hrApprover = data.hr_approver || {};
       const vpApprover = data.vp_approver || {};
+      const vp2Approver = data.vp2_approver || {};
       const presidentApprover = data.president_approver || {};
       const execApprover = data.exec_approver || {};
       const department = data.department || {};
@@ -148,6 +150,26 @@ export default function RequestDetailsPage({ requestId }: RequestDetailsPageProp
             skip_reason: data.head_skip_reason,
             comments: data.head_comments
           },
+          // Parent Head (if exists - for office hierarchy)
+          ...(data.parent_head_approved_by ? [{
+            id: 'parent_head',
+            label: 'Parent Department Head',
+            role: 'Parent Head',
+            status: data.parent_head_signature ? 'approved' : 
+                   data.status === 'pending_parent_head' ? 'next' : 'pending',
+            approver: data.parent_head_approver && data.parent_head_approver.id ? {
+              id: data.parent_head_approver.id,
+              name: data.parent_head_approver.name || 'Parent Department Head',
+              profile_picture: data.parent_head_approver.profile_picture,
+              department: data.parent_head_approver.department?.name || department.name,
+              position: data.parent_head_approver.position_title || 'Parent Department Head',
+              email: data.parent_head_approver.email,
+              phone: data.parent_head_approver.phone_number
+            } : undefined,
+            signature: data.parent_head_signature,
+            approved_at: data.parent_head_approved_at,
+            comments: data.parent_head_comments
+          }] : []),
           {
             id: 'admin',
             label: 'Admin Processing',
@@ -224,6 +246,24 @@ export default function RequestDetailsPage({ requestId }: RequestDetailsPageProp
             approved_at: data.vp_approved_at,
             comments: data.vp_comments
           },
+          // Second VP (if both VPs approved - for multi-department requests)
+          ...(data.both_vps_approved && data.vp2_approved_by ? [{
+            id: 'vp2',
+            label: 'Second Vice President',
+            role: 'VP',
+            status: data.vp2_signature ? 'approved' : 'pending',
+            approver: data.vp2_approved_by && vp2Approver.id ? {
+              id: vp2Approver.id,
+              name: vp2Approver.name || 'Second Vice President',
+              profile_picture: vp2Approver.profile_picture,
+              position: vp2Approver.position_title || 'Vice President',
+              email: vp2Approver.email,
+              phone: vp2Approver.phone_number
+            } : undefined,
+            signature: data.vp2_signature,
+            approved_at: data.vp2_approved_at,
+            comments: data.vp2_comments
+          }] : []),
           {
             id: 'president',
             label: 'President',

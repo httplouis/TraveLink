@@ -75,7 +75,9 @@ export class WorkflowEngine {
         return 'pending_admin';
 
       case 'pending_admin':
-        // After admin processing, check if budget exists
+        // After admin processing, check budget to determine next step
+        // Note: both_vps_approved is handled in API endpoints - requests still go through admin/comptroller
+        // The flag is just an acknowledgment that both VPs have signed for multi-department requests
         if (hasBudget) {
           // Has budget: must go to comptroller for budget verification
           return 'pending_comptroller';

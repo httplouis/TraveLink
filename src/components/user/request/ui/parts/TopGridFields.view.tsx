@@ -24,6 +24,7 @@ type Props = {
   requesterRole?: "faculty" | "head"; // Role type to determine if multiple requesters are allowed
   requestId?: string; // Request ID for sending invitations (after saving)
   currentUserEmail?: string; // Current logged-in user's email (for auto-confirm)
+  onRequestersStatusChange?: (allConfirmed: boolean) => void; // Callback when all requesters are confirmed
 };
 
 export default function TopGridFields({
@@ -36,6 +37,7 @@ export default function TopGridFields({
   requesterRole,
   requestId,
   currentUserEmail,
+  onRequestersStatusChange,
 }: Props) {
   // Calculate if signature pad should be shown
   const shouldShowSignaturePad = !isHeadRequester && !isRepresentativeSubmission;
@@ -80,15 +82,47 @@ export default function TopGridFields({
                     requestingPerson: requesters[0].name 
                   });
                   
-                  // Auto-fill department from first requester if not set
-                  if (requesters[0].department && !data?.department) {
-                    onDepartmentChange(requesters[0].department);
+                  // Auto-fill department: collect all unique departments from all requesters
+                  const departments = requesters
+                    .map(req => req.department)
+                    .filter((dept): dept is string => !!dept && dept.trim() !== "");
+                  
+                  // Remove duplicates (case-insensitive)
+                  const uniqueDepartments = Array.from(
+                    new Set(departments.map(dept => dept.trim()))
+                  );
+                  
+                  if (uniqueDepartments.length > 0) {
+                    // Combine departments: "HRD and WCDEO" for 2, "HRD, WCDEO, and CCMS" for 3+
+                    let combinedDepartment = "";
+                    if (uniqueDepartments.length === 1) {
+                      combinedDepartment = uniqueDepartments[0];
+                    } else if (uniqueDepartments.length === 2) {
+                      combinedDepartment = `${uniqueDepartments[0]} and ${uniqueDepartments[1]}`;
+                    } else {
+                      // For 3+ departments: "HRD, WCDEO, and CCMS"
+                      const lastDept = uniqueDepartments[uniqueDepartments.length - 1];
+                      const otherDepts = uniqueDepartments.slice(0, -1);
+                      combinedDepartment = `${otherDepts.join(", ")}, and ${lastDept}`;
+                    }
+                    
+                    // Only auto-fill if department field is empty or doesn't match the combined value
+                    const currentDept = data?.department || "";
+                    if (!currentDept || currentDept !== combinedDepartment) {
+                      console.log('[TopGridFields] 🔄 Auto-filling department from requesters:', {
+                        uniqueDepartments,
+                        combinedDepartment,
+                        currentDepartment: currentDept
+                      });
+                      onDepartmentChange(combinedDepartment);
+                    }
                   }
                 }
               }}
               requestId={requestId}
               requesterRole={requesterRole}
               currentUserEmail={currentUserEmail}
+              onStatusChange={onRequestersStatusChange}
             />
           ) : (
             <>
@@ -128,7 +162,12 @@ export default function TopGridFields({
             ) : (
               <div className="flex items-start gap-1.5 text-xs text-slate-600">
                 <Info className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
-                <span>Select the requester's department/office</span>
+                <span>
+                  {requesterRole === "head" || requesterRole === "faculty" 
+                    ? "Select the requester's department/office. If multiple requesters have different departments, they will be combined automatically (e.g., 'HRD and WCDEO')."
+                    : "Select the requester's department/office"
+                  }
+                </span>
               </div>
             )}
           </div>

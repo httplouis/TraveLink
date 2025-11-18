@@ -1,15 +1,50 @@
 "use client";
 
 import * as React from "react";
-import { AdminRequestsRepo, type AdminRequest } from "@/lib/admin/requests/store";
+import { fetchRequest } from "@/lib/admin/requests/api";
 import { buildRequestPDF } from "@/lib/admin/requests/pdf";
+import type { AdminRequest } from "@/lib/admin/requests/store";
 
 export default function RequestDetails({ id }: { id: string }) {
   const [data, setData] = React.useState<AdminRequest | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    setData(AdminRequestsRepo.get(id) ?? null);
+    async function loadRequest() {
+      try {
+        setLoading(true);
+        setError(null);
+        const request = await fetchRequest(id);
+        setData(request);
+      } catch (err: any) {
+        console.error("[RequestDetails] Error loading request:", err);
+        setError(err.message || "Failed to load request");
+      } finally {
+        setLoading(false);
+      }
+    }
+    
+    if (id) {
+      loadRequest();
+    }
   }, [id]);
+
+  if (loading) {
+    return (
+      <div className="p-6 text-sm text-neutral-500">
+        Loading request details...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6 text-sm text-red-600">
+        Error: {error}
+      </div>
+    );
+  }
 
   if (!data) {
     return (

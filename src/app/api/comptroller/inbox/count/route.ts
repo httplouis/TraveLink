@@ -11,6 +11,7 @@ export async function GET() {
       .from("requests")
       .select("*", { count: "exact", head: true })
       .eq("status", "pending_comptroller");
+      // Note: both_vps_approved is just an acknowledgment - requests still go through comptroller
 
     if (error) {
       console.error("Comptroller inbox count error:", error);

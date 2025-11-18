@@ -100,22 +100,93 @@ export async function GET(req: NextRequest) {
         console.log("[GET /api/approvers/list] No admins from table, trying users table...");
         
         // First, get all admins from users table (including super admins)
-        const { data: allUsersAdmins, error: allUsersError } = await supabase
-          .from("users")
-          .select("id, name, email, profile_picture, phone_number, position_title, department_id, role, is_admin, status")
-          .or("role.eq.admin,is_admin.eq.true")
-          .order("name", { ascending: true });
+        // Use service_role client (already using it) - should bypass RLS
+        // Try querying with is_admin = true first (more reliable)
+        let allUsersAdminsFinal: any[] = [];
         
-        adminError = allUsersError;
-        console.log("[GET /api/approvers/list] All users with admin role:", {
-          count: allUsersAdmins?.length || 0,
-          error: adminError?.message,
-          names: allUsersAdmins?.map(u => u.name)
+        // Test query: Get ALL users first to verify RLS is bypassed
+        const { data: testUsers, error: testError } = await supabase
+          .from("users")
+          .select("id, name, role, is_admin, status")
+          .limit(5);
+        
+        console.log("[GET /api/approvers/list] Test query (all users, limit 5):", {
+          count: testUsers?.length || 0,
+          error: testError?.message,
+          hasAdmins: testUsers?.some((u: any) => u.is_admin || u.role === 'admin')
         });
         
-        if (allUsersAdmins && allUsersAdmins.length > 0) {
+        // Strategy A: Query by is_admin flag
+        const { data: adminsByFlag, error: flagError } = await supabase
+          .from("users")
+          .select("id, name, email, profile_picture, phone_number, position_title, department_id, role, is_admin, status")
+          .eq("is_admin", true);
+        
+        console.log("[GET /api/approvers/list] Strategy A (is_admin=true):", {
+          count: adminsByFlag?.length || 0,
+          error: flagError?.message,
+          sample: adminsByFlag?.[0]?.name
+        });
+        
+        if (!flagError && adminsByFlag && adminsByFlag.length > 0) {
+          allUsersAdminsFinal = adminsByFlag;
+          console.log("[GET /api/approvers/list] ✅ Using Strategy A - Found admins by is_admin flag:", adminsByFlag.length);
+        } else {
+          // Strategy B: Query by role
+          const { data: adminsByRole, error: roleError } = await supabase
+            .from("users")
+            .select("id, name, email, profile_picture, phone_number, position_title, department_id, role, is_admin, status")
+            .eq("role", "admin");
+          
+          console.log("[GET /api/approvers/list] Strategy B (role=admin):", {
+            count: adminsByRole?.length || 0,
+            error: roleError?.message,
+            sample: adminsByRole?.[0]?.name
+          });
+          
+          if (!roleError && adminsByRole && adminsByRole.length > 0) {
+            allUsersAdminsFinal = adminsByRole;
+            console.log("[GET /api/approvers/list] ✅ Using Strategy B - Found admins by role:", adminsByRole.length);
+          } else {
+            // Strategy C: Try OR query as fallback
+            const { data: adminsByOr, error: orError } = await supabase
+              .from("users")
+              .select("id, name, email, profile_picture, phone_number, position_title, department_id, role, is_admin, status")
+              .or("role.eq.admin,is_admin.eq.true");
+            
+            console.log("[GET /api/approvers/list] Strategy C (OR query):", {
+              count: adminsByOr?.length || 0,
+              error: orError?.message,
+              sample: adminsByOr?.[0]?.name
+            });
+            
+            if (!orError && adminsByOr) {
+              allUsersAdminsFinal = adminsByOr;
+              console.log("[GET /api/approvers/list] ✅ Using Strategy C - Found admins by OR query:", adminsByOr.length);
+            } else {
+              console.error("[GET /api/approvers/list] ❌ All admin queries failed:", { 
+                flagError: flagError?.message, 
+                roleError: roleError?.message, 
+                orError: orError?.message 
+              });
+            }
+          }
+        }
+        
+        // Filter by active status if needed
+        if (allUsersAdminsFinal.length > 0) {
+          allUsersAdminsFinal = allUsersAdminsFinal.filter((a: any) => !a.status || a.status === "active");
+          console.log("[GET /api/approvers/list] After filtering by active status:", allUsersAdminsFinal.length);
+        }
+        
+        console.log("[GET /api/approvers/list] All users with admin role:", {
+          count: allUsersAdminsFinal?.length || 0,
+          names: allUsersAdminsFinal?.map((u: any) => u.name)
+        });
+        
+        if (allUsersAdminsFinal && allUsersAdminsFinal.length > 0) {
           // Get super admin IDs from admins table to exclude them
-          const adminIds = allUsersAdmins.map(a => a.id);
+          const adminIds = allUsersAdminsFinal.map((a: any) => a.id);
           const { data: adminsCheck, error: adminsCheckError } = await supabase
             .from("admins")
             .select("user_id, super_admin")
@@ -136,7 +207,7 @@ export async function GET(req: NextRequest) {
           console.log("[GET /api/approvers/list] Super admin IDs to exclude:", Array.from(superAdminIds));
           
           // Filter out super admins and inactive users
-          admins = allUsersAdmins.filter(a => {
+          admins = allUsersAdminsFinal.filter((a: any) => {
             const isSuperAdmin = superAdminIds.has(a.id);
             const isActive = !a.status || a.status === "active";
             
@@ -244,27 +315,55 @@ export async function GET(req: NextRequest) {
     }
 
     if (role === "vp" || !role) {
-      // Get VP External (Atty. Dario Opistan)
+      // Get all VPs (SVP, VP Admin, VP External, VP Finance, etc.)
+      // VPs have exec_type like "svp_academics", "vp_admin", "vp_external", "vp_finance", or just "vp"
       const { data: vps } = await supabase
         .from("users")
         .select("id, name, email, profile_picture, phone_number, position_title, department_id, role, is_vp, exec_type")
         .or("role.eq.exec,is_vp.eq.true")
-        .eq("exec_type", "vp")
         .eq("status", "active")
         .order("name", { ascending: true });
+      
+      // Filter to only include VPs (exclude President)
+      const filteredVps = (vps || []).filter((vp: any) => {
+        // Include if is_vp is true OR exec_type contains "vp" or "svp" (but not "president")
+        const isVP = vp.is_vp === true || 
+                    (vp.exec_type && (
+                      vp.exec_type.startsWith('vp') || 
+                      vp.exec_type.startsWith('svp')
+                    )) ||
+                    (vp.role === 'exec' && vp.exec_type && vp.exec_type !== 'president');
+        return isVP;
+      });
 
-      if (vps) {
-        approvers.push(...vps.map(v => ({
-          id: v.id,
-          name: v.name,
-          email: v.email,
-          profile_picture: v.profile_picture,
-          phone: v.phone_number,
-          position: v.position_title || "Vice President",
-          department: null,
-          role: "vp",
-          roleLabel: "Vice President (External)"
-        })));
+      if (filteredVps && filteredVps.length > 0) {
+        approvers.push(...filteredVps.map((v: any) => {
+          // Determine role label based on exec_type
+          let roleLabel = "Vice President";
+          if (v.exec_type === "svp_academics") {
+            roleLabel = "Senior Vice President (Academics)";
+          } else if (v.exec_type === "vp_admin") {
+            roleLabel = "Vice President (Administration)";
+          } else if (v.exec_type === "vp_external") {
+            roleLabel = "Vice President (External Relations)";
+          } else if (v.exec_type === "vp_finance") {
+            roleLabel = "Vice President (Finance)";
+          }
+          
+          return {
+            id: v.id,
+            name: v.name,
+            email: v.email,
+            profile_picture: v.profile_picture,
+            phone: v.phone_number,
+            position: v.position_title || "Vice President",
+            department: null,
+            role: "vp",
+            roleLabel: roleLabel
+          };
+        }));
+        
+        console.log(`[GET /api/approvers/list] ✅ Found ${filteredVps.length} VP(s):`, filteredVps.map((v: any) => v.name));
       }
     }
 

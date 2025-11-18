@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
+import { getDisplayName } from "@/lib/utils/name-formatting";
 
 export default function DashboardHero({
   userName = "Traveler",
@@ -12,6 +13,8 @@ export default function DashboardHero({
   onOpenSchedule?: () => void;
   onNewRequest?: () => void;
 }) {
+  // Remove titles from name for display
+  const displayName = getDisplayName(userName);
   // REAL-TIME CLOCK - Updates every second
   const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -60,7 +63,7 @@ export default function DashboardHero({
             transition={{ delay: 0.2 }}
             className="text-3xl font-bold tracking-tight"
           >
-            {userName}
+            {displayName}
           </motion.h1>
           <motion.div 
             initial={{ opacity: 0 }}

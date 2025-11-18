@@ -44,8 +44,9 @@ export async function GET() {
     console.log(`[GET /api/head] Fetching requests for head: ${profile.email}, dept: ${profile.department_id}`);
 
     // Get requests for THIS head's department with status = pending_head or pending_parent_head
-    // Also fetch request_history to get receive_time
-    const { data, error } = await supabase
+    // ALSO get requests with multiple requesters where at least one requester is from this head's department
+    // This allows heads to sign separately for multi-department requests
+    const { data: directRequests, error: directError } = await supabase
       .from("requests")
       .select(`
         *,
@@ -55,7 +56,58 @@ export async function GET() {
       .in("status", ["pending_head", "pending_parent_head"])
       .eq("department_id", profile.department_id)
       .order("created_at", { ascending: false })
-      .limit(50); // Limit to 50 most recent requests
+      .limit(50);
+
+    // Also get requests with multiple requesters from requester_invitations where this head's department is involved
+    // Use a safer approach: first get the request IDs, then fetch the requests separately
+    let multiDeptRequestList: any[] = [];
+    let multiDeptError: any = null;
+    
+    try {
+      const { data: requesterInvitations, error: invError } = await supabase
+        .from("requester_invitations")
+        .select("request_id")
+        .eq("department_id", profile.department_id)
+        .eq("status", "confirmed");
+      
+      if (invError) {
+        console.error("[GET /api/head] Error fetching requester invitations:", invError);
+        multiDeptError = invError;
+      } else if (requesterInvitations && requesterInvitations.length > 0) {
+        const requestIds = requesterInvitations.map((inv: any) => inv.request_id).filter(Boolean);
+        
+        if (requestIds.length > 0) {
+          const { data: multiDeptRequests, error: reqError } = await supabase
+            .from("requests")
+            .select(`
+              *,
+              requester:users!requester_id(id, name, email, profile_picture, avatar_url, position_title),
+              department:departments!department_id(id, name, code)
+            `)
+            .in("id", requestIds)
+            .in("status", ["pending_head", "pending_parent_head"])
+            .order("created_at", { ascending: false })
+            .limit(50);
+          
+          if (reqError) {
+            console.error("[GET /api/head] Error fetching multi-department requests:", reqError);
+            multiDeptError = reqError;
+          } else {
+            multiDeptRequestList = multiDeptRequests || [];
+          }
+        }
+      }
+    } catch (err: any) {
+      console.error("[GET /api/head] Exception fetching multi-department requests:", err);
+      multiDeptError = err;
+    }
+
+    // Combine both sets of requests, avoiding duplicates
+    const directRequestIds = new Set((directRequests || []).map((r: any) => r.id));
+    const uniqueMultiDeptRequests = multiDeptRequestList.filter((r: any) => r && !directRequestIds.has(r.id));
+    
+    const data = [...(directRequests || []), ...uniqueMultiDeptRequests];
+    const error = directError || multiDeptError;
 
     // Debug: Log profile picture data from database
     if (data && data.length > 0) {
@@ -95,12 +147,21 @@ export async function GET() {
       }
     }
 
-    if (error) {
-      console.error("[GET /api/head] Query error:", error);
-      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    // Handle errors gracefully - if multi-dept query fails, still return direct requests
+    if (directError) {
+      console.error("[GET /api/head] Direct requests query error:", directError);
+      // If direct requests fail, return error
+      return NextResponse.json({ ok: false, error: directError.message }, { status: 500 });
+    }
+    
+    // If multi-dept query fails, log but don't fail the entire request
+    // Just return the direct requests
+    if (multiDeptError) {
+      console.warn("[GET /api/head] Multi-department query failed (non-critical):", multiDeptError);
+      // Continue with just direct requests
     }
 
-    console.log(`[GET /api/head] Found ${data?.length || 0} pending requests`);
+    console.log(`[GET /api/head] Found ${data?.length || 0} pending requests (${directRequests?.length || 0} direct, ${uniqueMultiDeptRequests.length} multi-dept)`);
 
     return NextResponse.json({ ok: true, data: data || [] });
   } catch (err: any) {
@@ -180,8 +241,27 @@ export async function PATCH(req: Request) {
       }, { status: 400 });
     }
 
-    // Verify user is head of this department
-    if (request.department_id !== profile.department_id) {
+    // Verify user is head of this department OR request has multiple requesters from different departments
+    // For multi-department requests, check if this head's department has confirmed requesters
+    let isAuthorized = request.department_id === profile.department_id;
+    
+    if (!isAuthorized) {
+      // Check if this request has multiple requesters and this head's department is involved
+      const { data: requesterInvitations } = await supabase
+        .from("requester_invitations")
+        .select("department_id, status")
+        .eq("request_id", id)
+        .eq("department_id", profile.department_id)
+        .eq("status", "confirmed")
+        .limit(1);
+      
+      if (requesterInvitations && requesterInvitations.length > 0) {
+        isAuthorized = true;
+        console.log(`[PATCH /api/head] Multi-department request authorized for head ${profile.id}`);
+      }
+    }
+    
+    if (!isAuthorized) {
       return NextResponse.json({ ok: false, error: "Not authorized for this department" }, { status: 403 });
     }
 
@@ -313,7 +393,9 @@ export async function PATCH(req: Request) {
           sent_to: nextApproverRole,
           sent_to_id: next_approver_id || null,
           return_reason: return_reason || null,
-          approval_time: now
+          approval_time: now,
+          department_id: profile.department_id, // Track which department's head approved (for multi-department requests)
+          is_multi_department: !!(request.department_id !== profile.department_id) // Flag if this is a multi-department approval
         }
       });
 

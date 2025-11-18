@@ -34,6 +34,7 @@ export async function GET(request: NextRequest) {
     // Apply filters
     if (status && status !== "All") {
       query = query.eq("status", status);
+      // Note: both_vps_approved is just an acknowledgment - requests still go through normal workflow
     }
 
     if (role) {

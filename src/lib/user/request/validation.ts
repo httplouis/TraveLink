@@ -23,6 +23,8 @@ export function canSubmit(
     isRepresentativeSubmission?: boolean;
     currentUserName?: string;
     requestingPersonName?: string;
+    allRequestersConfirmed?: boolean; // For multiple requesters
+    allParticipantsConfirmed?: boolean; // For seminar participants
   }
 ) {
   const errors: Errors = {};
@@ -51,6 +53,8 @@ export function canSubmit(
   console.log('  - currentUserName:', options?.currentUserName);
   console.log('  - requestingPersonName:', options?.requestingPersonName || to.requestingPerson);
   console.log('  - hasSignature:', hasSignature(to.requesterSignature));
+  console.log('  - allRequestersConfirmed:', options?.allRequestersConfirmed);
+  console.log('  - allParticipantsConfirmed:', options?.allParticipantsConfirmed);
 
   // Helper function to check if date is in the past
   const isDateInPast = (dateStr: string): boolean => {
@@ -171,6 +175,11 @@ export function canSubmit(
       errors["seminar.requesterSignature"] = "Requesting person's signature is required";
     }
     
+    // ✅ VALIDATION: All participants must be confirmed before submitting
+    if (options?.allParticipantsConfirmed === false) {
+      errors["seminar.participants"] = "All invited participants must confirm their participation before submitting. Please wait for all participants to confirm or remove pending invitations.";
+    }
+    
   } else {
     // TRAVEL ORDER FORM VALIDATION
     if (!req(to.date)) errors["travelOrder.date"] = "Date is required";
@@ -210,6 +219,11 @@ export function canSubmit(
 
     // Note: Head signature is NOT required for initial submission
     // Head will sign AFTER reviewing the request
+    
+    // ✅ VALIDATION: All requesters must be confirmed before submitting (for multiple requesters)
+    if (options?.allRequestersConfirmed === false) {
+      errors["travelOrder.requesters"] = "All invited requesters must confirm their participation before submitting. Please wait for all requesters to confirm or remove pending invitations.";
+    }
 
     const needsJustif =
       data.vehicleMode === "rent" ||

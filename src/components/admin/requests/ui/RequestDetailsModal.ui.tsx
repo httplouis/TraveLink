@@ -189,9 +189,18 @@ export default function RequestDetailsModalUI({
     async function fetchOptions() {
       try {
         setLoadingOptions(true);
+        
+        // Get travel date from request for coding day filtering
+        const travelDate = (row as any)?.travel_start_date 
+          ? new Date((row as any).travel_start_date).toISOString().split('T')[0]
+          : null;
+        
         const [driversRes, vehiclesRes] = await Promise.all([
           fetch('/api/drivers'),
-          fetch('/api/vehicles')
+          fetch(travelDate 
+            ? `/api/vehicles?status=available&date=${encodeURIComponent(travelDate)}`
+            : '/api/vehicles?status=available'
+          )
         ]);
         
         if (driversRes.ok) {
@@ -202,6 +211,7 @@ export default function RequestDetailsModalUI({
         if (vehiclesRes.ok) {
           const vehiclesData = await vehiclesRes.json();
           setVehicles(vehiclesData.ok && vehiclesData.data ? vehiclesData.data : []);
+          console.log(`[RequestDetailsModal] Loaded ${vehiclesData.data?.length || 0} vehicles${travelDate ? ` for date ${travelDate}` : ''}`);
         }
       } catch (err) {
         console.error('[RequestDetailsModal] Failed to fetch options:', err);
@@ -211,7 +221,7 @@ export default function RequestDetailsModalUI({
     }
     
     if (open) fetchOptions();
-  }, [open]);
+  }, [open, row]);
 
   // Fetch confirmed requesters
   React.useEffect(() => {
@@ -377,6 +387,10 @@ export default function RequestDetailsModalUI({
     setSignOpen(true);
   }
 
+  // State for default approver (Ma'am TM)
+  const [defaultApproverId, setDefaultApproverId] = React.useState<string | undefined>(undefined);
+  const [defaultApproverName, setDefaultApproverName] = React.useState<string | undefined>(undefined);
+
   // Load approver options for choice-based sending
   React.useEffect(() => {
     if (showApproverSelection && row?.id) {
@@ -388,21 +402,22 @@ export default function RequestDetailsModalUI({
             fetch('/api/approvers/list?role=hr'),
           ]);
           
-          const comptrollerData = await comptrollerRes.json().catch(() => ({ ok: false, approvers: [] }));
-          const hrData = await hrRes.json().catch(() => ({ ok: false, approvers: [] }));
+          const comptrollerData = await comptrollerRes.json().catch(() => ({ ok: false, data: [] }));
+          const hrData = await hrRes.json().catch(() => ({ ok: false, data: [] }));
           
           const options: any[] = [];
           
-          if (comptrollerData.ok && comptrollerData.approvers) {
-            options.push(...comptrollerData.approvers.map((a: any) => ({
+          // Note: API returns { ok, data } not { ok, approvers }
+          if (comptrollerData.ok && comptrollerData.data) {
+            options.push(...comptrollerData.data.map((a: any) => ({
               ...a,
               role: 'comptroller',
               roleLabel: 'Comptroller'
             })));
           }
           
-          if (hrData.ok && hrData.approvers) {
-            options.push(...hrData.approvers.map((a: any) => ({
+          if (hrData.ok && hrData.data) {
+            options.push(...hrData.data.map((a: any) => ({
               ...a,
               role: 'hr',
               roleLabel: 'HR'
@@ -419,6 +434,24 @@ export default function RequestDetailsModalUI({
       loadApprovers();
     }
   }, [showApproverSelection, row?.id]);
+
+  // Find Ma'am TM (Trizzia Maree Casino) as default approver for admin selection
+  React.useEffect(() => {
+    if (showApproverSelection && approverOptions.length > 0) {
+      // Try to find Ma'am TM by name or email
+      const maamTM = approverOptions.find((opt: any) => 
+        opt.name?.toLowerCase().includes('trizzia') || 
+        opt.email?.toLowerCase().includes('trizzia') ||
+        opt.name?.toLowerCase().includes('casino')
+      );
+      
+      if (maamTM) {
+        setDefaultApproverId(maamTM.id);
+        setDefaultApproverName(maamTM.name);
+        console.log('[Admin Approve] ✅ Found Ma\'am TM as default approver:', maamTM.name);
+      }
+    }
+  }, [showApproverSelection, approverOptions]);
 
   async function confirmSignature() {
     if (!row?.id || !sigDataUrl || isApproving) return;
@@ -1280,6 +1313,8 @@ export default function RequestDetailsModalUI({
           options={approverOptions}
           currentRole="admin"
           allowReturnToRequester={false}
+          defaultApproverId={defaultApproverId}
+          defaultApproverName={defaultApproverName}
         />
       )}
     </Dialog>
