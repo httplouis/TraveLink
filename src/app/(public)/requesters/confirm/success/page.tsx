@@ -9,6 +9,23 @@ import { motion } from "framer-motion";
 export default function RequesterConfirmationSuccessPage() {
   const router = useRouter();
 
+  const handleClosePage = () => {
+    // Try to close the window if it was opened by script
+    // window.close() only works if the window was opened via window.open()
+    if (window.opener) {
+      // Window was opened by script, try to close
+      window.close();
+    } else {
+      // Window was not opened by script (user navigated directly)
+      // Go back in history, or redirect to home if no history
+      if (window.history.length > 1) {
+        router.back();
+      } else {
+        router.push("/");
+      }
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 via-white to-gray-50 px-4 py-8">
       <motion.div
@@ -91,7 +108,7 @@ export default function RequesterConfirmationSuccessPage() {
               Return to Home
             </button>
             <button
-              onClick={() => window.close()}
+              onClick={handleClosePage}
               className="w-full inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 transition-all font-medium"
             >
               <LogOut className="h-4 w-4" />

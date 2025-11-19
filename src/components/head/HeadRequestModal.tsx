@@ -1121,6 +1121,10 @@ export default function HeadRequestModal({
                       console.log("[HeadRequestModal] Clearing signature");
                       setHeadSignature("");
                     }}
+                    onUseSaved={(dataUrl) => {
+                      setHeadSignature(dataUrl);
+                    }}
+                    showUseSavedButton={true}
                     hideSaveButton
                   />
                 </div>

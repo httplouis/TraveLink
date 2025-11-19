@@ -42,19 +42,13 @@ export function canSubmit(
     const requestingName = options.requestingPersonName.toLowerCase().trim();
     if (currentName !== requestingName) {
       isRepresentative = true;
-      console.log('[Validation] 🔄 Fallback: Names don\'t match, treating as representative');
+      // Debug: Only log if there's a mismatch (not every call)
     }
   }
   
-  console.log('[Validation] canSubmit called');
-  console.log('  - reason:', data.reason);
-  console.log('  - isRepresentativeSubmission (from flag):', options?.isRepresentativeSubmission);
-  console.log('  - isRepresentativeSubmission (final):', isRepresentative);
-  console.log('  - currentUserName:', options?.currentUserName);
-  console.log('  - requestingPersonName:', options?.requestingPersonName || to.requestingPerson);
-  console.log('  - hasSignature:', hasSignature(to.requesterSignature));
-  console.log('  - allRequestersConfirmed:', options?.allRequestersConfirmed);
-  console.log('  - allParticipantsConfirmed:', options?.allParticipantsConfirmed);
+  // Reduced logging - only log validation failures, not every call
+  // Uncomment for debugging if needed:
+  // console.log('[Validation] canSubmit called', { reason: data.reason, isRepresentative });
 
   // Helper function to check if date is in the past
   const isDateInPast = (dateStr: string): boolean => {

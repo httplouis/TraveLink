@@ -9,6 +9,8 @@ import HistoryFiltersBar from "@/components/admin/history/HistoryFiltersBar.ui";
 import HistoryTable from "@/components/admin/history/HistoryTable.ui";
 import { Download, FileText } from "lucide-react";
 import { downloadCsv } from "@/lib/common/csv";
+import { SkeletonTable, SkeletonCard } from "@/components/common/SkeletonLoader";
+import { createLogger } from "@/lib/debug";
 
 export default function HistoryPageClient() {
   const [filters, setFilters] = React.useState<HistoryFilters>({});
@@ -25,9 +27,12 @@ export default function HistoryPageClient() {
   });
   const [selectedItem, setSelectedItem] = React.useState<HistoryItem | null>(null);
 
+  const logger = createLogger("AdminHistory");
+
   const load = React.useCallback(async () => {
     setLoading(true);
     try {
+      logger.info("Loading admin history...");
       const [historyResult, statsResult] = await Promise.all([
         queryHistory(filters, page, pageSize),
         getHistoryStats(),
@@ -36,8 +41,9 @@ export default function HistoryPageClient() {
       setData(historyResult.data);
       setTotal(historyResult.total);
       setStats(statsResult);
+      logger.success(`Loaded ${historyResult.data?.length || 0} history items`);
     } catch (error) {
-      console.error("[HistoryPage] Error loading data:", error);
+      logger.error("Error loading data:", error);
       setData([]);
       setTotal(0);
     } finally {
@@ -94,11 +100,15 @@ export default function HistoryPageClient() {
 
       {/* Table */}
       {loading ? (
-        <div className="flex items-center justify-center py-16 bg-white rounded-xl shadow-md">
-          <div className="text-center">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-[#7a1f2a]"></div>
-            <p className="mt-2 text-neutral-600">Loading history...</p>
+        <div className="space-y-4">
+          {/* Stats Cards Skeleton */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <SkeletonCard key={i} />
+            ))}
           </div>
+          {/* Table Skeleton */}
+          <SkeletonTable rows={10} cols={8} />
         </div>
       ) : (
         <HistoryTable rows={data} onView={setSelectedItem} />

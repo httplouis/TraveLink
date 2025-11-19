@@ -167,6 +167,7 @@ export default function ChatbotWidget() {
           className="fixed bottom-6 right-6 text-white p-3 rounded-full shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 z-50"
           style={{ backgroundColor: '#7A0010' }}
           aria-label="Open Travie AI Assistant"
+          suppressHydrationWarning
         >
           <MessageCircle className="w-6 h-6" />
         </button>
@@ -179,6 +180,7 @@ export default function ChatbotWidget() {
           className="fixed bottom-6 right-6 text-white p-3 rounded-full shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 z-50"
           style={{ backgroundColor: '#7A0010' }}
           aria-label="Expand Travie"
+          suppressHydrationWarning
         >
           <MessageCircle className="w-6 h-6" />
         </button>

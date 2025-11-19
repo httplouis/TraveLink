@@ -3,10 +3,12 @@
 
 import React from "react";
 import HeadRequestModal from "@/components/head/HeadRequestModal";
-import { SkeletonRequestCard } from "@/components/common/ui/Skeleton";
+import { SkeletonRequestCard } from "@/components/common/SkeletonLoader";
 import StatusBadge from "@/components/common/StatusBadge";
 import PersonDisplay from "@/components/common/PersonDisplay";
+import RequestCardEnhanced from "@/components/common/RequestCardEnhanced";
 import { createSupabaseClient } from "@/lib/supabase/client";
+import { createLogger } from "@/lib/debug";
 
 // Format time ago helper
 function formatTimeAgo(date: Date): string {
@@ -79,15 +81,23 @@ export default function HeadInboxPage() {
     return Array.from(depts).sort();
   }, [items, historyItems]);
 
+  const logger = createLogger("HeadInbox");
+
   async function load(showLoader = true) {
     if (showLoader) setLoading(true);
     try {
+      logger.info("Loading head requests...");
       const res = await fetch("/api/head", { cache: "no-store" });
       const json = await res.json();
       if (json.ok) {
         setItems(json.data ?? []);
         setLastUpdate(new Date());
+        logger.success(`Loaded ${json.data?.length || 0} requests`);
+      } else {
+        logger.warn("Failed to load requests:", json.error);
       }
+    } catch (error) {
+      logger.error("Error loading requests:", error);
     } finally {
       if (showLoader) setLoading(false);
     }
@@ -493,142 +503,51 @@ export default function HeadInboxPage() {
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {filteredItems.map((item) => {
-            // Better fallback chain for requester name
-            const requester = item.requester?.name || item.requester_name || item.requester?.email || "Unknown Requester";
-            const department = item.department?.name || item.department?.code || "—";
-            const purpose = item.purpose || "No purpose indicated";
-            const requestNumber = item.request_number || "—";
-            const travelDate = item.travel_start_date ? new Date(item.travel_start_date).toLocaleDateString() : "—";
-            
-            // Debug: Log profile picture data
-            if (item.requester) {
-              console.log(`[HeadInbox] Request ${requestNumber} - Requester profile picture:`, {
-                profile_picture: item.requester.profile_picture,
-                avatar_url: item.requester.avatar_url,
-                name: requester,
-                fullRequester: item.requester
-              });
-            }
-            
+        <div className="space-y-4">
+          {filteredItems.map((item, index) => {
             // Check if request is new (within last 24 hours AND not viewed yet)
             const createdAt = item.created_at ? new Date(item.created_at) : null;
             const now = new Date();
             const hoursSinceCreation = createdAt ? (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60) : 999;
-            const isNew = hoursSinceCreation < 24 && !viewedRequests.has(item.id); // New if submitted in last 24 hours AND not viewed
-            
-            // Status badge config
-            const getStatusBadge = (status: string) => {
-              switch (status) {
-                case 'pending_head':
-                case 'pending_parent_head':
-                  return { text: 'Pending Review', color: 'bg-amber-50 border-amber-200 text-amber-700' };
-                case 'approved_head':
-                  return { text: 'Approved', color: 'bg-green-50 border-green-200 text-green-700' };
-                case 'pending_comptroller':
-                  return { text: 'With Comptroller', color: 'bg-blue-50 border-blue-200 text-blue-700' };
-                case 'pending_hr':
-                  return { text: 'With HR', color: 'bg-purple-50 border-purple-200 text-purple-700' };
-                case 'rejected':
-                  return { text: 'Rejected', color: 'bg-red-50 border-red-200 text-red-700' };
-                default:
-                  return { text: status || 'Unknown', color: 'bg-slate-50 border-slate-200 text-slate-700' };
-              }
-            };
-            const statusBadge = getStatusBadge(item.status);
+            const isNew = hoursSinceCreation < 24 && !viewedRequests.has(item.id);
             
             return (
-              <button
+              <RequestCardEnhanced
                 key={item.id}
-                onClick={() => {
+                request={{
+                  id: item.id,
+                  request_number: item.request_number || "—",
+                  file_code: item.file_code,
+                  title: item.title,
+                  purpose: item.purpose || "No purpose indicated",
+                  destination: item.destination,
+                  travel_start_date: item.travel_start_date,
+                  travel_end_date: item.travel_end_date,
+                  status: item.status,
+                  created_at: item.created_at,
+                  total_budget: item.total_budget,
+                  request_type: item.request_type,
+                  requester_name: item.requester?.name || item.requester_name,
+                  requester: {
+                    name: item.requester?.name || item.requester_name || "Unknown",
+                    email: item.requester?.email,
+                    profile_picture: item.requester?.profile_picture || item.requester?.avatar_url,
+                    department: item.department?.name || item.department?.code,
+                    position: item.requester?.position_title,
+                  },
+                  department: item.department,
+                }}
+                showActions={true}
+                onView={() => {
                   setSelected(item);
                   markAsViewed(item.id);
                 }}
-                className={`group flex w-full items-center justify-between rounded-xl border px-5 py-4 text-left shadow-sm transition-all hover:shadow-lg hover:scale-[1.01] ${
+                className={
                   isNew && activeTab === 'pending' && !viewedRequests.has(item.id)
-                    ? 'border-green-300 bg-green-50/30'
-                    : 'border-slate-200 bg-white hover:border-[#7A0010]/30'
-                }`}
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2.5 mb-2.5">
-                    <span className="rounded-md bg-[#7A0010] px-2.5 py-0.5 text-xs font-bold text-white">
-                      {requestNumber}
-                    </span>
-                    {isNew && activeTab === 'pending' && !viewedRequests.has(item.id) && (
-                      <span className="flex items-center gap-1 rounded-md bg-green-500 px-2 py-0.5 text-xs font-bold text-white shadow-sm">
-                        <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                        </svg>
-                        NEW
-                      </span>
-                    )}
-                    <span className="text-xs text-slate-400">•</span>
-                    <span className="text-xs font-medium text-slate-500">{travelDate}</span>
-                    {activeTab === 'pending' && item.received_at && (
-                      <>
-                        <span className="text-xs text-slate-400">•</span>
-                        <span className="text-xs text-slate-500 flex items-center gap-1">
-                          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          {formatTimeAgo(new Date(item.received_at))}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                  
-                  {/* Use PersonDisplay component with profile picture */}
-                  <PersonDisplay
-                    name={requester}
-                    position={item.requester?.position_title}
-                    department={department}
-                    profilePicture={item.requester?.profile_picture || item.requester?.avatar_url || null}
-                    size="sm"
-                  />
-                  
-                  <p className="text-sm text-slate-600 line-clamp-1 mt-2 mb-1">
-                    {purpose}
-                  </p>
-                  
-                  {/* History timestamps */}
-                  {activeTab === 'history' && (
-                    <div className="flex flex-wrap items-center gap-3 text-xs">
-                      {item.head_approved_at && (
-                        <div className="flex items-center gap-1.5 text-green-600">
-                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                          <span>Approved: {new Date(item.head_approved_at).toLocaleDateString()} {new Date(item.head_approved_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                        </div>
-                      )}
-                      {item.rejected_at && (
-                        <div className="flex items-center gap-1.5 text-red-600">
-                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                          <span>Rejected: {new Date(item.rejected_at).toLocaleDateString()} {new Date(item.rejected_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                        </div>
-                      )}
-                      {item.parent_head_approved_at && !item.head_approved_at && (
-                        <div className="flex items-center gap-1.5 text-green-600">
-                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                          <span>Approved: {new Date(item.parent_head_approved_at).toLocaleDateString()} {new Date(item.parent_head_approved_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-col items-end gap-2 ml-4">
-                  <StatusBadge status={item.status} size="md" showIcon={true} />
-                  <svg className="h-5 w-5 text-slate-300 group-hover:text-[#7A0010] transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </div>
-              </button>
+                    ? "border-green-300 bg-green-50/30"
+                    : ""
+                }
+              />
             );
           })}
         </div>

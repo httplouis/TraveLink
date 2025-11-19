@@ -11,7 +11,26 @@ import DepartmentSelect from "@/components/common/inputs/DepartmentSelect.ui";
 export default function RequesterConfirmationPage() {
   const params = useParams();
   const router = useRouter();
-  const token = params.token as string;
+  
+  // Get token from URL params - Next.js automatically decodes it
+  let token = params.token as string;
+  
+  // Fallback: Try to get token from URL if params.token is missing
+  if (!token && typeof window !== 'undefined') {
+    const pathParts = window.location.pathname.split('/');
+    const tokenIndex = pathParts.indexOf('confirm');
+    if (tokenIndex >= 0 && tokenIndex < pathParts.length - 1) {
+      token = pathParts[tokenIndex + 1];
+      console.log("[requester-confirm] 🔄 Token extracted from URL path:", token.substring(0, 16) + "...");
+    }
+  }
+  
+  console.log("[requester-confirm] 📋 Initial token from params:", {
+    tokenExists: !!token,
+    tokenLength: token?.length || 0,
+    tokenPreview: token ? token.substring(0, 16) + "..." : "none",
+    fullPath: typeof window !== 'undefined' ? window.location.pathname : 'server',
+  });
 
   const [loading, setLoading] = React.useState(true);
   const [submitting, setSubmitting] = React.useState(false);
@@ -27,20 +46,142 @@ export default function RequesterConfirmationPage() {
 
   React.useEffect(() => {
     if (token) {
+      console.log("[requester-confirm] 🚀 useEffect triggered, token available:", {
+        token: token.substring(0, 20) + "..." + token.substring(Math.max(0, token.length - 12)),
+        tokenLength: token.length,
+        willFetch: true,
+      });
       fetchInvitation();
+    } else {
+      console.warn("[requester-confirm] ⚠️ useEffect triggered but token is missing!");
+      setError("Token not found in URL. Please check the confirmation link.");
+      setLoading(false);
     }
   }, [token]);
 
   const fetchInvitation = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/requesters/confirm?token=${token}`);
+      setError(null);
+      
+      if (!token || !token.trim()) {
+        setError("Invalid token. Please check the confirmation link.");
+        setLoading(false);
+        return;
+      }
+      
+      // Token from URL params is already decoded by Next.js router
+      // Next.js automatically decodes URL path parameters
+      // We need to encode it for the query parameter in the API call
+      let tokenToUse = token;
+      
+      // Log the raw token from URL
+      console.log("[requester-confirm] 📋 Raw token from URL path:", {
+        token: token.substring(0, 20) + "..." + token.substring(Math.max(0, token.length - 12)),
+        tokenLength: token.length,
+        isHex: /^[0-9a-f]+$/i.test(token),
+        urlPath: typeof window !== 'undefined' ? window.location.pathname : 'server',
+      });
+      
+      // If token looks like it might be encoded, try decoding
+      // But hex tokens (64 chars) shouldn't need decoding
+      try {
+        const decoded = decodeURIComponent(token);
+        if (decoded !== token && decoded.length > 0) {
+          // Token was encoded, use decoded version
+          tokenToUse = decoded;
+          console.log("[requester-confirm] 🔄 Token was encoded, using decoded version");
+        } else {
+          // Token is already decoded, use as-is
+          tokenToUse = token;
+        }
+      } catch (e) {
+        // Not encoded or decode failed, use as-is
+        tokenToUse = token;
+        console.log("[requester-confirm] ℹ️ Token decode not needed or failed, using as-is");
+      }
+      
+      // Now encode for the API call (query parameters need encoding)
+      const apiUrl = `/api/requesters/confirm?token=${encodeURIComponent(tokenToUse)}`;
+      
+      console.log("[requester-confirm] 🔍 Fetching invitation:", {
+        rawTokenFromUrl: token.substring(0, 20) + "..." + token.substring(Math.max(0, token.length - 12)),
+        tokenLength: token.length,
+        tokenToUse: tokenToUse.substring(0, 20) + "..." + tokenToUse.substring(Math.max(0, tokenToUse.length - 12)),
+        tokenToUseLength: tokenToUse.length,
+        apiUrl: apiUrl.substring(0, 100) + "...",
+        tokensMatch: token === tokenToUse,
+        isHex: /^[0-9a-f]+$/i.test(tokenToUse),
+      });
+      
+      let response: Response;
+      try {
+        response = await fetch(apiUrl, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          cache: 'no-store', // Ensure fresh data
+        });
+      } catch (fetchError: any) {
+        console.error("[requester-confirm] ❌ Fetch error:", fetchError);
+        setError(`Network error: ${fetchError.message || "Failed to connect to server"}`);
+        setLoading(false);
+        return;
+      }
+      
+      if (!response.ok) {
+        console.error("[requester-confirm] ❌ API error:", {
+          status: response.status,
+          statusText: response.statusText,
+          url: apiUrl.substring(0, 150),
+          headers: Object.fromEntries(response.headers.entries()),
+        });
+        
+        // Try to get error message from response
+        let errorMessage = `Failed to load invitation (${response.status})`;
+        let errorDetails: any = {};
+        try {
+          const errorData = await response.json();
+          errorDetails = errorData;
+          console.error("[requester-confirm] ❌ Error data:", errorData);
+          
+          if (errorData.error) {
+            errorMessage = errorData.error;
+          }
+          if (errorData.details) {
+            errorMessage += ` (${errorData.details})`;
+          }
+          if (errorData.message && !errorData.error) {
+            errorMessage = errorData.message;
+          }
+        } catch (jsonError) {
+          // If response is not JSON, try to get text
+          try {
+            const text = await response.text();
+            console.error("[requester-confirm] ❌ Error text:", text);
+            errorMessage = text || errorMessage;
+          } catch (textError) {
+            console.error("[requester-confirm] ❌ Could not read error response:", textError);
+          }
+        }
+        
+        setError(errorMessage);
+        return;
+      }
+      
       const data = await response.json();
 
-      if (!response.ok || !data.ok) {
+      if (!data.ok) {
+        console.error("[requester-confirm] ❌ Data error:", data.error);
         setError(data.error || "Failed to load invitation");
         return;
       }
+      
+      console.log("[requester-confirm] ✅ Invitation loaded:", {
+        status: data.data?.status,
+        email: data.data?.email,
+      });
 
       setInvitation(data.data);
       
@@ -106,8 +247,13 @@ export default function RequesterConfirmationPage() {
         throw new Error(data.error || "Failed to submit response");
       }
 
-      // Success - redirect to success page
-      router.push('/requesters/confirm/success');
+      // Success - show success message and redirect
+      console.log("[requester-confirm] ✅ Confirmation successful:", data);
+      
+      // Small delay to ensure database is updated
+      setTimeout(() => {
+        router.push('/requesters/confirm/success');
+      }, 500);
     } catch (err: any) {
       setError(err.message || "Failed to submit response");
       setSubmitting(false); // Re-enable form on error

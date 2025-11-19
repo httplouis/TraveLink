@@ -52,6 +52,7 @@ export default function RequestDetailsPage({ requestId }: RequestDetailsPageProp
       const transformedRequest = {
         id: data.id,
         request_number: data.request_number,
+        file_code: data.file_code, // Log book file code
         title: data.title,
         purpose: data.purpose,
         destination: data.destination,
@@ -60,8 +61,11 @@ export default function RequestDetailsPage({ requestId }: RequestDetailsPageProp
         total_budget: data.total_budget || 0,
         expense_breakdown: data.expense_breakdown || [],
         transportation_type: data.transportation_type,
+        pickup_preference: data.pickup_preference,
         pickup_location: data.pickup_location,
         pickup_time: data.pickup_time,
+        pickup_contact_number: data.pickup_contact_number,
+        requester_contact_number: data.requester_contact_number,
         status: data.status,
         created_at: data.created_at,
         cost_justification: data.cost_justification,
@@ -108,6 +112,35 @@ export default function RequestDetailsPage({ requestId }: RequestDetailsPageProp
             return data.seminar_data;
           }
           return null;
+        })(),
+        seminar_code_per_person: (() => {
+          if (data.seminar_code_per_person) {
+            if (typeof data.seminar_code_per_person === 'string') {
+              try {
+                return JSON.parse(data.seminar_code_per_person);
+              } catch (e) {
+                console.warn('[RequestDetailsPage] Failed to parse seminar_code_per_person:', e);
+                return [];
+              }
+            }
+            return data.seminar_code_per_person;
+          }
+          return [];
+        })(),
+        // Attachments
+        attachments: (() => {
+          if (data.attachments) {
+            if (typeof data.attachments === 'string') {
+              try {
+                return JSON.parse(data.attachments);
+              } catch (e) {
+                console.warn('[RequestDetailsPage] Failed to parse attachments:', e);
+                return [];
+              }
+            }
+            return data.attachments;
+          }
+          return [];
         })(),
         
         // Build signature stages with real data

@@ -1,6 +1,6 @@
 // src/app/api/requesters/confirm/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 import { getPhilippineTimestamp } from "@/lib/datetime";
 
 /**
@@ -8,18 +8,109 @@ import { getPhilippineTimestamp } from "@/lib/datetime";
  * Fetch invitation details for confirmation
  */
 export async function GET(req: NextRequest) {
+  console.log("\n" + "=".repeat(70));
+  console.log("[GET /api/requesters/confirm] 🚀 Route handler called!");
+  console.log("=".repeat(70));
+  console.log("[GET /api/requesters/confirm] Request URL:", req.url);
+  console.log("[GET /api/requesters/confirm] Request method:", req.method);
+  
   try {
-    const { searchParams } = new URL(req.url);
+    // Handle case where req.url might be relative
+    let url: URL;
+    try {
+      url = new URL(req.url);
+    } catch (e) {
+      // If req.url is relative, construct full URL
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 
+                     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
+      url = new URL(req.url, baseUrl);
+    }
+    
+    const { searchParams } = url;
     const token = searchParams.get("token");
+    
+    console.log("[GET /api/requesters/confirm] Full URL:", url.toString());
+    console.log("[GET /api/requesters/confirm] Search params:", Object.fromEntries(searchParams.entries()));
+
+    console.log("[GET /api/requesters/confirm] Request received:", {
+      url: req.url,
+      pathname: url.pathname,
+      token: token ? `${token.substring(0, 8)}...` : "missing",
+      tokenLength: token?.length || 0,
+    });
 
     if (!token) {
+      console.error("[GET /api/requesters/confirm] ❌ Token missing from request");
       return NextResponse.json({ ok: false, error: "Token is required" }, { status: 400 });
     }
+    
+    // Decode token in case it was double-encoded
+    // Try multiple decoding attempts
+    let decodedToken = token;
+    try {
+      decodedToken = decodeURIComponent(token);
+      // If decoding changed it, it was encoded
+      if (decodedToken === token) {
+        // Try decoding again in case it was double-encoded
+        const doubleDecoded = decodeURIComponent(decodedToken);
+        if (doubleDecoded !== decodedToken) {
+          decodedToken = doubleDecoded;
+          console.log("[GET /api/requesters/confirm] 🔄 Token was double-encoded, decoded twice");
+        }
+      } else {
+        console.log("[GET /api/requesters/confirm] 🔄 Token was encoded, decoded once");
+      }
+    } catch (e) {
+      // Token might not be encoded, use as-is
+      console.log("[GET /api/requesters/confirm] ⚠️ Token decode failed, using as-is:", e);
+      decodedToken = token;
+    }
+    
+    console.log("[GET /api/requesters/confirm] 📋 Token analysis:", {
+      originalToken: token.substring(0, 16) + "..." + token.substring(token.length - 8),
+      originalTokenLength: token.length,
+      decodedToken: decodedToken.substring(0, 16) + "..." + decodedToken.substring(decodedToken.length - 8),
+      decodedTokenLength: decodedToken.length,
+      tokensMatch: token === decodedToken,
+      isHex: /^[0-9a-f]+$/i.test(decodedToken),
+    });
 
-    const supabase = await createSupabaseServerClient(true);
-
-    // Fetch invitation
-    const { data: invitation, error: inviteError } = await supabase
+    // Use direct createClient with service_role to truly bypass RLS
+    // createServerClient from @supabase/ssr might still apply RLS even with service_role
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error("[GET /api/requesters/confirm] ❌ Missing Supabase configuration");
+      return NextResponse.json({ 
+        ok: false, 
+        error: "Missing Supabase configuration" 
+      }, { status: 500 });
+    }
+    
+    // Service role client for queries (bypasses RLS completely)
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+    
+    console.log("[GET /api/requesters/confirm] ✅ Using direct createClient with service_role key");
+    
+    // Fetch invitation - try multiple strategies
+    let invitation: any = null;
+    let inviteError: any = null;
+    
+    // Strategy 1: Try with the token as-is
+    console.log("[GET /api/requesters/confirm] 🔍 Strategy 1: Searching with token as-is");
+    console.log("[GET /api/requesters/confirm] 🔍 Token being searched:", {
+      token: token.substring(0, 20) + "..." + token.substring(Math.max(0, token.length - 12)),
+      tokenLength: token.length,
+      isHex: /^[0-9a-f]+$/i.test(token),
+      trimmed: token.trim().length,
+    });
+    let { data, error } = await supabase
       .from("requester_invitations")
       .select(`
         *,
@@ -34,20 +125,217 @@ export async function GET(req: NextRequest) {
           requester:users!requester_id(id, name, email, profile_picture)
         )
       `)
-      .eq("token", token)
+      .eq("token", token.trim()) // Trim token in case of whitespace
       .single();
-
-    if (inviteError || !invitation) {
-      return NextResponse.json({ ok: false, error: "Invalid or expired invitation" }, { status: 404 });
+    
+    invitation = data;
+    inviteError = error;
+    
+    if (inviteError && inviteError.code === 'PGRST116') {
+      console.log("[GET /api/requesters/confirm] ❌ Strategy 1 failed: Token not found");
+      
+      // Strategy 2: Try with decoded token if different
+      if (decodedToken !== token) {
+        console.log("[GET /api/requesters/confirm] 🔍 Strategy 2: Trying with decoded token");
+        const { data: decodedData, error: decodedError } = await supabase
+          .from("requester_invitations")
+          .select(`
+            *,
+            request:requests(
+              id,
+              request_number,
+              title,
+              purpose,
+              destination,
+              travel_start_date,
+              travel_end_date,
+              requester:users!requester_id(id, name, email, profile_picture)
+            )
+          `)
+          .eq("token", decodedToken)
+          .single();
+        
+        if (!decodedError && decodedData) {
+          invitation = decodedData;
+          inviteError = null;
+          console.log("[GET /api/requesters/confirm] ✅ Strategy 2 succeeded: Found with decoded token");
+        } else {
+          console.log("[GET /api/requesters/confirm] ❌ Strategy 2 failed:", decodedError?.code, decodedError?.message);
+        }
+      }
+      
+      // Strategy 3: Try to find by token substring (in case of truncation)
+      if (inviteError && inviteError.code === 'PGRST116') {
+        console.log("[GET /api/requesters/confirm] 🔍 Strategy 3: Searching all recent invitations to find matching token");
+        const { data: allInvitations, error: allError } = await supabase
+          .from("requester_invitations")
+          .select("id, email, token, request_id, status, expires_at, created_at")
+          .limit(100)
+          .order("created_at", { ascending: false });
+        
+        if (!allError && allInvitations) {
+          console.log("[GET /api/requesters/confirm] 📊 Found", allInvitations.length, "total invitations");
+          
+          // Find exact match - try both original and decoded tokens
+          const exactMatch = allInvitations.find((inv: any) => {
+            const invToken = inv.token || '';
+            return invToken === token || 
+                   invToken === decodedToken ||
+                   invToken.toLowerCase() === token.toLowerCase() ||
+                   invToken.toLowerCase() === decodedToken.toLowerCase();
+          });
+          
+          if (exactMatch) {
+            console.log("[GET /api/requesters/confirm] ✅ Strategy 3: Found exact match by token");
+            console.log("[GET /api/requesters/confirm] 📋 Match details:", {
+              invitationId: exactMatch.id,
+              email: exactMatch.email,
+              status: exactMatch.status,
+              tokenMatch: exactMatch.token === token || exactMatch.token === decodedToken,
+              tokenLengths: {
+                db: exactMatch.token?.length,
+                search: token.length,
+                decoded: decodedToken.length,
+              },
+            });
+            
+            // Fetch full invitation with relations
+            const { data: fullInvitation, error: fullError } = await supabase
+              .from("requester_invitations")
+              .select(`
+                *,
+                request:requests(
+                  id,
+                  request_number,
+                  title,
+                  purpose,
+                  destination,
+                  travel_start_date,
+                  travel_end_date,
+                  requester:users!requester_id(id, name, email, profile_picture)
+                )
+              `)
+              .eq("id", exactMatch.id)
+              .single();
+            
+            if (!fullError && fullInvitation) {
+              invitation = fullInvitation;
+              inviteError = null;
+              console.log("[GET /api/requesters/confirm] ✅ Strategy 3 succeeded: Found full invitation");
+            } else {
+              console.error("[GET /api/requesters/confirm] ❌ Strategy 3: Failed to fetch full invitation:", fullError);
+            }
+          } else {
+            // Log first few tokens for debugging
+            console.log("[GET /api/requesters/confirm] 🔍 Sample tokens from database:", 
+              allInvitations.slice(0, 10).map((inv: any) => ({
+                id: inv.id,
+                email: inv.email,
+                tokenFirst16: inv.token?.substring(0, 16),
+                tokenLast8: inv.token?.substring(inv.token?.length - 8),
+                tokenLength: inv.token?.length,
+                status: inv.status,
+                created_at: inv.created_at,
+                tokenMatches: {
+                  exact: inv.token === token || inv.token === decodedToken,
+                  caseInsensitive: inv.token?.toLowerCase() === token.toLowerCase() || inv.token?.toLowerCase() === decodedToken.toLowerCase(),
+                },
+              }))
+            );
+            console.log("[GET /api/requesters/confirm] ❌ Strategy 3: No matching token found in database");
+            console.log("[GET /api/requesters/confirm] 🔍 Searching for:", {
+              token: token.substring(0, 16) + "..." + token.substring(token.length - 8),
+              decodedToken: decodedToken.substring(0, 16) + "..." + decodedToken.substring(decodedToken.length - 8),
+            });
+          }
+        } else {
+          console.error("[GET /api/requesters/confirm] ❌ Strategy 3: Failed to fetch invitations:", allError);
+        }
+      }
+    } else if (!inviteError && invitation) {
+      console.log("[GET /api/requesters/confirm] ✅ Strategy 1 succeeded: Found invitation");
     }
 
-    // Check if expired
-    if (new Date(invitation.expires_at) < new Date()) {
-      // Update status to expired
-      await supabase
+    if (inviteError) {
+      console.error("[GET /api/requesters/confirm] ❌ All search strategies failed. Database error:", {
+        code: inviteError.code,
+        message: inviteError.message,
+        details: inviteError.details,
+        hint: inviteError.hint,
+        searchedToken: token.substring(0, 16) + "..." + token.substring(token.length - 8),
+        searchedTokenLength: token.length,
+        decodedToken: decodedToken.substring(0, 16) + "..." + decodedToken.substring(decodedToken.length - 8),
+        decodedTokenLength: decodedToken.length,
+      });
+      
+      // Final fallback: Get recent invitations and log them for debugging
+      console.log("[GET /api/requesters/confirm] 🔍 Final fallback: Fetching recent invitations for debugging");
+      const { data: recentInvitations } = await supabase
         .from("requester_invitations")
-        .update({ status: 'expired' })
-        .eq("id", invitation.id);
+        .select("id, email, token, status, created_at, expires_at")
+        .limit(20)
+        .order("created_at", { ascending: false });
+      
+      if (recentInvitations && recentInvitations.length > 0) {
+        console.log("[GET /api/requesters/confirm] 📊 Recent invitations in database:", 
+          recentInvitations.map((inv: any) => ({
+            id: inv.id,
+            email: inv.email,
+            tokenPreview: inv.token ? `${inv.token.substring(0, 16)}...${inv.token.substring(inv.token.length - 8)}` : 'null',
+            tokenLength: inv.token?.length || 0,
+            status: inv.status,
+            created_at: inv.created_at,
+            expires_at: inv.expires_at,
+            isExpired: inv.expires_at ? new Date(inv.expires_at) < new Date() : false,
+          }))
+        );
+      }
+      
+      // If it's a "not found" error (PGRST116), provide helpful error message
+      if (inviteError.code === 'PGRST116') {
+        return NextResponse.json({ 
+          ok: false, 
+          error: "Invitation not found. The link may be invalid, expired, or the invitation may have been deleted. Please request a new invitation link.",
+          details: `Token searched: ${token.substring(0, 16)}...${token.substring(token.length - 8)} (length: ${token.length}). Check server logs for recent invitations.`
+        }, { status: 404 });
+      }
+      
+      return NextResponse.json({ 
+        ok: false, 
+        error: "Failed to load invitation",
+        details: inviteError.message 
+      }, { status: 500 });
+    }
+
+    if (!invitation) {
+      console.error("[GET /api/requesters/confirm] Invitation not found for token");
+      return NextResponse.json({ 
+        ok: false, 
+        error: "Invitation not found. Please check the link or contact the requester for a new invitation." 
+      }, { status: 404 });
+    }
+
+    // Check if expired (with 1 minute buffer to account for timezone differences)
+    const expiresAt = new Date(invitation.expires_at);
+    const now = new Date();
+    const bufferMs = 60 * 1000; // 1 minute buffer
+    
+    console.log("[GET /api/requesters/confirm] Expiration check:", {
+      expires_at: invitation.expires_at,
+      expiresAt: expiresAt.toISOString(),
+      now: now.toISOString(),
+      isExpired: expiresAt.getTime() < (now.getTime() - bufferMs),
+      status: invitation.status
+    });
+
+    if (expiresAt.getTime() < (now.getTime() - bufferMs)) {
+      // Only update status if still pending
+      if (invitation.status === 'pending') {
+        await supabase
+          .from("requester_invitations")
+          .update({ status: 'expired' })
+          .eq("id", invitation.id);
+      }
 
       return NextResponse.json({ 
         ok: false, 
@@ -99,9 +387,17 @@ export async function GET(req: NextRequest) {
       }
     });
   } catch (err: any) {
-    console.error("[GET /api/requesters/confirm] Error:", err);
+    console.error("[GET /api/requesters/confirm] Unexpected error:", {
+      message: err.message,
+      stack: err.stack,
+      name: err.name,
+    });
     return NextResponse.json(
-      { ok: false, error: err.message || "Internal server error" },
+      { 
+        ok: false, 
+        error: err.message || "Internal server error",
+        details: process.env.NODE_ENV === 'development' ? err.stack : undefined
+      },
       { status: 500 }
     );
   }
@@ -132,14 +428,60 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Reason is required for declining" }, { status: 400 });
     }
 
-    const supabase = await createSupabaseServerClient(true);
+    // Use direct createClient with service_role to truly bypass RLS
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error("[POST /api/requesters/confirm] ❌ Missing Supabase configuration");
+      return NextResponse.json({ 
+        ok: false, 
+        error: "Missing Supabase configuration" 
+      }, { status: 500 });
+    }
+    
+    // Service role client for queries (bypasses RLS completely)
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+    
+    console.log("[POST /api/requesters/confirm] ✅ Using direct createClient with service_role key");
 
-    // Fetch invitation
-    const { data: invitation, error: inviteError } = await supabase
+    // Decode token in case it was double-encoded
+    const decodedToken = decodeURIComponent(token);
+    
+    // Fetch invitation - try both encoded and decoded token
+    let invitation: any = null;
+    let inviteError: any = null;
+    
+    // First try with the token as-is
+    let { data, error } = await supabase
       .from("requester_invitations")
       .select("*")
       .eq("token", token)
       .single();
+    
+    invitation = data;
+    inviteError = error;
+    
+    // If not found and token was decoded, try with decoded token
+    if (inviteError && inviteError.code === 'PGRST116' && decodedToken !== token) {
+      console.log("[POST /api/requesters/confirm] 🔄 Token not found, trying decoded token");
+      const { data: decodedData, error: decodedError } = await supabase
+        .from("requester_invitations")
+        .select("*")
+        .eq("token", decodedToken)
+        .single();
+      
+      if (!decodedError && decodedData) {
+        invitation = decodedData;
+        inviteError = null;
+        console.log("[POST /api/requesters/confirm] ✅ Found invitation with decoded token");
+      }
+    }
 
     if (inviteError || !invitation) {
       return NextResponse.json({ ok: false, error: "Invalid invitation" }, { status: 404 });
@@ -153,32 +495,63 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // Check if expired
-    if (new Date(invitation.expires_at) < new Date()) {
-      await supabase
-        .from("requester_invitations")
-        .update({ status: 'expired' })
-        .eq("id", invitation.id);
+    // Check if expired (with 1 minute buffer to account for timezone differences)
+    const expiresAt = new Date(invitation.expires_at);
+    const now = new Date();
+    const bufferMs = 60 * 1000; // 1 minute buffer
+    
+    if (expiresAt.getTime() < (now.getTime() - bufferMs)) {
+      // Only update status if still pending
+      if (invitation.status === 'pending') {
+        await supabase
+          .from("requester_invitations")
+          .update({ status: 'expired' })
+          .eq("id", invitation.id);
+      }
 
       return NextResponse.json({ ok: false, error: "This invitation has expired" }, { status: 400 });
     }
 
-    const now = getPhilippineTimestamp();
+    const phNow = getPhilippineTimestamp();
 
     if (action === "confirm") {
+      // Check if user exists and has a saved signature
+      let finalSignature = signature || null;
+      let userProfile: any = null;
+      
+      if (invitation.email) {
+        const { data: user } = await supabase
+          .from("users")
+          .select("id, signature")
+          .eq("email", invitation.email.toLowerCase())
+          .eq("status", "active")
+          .maybeSingle();
+
+        if (user) {
+          userProfile = user;
+          // Use saved signature if no signature was provided
+          if (!finalSignature && user.signature) {
+            finalSignature = user.signature;
+            console.log("[POST /api/requesters/confirm] ✅ Using saved signature from user profile");
+          }
+        }
+      }
+
       // Update invitation to confirmed
-      const { error: updateError } = await supabase
+      const { data: updatedInvitation, error: updateError } = await supabase
         .from("requester_invitations")
         .update({
           status: 'confirmed',
           name: name.trim(),
           department: department?.trim() || null,
           department_id: department_id || null,
-          signature: signature || null,
-          confirmed_at: now,
-          updated_at: now,
+          signature: finalSignature,
+          confirmed_at: phNow,
+          updated_at: phNow,
         })
-        .eq("id", invitation.id);
+        .eq("id", invitation.id)
+        .select()
+        .single();
 
       if (updateError) {
         console.error("[POST /api/requesters/confirm] Update error:", updateError);
@@ -186,26 +559,24 @@ export async function POST(req: NextRequest) {
       }
 
       // Update user_id if user exists in system
-      if (invitation.email) {
-        const { data: user } = await supabase
-          .from("users")
-          .select("id")
-          .eq("email", invitation.email.toLowerCase())
-          .eq("status", "active")
-          .maybeSingle();
-
-        if (user) {
-          await supabase
-            .from("requester_invitations")
-            .update({ user_id: user.id })
-            .eq("id", invitation.id);
-        }
+      if (userProfile && userProfile.id) {
+        await supabase
+          .from("requester_invitations")
+          .update({ user_id: userProfile.id })
+          .eq("id", invitation.id);
       }
+
+      console.log("[POST /api/requesters/confirm] ✅ Confirmation successful:", {
+        invitationId: updatedInvitation?.id,
+        status: updatedInvitation?.status,
+        hasSignature: !!updatedInvitation?.signature,
+        name: updatedInvitation?.name,
+      });
 
       return NextResponse.json({
         ok: true,
         message: "Successfully confirmed participation",
-        data: { ...invitation, status: 'confirmed' }
+        data: updatedInvitation || { ...invitation, status: 'confirmed', signature: finalSignature }
       });
     } else {
       // Decline
@@ -214,8 +585,8 @@ export async function POST(req: NextRequest) {
         .update({
           status: 'declined',
           declined_reason: declined_reason.trim(),
-          declined_at: now,
-          updated_at: now,
+          declined_at: phNow,
+          updated_at: phNow,
         })
         .eq("id", invitation.id);
 

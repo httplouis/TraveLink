@@ -108,6 +108,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               className="inline-flex h-9 items-center gap-2 rounded-full border border-white/60 bg-red-600 px-3 text-sm text-white shadow-inner transition hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500/70"
               aria-label="Logout"
               title="Logout"
+              suppressHydrationWarning
             >
               <LogOut className="h-4 w-4" />
               <span className="hidden sm:inline">Logout</span>

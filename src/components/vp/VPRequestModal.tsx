@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { X, CheckCircle2, XCircle, Users, Car, UserCog, MapPin, Calendar, DollarSign, FileText } from "lucide-react";
-import { useToast } from "@/components/common/ui/ToastProvider.ui";
+import { useToast } from "@/components/common/ui/Toast";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import { NameWithProfile } from "@/components/common/ProfileHoverCard";
 import ApproverSelectionModal from "@/components/common/ApproverSelectionModal";
@@ -30,9 +30,11 @@ export default function VPRequestModal({
   const toast = useToast();
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [vpSignature, setVpSignature] = useState<string>(request.vp_signature || request.vp2_signature || "");
+  const [vpSignature, setVpSignature] = useState<string>("");
   const [vpProfile, setVpProfile] = useState<any>(null);
   const [expenseBreakdown, setExpenseBreakdown] = useState<any[]>([]);
+  const [editedExpenses, setEditedExpenses] = useState<any[]>([]);
+  const [originalExpenses, setOriginalExpenses] = useState<any[]>([]);
   const [totalCost, setTotalCost] = useState(0);
   const [preferredDriverName, setPreferredDriverName] = useState<string>("");
   const [preferredVehicleName, setPreferredVehicleName] = useState<string>("");
@@ -40,34 +42,146 @@ export default function VPRequestModal({
   const [approverOptions, setApproverOptions] = useState<any[]>([]);
   const [loadingApprovers, setLoadingApprovers] = useState(false);
 
-  const t = request;
+  const [fullRequest, setFullRequest] = React.useState<any>(null);
+  const t = fullRequest || request;
 
-  // Load VP profile and expense breakdown
-  useEffect(() => {
-    async function loadData() {
-      try {
-        // Load current VP info
-        const meRes = await fetch("/api/profile");
-        const meData = await meRes.json();
-        if (meData.ok && meData.data) {
-          setVpProfile(meData.data);
-        } else {
-          console.error("[VPRequestModal] Failed to load profile:", meData);
+  // Load full request details and VP profile
+  const loadFullRequest = async () => {
+    try {
+      const res = await fetch(`/api/requests/${request.id}`);
+      const json = await res.json();
+      
+      if (json.ok && json.data) {
+        setFullRequest(json.data);
+        const req = json.data;
+        
+        // Parse expense_breakdown if it's a string (JSONB from database)
+        let expenseBreakdown = req.expense_breakdown;
+        if (typeof expenseBreakdown === 'string') {
+          try {
+            expenseBreakdown = JSON.parse(expenseBreakdown);
+          } catch (e) {
+            console.error("[VPRequestModal] Failed to parse expense_breakdown:", e);
+            expenseBreakdown = null;
+          }
         }
-
-        // Load expense breakdown
-        if (t.expense_breakdown && Array.isArray(t.expense_breakdown)) {
-          setExpenseBreakdown(t.expense_breakdown);
-          const total = t.expense_breakdown.reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0);
-          setTotalCost(total || t.total_budget || 0);
+        
+        // Check if comptroller edited the budget
+        const hasComptrollerEdit = req.comptroller_edited_budget && req.comptroller_edited_budget !== req.total_budget;
+        
+        if (expenseBreakdown && Array.isArray(expenseBreakdown) && expenseBreakdown.length > 0) {
+          setExpenseBreakdown(expenseBreakdown);
+          
+          setEditedExpenses(expenseBreakdown.map((exp: any) => ({
+            item: exp.item || exp.description || "Unknown",
+            amount: exp.amount || 0,
+            description: exp.description || null,
+            justification: exp.justification || null
+          })));
+          
+          // Fetch original expense breakdown from request_history if comptroller edited
+          let originalExpenseBreakdown: any[] = [];
+          if (hasComptrollerEdit) {
+            try {
+              const historyRes = await fetch(`/api/requests/${request.id}/history`);
+              const historyData = await historyRes.json();
+              if (historyData && historyData.ok && historyData.data && historyData.data.history) {
+                const budgetModification = historyData.data.history.find((entry: any) => 
+                  entry.action === "budget_modified" && entry.metadata?.original_expense_breakdown
+                );
+                if (budgetModification && budgetModification.metadata?.original_expense_breakdown) {
+                  originalExpenseBreakdown = budgetModification.metadata.original_expense_breakdown;
+                } else {
+                  // Reconstruct original amounts
+                  const originalTotal = req.total_budget || 0;
+                  const newTotal = req.comptroller_edited_budget || 0;
+                  
+                  if (originalTotal > 0 && newTotal > 0) {
+                    const itemsWithExtractedAmounts: Record<string, number> = {};
+                    expenseBreakdown.forEach((exp: any) => {
+                      if (exp.justification) {
+                        const justification = exp.justification.toLowerCase();
+                        const numberMatch = justification.match(/(?:from|original|was|₱|peso|php|mahal\s+ng|mandating)?\s*(\d+(?:\.\d+)?)/i);
+                        if (numberMatch && numberMatch[1]) {
+                          const extractedAmount = parseFloat(numberMatch[1]);
+                          if (extractedAmount > 0 && extractedAmount !== exp.amount) {
+                            const itemKey = exp.item || exp.description || "Unknown";
+                            itemsWithExtractedAmounts[itemKey] = extractedAmount;
+                          }
+                        }
+                      }
+                    });
+                    
+                    const extractedSum = Object.values(itemsWithExtractedAmounts).reduce((sum, amt) => sum + amt, 0);
+                    const itemsWithoutExtracted = expenseBreakdown.filter((exp: any) => {
+                      const itemKey = exp.item || exp.description || "Unknown";
+                      return !itemsWithExtractedAmounts[itemKey];
+                    });
+                    
+                    const remainingOriginalTotal = Math.max(0, originalTotal - extractedSum);
+                    const remainingNewTotal = itemsWithoutExtracted.reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0);
+                    const ratio = remainingOriginalTotal > 0 && remainingNewTotal > 0 
+                      ? remainingOriginalTotal / remainingNewTotal 
+                      : (originalTotal / newTotal);
+                    
+                    originalExpenseBreakdown = expenseBreakdown.map((exp: any) => {
+                      const itemKey = exp.item || exp.description || "Unknown";
+                      if (itemsWithExtractedAmounts[itemKey] !== undefined) {
+                        return {
+                          item: itemKey,
+                          amount: itemsWithExtractedAmounts[itemKey],
+                          description: exp.description || null
+                        };
+                      }
+                      const proportionalAmount = Math.round((exp.amount || 0) * ratio * 100) / 100;
+                      return {
+                        item: itemKey,
+                        amount: proportionalAmount > 0 ? proportionalAmount : exp.amount,
+                        description: exp.description || null
+                      };
+                    });
+                  }
+                }
+              }
+            } catch (err) {
+              console.error("[VPRequestModal] Failed to fetch original expense breakdown:", err);
+            }
+          }
+          
+          if (hasComptrollerEdit && originalExpenseBreakdown.length > 0) {
+            setOriginalExpenses(originalExpenseBreakdown.map((exp: any) => ({
+              item: exp.item || exp.description || "Unknown",
+              amount: exp.amount || 0,
+              description: exp.description || null
+            })));
+          } else {
+            setOriginalExpenses([]);
+          }
+          
+          const total = expenseBreakdown.reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0);
+          setTotalCost(total || req.total_budget || 0);
         } else {
-          setTotalCost(t.total_budget || 0);
+          if (req.total_budget && req.total_budget > 0) {
+            const singleExpense = {
+              item: "Total Budget",
+              amount: req.total_budget
+            };
+            setExpenseBreakdown([singleExpense]);
+            setEditedExpenses([singleExpense]);
+            setOriginalExpenses([]);
+            setTotalCost(req.total_budget);
+          } else {
+            setExpenseBreakdown([]);
+            setEditedExpenses([]);
+            setOriginalExpenses([]);
+            setTotalCost(0);
+          }
         }
 
         // Load preferred driver
-        if (t.preferred_driver_id) {
+        if (req.preferred_driver_id) {
           try {
-            const driverRes = await fetch(`/api/users/${t.preferred_driver_id}`);
+            const driverRes = await fetch(`/api/users/${req.preferred_driver_id}`);
             const driverData = await driverRes.json();
             if (driverData.ok && driverData.data) {
               setPreferredDriverName(driverData.data.name || "Unknown Driver");
@@ -78,9 +192,9 @@ export default function VPRequestModal({
         }
 
         // Load preferred vehicle
-        if (t.preferred_vehicle_id) {
+        if (req.preferred_vehicle_id) {
           try {
-            const vehicleRes = await fetch(`/api/vehicles/${t.preferred_vehicle_id}`);
+            const vehicleRes = await fetch(`/api/vehicles/${req.preferred_vehicle_id}`);
             const vehicleData = await vehicleRes.json();
             if (vehicleData.ok && vehicleData.data) {
               setPreferredVehicleName(vehicleData.data.name || vehicleData.data.plate_number || "Unknown Vehicle");
@@ -89,12 +203,37 @@ export default function VPRequestModal({
             console.error("[VPRequestModal] Failed to load vehicle:", err);
           }
         }
+      }
+    } catch (err) {
+      console.error("[VPRequestModal] Error loading full request:", err);
+    }
+  };
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        // Load current VP info
+        const meRes = await fetch("/api/profile");
+        const meData = await meRes.json();
+        if (meData.ok && meData.data) {
+          setVpProfile(meData.data);
+          // Only set signature if VP has already signed (viewOnly mode)
+          if (viewOnly && (meData.data.id === t.vp_approved_by || meData.data.id === t.vp2_approved_by)) {
+            setVpSignature(t.vp_signature || t.vp2_signature || "");
+          }
+        } else {
+          console.error("[VPRequestModal] Failed to load profile:", meData);
+          setVpProfile({ name: "VP User", email: "vp@example.com" });
+        }
+
+        await loadFullRequest();
       } catch (err) {
         console.error("[VPRequestModal] Error loading data:", err);
+        setVpProfile({ name: "VP User", email: "vp@example.com" });
       }
     }
     loadData();
-  }, [t]);
+  }, [request.id, viewOnly]);
 
   // Check if other VP has already signed
   const otherVPApproved = request.vp_approved_by && request.vp_approved_by !== request.vp2_approved_by;
@@ -103,12 +242,12 @@ export default function VPRequestModal({
 
   const handleApprove = async () => {
     if (!vpSignature) {
-      toast({ message: "Please provide your signature", kind: "error" });
+      toast.error("Signature Required", "Please provide your signature");
       return;
     }
 
     if (!notes.trim() || notes.trim().length < 10) {
-      toast({ message: "Notes are required and must be at least 10 characters long", kind: "error" });
+      toast.error("Notes Required", "Notes are required and must be at least 10 characters long");
       return;
     }
 
@@ -175,7 +314,7 @@ export default function VPRequestModal({
         setLoadingApprovers(false);
         setApproverOptions([]);
         setShowApproverSelection(true);
-        toast({ message: "Could not fetch approvers. You can still return the request to the requester.", kind: "warning" });
+        toast.warning("Warning", "Could not fetch approvers. You can still return the request to the requester.");
       }
       return;
     }
@@ -223,7 +362,7 @@ export default function VPRequestModal({
         } catch {
           errorData = { error: errorText || `HTTP ${res.status}` };
         }
-        toast({ message: errorData.error || "Failed to approve request", kind: "error" });
+        toast.error("Approval Failed", errorData.error || "Failed to approve request");
         return;
       }
 
@@ -233,17 +372,17 @@ export default function VPRequestModal({
         const roleLabel = selectedRole === "requester" ? "Requester" : 
                          selectedRole === "admin" ? "Admin" : 
                          selectedRole === "president" ? "President" : "Next Approver";
-        toast({ message: `Request has been sent to ${roleLabel}`, kind: "success" });
+        toast.success("Request Approved", `Request has been sent to ${roleLabel}`);
         setShowApproverSelection(false);
         setTimeout(() => {
           onApproved(request.id);
           onClose();
         }, 1500);
       } else {
-        toast({ message: data.error || "Failed to approve request", kind: "error" });
+        toast.error("Approval Failed", data.error || "Failed to approve request");
       }
     } catch (error) {
-      toast({ message: "An error occurred", kind: "error" });
+      toast.error("Error", "An error occurred");
     } finally {
       setSubmitting(false);
     }
@@ -251,7 +390,7 @@ export default function VPRequestModal({
 
   const handleReject = async () => {
     if (!notes.trim()) {
-      toast({ message: "Please provide a reason for rejection", kind: "error" });
+      toast.error("Reason Required", "Please provide a reason for rejection");
       return;
     }
 
@@ -270,7 +409,7 @@ export default function VPRequestModal({
       const data = await res.json();
 
       if (data.ok) {
-        toast({ message: "Request rejected", kind: "info" });
+        toast.info("Request Rejected", "Request rejected successfully");
         setTimeout(() => {
           onRejected(request.id);
           onClose();
@@ -279,7 +418,7 @@ export default function VPRequestModal({
         toast({ message: data.error || "Failed to reject request", kind: "error" });
       }
     } catch (error) {
-      toast({ message: "An error occurred", kind: "error" });
+      toast.error("Error", "An error occurred");
     } finally {
       setSubmitting(false);
     }
@@ -391,7 +530,15 @@ export default function VPRequestModal({
                 <div className="mt-4 pt-4 border-t border-slate-100">
                   <p className="text-xs text-slate-500 flex items-center gap-1.5">
                     <Calendar className="h-3.5 w-3.5" />
-                    Submitted {new Date(t.created_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                    Submitted {new Date(t.created_at).toLocaleString('en-PH', { 
+                      year: 'numeric', 
+                      month: 'short', 
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      hour12: true,
+                      timeZone: 'Asia/Manila'
+                    })}
                   </p>
                 </div>
               )}
@@ -571,126 +718,289 @@ export default function VPRequestModal({
               </section>
             )}
 
-            {/* Requester Signature */}
-            <section className="rounded-lg bg-slate-50 border border-slate-200 p-4">
-              <p className="text-xs font-semibold uppercase text-slate-700 mb-3">
+            {/* Requester Signature - Same style as Previous Approvals */}
+            <section className="rounded-lg bg-slate-50 border border-slate-200 p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-600 mb-4">
                 Requester's Signature
               </p>
               {(t.requester_signature) ? (
-                <div className="bg-white rounded-lg border border-slate-200 p-4">
-                  <img
-                    src={t.requester_signature}
-                    alt="Requester signature"
-                    className="h-[100px] w-full object-contain"
-                  />
-                  <p className="text-center text-xs text-slate-600 mt-2 font-medium">
-                    Signed by: {t.requester_name || "Requester"}
-                  </p>
-                  {t.requester_signed_at && (
-                    <p className="text-center text-xs text-slate-500 mt-1">
-                      {new Date(t.requester_signed_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-sm font-semibold text-slate-800">
+                      Requester Signed
                     </p>
-                  )}
+                    {(t.requester_signed_at || t.created_at) && (
+                      <span className="text-xs text-slate-500 font-medium">
+                        {new Date(t.requester_signed_at || t.created_at).toLocaleString('en-US', { 
+                          year: 'numeric', 
+                          month: 'short', 
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: true,
+                          timeZone: 'Asia/Manila'
+                        })}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-600 mb-3">
+                    By: <span className="font-medium text-slate-700">{t.requester_name || "Requester"}</span>
+                  </p>
+                  <div className="mt-3 pt-3 border-t border-slate-200">
+                    <img
+                      src={t.requester_signature}
+                      alt="Requester signature"
+                      className="h-20 w-full object-contain bg-slate-50 rounded p-2"
+                    />
+                  </div>
                 </div>
               ) : (
-                <div className="flex items-center justify-center gap-2 text-sm text-slate-600 bg-white rounded-lg border border-slate-200 p-4">
-                  <FileText className="h-4 w-4" />
+                <div className="flex items-center justify-center gap-2 text-sm text-slate-500 bg-white rounded-lg border border-slate-200 p-4">
+                  <FileText className="h-4 w-4 text-slate-400" />
                   <span>No signature provided by requester</span>
                 </div>
               )}
             </section>
 
-            {/* Previous Approvals */}
-            <section className="rounded-lg bg-slate-50 border border-slate-200 p-4">
-              <p className="text-xs font-semibold uppercase text-slate-700 mb-3">
+            {/* Previous Approvals - Show ALL signatures from all approvers BEFORE VP */}
+            <section className="rounded-lg bg-slate-50 border border-slate-200 p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-600 mb-4">
                 Previous Approvals
               </p>
               <div className="space-y-3">
-                {t.head_approved_at && (
-                  <div className="bg-white rounded-lg border border-slate-200 p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-sm font-medium text-slate-900">Head Approved</p>
-                      <span className="text-xs text-green-600 font-medium">
-                        {new Date(t.head_approved_at).toLocaleDateString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                {/* Check for BOTH direct head approval AND parent head approval */}
+                {(() => {
+                  const headApprover = t.head_approver;
+                  const parentHeadApprover = t.parent_head_approver;
+                  const hasHeadApproval = !!(t.head_approved_at || t.head_approved_by);
+                  const hasParentHeadApproval = !!(t.parent_head_approved_at || t.parent_head_approved_by);
+                  
+                  const approverToUse = hasParentHeadApproval ? parentHeadApprover 
+                    : hasHeadApproval ? headApprover 
+                    : null;
+                  const hasAnyHeadApproval = hasHeadApproval || hasParentHeadApproval;
+                  
+                  let signature: string | null = null;
+                  if (t.parent_head_signature) {
+                    signature = t.parent_head_signature;
+                  } else if (t.head_signature) {
+                    signature = t.head_signature;
+                  }
+                  
+                  const approvalDate = t.parent_head_approved_at || t.head_approved_at;
+                  const approverDept = approverToUse?.department?.name || approverToUse?.department_name || "";
+                  
+                  return hasAnyHeadApproval ? (
+                    <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-sm font-semibold text-slate-800">
+                          {hasParentHeadApproval ? "Parent Head Approved" : "Head Approved"}
+                        </p>
+                        <span className="text-xs text-slate-500 font-medium">
+                          {approvalDate && new Date(approvalDate).toLocaleString('en-US', { 
+                            year: 'numeric', 
+                            month: 'short', 
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: true,
+                            timeZone: 'Asia/Manila'
+                          })}
+                        </span>
+                      </div>
+                      {approverToUse && (
+                        <p className="text-xs text-slate-600 mb-3">
+                          By: <span className="font-medium text-slate-700">{approverToUse.name || (hasParentHeadApproval ? "Parent Head" : "Department Head")}</span>
+                          {approverDept ? <span className="text-slate-500"> ({approverDept})</span> : ''}
+                        </p>
+                      )}
+                      {signature && (
+                        <div className="mt-3 pt-3 border-t border-slate-200">
+                          <img
+                            src={signature}
+                            alt="Head signature"
+                            className="h-20 w-full object-contain bg-slate-50 rounded p-2"
+                          />
+                        </div>
+                      )}
+                      {(t.head_comments || t.parent_head_comments) && (
+                        <div className="mt-3 pt-3 border-t border-slate-200">
+                          <p className="text-xs text-slate-500 mb-1 font-medium">Comments:</p>
+                          <p className="text-xs text-slate-700 leading-relaxed">{t.parent_head_comments || t.head_comments}</p>
+                        </div>
+                      )}
+                    </div>
+                  ) : null;
+                })()}
+
+                {t.admin_approved_at && (
+                  <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-sm font-semibold text-slate-800">Admin Processed</p>
+                      <span className="text-xs text-slate-500 font-medium">
+                        {new Date(t.admin_approved_at).toLocaleString('en-US', { 
+                          year: 'numeric', 
+                          month: 'short', 
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: true,
+                          timeZone: 'Asia/Manila'
+                        })}
                       </span>
                     </div>
-                    {t.head_approved_by && (
-                      <p className="text-xs text-slate-600">
-                        By: {t.head_approver?.name || t.head_signed_by || "Department Head"}
+                    {t.admin_approved_by && (
+                      <p className="text-xs text-slate-600 mb-3">
+                        By: <span className="font-medium text-slate-700">{t.admin_approver?.name || "Administrator"}</span>
                       </p>
                     )}
-                    {t.head_signature && (
-                      <div className="mt-2 pt-2 border-t border-slate-100">
+                    {t.admin_signature && (
+                      <div className="mt-3 pt-3 border-t border-slate-200">
                         <img
-                          src={t.head_signature}
-                          alt="Head signature"
-                          className="h-16 w-full object-contain"
+                          src={t.admin_signature}
+                          alt="Admin signature"
+                          className="h-20 w-full object-contain bg-slate-50 rounded p-2"
                         />
                       </div>
                     )}
-                    {t.head_comments && (
-                      <div className="mt-2 pt-2 border-t border-slate-100">
-                        <p className="text-xs text-slate-500 mb-1">Comments:</p>
-                        <p className="text-xs text-slate-700">{t.head_comments}</p>
+                    {t.admin_comments && (
+                      <div className="mt-3 pt-3 border-t border-slate-200">
+                        <p className="text-xs text-slate-500 mb-1 font-medium">Comments:</p>
+                        <p className="text-xs text-slate-700 leading-relaxed">{t.admin_comments}</p>
                       </div>
                     )}
                   </div>
                 )}
-                
+
+                {t.comptroller_approved_at && (
+                  <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-sm font-semibold text-slate-800">Comptroller Approved</p>
+                      <span className="text-xs text-slate-500 font-medium">
+                        {new Date(t.comptroller_approved_at).toLocaleString('en-US', { 
+                          year: 'numeric', 
+                          month: 'short', 
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: true,
+                          timeZone: 'Asia/Manila'
+                        })}
+                      </span>
+                    </div>
+                    {t.comptroller_approved_by && (
+                      <p className="text-xs text-slate-600 mb-3">
+                        By: <span className="font-medium text-slate-700">{t.comptroller_approver?.name || "Comptroller"}</span>
+                      </p>
+                    )}
+                    {t.comptroller_signature && (
+                      <div className="mt-3 pt-3 border-t border-slate-200">
+                        <img
+                          src={t.comptroller_signature}
+                          alt="Comptroller signature"
+                          className="h-20 w-full object-contain bg-slate-50 rounded p-2"
+                        />
+                      </div>
+                    )}
+                    {t.comptroller_comments && (
+                      <div className="mt-3 pt-3 border-t border-slate-200">
+                        <p className="text-xs text-slate-500 mb-1 font-medium">Comments:</p>
+                        <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">{t.comptroller_comments}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {t.hr_approved_at && (
-                  <div className="bg-white rounded-lg border border-slate-200 p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-sm font-medium text-slate-900">HR Approved</p>
-                      <span className="text-xs text-green-600 font-medium">
-                        {new Date(t.hr_approved_at).toLocaleDateString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                  <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-sm font-semibold text-slate-800">HR Approved</p>
+                      <span className="text-xs text-slate-500 font-medium">
+                        {new Date(t.hr_approved_at).toLocaleString('en-US', { 
+                          year: 'numeric', 
+                          month: 'short', 
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: true,
+                          timeZone: 'Asia/Manila'
+                        })}
                       </span>
                     </div>
                     {t.hr_approved_by && (
-                      <p className="text-xs text-slate-600">
-                        By: {t.hr_approver?.name || "HR Officer"}
+                      <p className="text-xs text-slate-600 mb-3">
+                        By: <span className="font-medium text-slate-700">{t.hr_approver?.name || "HR Officer"}</span>
                       </p>
                     )}
-                    {t.hr_comments && (
-                      <div className="mt-2 pt-2 border-t border-slate-100">
-                        <p className="text-xs text-slate-500 mb-1">Comments:</p>
-                        <p className="text-xs text-slate-700">{t.hr_comments}</p>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {t.vp_approved_at && (
-                  <div className="bg-white rounded-lg border border-slate-200 p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-sm font-medium text-slate-900">First VP Approved</p>
-                      <span className="text-xs text-green-600 font-medium">
-                        {new Date(t.vp_approved_at).toLocaleDateString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
-                      </span>
-                    </div>
-                    {t.vp_approved_by && (
-                      <p className="text-xs text-slate-600">
-                        By: {t.vp_approver?.name || "Vice President"}
-                      </p>
-                    )}
-                    {t.vp_signature && (
-                      <div className="mt-2 pt-2 border-t border-slate-100">
+                    {t.hr_signature && (
+                      <div className="mt-3 pt-3 border-t border-slate-200">
                         <img
-                          src={t.vp_signature}
-                          alt="VP signature"
-                          className="h-16 w-full object-contain"
+                          src={t.hr_signature}
+                          alt="HR signature"
+                          className="h-20 w-full object-contain bg-slate-50 rounded p-2"
                         />
                       </div>
                     )}
-                    {t.vp_comments && (
-                      <div className="mt-2 pt-2 border-t border-slate-100">
-                        <p className="text-xs text-slate-500 mb-1">Comments:</p>
-                        <p className="text-xs text-slate-700">{t.vp_comments}</p>
+                    {t.hr_comments && (
+                      <div className="mt-3 pt-3 border-t border-slate-200">
+                        <p className="text-xs text-slate-500 mb-1 font-medium">Comments:</p>
+                        <p className="text-xs text-slate-700 leading-relaxed">{t.hr_comments}</p>
                       </div>
                     )}
                   </div>
                 )}
 
-                {!t.head_approved_at && !t.hr_approved_at && !t.vp_approved_at && (
+                {/* Only show VP approval if ANOTHER VP (not current) has already approved */}
+                {(() => {
+                  // Check if current VP is viewing their own approval or another VP's
+                  const currentVPId = vpProfile?.id;
+                  const firstVPApproved = t.vp_approved_at && t.vp_approved_by;
+                  const secondVPApproved = t.vp2_approved_at && t.vp2_approved_by;
+                  
+                  // Show first VP approval only if current VP is NOT the first VP
+                  const showFirstVP = firstVPApproved && currentVPId !== t.vp_approved_by;
+                  
+                  return showFirstVP ? (
+                    <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-sm font-semibold text-slate-800">VP Approved</p>
+                        <span className="text-xs text-slate-500 font-medium">
+                          {new Date(t.vp_approved_at).toLocaleString('en-US', { 
+                            year: 'numeric', 
+                            month: 'short', 
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: true,
+                            timeZone: 'Asia/Manila'
+                          })}
+                        </span>
+                      </div>
+                      {t.vp_approved_by && (
+                        <p className="text-xs text-slate-600 mb-3">
+                          By: <span className="font-medium text-slate-700">{t.vp_approver?.name || "Vice President"}</span>
+                        </p>
+                      )}
+                      {t.vp_signature && (
+                        <div className="mt-3 pt-3 border-t border-slate-200">
+                          <img
+                            src={t.vp_signature}
+                            alt="VP signature"
+                            className="h-20 w-full object-contain bg-slate-50 rounded p-2"
+                          />
+                        </div>
+                      )}
+                      {t.vp_comments && (
+                        <div className="mt-3 pt-3 border-t border-slate-200">
+                          <p className="text-xs text-slate-500 mb-1 font-medium">Comments:</p>
+                          <p className="text-xs text-slate-700 leading-relaxed">{t.vp_comments}</p>
+                        </div>
+                      )}
+                    </div>
+                  ) : null;
+                })()}
+
+                {!t.head_approved_at && !t.parent_head_approved_at && !t.admin_approved_at && !t.comptroller_approved_at && !t.hr_approved_at && !(t.vp_approved_at && vpProfile?.id !== t.vp_approved_by) && (
                   <div className="text-center py-4 text-sm text-slate-500">
                     No previous approvals yet
                   </div>
@@ -698,38 +1008,94 @@ export default function VPRequestModal({
               </div>
             </section>
 
-            {/* Budget Breakdown */}
-            <section className="rounded-lg bg-slate-50 border border-slate-200 p-4">
-              <div className="flex items-center gap-2 mb-3 pb-3 border-b border-slate-200">
-                <DollarSign className="h-5 w-5 text-slate-700" />
-                <h3 className="text-sm font-semibold text-slate-900">Budget Breakdown</h3>
+            {/* Budget Breakdown - Read Only with Comptroller Edit History */}
+            <section className="rounded-lg bg-slate-50 border-2 border-[#7A0010] p-4 shadow-lg">
+              <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-200">
+                <div className="flex items-center gap-2">
+                  <DollarSign className="h-5 w-5 text-slate-700" />
+                  <h3 className="text-sm font-semibold text-slate-900">Budget Breakdown</h3>
+                </div>
               </div>
 
-              {expenseBreakdown.length > 0 ? (
+              {/* Comptroller Comments */}
+              {t.comptroller_comments && (
+                <div className="mb-4 p-3 bg-blue-50 border-l-4 border-blue-500 rounded-r">
+                  <p className="text-xs font-semibold text-blue-900 mb-1">Comptroller Comments:</p>
+                  <p className="text-xs text-blue-800 whitespace-pre-wrap">{t.comptroller_comments}</p>
+                </div>
+              )}
+
+              {editedExpenses.length > 0 ? (
                 <>
                   <div className="space-y-2 mb-3">
-                    {expenseBreakdown.map((expense: any, idx: number) => {
+                    {editedExpenses.map((expense: any, index: number) => {
                       const label = expense.item === "Other" && expense.description 
                         ? expense.description 
                         : expense.item || expense.description;
                       
+                      // Find original expense for this item
+                      const originalExpense = originalExpenses.find((orig: any) => 
+                        (orig.item === expense.item || orig.description === expense.description) ||
+                        (orig.item === expense.description || orig.description === expense.item) ||
+                        (orig.item === label || orig.description === label)
+                      );
+                      const originalAmount = originalExpense?.amount;
+                      // Check if comptroller edited the budget
+                      const hasComptrollerEdit = t.comptroller_edited_budget && t.comptroller_edited_budget !== t.total_budget;
+                      const wasEdited = hasComptrollerEdit && originalAmount !== undefined && originalAmount !== expense.amount;
+                      
                       return expense.amount > 0 && (
-                        <div key={idx} className="flex items-center justify-between py-2">
-                          <span className="text-sm text-slate-600">{label}</span>
-                          <span className="text-sm font-semibold text-slate-900">{peso(expense.amount)}</span>
+                        <div key={index} className="py-2 border-b border-slate-100 last:border-0">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm text-slate-600">{label}</span>
+                            <div className="text-right">
+                              {wasEdited && originalAmount !== undefined ? (
+                                <div className="flex flex-col items-end gap-1">
+                                  <span className="text-xs text-slate-500 line-through">
+                                    {peso(originalAmount)}
+                                  </span>
+                                  <span className="text-sm font-semibold text-[#7A0010]">
+                                    {peso(expense.amount)}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-sm font-semibold text-slate-900">{peso(expense.amount)}</span>
+                              )}
+                            </div>
+                          </div>
+                          {expense.justification && (
+                            <div className="mt-1.5 pl-2 border-l-2 border-blue-300">
+                              <p className="text-xs text-blue-700 italic">
+                                <span className="font-semibold">Justification:</span> {expense.justification}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
                   </div>
                   
-                  {totalCost > 0 && (
-                    <div className="pt-3 border-t border-slate-300">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-bold text-slate-900">TOTAL BUDGET</span>
-                        <span className="text-lg font-bold text-[#7A0010]">{peso(totalCost)}</span>
+                  <div className="pt-3 border-t-2 border-slate-300">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-bold text-slate-900">TOTAL BUDGET</span>
+                      <div className="text-right">
+                        {t.comptroller_edited_budget && t.comptroller_edited_budget !== t.total_budget ? (
+                          <div className="flex flex-col items-end gap-1">
+                            <span className="text-sm text-slate-500 line-through">
+                              {peso(t.total_budget || 0)}
+                            </span>
+                            <div className="text-lg font-bold text-[#7A0010]">
+                              {peso(t.comptroller_edited_budget)}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-lg font-bold text-[#7A0010]">
+                            {peso(editedExpenses.reduce((sum, exp) => sum + (exp.amount || 0), 0))}
+                          </div>
+                        )}
                       </div>
                     </div>
-                  )}
+                  </div>
                 </>
               ) : (
                 <div className="py-4 text-center">
@@ -813,7 +1179,15 @@ export default function VPRequestModal({
                       />
                       {(t.vp_approved_at || t.vp2_approved_at) && (
                         <p className="text-xs text-slate-500 text-center mt-2">
-                          Signed on {new Date(t.vp_approved_at || t.vp2_approved_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                          Signed on {new Date(t.vp_approved_at || t.vp2_approved_at).toLocaleString('en-PH', { 
+                            year: 'numeric', 
+                            month: 'short', 
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: true,
+                            timeZone: 'Asia/Manila'
+                          })}
                         </p>
                       )}
                     </>
@@ -840,6 +1214,10 @@ export default function VPRequestModal({
                     onClear={() => {
                       setVpSignature("");
                     }}
+                    onUseSaved={(dataUrl) => {
+                      setVpSignature(dataUrl);
+                    }}
+                    showUseSavedButton={true}
                     hideSaveButton
                   />
                 </div>

@@ -63,6 +63,20 @@ export async function GET() {
       isArray: Array.isArray(allRequests),
       firstRequestId: allRequests?.[0]?.id || null
     });
+    
+    // Check if TO-2025-155 is in the raw fetch
+    const to155InRaw = allRequests?.find((r: any) => r.request_number === 'TO-2025-155');
+    if (to155InRaw) {
+      console.log(`[Admin Inbox API] 🔍 Found TO-2025-155 in raw fetch:`, {
+        id: to155InRaw.id,
+        status: to155InRaw.status,
+        requester_is_head: to155InRaw.requester_is_head,
+        workflow_metadata: to155InRaw.workflow_metadata,
+        workflow_metadata_type: typeof to155InRaw.workflow_metadata
+      });
+    } else {
+      console.log(`[Admin Inbox API] ❌ TO-2025-155 NOT FOUND in raw fetch!`);
+    }
 
     // Now fetch related data separately to avoid filtering issues
     if (allRequests && allRequests.length > 0) {
@@ -140,12 +154,85 @@ export async function GET() {
       });
     }
 
-    // Filter requests: Show ALL requests to admin
-    // Admin can see everything - no filtering needed
-    // The frontend will handle displaying pending vs history
+    // Filter requests: Admin should ONLY see requests that have been approved by heads
+    // Exclude drafts (not submitted yet) and pending_head (still waiting for head approval)
     const requests = (allRequests || []).filter((req: any) => {
-      // Always show all requests to admin - they can see everything
-      // The frontend will filter by status (pending vs history)
+      // Exclude drafts - these are not submitted yet
+      if (req.status === 'draft') {
+        return false;
+      }
+      
+      // Parse workflow_metadata if it's a string (JSONB from database)
+      let workflowMetadata: any = {};
+      if (req.workflow_metadata) {
+        if (typeof req.workflow_metadata === 'string') {
+          try {
+            workflowMetadata = JSON.parse(req.workflow_metadata);
+          } catch (e) {
+            console.warn(`[Admin Inbox API] Failed to parse workflow_metadata for ${req.request_number || req.id}:`, e);
+            workflowMetadata = {};
+          }
+        } else {
+          workflowMetadata = req.workflow_metadata;
+        }
+      }
+      
+      // Check if head has already approved FIRST (before excluding pending_head)
+      // This handles multi-department requests where status might still be pending_head
+      // but one or more heads have already approved
+      const headApproved = !!(req.head_approved_at || req.head_signature || req.parent_head_approved_at || req.parent_head_signature);
+      
+      // Also check if head sent this to admin (via workflow_metadata)
+      // OR if requester is head and status is pending_head/pending_admin (head requester can send directly to admin)
+      const sentToAdmin = workflowMetadata.next_approver_role === 'admin' || workflowMetadata.next_admin_id;
+      const isHeadRequester = req.requester_is_head === true;
+      
+      // SPECIAL CASE: Head requester with next_approver_role = 'admin' should be visible to admin
+      // This handles cases where head submits and selects admin during submission
+      // Even if head hasn't "approved" yet (because they're the requester), they've selected admin
+      const headRequesterSentToAdmin = isHeadRequester && sentToAdmin && (req.status === 'pending_head' || req.status === 'pending_admin');
+      
+      // Debug logging for TO-2025-155 specifically
+      if (req.request_number === 'TO-2025-155') {
+        console.log(`[Admin Inbox API] 🔍 DEBUG TO-2025-155:`, {
+          status: req.status,
+          requester_is_head: req.requester_is_head,
+          headApproved,
+          workflowMetadata,
+          sentToAdmin,
+          isHeadRequester,
+          headRequesterSentToAdmin,
+          shouldInclude: headApproved || sentToAdmin || headRequesterSentToAdmin
+        });
+      }
+      
+      // If head has approved, include it even if status is still pending_head
+      // (this happens in multi-department requests where not all heads have approved yet)
+      // OR if head explicitly sent it to admin
+      // OR if head requester sent it to admin (special case)
+      if (headApproved || sentToAdmin || headRequesterSentToAdmin) {
+        if (req.status === 'pending_head' && (headApproved || sentToAdmin || headRequesterSentToAdmin)) {
+          console.log(`[Admin Inbox API] ✅ Including pending_head request ${req.request_number || req.id} - head approved: ${headApproved}, sentToAdmin: ${sentToAdmin}, headRequesterSentToAdmin: ${headRequesterSentToAdmin}`);
+        }
+        return true;
+      }
+      
+      // Exclude pending_head - these are still waiting for head approval
+      // Only exclude if head hasn't approved yet AND hasn't sent to admin AND not head requester
+      if (req.status === 'pending_head') {
+        if (req.request_number === 'TO-2025-155') {
+          console.log(`[Admin Inbox API] ❌ EXCLUDING TO-2025-155 - headApproved: ${headApproved}, sentToAdmin: ${sentToAdmin}, headRequesterSentToAdmin: ${headRequesterSentToAdmin}`);
+        }
+        return false;
+      }
+      
+      // Include requests that are explicitly waiting for admin
+      if (req.status === 'pending_admin') {
+        return true;
+      }
+      
+      // Include all other statuses (pending_comptroller, pending_hr, pending_exec, approved, etc.)
+      // Admin should see the full workflow after head approval
       return true;
     });
 
@@ -167,6 +254,23 @@ export async function GET() {
       filteredStatusCounts[r.status] = (filteredStatusCounts[r.status] || 0) + 1;
     });
     console.log("[Admin Inbox API] Filtered status breakdown:", filteredStatusCounts);
+    
+    // Log requests with head approval but still pending_head status (multi-department case)
+    const multiDeptRequests = (allRequests || []).filter((r: any) => {
+      const headApproved = !!(r.head_approved_at || r.head_signature || r.parent_head_approved_at || r.parent_head_signature);
+      return headApproved && r.status === 'pending_head';
+    });
+    if (multiDeptRequests.length > 0) {
+      console.log("[Admin Inbox API] ⚠️ Found", multiDeptRequests.length, "multi-department requests (head approved but status still pending_head):", 
+        multiDeptRequests.map((r: any) => ({
+          id: r.id,
+          request_number: r.request_number,
+          status: r.status,
+          head_approved_at: r.head_approved_at,
+          head_approved_by: r.head_approved_by
+        }))
+      );
+    }
     
     console.log("[Admin Inbox API] All request IDs:", allRequests?.map((r: any) => ({
       id: r.id,
@@ -195,6 +299,76 @@ export async function GET() {
         next_approver_role: typeof r.workflow_metadata === 'object' ? r.workflow_metadata?.next_approver_role : null,
         next_approver_id: typeof r.workflow_metadata === 'object' ? r.workflow_metadata?.next_approver_id : null
       })));
+    }
+
+    // Auto-create notifications for pending_admin requests that don't have notifications yet
+    // This ensures admins get notified even for existing requests
+    try {
+      const { createNotification } = await import("@/lib/notifications/helpers");
+      
+      // Get all pending_admin requests that need notifications
+      const pendingAdminRequests = requests.filter((req: any) => 
+        req.status === 'pending_admin' && 
+        (req.head_approved_at || req.head_signature || req.parent_head_approved_at || req.parent_head_signature)
+      );
+      
+      if (pendingAdminRequests.length > 0) {
+        console.log("[Admin Inbox API] 📧 Checking notifications for", pendingAdminRequests.length, "pending_admin requests");
+        
+        // Get all admin user IDs
+        const { data: allAdmins } = await supabaseServiceRole
+          .from("users")
+          .select("id")
+          .eq("role", "admin")
+          .eq("is_admin", true)
+          .eq("status", "active");
+        
+        if (allAdmins && allAdmins.length > 0) {
+          // For each pending_admin request, check if notifications exist
+          for (const req of pendingAdminRequests) {
+            // Check existing notifications for this request
+            const { data: existingNotifications } = await supabaseServiceRole
+              .from("notifications")
+              .select("user_id")
+              .eq("related_type", "request")
+              .eq("related_id", req.id)
+              .eq("notification_type", "request_pending_signature");
+            
+            const notifiedAdminIds = new Set(
+              (existingNotifications || []).map((n: any) => n.user_id)
+            );
+            
+            // Get requester name
+            const requestingPersonName = req.requester_name || req.requester?.name || req.requester?.email || "Requester";
+            
+            // Create notifications for admins that don't have one yet
+            const notificationsToCreate = allAdmins
+              .filter((admin: any) => !notifiedAdminIds.has(admin.id))
+              .map((admin: any) =>
+                createNotification({
+                  user_id: admin.id,
+                  notification_type: "request_pending_signature",
+                  title: "New Request Requires Review",
+                  message: `A travel order request ${req.request_number || ''} from ${requestingPersonName} requires your review.`,
+                  related_type: "request",
+                  related_id: req.id,
+                  action_url: `/admin/requests?view=${req.id}`,
+                  action_label: "Review Request",
+                  priority: "high",
+                })
+              );
+            
+            if (notificationsToCreate.length > 0) {
+              const results = await Promise.allSettled(notificationsToCreate);
+              const successful = results.filter((r) => r.status === "fulfilled" && r.value).length;
+              console.log(`[Admin Inbox API] ✅ Created ${successful} notification(s) for request ${req.request_number || req.id}`);
+            }
+          }
+        }
+      }
+    } catch (notifError: any) {
+      console.error("[Admin Inbox API] ⚠️ Failed to create notifications (non-fatal):", notifError);
+      // Don't fail the request if notifications fail
     }
 
     // Return data in the format expected by useRequestsFromSupabase

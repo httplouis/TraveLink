@@ -1,6 +1,7 @@
 // src/app/api/participants/invite/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 import { sendEmail, generateParticipantInvitationEmail } from "@/lib/email";
 import crypto from "crypto";
 
@@ -14,6 +15,19 @@ export async function POST(req: NextRequest) {
   console.log("=".repeat(70));
   
   try {
+    // Create service role client for database operations (bypasses RLS)
+    const supabaseServiceRole = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    );
+
+    // Use regular client for auth checks
     const supabase = await createSupabaseServerClient(true);
     const body = await req.json();
     const { request_id, email } = body;
@@ -44,8 +58,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "User not found" }, { status: 404 });
     }
 
-    // Check if invitation already exists
-    const { data: existing, error: existingError } = await supabase
+    // Check if invitation already exists (use service role to bypass RLS)
+    const { data: existing, error: existingError } = await supabaseServiceRole
       .from("participant_invitations")
       .select("id, status, token")
       .eq("request_id", request_id)
@@ -78,7 +92,8 @@ export async function POST(req: NextRequest) {
         status: 'pending',
       });
 
-      const { data: newInvitation, error: inviteError } = await supabase
+      // Use service role client to bypass RLS for insert
+      const { data: newInvitation, error: inviteError } = await supabaseServiceRole
         .from("participant_invitations")
         .insert({
           request_id,
@@ -113,7 +128,8 @@ export async function POST(req: NextRequest) {
     }
 
     // Get request details for email (including requester profile picture and seminar data)
-    const { data: requestData } = await supabase
+    // Use service role to bypass RLS
+    const { data: requestData } = await supabaseServiceRole
       .from("requests")
       .select("id, reason, seminar_title, travel_start_date, travel_end_date, seminar_data, requester:users!requester_id(name, profile_picture)")
       .eq("id", request_id)
@@ -228,8 +244,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Update request to mark invitations as sent
-    await supabase
+    // Update request to mark invitations as sent (use service role to bypass RLS)
+    await supabaseServiceRole
       .from("requests")
       .update({
         participant_invitations_sent: true,

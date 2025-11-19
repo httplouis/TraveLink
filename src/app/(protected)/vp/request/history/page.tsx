@@ -7,6 +7,8 @@ import StatusBadge from "@/components/common/StatusBadge";
 import PersonDisplay from "@/components/common/PersonDisplay";
 import TrackingModal from "@/components/common/TrackingModal";
 import { cardVariants, staggerContainer } from "@/lib/animations";
+import { SkeletonRequestCard } from "@/components/common/SkeletonLoader";
+import { createLogger } from "@/lib/debug";
 
 export default function VPHistoryPage() {
   const [items, setItems] = React.useState<any[]>([]);
@@ -19,21 +21,31 @@ export default function VPHistoryPage() {
     document.title = "VP History - Travelink";
   }, []);
 
+  const logger = createLogger("VPHistory");
+
   React.useEffect(() => {
+    logger.info("Loading VP history...");
     fetch("/api/vp/history")
       .then(res => res.json())
       .then(data => {
         if (data.ok) {
-          console.log("[VP History] Raw data:", data.data);
+          logger.debug("VP History - Raw data:", { count: data.data?.length || 0 });
           if (data.data && data.data.length > 0) {
-            console.log("[VP History] First item vp_approved_at:", data.data[0].vp_approved_at);
-            console.log("[VP History] First item exec_approved_at:", data.data[0].exec_approved_at);
+            logger.debug("VP History - First item:", { 
+              id: data.data[0].id,
+              vp_approved_at: data.data[0].vp_approved_at,
+              exec_approved_at: data.data[0].exec_approved_at
+            });
           }
           setItems(data.data || []);
+          logger.success(`Loaded ${data.data?.length || 0} history items`);
+        } else {
+          logger.warn("Failed to load VP history:", data.error);
         }
         setLoading(false);
       })
-      .catch(() => {
+      .catch((error) => {
+        logger.error("Error loading VP history:", error);
         setItems([]);
         setLoading(false);
       });
@@ -73,8 +85,21 @@ export default function VPHistoryPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin h-8 w-8 border-4 border-[#7a0019] border-t-transparent rounded-full"></div>
+      <div className="space-y-6">
+        {/* Header Skeleton */}
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <div className="h-9 w-64 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer bg-[length:200%_100%]" />
+            <div className="h-5 w-96 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer bg-[length:200%_100%]" />
+          </div>
+          <div className="h-10 w-32 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded-lg animate-shimmer bg-[length:200%_100%]" />
+        </div>
+        {/* Request Cards Skeleton */}
+        <div className="space-y-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <SkeletonRequestCard key={i} />
+          ))}
+        </div>
       </div>
     );
   }

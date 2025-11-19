@@ -19,16 +19,21 @@ type Props = {
   onDraw?: () => void;
   /** Called when a save is requested (button or auto-save on pointerup) */
   onSave?: (dataUrl: string) => void;
-  /** Called when user clicks “Clear” */
+  /** Called when user clicks "Clear" */
   onClear?: () => void;
   /** Optional: handle file upload yourself */
   onUpload?: (file: File) => void;
+  /** Called when user clicks "Use Saved Signature" */
+  onUseSaved?: (dataUrl: string) => void;
 
   /** Disable the Save button (when shown) */
   saveDisabled?: boolean;
 
-  /** Hide the manual “Save signature” button (autosave-only UX) */
+  /** Hide the manual "Save signature" button (autosave-only UX) */
   hideSaveButton?: boolean;
+
+  /** Show "Use Saved Signature" button */
+  showUseSavedButton?: boolean;
 
   className?: string;
 };
@@ -43,10 +48,14 @@ export default function SignaturePad({
   onSave,
   onClear,
   onUpload,
+  onUseSaved,
   saveDisabled = false,
   hideSaveButton = false,
+  showUseSavedButton = false,
   className = "",
 }: Props) {
+  const [savedSignature, setSavedSignature] = React.useState<string | null>(null);
+  const [loadingSaved, setLoadingSaved] = React.useState(false);
   const wrapperRef = React.useRef<HTMLDivElement | null>(null);
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const ctxRef = React.useRef<CanvasRenderingContext2D | null>(null);
@@ -86,6 +95,37 @@ export default function SignaturePad({
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, [resizeCanvas]);
+
+  const loadSavedSignature = React.useCallback(async () => {
+    try {
+      setLoadingSaved(true);
+      const res = await fetch("/api/settings/signature");
+      const data = await res.json();
+      if (data.ok && data.data?.signature) {
+        setSavedSignature(data.data.signature);
+      }
+    } catch (err) {
+      console.error("Failed to load saved signature:", err);
+    } finally {
+      setLoadingSaved(false);
+    }
+  }, []);
+
+  // Load saved signature if showUseSavedButton is true
+  React.useEffect(() => {
+    if (showUseSavedButton && !savedSignature && !loadingSaved) {
+      loadSavedSignature();
+    }
+  }, [showUseSavedButton, savedSignature, loadingSaved, loadSavedSignature]);
+
+  const handleUseSaved = React.useCallback(() => {
+    if (savedSignature && onUseSaved) {
+      onUseSaved(savedSignature);
+      // Also draw it on canvas
+      drawImageToCanvas(savedSignature);
+      onSave?.(savedSignature);
+    }
+  }, [savedSignature, onUseSaved, onSave]);
 
   // Draw a dataURL image to canvas (for preload & uploads)
   const drawImageToCanvas = React.useCallback((dataUrl: string) => {
@@ -271,6 +311,20 @@ export default function SignaturePad({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        {showUseSavedButton && savedSignature && (
+          <button
+            type="button"
+            onClick={handleUseSaved}
+            className="h-9 rounded-md border-2 border-green-500 bg-green-50 px-3 text-sm font-medium text-green-700 hover:bg-green-100 flex items-center gap-1.5"
+            title="Use your saved signature from settings"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            Use Saved Signature
+          </button>
+        )}
+
         <button
           type="button"
           onClick={clear}

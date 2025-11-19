@@ -18,6 +18,7 @@ interface StatusBadgeProps {
   status: RequestStatus | string;
   size?: "sm" | "md" | "lg";
   showIcon?: boolean;
+  variant?: "default" | "light";
 }
 
 const STATUS_CONFIG = {
@@ -80,7 +81,8 @@ const SIZE_CLASSES = {
 export default function StatusBadge({ 
   status, 
   size = "md",
-  showIcon = true 
+  showIcon = true,
+  variant = "default"
 }: StatusBadgeProps) {
   const config = STATUS_CONFIG[status as keyof typeof STATUS_CONFIG] || {
     label: status,
@@ -90,13 +92,26 @@ export default function StatusBadge({
 
   const Icon = config.icon;
 
+  // Light variant for use on dark backgrounds
+  const lightColors: Record<string, string> = {
+    "bg-yellow-100 text-yellow-800 border-yellow-200": "bg-yellow-400/20 text-yellow-200 border-yellow-300/30",
+    "bg-green-100 text-green-800 border-green-200": "bg-green-400/20 text-green-200 border-green-300/30",
+    "bg-red-100 text-red-800 border-red-200": "bg-red-400/20 text-red-200 border-red-300/30",
+    "bg-gray-100 text-gray-800 border-gray-200": "bg-gray-400/20 text-gray-200 border-gray-300/30",
+    "bg-blue-100 text-blue-800 border-blue-200": "bg-blue-400/20 text-blue-200 border-blue-300/30",
+  };
+
+  const colorClass = variant === "light" 
+    ? (lightColors[config.color] || "bg-white/20 text-white border-white/30")
+    : config.color;
+
   return (
     <span
       className={`
         inline-flex items-center gap-1.5 
         font-medium rounded-full border
         transition-all duration-150
-        ${config.color}
+        ${colorClass}
         ${SIZE_CLASSES[size]}
       `}
     >

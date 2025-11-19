@@ -5,6 +5,7 @@ import * as React from "react";
 import DashboardView from "@/components/user/dashboard/DashboardView";
 import DashboardSkeleton from "@/components/common/skeletons/DashboardSkeleton";
 import CommandPalette from "@/components/common/CommandPalette";
+import { createLogger } from "@/lib/debug";
 
 export default function HeadDashboardContainer() {
   const router = useRouter();
@@ -20,10 +21,13 @@ export default function HeadDashboardContainer() {
   const [recentActivity, setRecentActivity] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
 
+  const logger = createLogger("HeadDashboard");
+
   React.useEffect(() => {
     const fetchDashboardData = async () => {
       try {
         setLoading(true);
+        logger.info("Loading dashboard data...");
 
         // Fetch critical data first (profile, stats) - these are needed immediately
         const [profileRes, statsRes] = await Promise.all([
@@ -75,8 +79,9 @@ export default function HeadDashboardContainer() {
         if (activityData.ok) {
           setRecentActivity(activityData.data || []);
         }
+        logger.success("Dashboard data loaded successfully");
       } catch (err) {
-        console.error('Failed to fetch dashboard data:', err);
+        logger.error('Failed to fetch dashboard data:', err);
       } finally {
         setLoading(false);
       }

@@ -367,7 +367,7 @@ export async function PATCH(req: Request) {
         try {
           const { data: approverUser } = await supabase
             .from("users")
-            .select("id, role, is_admin, is_hr, is_vp, is_president, is_head, is_comptroller, exec_type")
+            .select("id, role, is_admin, is_hr, is_vp, is_president, is_head, is_comptroller, exec_type, department_id")
             .eq("id", next_approver_id)
             .single();
           
@@ -388,7 +388,7 @@ export async function PATCH(req: Request) {
             } else if (approverUser.is_comptroller || approverUser.role === "comptroller") {
               nextStatus = "pending_comptroller";
               nextApproverRole = "comptroller";
-            } else if (approverUser.is_head || approverUser.role === "head") {
+              } else if (approverUser.is_head || approverUser.role === "head") {
               // Check if this is a parent head
               const hasParentDepartment = !!(request.department as any)?.parent_department_id;
               if (hasParentDepartment && approverUser.department_id === (request.department as any)?.parent_department_id) {
@@ -409,12 +409,12 @@ export async function PATCH(req: Request) {
                 // Default workflow
                 const hasParentDepartment = !!(request.department as any)?.parent_department_id;
                 nextStatus = WorkflowEngine.getNextStatus(
-                  request.status,
+                  request.status as any,
                   request.requester_is_head || false,
                   request.has_budget || false,
                   hasParentDepartment
                 );
-                nextApproverRole = WorkflowEngine.getApproverRole(nextStatus) || "admin";
+                nextApproverRole = WorkflowEngine.getApproverRole(nextStatus as any) || "admin";
               }
             }
           } else {
@@ -429,12 +429,12 @@ export async function PATCH(req: Request) {
               // Default workflow
               const hasParentDepartment = !!(request.department as any)?.parent_department_id;
               nextStatus = WorkflowEngine.getNextStatus(
-                request.status,
+                request.status as any,
                 request.requester_is_head || false,
                 request.has_budget || false,
                 hasParentDepartment
               );
-              nextApproverRole = WorkflowEngine.getApproverRole(nextStatus) || "admin";
+              nextApproverRole = WorkflowEngine.getApproverRole(nextStatus as any) || "admin";
             }
           }
         } catch (err) {
@@ -449,32 +449,96 @@ export async function PATCH(req: Request) {
           } else {
             const hasParentDepartment = !!(request.department as any)?.parent_department_id;
             nextStatus = WorkflowEngine.getNextStatus(
-              request.status,
+              request.status as any,
               request.requester_is_head || false,
               request.has_budget || false,
               hasParentDepartment
             );
-            nextApproverRole = WorkflowEngine.getApproverRole(nextStatus) || "admin";
+            nextApproverRole = WorkflowEngine.getApproverRole(nextStatus as any) || "admin";
           }
         }
       } else {
         // Default workflow
         const hasParentDepartment = !!(request.department as any)?.parent_department_id;
         nextStatus = WorkflowEngine.getNextStatus(
-          request.status,
+          request.status as any,
           request.requester_is_head || false,
           request.has_budget || false,
           hasParentDepartment
         );
-        nextApproverRole = WorkflowEngine.getApproverRole(nextStatus) || "admin";
+        nextApproverRole = WorkflowEngine.getApproverRole(nextStatus as any) || "admin";
       }
 
-      console.log(`[PATCH /api/head] Approving request ${id}: ${request.status} → ${nextStatus}`);
+      // Check if this is a multi-department request and if all department heads have approved
+      // Get all confirmed requesters from different departments
+      const { data: allRequesters } = await supabase
+        .from("requester_invitations")
+        .select("department_id")
+        .eq("request_id", id)
+        .eq("status", "confirmed");
+      
+      // Get unique departments from requesters
+      const requesterDeptIds = new Set<string>();
+      if (request.department_id) {
+        requesterDeptIds.add(request.department_id);
+      }
+      (allRequesters || []).forEach((r: any) => {
+        if (r.department_id) {
+          requesterDeptIds.add(r.department_id);
+        }
+      });
+      
+      const uniqueDeptIds = Array.from(requesterDeptIds);
+      const isMultiDepartment = uniqueDeptIds.length > 1;
+      
+      // If multi-department, check if all department heads have approved
+      let allHeadsApproved = true;
+      if (isMultiDepartment) {
+        // Get all head approvals from request_history for this request
+        const { data: headApprovals } = await supabase
+          .from("request_history")
+          .select("metadata")
+          .eq("request_id", id)
+          .eq("action", "approved")
+          .eq("actor_role", "head");
+        
+        const approvedDeptIds = new Set<string>();
+        (headApprovals || []).forEach((approval: any) => {
+          const deptId = approval.metadata?.department_id;
+          if (deptId) {
+            approvedDeptIds.add(deptId);
+          }
+        });
+        
+        // Also check if current head is approving (add their department)
+        approvedDeptIds.add(profile.department_id);
+        
+        // Check if all departments have been approved
+        allHeadsApproved = uniqueDeptIds.every(deptId => approvedDeptIds.has(deptId));
+        
+        console.log(`[PATCH /api/head] Multi-department check:`, {
+          uniqueDeptIds,
+          approvedDeptIds: Array.from(approvedDeptIds),
+          allHeadsApproved,
+          currentHeadDept: profile.department_id
+        });
+      }
+      
+      // If multi-department and not all heads have approved, keep status as pending_head
+      // Only move forward when ALL department heads have approved
+      const finalNextStatus = (isMultiDepartment && !allHeadsApproved) 
+        ? "pending_head" 
+        : nextStatus;
+      const finalNextApproverRole = (isMultiDepartment && !allHeadsApproved)
+        ? "head"
+        : nextApproverRole;
+      
+      console.log(`[PATCH /api/head] Approving request ${id}: ${request.status} → ${finalNextStatus} (multi-dept: ${isMultiDepartment}, all approved: ${allHeadsApproved})`);
 
       // Update request with approval
       const updateData: any = {
-        status: nextStatus,
-        current_approver_role: nextApproverRole,
+        status: finalNextStatus,
+        current_approver_role: finalNextApproverRole,
         ...returnInfo, // Include return info if returning to requester
       };
       
@@ -483,24 +547,26 @@ export async function PATCH(req: Request) {
         // Store approver ID in workflow_metadata based on their role
         const workflowMetadata: any = request.workflow_metadata || {};
         workflowMetadata.next_approver_id = next_approver_id;
-        workflowMetadata.next_approver_role = nextApproverRole;
+        workflowMetadata.next_approver_role = finalNextApproverRole;
         
-        // Store role-specific IDs for inbox filtering
-        // Note: Don't set next_admin_id, next_hr_id, or next_comptroller_id - allow all users in those roles to see it
-        if (nextApproverRole === "admin") {
-          // Don't set next_admin_id - allow all admins to see it
-          // workflowMetadata.next_admin_id = next_approver_id;
-        } else if (nextApproverRole === "vp") {
+        // Store role-specific IDs for inbox filtering and routing display
+        // Store next_admin_id for routing display (who it was sent to)
+        if (finalNextApproverRole === "admin") {
+          // Store admin ID for routing display, but allow all admins to see it in inbox
+          if (next_approver_id) {
+            workflowMetadata.next_admin_id = next_approver_id;
+          }
+        } else if (finalNextApproverRole === "vp") {
           workflowMetadata.next_vp_id = next_approver_id;
-        } else if (nextApproverRole === "president") {
+        } else if (finalNextApproverRole === "president") {
           workflowMetadata.next_president_id = next_approver_id;
-        } else if (nextApproverRole === "hr") {
+        } else if (finalNextApproverRole === "hr") {
           // Don't set next_hr_id - allow all HRs to see it
           // workflowMetadata.next_hr_id = next_approver_id;
-        } else if (nextApproverRole === "comptroller") {
+        } else if (finalNextApproverRole === "comptroller") {
           // Don't set next_comptroller_id - allow all comptrollers to see it
           // workflowMetadata.next_comptroller_id = next_approver_id;
-        } else if (nextApproverRole === "head") {
+        } else if (finalNextApproverRole === "head") {
           workflowMetadata.next_head_id = next_approver_id;
         }
         
@@ -570,14 +636,14 @@ export async function PATCH(req: Request) {
         actor_id: profile.id,
         actor_role: "head",
         previous_status: request.status,
-        new_status: nextStatus,
+        new_status: finalNextStatus,
         comments: comments || "Approved by department head",
         metadata: {
           signature_at: now,
           signature_time: now, // Track signature time
           receive_time: request.created_at || now, // Track when request was received by head
           submission_time: request.created_at || null, // Track original submission time
-          sent_to: nextApproverRole,
+          sent_to: finalNextApproverRole,
           sent_to_id: next_approver_id || null,
           return_reason: return_reason || null,
           approval_time: now,
@@ -588,19 +654,56 @@ export async function PATCH(req: Request) {
 
       // Create notifications
       try {
-        // Notify requester that request was approved by head
+        // Notify requester - different message if multi-department and waiting for other heads
         if (request.requester_id) {
+          const isMultiDeptWaiting = isMultiDepartment && !allHeadsApproved;
           await createNotification({
             user_id: request.requester_id,
-            notification_type: "request_approved",
-            title: "Request Approved by Department Head",
-            message: `Your travel order request ${request.request_number || ''} has been approved by the department head and is now being processed.`,
+            notification_type: isMultiDeptWaiting ? "request_partially_approved" : "request_approved",
+            title: isMultiDeptWaiting 
+              ? "Request Partially Approved by Department Head"
+              : "Request Approved by All Department Heads",
+            message: isMultiDeptWaiting
+              ? `Your travel order request ${request.request_number || ''} has been approved by one department head. Waiting for approval from other department heads.`
+              : `Your travel order request ${request.request_number || ''} has been approved by all department heads and is now being processed.`,
             related_type: "request",
             related_id: id,
             action_url: `/user/submissions?view=${id}`,
             action_label: "View Request",
             priority: "normal",
           });
+        }
+        
+        // If multi-department and all heads approved, notify other department heads that request is moving forward
+        if (isMultiDepartment && allHeadsApproved) {
+          // Notify other department heads that the request has been fully approved
+          for (const deptId of uniqueDeptIds) {
+            if (deptId !== profile.department_id) {
+              // Get heads from this department
+              const { data: otherHeads } = await supabase
+                .from("users")
+                .select("id")
+                .eq("department_id", deptId)
+                .or("is_head.eq.true,role.eq.head")
+                .eq("status", "active");
+              
+              if (otherHeads && otherHeads.length > 0) {
+                for (const head of otherHeads) {
+                  await createNotification({
+                    user_id: head.id,
+                    notification_type: "request_status_change",
+                    title: "Multi-Department Request Fully Approved",
+                    message: `All department heads have approved request ${request.request_number || ''}. The request is now moving to the next approval stage.`,
+                    related_type: "request",
+                    related_id: id,
+                    action_url: `/head/inbox`,
+                    action_label: "View Request",
+                    priority: "normal",
+                  });
+                }
+              }
+            }
+          }
         }
 
         // Notify submitter (if different from requester) that request was approved
@@ -634,7 +737,7 @@ export async function PATCH(req: Request) {
         }
 
         // If request goes to admin (pending_admin), notify ALL admins
-        if (nextStatus === "pending_admin") {
+        if (finalNextStatus === "pending_admin") {
           console.log("[PATCH /api/head] 📧 Notifying all admins about new pending request");
           
           // Find all active admin users
@@ -679,9 +782,9 @@ export async function PATCH(req: Request) {
         // Don't fail the request if notifications fail
       }
 
-      console.log(`[PATCH /api/head] Success! Next status: ${nextStatus}`);
+      console.log(`[PATCH /api/head] Success! Next status: ${finalNextStatus}`);
 
-      return NextResponse.json({ ok: true, nextStatus, data: { status: nextStatus } });
+      return NextResponse.json({ ok: true, nextStatus: finalNextStatus, data: { status: finalNextStatus } });
       
     } else {
       // Reject

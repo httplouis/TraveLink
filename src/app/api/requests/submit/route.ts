@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { WorkflowEngine } from "@/lib/workflow/engine";
-import { sendEmail, generateParticipantInvitationEmail } from "@/lib/email";
+import { sendEmail, generateParticipantInvitationEmail, generateSignatureRequestEmail } from "@/lib/email";
 import { createNotification } from "@/lib/notifications/helpers";
 import { getPhilippineTimestamp } from "@/lib/datetime";
 import crypto from "crypto";
@@ -14,6 +14,15 @@ export async function POST(req: Request) {
     console.log("[/api/requests/submit] Body keys:", Object.keys(body));
     console.log("[/api/requests/submit] Status:", body.status);
     console.log("[/api/requests/submit] Reason:", body.reason);
+    console.log("[/api/requests/submit] Transportation data present:", !!body.transportation);
+    if (body.transportation) {
+      console.log("[/api/requests/submit] Transportation keys:", Object.keys(body.transportation || {}));
+      console.log("[/api/requests/submit] Transportation data:", JSON.stringify(body.transportation, null, 2));
+    }
+    console.log("[/api/requests/submit] Attachments data present:", !!body.attachments);
+    if (body.attachments) {
+      console.log("[/api/requests/submit] Attachments count:", Array.isArray(body.attachments) ? body.attachments.length : 'not array');
+    }
     console.log("[/api/requests/submit] Seminar data present:", !!body.seminar);
     console.log("[/api/requests/submit] Seminar data type:", typeof body.seminar);
     if (body.seminar) {
@@ -750,26 +759,61 @@ export async function POST(req: Request) {
     // If representative submission (requesting person ≠ submitter), send to requesting person first
     // If requesting person is NOT a head, send to their department head first
     // If requesting person IS a head, can go directly to admin
+    // SPECIAL CASE: Mixed Requesters (Director + Faculty) - Faculty still needs Dean signature
     // Note: requestedStatus is already defined above
     let initialStatus: string;
     if (requestedStatus === "draft") {
       initialStatus = "draft";
-    } else if (mightBeRepresentative && !isSeminar && travelOrder.requestingPerson) {
-      // Representative submission: send to requesting person first for signature
-      // Status: "pending_requester_signature" or "pending_head" (if requesting person is head)
-      if (requestingPersonIsHead) {
-        initialStatus = "pending_head"; // Requesting person is head, they can approve directly
-      } else {
-        initialStatus = "pending_requester_signature"; // Need requesting person's signature first
-      }
-    } else if (requestingPersonIsHead) {
-      // Requesting person is a head: they sign first, then send to parent head (if exists) or admin
-      // Status will be pending_head so they can sign their own request first
-      // The selected approver (VP/Admin) will be saved in workflow_metadata for routing display
-      initialStatus = "pending_head";
     } else {
-      // Requesting person is NOT a head, send to their department head first
-      initialStatus = "pending_head";
+      // Check if there are multiple requesters and if any are Faculty who need head approval
+      // Note: hasMultipleRequesters is already defined above (line 181)
+      let hasFacultyRequester = false;
+      let facultyRequesterDeptId: string | null = null;
+      
+      if (hasMultipleRequesters && Array.isArray(travelOrder.requesters) && travelOrder.requesters.length > 0) {
+        // Check all requesters to see if any are Faculty (not head, not director, not dean)
+        for (const req of travelOrder.requesters) {
+          if (req.user_id) {
+            // Fetch user to check their role
+            const { data: reqUser } = await supabase
+              .from("users")
+              .select("id, is_head, role, department_id")
+              .eq("id", req.user_id)
+              .single();
+            
+            if (reqUser && !reqUser.is_head && reqUser.role !== "director" && reqUser.role !== "dean" && reqUser.role !== "head") {
+              // This is a Faculty requester who needs their Dean's signature
+              hasFacultyRequester = true;
+              facultyRequesterDeptId = reqUser.department_id;
+              console.log(`[/api/requests/submit] 📝 Found Faculty requester (${reqUser.id}) who needs Dean signature`);
+              break; // Found one, that's enough
+            }
+          }
+        }
+      }
+      
+      // If there's a Faculty requester, they need their Dean's signature first
+      // Even if the primary requester is a Director/Head
+      if (hasFacultyRequester) {
+        initialStatus = "pending_head"; // Go to Faculty's department head first
+        console.log(`[/api/requests/submit] 🎯 Mixed requesters detected: Faculty requester found, routing to pending_head`);
+      } else if (mightBeRepresentative && !isSeminar && travelOrder.requestingPerson) {
+        // Representative submission: send to requesting person first for signature
+        // Status: "pending_requester_signature" or "pending_head" (if requesting person is head)
+        if (requestingPersonIsHead) {
+          initialStatus = "pending_head"; // Requesting person is head, they can approve directly
+        } else {
+          initialStatus = "pending_requester_signature"; // Need requesting person's signature first
+        }
+      } else if (requestingPersonIsHead) {
+        // Requesting person is a head: skip head approval, go directly to admin
+        // Use WorkflowEngine to get correct initial status
+        initialStatus = WorkflowEngine.getInitialStatus(true); // This returns 'pending_admin' for heads
+        console.log(`[/api/requests/submit] 🎯 Head requester detected, initial status: ${initialStatus}`);
+      } else {
+        // Requesting person is NOT a head, send to their department head first
+        initialStatus = "pending_head";
+      }
     }
     const seminar = body.seminar || {};
     
@@ -1036,6 +1080,12 @@ export async function POST(req: Request) {
       title: finalTitle,
       purpose: finalPurpose,
       destination: finalDestination,
+      // Save destination coordinates if available
+      ...(isSeminar && seminar.venueGeo ? {
+        destination_geo: seminar.venueGeo
+      } : !isSeminar && (body.destination_geo || travelOrder.destination_geo) ? {
+        destination_geo: body.destination_geo || travelOrder.destination_geo
+      } : {}),
       // NOTE: seminar_title and seminar_venue are stored in seminar_data JSONB field, not as separate columns
       
       // Dates: use travel_start_date/travel_end_date for both seminars and travel orders
@@ -1111,16 +1161,36 @@ export async function POST(req: Request) {
         own_vehicle_details: body.transportation.own_vehicle_details || null,
       } : {}),
       
-      // File attachments
-      attachments: Array.isArray(body.attachments) ? body.attachments.map((att: any) => ({
-        id: att.id || crypto.randomUUID(),
-        name: att.name,
-        url: att.url,
-        mime: att.mime,
-        size: att.size,
-        uploaded_at: att.uploaded_at || new Date().toISOString(),
-        uploaded_by: att.uploaded_by || profile.id,
-      })) : [],
+      // File attachments - check multiple sources
+      attachments: (() => {
+        // Check body.attachments first, then travelOrder.attachments, then seminar.attachments
+        let attachmentsArray: any[] = [];
+        if (Array.isArray(body.attachments)) {
+          attachmentsArray = body.attachments;
+        } else if (Array.isArray(body.travelOrder?.attachments)) {
+          attachmentsArray = body.travelOrder.attachments;
+        } else if (Array.isArray(body.seminar?.attachments)) {
+          attachmentsArray = body.seminar.attachments;
+        }
+        
+        console.log("[/api/requests/submit] Attachments found:", {
+          fromBody: Array.isArray(body.attachments),
+          fromTravelOrder: Array.isArray(body.travelOrder?.attachments),
+          fromSeminar: Array.isArray(body.seminar?.attachments),
+          count: attachmentsArray.length,
+          attachments: attachmentsArray
+        });
+        
+        return attachmentsArray.map((att: any) => ({
+          id: att.id || crypto.randomUUID(),
+          name: att.name,
+          url: att.url,
+          mime: att.mime,
+          size: att.size,
+          uploaded_at: att.uploaded_at || new Date().toISOString(),
+          uploaded_by: att.uploaded_by || profile.id,
+        }));
+      })(),
       
       // Requester contact number (for driver coordination)
       requester_contact_number: body.transportation?.pickup_contact_number || body.requester_contact_number || null,
@@ -1129,8 +1199,27 @@ export async function POST(req: Request) {
       current_approver_role: WorkflowEngine.getApproverRole(initialStatus),
       
       // Save workflow_metadata with selected approver if head selected VP/admin during submission
+      // Also save reason_of_trip and department_head_endorsement if provided
       workflow_metadata: (() => {
         const metadata: any = {};
+        
+        // Save reason of trip
+        if (reason && reason !== "seminar") {
+          metadata.reason_of_trip = reason;
+        }
+        
+        // Save department head endorsement if provided
+        if (body.departmentHeadEndorsement || travelOrder.departmentHeadEndorsement) {
+          const endorsement = body.departmentHeadEndorsement || travelOrder.departmentHeadEndorsement;
+          if (endorsement.endorsed_by) {
+            metadata.department_head_endorsed_by = endorsement.endorsed_by;
+          }
+          if (endorsement.endorsement_date) {
+            metadata.department_head_endorsement_date = endorsement.endorsement_date;
+          }
+        }
+        
+        // Save routing information
         if (nextApproverId && nextApproverRole) {
           if (nextApproverRole === "vp") {
             metadata.next_vp_id = nextApproverId;
@@ -1143,6 +1232,7 @@ export async function POST(req: Request) {
             metadata.next_approver_id = nextApproverId;
           }
         }
+        
         return Object.keys(metadata).length > 0 ? metadata : null;
       })(),
       
@@ -1494,23 +1584,85 @@ export async function POST(req: Request) {
         const newRequesters = travelOrder.requesters.filter((req: any) => !req.invitationId || req.invitationId === 'auto-confirmed');
         
         // Update existing invitations to link to this request (if they were created for a draft)
+        // BUT: Check if invitation is already linked to a different request - if so, create a new one instead
         if (alreadyInvited.length > 0) {
           const invitationIds = alreadyInvited.map((req: any) => req.invitationId).filter(Boolean);
           if (invitationIds.length > 0) {
-            const { error: updateError } = await supabase
+            // First, check which invitations are already linked to a different request
+            const { data: existingInvitations } = await supabase
               .from("requester_invitations")
-              .update({ request_id: data.id })
+              .select("id, request_id, email, name, status, signature, department, department_id, user_id")
               .in("id", invitationIds);
             
-            if (updateError) {
-              console.error("[/api/requests/submit] ❌ Failed to update existing invitations:", updateError);
+            if (existingInvitations) {
+              const invitationsToUpdate: string[] = [];
+              const requestersToRecreate: any[] = [];
+              
+              for (const req of alreadyInvited) {
+                const existingInv = existingInvitations.find((inv: any) => inv.id === req.invitationId);
+                if (existingInv) {
+                  // If invitation is already linked to a different request, recreate it
+                  if (existingInv.request_id && existingInv.request_id !== data.id) {
+                    console.log(`[/api/requests/submit] ⚠️ Invitation ${req.invitationId} is linked to different request ${existingInv.request_id}, creating new invitation`);
+                    requestersToRecreate.push({
+                      ...req,
+                      // Preserve confirmed status and signature if already confirmed
+                      status: existingInv.status,
+                      signature: existingInv.signature,
+                      email: existingInv.email || req.email,
+                      name: existingInv.name || req.name,
+                      department: existingInv.department || req.department,
+                      department_id: existingInv.department_id || req.department_id,
+                      user_id: existingInv.user_id || req.user_id,
+                    });
+                  } else {
+                    // Invitation is not linked or linked to this request - update it
+                    invitationsToUpdate.push(req.invitationId);
+                  }
+                } else {
+                  // Invitation not found - create new one
+                  console.log(`[/api/requests/submit] ⚠️ Invitation ${req.invitationId} not found, creating new invitation`);
+                  requestersToRecreate.push(req);
+                }
+              }
+              
+              // Update invitations that are safe to update
+              if (invitationsToUpdate.length > 0) {
+                const { error: updateError } = await supabase
+                  .from("requester_invitations")
+                  .update({ request_id: data.id })
+                  .in("id", invitationsToUpdate);
+                
+                if (updateError) {
+                  console.error("[/api/requests/submit] ❌ Failed to update existing invitations:", updateError);
+                } else {
+                  console.log("[/api/requests/submit] ✅ Updated", invitationsToUpdate.length, "existing requester invitations");
+                }
+              }
+              
+              // Add requesters that need new invitations to the newRequesters array
+              if (requestersToRecreate.length > 0) {
+                newRequesters.push(...requestersToRecreate);
+                console.log("[/api/requests/submit] 📝 Will create", requestersToRecreate.length, "new invitations for requesters with existing invitations linked to other requests");
+              }
             } else {
-              console.log("[/api/requests/submit] ✅ Updated", invitationIds.length, "existing requester invitations");
+              // Fallback: try to update all invitations
+              const { error: updateError } = await supabase
+                .from("requester_invitations")
+                .update({ request_id: data.id })
+                .in("id", invitationIds);
+              
+              if (updateError) {
+                console.error("[/api/requests/submit] ❌ Failed to update existing invitations:", updateError);
+              } else {
+                console.log("[/api/requests/submit] ✅ Updated", invitationIds.length, "existing requester invitations");
+              }
             }
           }
         }
         
         // Create new requester invitations for requesters without invitationId (or auto-confirmed)
+        // Also includes requesters whose invitations were linked to different requests
         const requestersToCreate = newRequesters.filter((req: any) => req.name && req.email);
         if (requestersToCreate.length > 0) {
           const requesterInvitations = requestersToCreate.map((req: any) => ({
@@ -1521,10 +1673,13 @@ export async function POST(req: Request) {
             department: req.department || null,
             department_id: req.department_id || null,
             invited_by: profile.id,
-            status: req.invitationId === 'auto-confirmed' ? 'confirmed' : 'pending', // Auto-confirmed if current user
+            // If requester has status 'confirmed' and signature, preserve it (from existing invitation)
+            status: req.status === 'confirmed' ? 'confirmed' : (req.invitationId === 'auto-confirmed' ? 'confirmed' : 'pending'),
             token: crypto.randomBytes(32).toString('hex'), // Generate new token
             expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days
             signature: req.signature || null,
+            // If status is confirmed, set confirmed_at
+            confirmed_at: req.status === 'confirmed' ? new Date().toISOString() : null,
           }));
 
           const { error: inviteError } = await supabase
@@ -1624,6 +1779,14 @@ export async function POST(req: Request) {
 
       // 2. If representative submission, notify requester that they need to sign
       if (mightBeRepresentative && finalRequesterId && finalRequesterId !== profile.id) {
+        // Get requester email for email notification
+        const { data: requesterProfile } = await supabase
+          .from("users")
+          .select("email, name")
+          .eq("id", finalRequesterId)
+          .single();
+
+        // Create in-app notification
         await createNotification({
           user_id: finalRequesterId,
           notification_type: "request_pending_signature",
@@ -1635,6 +1798,54 @@ export async function POST(req: Request) {
           action_label: "Sign Request",
           priority: "high",
         });
+
+        // Send email notification if requester has email
+        if (requesterProfile?.email && initialStatus === "pending_requester_signature") {
+          try {
+            let baseUrl = process.env.NEXT_PUBLIC_APP_URL;
+            if (!baseUrl && process.env.VERCEL_URL) {
+              baseUrl = `https://${process.env.VERCEL_URL}`;
+            }
+            if (!baseUrl) {
+              baseUrl = "http://localhost:3000";
+            }
+            const signatureLink = `${baseUrl}/user/inbox`;
+
+            const travelDate = data.travel_start_date
+              ? new Date(data.travel_start_date).toLocaleDateString("en-US", {
+                  timeZone: "Asia/Manila",
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                })
+              : "";
+
+            const emailHtml = generateSignatureRequestEmail({
+              requesterName: requesterProfile.name || "Requester",
+              requestNumber: data.request_number,
+              purpose: data.purpose || data.title,
+              destination: data.destination,
+              travelDate,
+              submittedByName: submitterName,
+              signatureLink,
+            });
+
+            const emailResult = await sendEmail({
+              to: requesterProfile.email.toLowerCase(),
+              subject: `Signature Required: Travel Request ${data.request_number || ''}`,
+              html: emailHtml,
+            });
+
+            if (emailResult.success) {
+              console.log(`[/api/requests/submit] ✅ Signature request email sent to ${requesterProfile.email}`);
+            } else {
+              console.warn(`[/api/requests/submit] ⚠️ Failed to send signature request email:`, emailResult.error);
+            }
+          } catch (emailErr: any) {
+            console.error(`[/api/requests/submit] ❌ Error sending signature request email:`, emailErr);
+            // Don't fail the request if email fails
+          }
+        }
       }
 
       // 3. If request goes directly to admin (head requester or head approved), notify all admins

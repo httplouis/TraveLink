@@ -69,17 +69,27 @@ export default function FileAttachmentSection({
           body: formData,
         });
 
+        if (!response.ok) {
+          const errorText = await response.text();
+          let errorMessage = "Upload failed";
+          try {
+            const errorJson = JSON.parse(errorText);
+            errorMessage = errorJson.error || errorMessage;
+          } catch {
+            errorMessage = errorText || `Server error: ${response.status}`;
+          }
+          throw new Error(errorMessage);
+        }
+
         const result = await response.json();
 
         if (result.ok && result.attachment) {
           onChange([...attachments, result.attachment]);
         } else {
-          setUploadErrors(prev => ({
-            ...prev,
-            [tempId]: result.error || "Upload failed",
-          }));
+          throw new Error(result.error || "Upload failed");
         }
       } catch (err: any) {
+        console.error("[FileAttachment] Upload error:", err);
         setUploadErrors(prev => ({
           ...prev,
           [tempId]: err.message || "Upload failed",

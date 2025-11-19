@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { X, CheckCircle2, XCircle, Users, Car, UserCog, MapPin, Calendar, DollarSign, FileText, Edit2, Check } from "lucide-react";
-import { useToast } from "@/components/common/ui/ToastProvider.ui";
+import { X, CheckCircle2, XCircle, Users, Car, UserCog, MapPin, Calendar, DollarSign, FileText, Check } from "lucide-react";
+import { useToast } from "@/components/common/ui/Toast";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import { NameWithProfile } from "@/components/common/ProfileHoverCard";
 import ApproverSelectionModal from "@/components/common/ApproverSelectionModal";
@@ -34,7 +34,7 @@ export default function HRRequestModal({
   const [hrProfile, setHrProfile] = useState<any>(null);
   const [expenseBreakdown, setExpenseBreakdown] = useState<any[]>([]);
   const [editedExpenses, setEditedExpenses] = useState<any[]>([]);
-  const [editingBudget, setEditingBudget] = useState(false);
+  const [originalExpenses, setOriginalExpenses] = useState<any[]>([]);
   const [totalCost, setTotalCost] = useState(0);
   const [preferredDriverName, setPreferredDriverName] = useState<string>("");
   const [preferredVehicleName, setPreferredVehicleName] = useState<string>("");
@@ -71,32 +71,155 @@ export default function HRRequestModal({
         }
         
         // Load expense breakdown
+        // Check if comptroller edited the budget - if so, we need to show original vs edited
+        const hasComptrollerEdit = req.comptroller_edited_budget && req.comptroller_edited_budget !== req.total_budget;
+        
         if (expenseBreakdown && Array.isArray(expenseBreakdown) && expenseBreakdown.length > 0) {
           console.log("[HRRequestModal] Found expense_breakdown:", expenseBreakdown);
           setExpenseBreakdown(expenseBreakdown);
+          
+          // Current expenses (after comptroller edit) - includes justifications
           setEditedExpenses(expenseBreakdown.map((exp: any) => ({
             item: exp.item || exp.description || "Unknown",
             amount: exp.amount || 0,
-            description: exp.description || null
+            description: exp.description || null,
+            justification: exp.justification || null
           })));
+          
+          // Fetch original expense breakdown from request_history if comptroller edited
+          let originalExpenseBreakdown: any[] = [];
+          if (hasComptrollerEdit) {
+            try {
+              const historyRes = await fetch(`/api/requests/${request.id}/history`);
+              const historyData = await historyRes.json();
+              if (historyData && historyData.ok && historyData.data && historyData.data.history) {
+                // Find the most recent budget_modified entry
+                const budgetModification = historyData.data.history.find((entry: any) => 
+                  entry.action === "budget_modified" && entry.metadata?.original_expense_breakdown
+                );
+                if (budgetModification && budgetModification.metadata?.original_expense_breakdown) {
+                  originalExpenseBreakdown = budgetModification.metadata.original_expense_breakdown;
+                  console.log("[HRRequestModal] Found original expense_breakdown:", originalExpenseBreakdown);
+                } else {
+                  // Fallback: If no original breakdown in history, reconstruct for ALL items
+                  // This happens for edits that happened before we started storing original breakdown
+                  console.log("[HRRequestModal] No original expense_breakdown in history, attempting reconstruction for ALL items");
+                  
+                  const originalTotal = req.total_budget || 0;
+                  const newTotal = req.comptroller_edited_budget || 0;
+                  
+                  if (originalTotal > 0 && newTotal > 0 && expenseBreakdown.length > 0) {
+                    // First, try to extract original amounts from justifications for specific items
+                    const itemsWithExtractedAmounts: Record<string, number> = {};
+                    expenseBreakdown.forEach((exp: any) => {
+                      if (exp.justification) {
+                        const justification = exp.justification.toLowerCase();
+                        // Look for patterns like "100", "₱100", "100 pesos", "from 100", "mahal ng 100", "mandating 100", etc.
+                        const numberMatch = justification.match(/(?:from|original|was|₱|peso|php|mahal\s+ng|mandating)?\s*(\d+(?:\.\d+)?)/i);
+                        if (numberMatch && numberMatch[1]) {
+                          const extractedAmount = parseFloat(numberMatch[1]);
+                          if (extractedAmount > 0 && extractedAmount !== exp.amount) {
+                            const itemKey = exp.item || exp.description || "Unknown";
+                            itemsWithExtractedAmounts[itemKey] = extractedAmount;
+                            console.log(`[HRRequestModal] Extracted original amount for ${itemKey}: ${extractedAmount} from justification "${exp.justification}"`);
+                          }
+                        }
+                      }
+                    });
+                    
+                    // Calculate the sum of extracted amounts
+                    const extractedSum = Object.values(itemsWithExtractedAmounts).reduce((sum, amt) => sum + amt, 0);
+                    
+                    // Calculate remaining amounts for items without extracted values
+                    const itemsWithoutExtracted = expenseBreakdown.filter((exp: any) => {
+                      const itemKey = exp.item || exp.description || "Unknown";
+                      return !itemsWithExtractedAmounts[itemKey];
+                    });
+                    
+                    const remainingOriginalTotal = Math.max(0, originalTotal - extractedSum);
+                    const remainingNewTotal = itemsWithoutExtracted.reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0);
+                    
+                    // For items without extracted amounts, calculate proportionally
+                    const ratio = remainingOriginalTotal > 0 && remainingNewTotal > 0 
+                      ? remainingOriginalTotal / remainingNewTotal 
+                      : (originalTotal / newTotal); // Fallback to overall ratio
+                    
+                    // Reconstruct ALL items with original amounts
+                    originalExpenseBreakdown = expenseBreakdown.map((exp: any) => {
+                      const itemKey = exp.item || exp.description || "Unknown";
+                      
+                      // Use extracted amount if available
+                      if (itemsWithExtractedAmounts[itemKey] !== undefined) {
+                        return {
+                          item: itemKey,
+                          amount: itemsWithExtractedAmounts[itemKey],
+                          description: exp.description || null
+                        };
+                      }
+                      
+                      // Otherwise, calculate proportionally for ALL remaining items
+                      const proportionalAmount = Math.round((exp.amount || 0) * ratio * 100) / 100;
+                      return {
+                        item: itemKey,
+                        amount: proportionalAmount > 0 ? proportionalAmount : exp.amount, // Fallback to current if calculation fails
+                        description: exp.description || null
+                      };
+                    });
+                    
+                    console.log("[HRRequestModal] Reconstructed original expense_breakdown for ALL items:", originalExpenseBreakdown);
+                    console.log("[HRRequestModal] Original total:", originalTotal, "Reconstructed total:", originalExpenseBreakdown.reduce((sum, exp) => sum + (exp.amount || 0), 0));
+                  } else {
+                    // If we can't reconstruct, at least create entries for all items (use current amounts as fallback)
+                    originalExpenseBreakdown = expenseBreakdown.map((exp: any) => ({
+                      item: exp.item || exp.description || "Unknown",
+                      amount: exp.amount || 0,
+                      description: exp.description || null
+                    }));
+                  }
+                }
+              }
+            } catch (err) {
+              console.error("[HRRequestModal] Failed to fetch original expense breakdown:", err);
+            }
+          }
+          
+          // Store original expenses for comparison
+          if (hasComptrollerEdit && originalExpenseBreakdown.length > 0) {
+            setOriginalExpenses(originalExpenseBreakdown.map((exp: any) => ({
+              item: exp.item || exp.description || "Unknown",
+              amount: exp.amount || 0,
+              description: exp.description || null
+            })));
+            console.log("[HRRequestModal] Set originalExpenses:", originalExpenseBreakdown);
+          } else {
+            setOriginalExpenses([]);
+          }
+          
           const total = expenseBreakdown.reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0);
           setTotalCost(total || req.total_budget || 0);
         } else {
           console.log("[HRRequestModal] No expense_breakdown found, using total_budget:", req.total_budget);
           // If no expense breakdown but has total_budget, create a single expense item
           if (req.total_budget && req.total_budget > 0) {
-            setExpenseBreakdown([{
+            const singleExpense = {
               item: "Total Budget",
               amount: req.total_budget
-            }]);
-            setEditedExpenses([{
-              item: "Total Budget",
-              amount: req.total_budget
-            }]);
+            };
+            setExpenseBreakdown([singleExpense]);
+            setEditedExpenses([singleExpense]);
+            if (hasComptrollerEdit) {
+              setOriginalExpenses([{
+                item: "Total Budget",
+                amount: req.total_budget // Original amount
+              }]);
+            } else {
+              setOriginalExpenses([]);
+            }
             setTotalCost(req.total_budget);
           } else {
             setExpenseBreakdown([]);
             setEditedExpenses([]);
+            setOriginalExpenses([]);
             setTotalCost(0);
           }
         }
@@ -139,14 +262,20 @@ export default function HRRequestModal({
         // Load current HR info
         const meRes = await fetch("/api/profile");
         const meData = await meRes.json();
-        if (meData) {
-          setHrProfile(meData);
+        if (meData && meData.ok && meData.data) {
+          setHrProfile(meData.data);
+        } else {
+          console.error("[HRRequestModal] Failed to load profile:", meData?.error);
+          // Set a fallback profile to prevent "Loading..." forever
+          setHrProfile({ name: "HR User", email: "" });
         }
 
         // Load full request details (includes all approver data and signatures)
         await loadFullRequest();
       } catch (err) {
         console.error("[HRRequestModal] Error loading data:", err);
+        // Set a fallback profile to prevent "Loading..." forever
+        setHrProfile({ name: "HR User", email: "" });
       }
     }
     loadData();
@@ -154,12 +283,12 @@ export default function HRRequestModal({
 
   const handleApprove = async () => {
     if (!hrSignature) {
-      toast({ message: "Please provide your signature", kind: "error" });
+      toast.error("Signature Required", "Please provide your signature");
       return;
     }
 
     if (!notes.trim() || notes.trim().length < 10) {
-      toast({ message: "Notes are required and must be at least 10 characters long", kind: "error" });
+      toast.error("Notes Required", "Notes are required and must be at least 10 characters long");
       return;
     }
 
@@ -263,17 +392,17 @@ export default function HRRequestModal({
 
       const data = await res.json();
       if (data.ok) {
-        toast({ message: data.message || "Request approved successfully", kind: "success" });
+        toast.success("Request Approved", data.message || "Request approved successfully");
         setShowVPSelection(false);
         setTimeout(() => {
           onApproved(request.id);
           onClose();
         }, 1500);
       } else {
-        toast({ message: data.error || "Failed to approve request", kind: "error" });
+        toast.error("Approval Failed", data.error || "Failed to approve request");
       }
     } catch (err) {
-      toast({ message: "Failed to approve request. Please try again.", kind: "error" });
+      toast.error("Error", "Failed to approve request. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -281,7 +410,7 @@ export default function HRRequestModal({
 
   const handleReject = async () => {
     if (!notes.trim()) {
-      toast({ message: "Please provide a reason for rejection", kind: "error" });
+      toast.error("Reason Required", "Please provide a reason for rejection");
       return;
     }
 
@@ -299,16 +428,16 @@ export default function HRRequestModal({
 
       const data = await res.json();
       if (data.ok) {
-        toast({ message: "Request rejected", kind: "info" });
+        toast.info("Request Rejected", "Request rejected successfully");
         setTimeout(() => {
           onRejected(request.id);
           onClose();
         }, 1500);
       } else {
-        toast({ message: data.error || "Failed to reject request", kind: "error" });
+        toast.error("Rejection Failed", data.error || "Failed to reject request");
       }
     } catch (err) {
-      toast({ message: "An error occurred", kind: "error" });
+      toast.error("Error", "An error occurred");
     } finally {
       setSubmitting(false);
     }
@@ -334,16 +463,18 @@ export default function HRRequestModal({
               )}
             </div>
             <div className="flex items-center gap-3">
-              <span className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 ${
-                t.status === 'pending_hr' ? 'bg-amber-100 text-amber-700' :
-                t.status === 'approved' ? 'bg-green-100 text-green-700' :
-                t.status === 'rejected' ? 'bg-red-100 text-red-700' :
-                'bg-slate-100 text-slate-700'
+              <span className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 backdrop-blur-sm ${
+                t.status === 'pending_hr' ? 'bg-amber-300/90 text-amber-900 border border-amber-400' :
+                t.status === 'pending_exec' ? 'bg-blue-300/90 text-blue-900 border border-blue-400' :
+                t.status === 'approved' ? 'bg-green-300/90 text-green-900 border border-green-400' :
+                t.status === 'rejected' ? 'bg-red-300/90 text-red-900 border border-red-400' :
+                'bg-white/20 text-white border border-white/30'
               }`}>
-                {t.status === 'pending_hr' ? 'Pending Review' :
+                {t.status === 'pending_hr' ? 'Pending HR Review' :
+                 t.status === 'pending_exec' ? 'Pending Executive' :
                  t.status === 'approved' ? 'Approved' :
                  t.status === 'rejected' ? 'Rejected' :
-                 t.status || 'Pending'}
+                 t.status?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Pending'}
               </span>
               <button
                 onClick={onClose}
@@ -545,7 +676,7 @@ export default function HRRequestModal({
                     Budget
                   </p>
                   <p className="text-lg font-bold text-[#7A0010]">
-                    {peso(totalCost || t.total_budget)}
+                    {peso(totalCost || t.comptroller_edited_budget || t.total_budget)}
                   </p>
                 </section>
               </div>
@@ -644,38 +775,45 @@ export default function HRRequestModal({
                 </section>
               )}
 
-              {/* Requester Signature - Same as VPRequestModal */}
-              <section className="rounded-lg bg-slate-50 border border-slate-200 p-4">
-                <p className="text-xs font-semibold uppercase text-slate-700 mb-3">
+              {/* Requester Signature - Same style as Previous Approvals */}
+              <section className="rounded-lg bg-slate-50 border border-slate-200 p-4 shadow-sm">
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-600 mb-4">
                   Requester's Signature
                 </p>
                 {(t.requester_signature) ? (
-                  <div className="bg-white rounded-lg border border-slate-200 p-4">
-                    <img
-                      src={t.requester_signature}
-                      alt="Requester signature"
-                      className="h-[100px] w-full object-contain"
-                    />
-                    <p className="text-center text-xs text-slate-600 mt-2 font-medium">
-                      Signed by: {t.requester_name || "Requester"}
-                    </p>
-                    {t.requester_signed_at && (
-                      <p className="text-center text-xs text-slate-500 mt-1">
-                        {new Date(t.requester_signed_at).toLocaleString('en-US', { 
-                          year: 'numeric', 
-                          month: 'short', 
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          hour12: true,
-                          timeZone: 'Asia/Manila'
-                        })}
+                  <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-sm font-semibold text-slate-800">
+                        Requester Signed
                       </p>
-                    )}
+                      {(t.requester_signed_at || t.created_at) && (
+                        <span className="text-xs text-slate-500 font-medium">
+                          {new Date(t.requester_signed_at || t.created_at).toLocaleString('en-US', { 
+                            year: 'numeric', 
+                            month: 'short', 
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: true,
+                            timeZone: 'Asia/Manila'
+                          })}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-600 mb-3">
+                      By: <span className="font-medium text-slate-700">{t.requester_name || "Requester"}</span>
+                    </p>
+                    <div className="mt-3 pt-3 border-t border-slate-200">
+                      <img
+                        src={t.requester_signature}
+                        alt="Requester signature"
+                        className="h-20 w-full object-contain bg-slate-50 rounded p-2"
+                      />
+                    </div>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-center gap-2 text-sm text-slate-600 bg-white rounded-lg border border-slate-200 p-4">
-                    <FileText className="h-4 w-4" />
+                  <div className="flex items-center justify-center gap-2 text-sm text-slate-500 bg-white rounded-lg border border-slate-200 p-4">
+                    <FileText className="h-4 w-4 text-slate-400" />
                     <span>No signature provided by requester</span>
                   </div>
                 )}
@@ -720,12 +858,12 @@ export default function HRRequestModal({
                     const approverDept = approverToUse?.department?.name || approverToUse?.department_name || "";
                     
                     return hasAnyHeadApproval ? (
-                      <div className="bg-white rounded-lg border border-slate-200 p-3">
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="text-sm font-medium text-slate-900">
+                      <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
+                        <div className="flex items-center justify-between mb-3">
+                          <p className="text-sm font-semibold text-slate-800">
                             {hasParentHeadApproval ? "Parent Head Approved" : hasHeadApproval ? "Head Approved" : "VP Approved (as Head)"}
                           </p>
-                          <span className="text-xs text-green-600 font-medium">
+                          <span className="text-xs text-slate-500 font-medium">
                             {approvalDate && new Date(approvalDate).toLocaleString('en-US', { 
                               year: 'numeric', 
                               month: 'short', 
@@ -738,24 +876,24 @@ export default function HRRequestModal({
                           </span>
                         </div>
                         {approverToUse && (
-                          <p className="text-xs text-slate-600">
-                            By: {approverToUse.name || (hasParentHeadApproval ? "Parent Head" : hasHeadApproval ? "Department Head" : "VP")}
-                            {approverDept ? ` (${approverDept})` : ''}
+                          <p className="text-xs text-slate-600 mb-3">
+                            By: <span className="font-medium text-slate-700">{approverToUse.name || (hasParentHeadApproval ? "Parent Head" : hasHeadApproval ? "Department Head" : "VP")}</span>
+                            {approverDept ? <span className="text-slate-500"> ({approverDept})</span> : ''}
                           </p>
                         )}
                         {signature && (
-                          <div className="mt-2 pt-2 border-t border-slate-100">
+                          <div className="mt-3 pt-3 border-t border-slate-200">
                             <img
                               src={signature}
                               alt="Head signature"
-                              className="h-16 w-full object-contain"
+                              className="h-20 w-full object-contain bg-slate-50 rounded p-2"
                             />
                           </div>
                         )}
                         {(t.head_comments || t.parent_head_comments) && (
-                          <div className="mt-2 pt-2 border-t border-slate-100">
-                            <p className="text-xs text-slate-500 mb-1">Comments:</p>
-                            <p className="text-xs text-slate-700">{t.parent_head_comments || t.head_comments}</p>
+                          <div className="mt-3 pt-3 border-t border-slate-200">
+                            <p className="text-xs text-slate-500 mb-1 font-medium">Comments:</p>
+                            <p className="text-xs text-slate-700 leading-relaxed">{t.parent_head_comments || t.head_comments}</p>
                           </div>
                         )}
                       </div>
@@ -763,10 +901,10 @@ export default function HRRequestModal({
                   })()}
 
                   {t.admin_approved_at && (
-                    <div className="bg-white rounded-lg border border-slate-200 p-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="text-sm font-medium text-slate-900">Admin Processed</p>
-                        <span className="text-xs text-green-600 font-medium">
+                    <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-sm font-semibold text-slate-800">Admin Processed</p>
+                        <span className="text-xs text-slate-500 font-medium">
                           {new Date(t.admin_approved_at).toLocaleString('en-US', { 
                             year: 'numeric', 
                             month: 'short', 
@@ -780,32 +918,32 @@ export default function HRRequestModal({
                       </div>
                       {t.admin_approved_by && (
                         <p className="text-xs text-slate-600">
-                          By: {t.admin_approver?.name || "Administrator"}
+                          By: <span className="font-medium text-slate-700">{t.admin_approver?.name || "Administrator"}</span>
                         </p>
                       )}
                       {t.admin_signature && (
-                        <div className="mt-2 pt-2 border-t border-slate-100">
+                        <div className="mt-3 pt-3 border-t border-slate-200">
                           <img
                             src={t.admin_signature}
                             alt="Admin signature"
-                            className="h-16 w-full object-contain"
+                            className="h-20 w-full object-contain bg-slate-50 rounded p-2"
                           />
                         </div>
                       )}
                       {t.admin_comments && (
-                        <div className="mt-2 pt-2 border-t border-slate-100">
-                          <p className="text-xs text-slate-500 mb-1">Comments:</p>
-                          <p className="text-xs text-slate-700">{t.admin_comments}</p>
+                        <div className="mt-3 pt-3 border-t border-slate-200">
+                          <p className="text-xs text-slate-500 mb-1 font-medium">Comments:</p>
+                          <p className="text-xs text-slate-700 leading-relaxed">{t.admin_comments}</p>
                         </div>
                       )}
                     </div>
                   )}
 
                   {t.comptroller_approved_at && (
-                    <div className="bg-white rounded-lg border border-slate-200 p-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="text-sm font-medium text-slate-900">Comptroller Approved</p>
-                        <span className="text-xs text-green-600 font-medium">
+                    <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-sm font-semibold text-slate-800">Comptroller Approved</p>
+                        <span className="text-xs text-slate-500 font-medium">
                           {new Date(t.comptroller_approved_at).toLocaleString('en-US', { 
                             year: 'numeric', 
                             month: 'short', 
@@ -818,23 +956,23 @@ export default function HRRequestModal({
                         </span>
                       </div>
                       {t.comptroller_approved_by && (
-                        <p className="text-xs text-slate-600">
-                          By: {t.comptroller_approver?.name || "Comptroller"}
+                        <p className="text-xs text-slate-600 mb-3">
+                          By: <span className="font-medium text-slate-700">{t.comptroller_approver?.name || "Comptroller"}</span>
                         </p>
                       )}
                       {t.comptroller_signature && (
-                        <div className="mt-2 pt-2 border-t border-slate-100">
+                        <div className="mt-3 pt-3 border-t border-slate-200">
                           <img
                             src={t.comptroller_signature}
                             alt="Comptroller signature"
-                            className="h-16 w-full object-contain"
+                            className="h-20 w-full object-contain bg-slate-50 rounded p-2"
                           />
                         </div>
                       )}
                       {t.comptroller_comments && (
-                        <div className="mt-2 pt-2 border-t border-slate-100">
-                          <p className="text-xs text-slate-500 mb-1">Comments:</p>
-                          <p className="text-xs text-slate-700">{t.comptroller_comments}</p>
+                        <div className="mt-3 pt-3 border-t border-slate-200">
+                          <p className="text-xs text-slate-500 mb-1 font-medium">Comments:</p>
+                          <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">{t.comptroller_comments}</p>
                         </div>
                       )}
                     </div>
@@ -848,23 +986,22 @@ export default function HRRequestModal({
                 </div>
               </section>
 
-              {/* Budget Breakdown - With Editing Capability */}
+              {/* Budget Breakdown - Read Only with Comptroller Edit History */}
               <section className="rounded-lg bg-slate-50 border-2 border-[#7A0010] p-4 shadow-lg">
                 <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-200">
                   <div className="flex items-center gap-2">
                     <DollarSign className="h-5 w-5 text-slate-700" />
                     <h3 className="text-sm font-semibold text-slate-900">Budget Breakdown</h3>
                   </div>
-                  {!editingBudget && !readOnly && (
-                    <button
-                      onClick={() => setEditingBudget(true)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-[#7A0010] text-white hover:bg-[#5e000d] rounded-lg transition-colors text-xs font-semibold shadow-sm"
-                    >
-                      <Edit2 className="h-4 w-4" />
-                      Edit Budget
-                    </button>
-                  )}
                 </div>
+
+                {/* Comptroller Comments */}
+                {t.comptroller_comments && (
+                  <div className="mb-4 p-3 bg-blue-50 border-l-4 border-blue-500 rounded-r">
+                    <p className="text-xs font-semibold text-blue-900 mb-1">Comptroller Comments:</p>
+                    <p className="text-xs text-blue-800 whitespace-pre-wrap">{t.comptroller_comments}</p>
+                  </div>
+                )}
 
                 {editedExpenses.length > 0 ? (
                   <>
@@ -874,25 +1011,42 @@ export default function HRRequestModal({
                           ? expense.description 
                           : expense.item || expense.description;
                         
+                        // Find original expense for this item
+                        const originalExpense = originalExpenses.find((orig: any) => 
+                          (orig.item === expense.item || orig.description === expense.description) ||
+                          (orig.item === expense.description || orig.description === expense.item) ||
+                          (orig.item === label || orig.description === label)
+                        );
+                        const originalAmount = originalExpense?.amount;
+                        // Check if comptroller edited the budget
+                        const hasComptrollerEdit = t.comptroller_edited_budget && t.comptroller_edited_budget !== t.total_budget;
+                        const wasEdited = hasComptrollerEdit && originalAmount !== undefined && originalAmount !== expense.amount;
+                        
                         return expense.amount > 0 && (
-                          <div key={index} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
-                            <span className="text-sm text-slate-600">{label}</span>
-                            {editingBudget ? (
-                              <input
-                                type="number"
-                                value={expense.amount}
-                                onChange={(e) => {
-                                  const amount = parseFloat(e.target.value) || 0;
-                                  setEditedExpenses(prev => {
-                                    const updated = [...prev];
-                                    updated[index] = { ...updated[index], amount };
-                                    return updated;
-                                  });
-                                }}
-                                className="w-32 px-3 py-1.5 border-2 border-[#7A0010]/20 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] text-sm"
-                              />
-                            ) : (
-                              <span className="text-sm font-semibold text-slate-900">{peso(expense.amount)}</span>
+                          <div key={index} className="py-2 border-b border-slate-100 last:border-0">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm text-slate-600">{label}</span>
+                              <div className="text-right">
+                                {wasEdited && originalAmount !== undefined ? (
+                                  <div className="flex flex-col items-end gap-1">
+                                    <span className="text-xs text-slate-500 line-through">
+                                      {peso(originalAmount)}
+                                    </span>
+                                    <span className="text-sm font-semibold text-[#7A0010]">
+                                      {peso(expense.amount)}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <span className="text-sm font-semibold text-slate-900">{peso(expense.amount)}</span>
+                                )}
+                              </div>
+                            </div>
+                            {expense.justification && (
+                              <div className="mt-1.5 pl-2 border-l-2 border-blue-300">
+                                <p className="text-xs text-blue-700 italic">
+                                  <span className="font-semibold">Justification:</span> {expense.justification}
+                                </p>
+                              </div>
                             )}
                           </div>
                         );
@@ -903,88 +1057,23 @@ export default function HRRequestModal({
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-bold text-slate-900">TOTAL BUDGET</span>
                         <div className="text-right">
-                          {(() => {
-                            const calculatedTotal = editedExpenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
-                            const originalTotal = expenseBreakdown.reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0) || totalCost;
-                            return calculatedTotal !== originalTotal ? (
-                              <>
-                                <div className="text-sm text-slate-500 line-through mb-1">
-                                  {peso(originalTotal)}
-                                </div>
-                                <div className="text-lg font-bold text-[#7A0010]">
-                                  {peso(calculatedTotal)}
-                                </div>
-                              </>
-                            ) : (
+                          {t.comptroller_edited_budget && t.comptroller_edited_budget !== t.total_budget ? (
+                            <div className="flex flex-col items-end gap-1">
+                              <span className="text-sm text-slate-500 line-through">
+                                {peso(t.total_budget || 0)}
+                              </span>
                               <div className="text-lg font-bold text-[#7A0010]">
-                                {peso(calculatedTotal)}
+                                {peso(t.comptroller_edited_budget)}
                               </div>
-                            );
-                          })()}
+                            </div>
+                          ) : (
+                            <div className="text-lg font-bold text-[#7A0010]">
+                              {peso(editedExpenses.reduce((sum, exp) => sum + (exp.amount || 0), 0))}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
-
-                    {editingBudget && !readOnly && (
-                      <div className="flex gap-2 mt-4">
-                        <button
-                          onClick={async () => {
-                            // Save budget edits without approving
-                            try {
-                              setSubmitting(true);
-                              const calculatedTotal = editedExpenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
-                              const res = await fetch("/api/hr/action", {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({
-                                  requestId: request.id,
-                                  action: "edit_budget",
-                                  editedBudget: calculatedTotal,
-                                  notes: notes || "Budget edited by HR",
-                                }),
-                              });
-
-                              const json = await res.json();
-                              
-                              if (json.ok) {
-                                toast({ message: "✅ Budget updated successfully", kind: "success" });
-                                setEditingBudget(false);
-                                // Update expense breakdown to reflect changes
-                                setExpenseBreakdown(editedExpenses);
-                                setTotalCost(calculatedTotal);
-                              } else {
-                                toast({ message: json.error || "Failed to update budget", kind: "error" });
-                              }
-                            } catch (err) {
-                              console.error("Save budget error:", err);
-                              toast({ message: "Failed to save budget. Please try again.", kind: "error" });
-                            } finally {
-                              setSubmitting(false);
-                            }
-                          }}
-                          disabled={submitting}
-                          className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <Check className="h-4 w-4" />
-                          {submitting ? "Saving..." : "Save Budget Changes"}
-                        </button>
-                        <button
-                          onClick={() => {
-                            // Cancel editing - revert to original
-                            setEditedExpenses(expenseBreakdown.map((exp: any) => ({
-                              item: exp.item,
-                              amount: exp.amount
-                            })));
-                            setEditingBudget(false);
-                          }}
-                          disabled={submitting}
-                          className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors flex items-center justify-center gap-2 text-sm font-medium disabled:opacity-50"
-                        >
-                          <XCircle className="h-4 w-4" />
-                          Cancel
-                        </button>
-                      </div>
-                    )}
                   </>
                 ) : (
                   <div className="py-4 text-center">
@@ -1088,6 +1177,10 @@ export default function HRRequestModal({
                       onClear={() => {
                         setHrSignature("");
                       }}
+                      onUseSaved={(dataUrl) => {
+                        setHrSignature(dataUrl);
+                      }}
+                      showUseSavedButton={true}
                       hideSaveButton
                     />
                   </div>
@@ -1161,29 +1254,33 @@ export default function HRRequestModal({
 
           {/* Actions */}
           {!readOnly && (
-            <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex gap-3 flex-shrink-0">
-              <button
-                onClick={handleApprove}
-                disabled={submitting || !hrSignature || !notes.trim() || notes.trim().length < 10}
-                className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <CheckCircle2 className="h-5 w-5" />
-                {submitting ? "Approving..." : "Approve Request"}
-              </button>
+            <div className="sticky bottom-0 bg-white border-t-2 border-slate-200 px-6 py-4 flex items-center justify-between flex-shrink-0 shadow-lg">
               <button
                 onClick={handleReject}
                 disabled={submitting || !notes.trim()}
-                className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white font-medium py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center justify-center gap-1.5 px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-medium text-sm rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <XCircle className="h-5 w-5" />
-                {submitting ? "Rejecting..." : "Reject Request"}
+                <XCircle className="h-4 w-4" />
+                {submitting ? "Rejecting..." : "Reject"}
               </button>
-              <button
-                onClick={onClose}
-                className="px-6 py-3 border border-gray-300 hover:bg-gray-100 text-gray-700 font-medium rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
+              
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={onClose}
+                  className="px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium text-sm rounded-md transition-colors"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  onClick={handleApprove}
+                  disabled={submitting || !hrSignature || !notes.trim() || notes.trim().length < 10}
+                  className="flex items-center justify-center gap-2 px-6 py-2.5 bg-[#7A0010] hover:bg-[#5e000d] text-white font-semibold text-sm rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  {submitting ? "Approving..." : "Approve Request"}
+                </button>
+              </div>
             </div>
           )}
 

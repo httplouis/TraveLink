@@ -50,15 +50,16 @@ export const DriversRepo = {
       const result = await response.json();
       
       if (result.ok && result.data) {
-        // Transform to match Driver type
+        // Transform to match Driver type - ALL DATA FROM DATABASE
         db = result.data.map((d: any) => ({
           id: d.id,
           firstName: d.name?.split(' ')[0] || 'Unknown',
           lastName: d.name?.split(' ').slice(1).join(' ') || '',
           code: `D${d.id.slice(0, 4)}`,
-          email: d.email,
+          email: d.email || '',
           phone: d.phone || '',
-          licenseNo: d.licenseNumber || d.license_no,
+          department: d.department || 'Transport Office', // From database, default to Transport Office
+          licenseNo: d.licenseNumber || d.license_no || '',
           licenseClass: 'B' as LicenseClass,
           licenseExpiry: d.licenseExpiry || d.license_expiry || new Date().toISOString(),
           status: (d.isAvailable ? 'active' : 'off_duty') as DriverStatus,

@@ -20,6 +20,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Get all invitations for this request
+    // Use .order() before .select() to ensure fresh data
     const { data: invitations, error } = await supabase
       .from("requester_invitations")
       .select(`
@@ -33,10 +34,22 @@ export async function GET(req: NextRequest) {
         declined_at,
         signature,
         user_id,
-        declined_reason
+        declined_reason,
+        updated_at
       `)
       .eq("request_id", requestId)
       .order("created_at", { ascending: true });
+    
+    console.log("[GET /api/requesters/status] 📊 Fetched invitations:", {
+      count: invitations?.length || 0,
+      statuses: invitations?.map((inv: any) => ({ 
+        id: inv.id, 
+        email: inv.email, 
+        status: inv.status,
+        hasSignature: !!inv.signature,
+        name: inv.name,
+      })) || [],
+    });
 
     if (error) {
       console.error("[GET /api/requesters/status] Error:", error);

@@ -4,6 +4,8 @@
 import React from "react";
 import { motion } from "framer-motion";
 import { Search, Filter, CheckCircle, XCircle, Calendar, Download } from "lucide-react";
+import { SkeletonRequestCard, SkeletonTable } from "@/components/common/SkeletonLoader";
+import { createLogger } from "@/lib/debug";
 
 type Decision = {
   id: string;
@@ -32,15 +34,21 @@ export default function ComptrollerHistory() {
     loadHistory();
   }, []);
 
+  const logger = createLogger("ComptrollerHistory");
+
   const loadHistory = async () => {
     try {
+      logger.info("Loading comptroller history...");
       const res = await fetch("/api/comptroller/history");
       if (res.ok) {
         const data = await res.json();
         setDecisions(data);
+        logger.success(`Loaded ${data?.length || 0} history items`);
+      } else {
+        logger.warn("Failed to load history:", res.statusText);
       }
     } catch (error) {
-      console.error("Error loading history:", error);
+      logger.error("Error loading history:", error);
     } finally {
       setLoading(false);
     }
@@ -69,8 +77,22 @@ export default function ComptrollerHistory() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin h-12 w-12 border-4 border-[#7A0010] border-t-transparent rounded-full"></div>
+      <div className="p-8 space-y-6">
+        {/* Header Skeleton */}
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <div className="h-9 w-64 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer bg-[length:200%_100%]" />
+            <div className="h-5 w-96 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer bg-[length:200%_100%]" />
+          </div>
+          <div className="h-10 w-24 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded-lg animate-shimmer bg-[length:200%_100%]" />
+        </div>
+        {/* Filters Skeleton */}
+        <div className="flex gap-4">
+          <div className="flex-1 h-12 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded-lg animate-shimmer bg-[length:200%_100%]" />
+          <div className="h-12 w-32 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded-lg animate-shimmer bg-[length:200%_100%]" />
+        </div>
+        {/* Table Skeleton */}
+        <SkeletonTable rows={5} cols={6} />
       </div>
     );
   }

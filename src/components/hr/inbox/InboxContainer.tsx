@@ -1,14 +1,16 @@
 "use client";
 
 import React from "react";
-import { SkeletonRequestCard } from "@/components/common/ui/Skeleton";
+import { SkeletonRequestCard } from "@/components/common/SkeletonLoader";
 import HRRequestModal from "@/components/hr/HRRequestModal";
 import RequestStatusTracker from "@/components/common/RequestStatusTracker";
 import TrackingModal from "@/components/common/TrackingModal";
 import StatusBadge from "@/components/common/StatusBadge";
 import PersonDisplay from "@/components/common/PersonDisplay";
+import RequestCardEnhanced from "@/components/common/RequestCardEnhanced";
 import { Eye } from "lucide-react";
 import { createSupabaseClient } from "@/lib/supabase/client";
+import { createLogger } from "@/lib/debug";
 
 export default function HRInboxContainer() {
   const [items, setItems] = React.useState<any[]>([]);
@@ -18,20 +20,27 @@ export default function HRInboxContainer() {
   const [showTrackingModal, setShowTrackingModal] = React.useState(false);
   const [lastUpdate, setLastUpdate] = React.useState<Date>(new Date());
 
+  const logger = createLogger("HRInbox");
+
   async function load(showLoader = true) {
     if (showLoader) setLoading(true);
     try {
+      logger.info("Loading HR requests...");
       const res = await fetch("/api/hr/inbox", { cache: "no-store" });
       const json = await res.json();
       if (json.ok) {
-        console.log("HR Inbox - Full Response:", json.data);
+        logger.debug("HR Inbox - Full Response:", { count: json.data?.length || 0 });
         if (json.data && json.data.length > 0) {
-          console.log("HR Inbox - First Item:", json.data[0]);
-          console.log("HR Inbox - First Item Department:", json.data[0].department);
+          logger.debug("HR Inbox - First Item:", { id: json.data[0].id, status: json.data[0].status });
         }
         setItems(json.data ?? []);
         setLastUpdate(new Date());
+        logger.success(`Loaded ${json.data?.length || 0} HR requests`);
+      } else {
+        logger.warn("Failed to load HR requests:", json.error);
       }
+    } catch (error) {
+      logger.error("Error loading HR requests:", error);
     } finally {
       if (showLoader) setLoading(false);
     }
@@ -132,75 +141,43 @@ export default function HRInboxContainer() {
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {items.map((item) => {
-            // For representative submissions, prioritize requester_name (actual person traveling)
-            const requester = item.requester_name || item.requester?.name || item.requester?.email || "Unknown";
-            const department = item.department?.name || item.department?.code || item.requester?.department || "Not specified";
-            const purpose = item.purpose || "No purpose indicated";
-            const requestNumber = item.request_number || "—";
-            const travelDate = item.travel_start_date ? new Date(item.travel_start_date).toLocaleDateString() : "—";
-
+        <div className="space-y-4">
+          {items.map((item, index) => {
             return (
-              <div
+              <RequestCardEnhanced
                 key={item.id}
-                onClick={() => {
-                  console.log("HR Inbox - Clicked Item:", item);
-                  console.log("HR Inbox - Clicked Item Department:", item.department);
-                  setSelected(item);
+                request={{
+                  id: item.id,
+                  request_number: item.request_number || "—",
+                  file_code: item.file_code,
+                  title: item.title,
+                  purpose: item.purpose || "No purpose indicated",
+                  destination: item.destination,
+                  travel_start_date: item.travel_start_date,
+                  travel_end_date: item.travel_end_date,
+                  status: item.status,
+                  created_at: item.created_at,
+                  comptroller_approved_at: item.comptroller_approved_at,
+                  total_budget: item.total_budget,
+                  comptroller_edited_budget: item.comptroller_edited_budget,
+                  request_type: item.request_type,
+                  requester_name: item.requester_name || item.requester?.name,
+                  requester: {
+                    name: item.requester_name || item.requester?.name || "Unknown",
+                    email: item.requester?.email,
+                    profile_picture: item.requester?.profile_picture,
+                    department: item.department?.name || item.department?.code,
+                    position: item.requester?.position_title,
+                  },
+                  department: item.department,
                 }}
-                className="group flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-5 py-4 text-left shadow-sm transition-all hover:border-[#7A0010]/30 hover:shadow-lg hover:scale-[1.01] cursor-pointer"
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2.5 mb-3">
-                    <span className="rounded-md bg-[#7A0010] px-2.5 py-0.5 text-xs font-bold text-white">
-                      {requestNumber}
-                    </span>
-                    <span className="text-xs text-slate-400">•</span>
-                    <span className="text-xs font-medium text-slate-500">{travelDate}</span>
-                  </div>
-                  
-                  {/* Use PersonDisplay component */}
-                  <PersonDisplay
-                    name={requester}
-                    position={item.requester?.position_title}
-                    department={department}
-                    profilePicture={item.requester?.profile_picture}
-                    size="sm"
-                  />
-                  
-                  <p className="text-sm text-slate-600 line-clamp-1 mt-2 mb-1">
-                    {purpose}
-                  </p>
-                  {/* Approval Progress Tracker */}
-                  <div className="mt-2">
-                    <RequestStatusTracker
-                      status={item.status}
-                      requesterIsHead={item.requester_is_head}
-                      hasBudget={item.has_budget}
-                      hasParentHead={item.has_parent_head}
-                      compact={true}
-                    />
-                  </div>
-                </div>
-                <div className="flex flex-col items-end gap-2 ml-4">
-                  <StatusBadge status="pending_hr" size="md" showIcon={true} />
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setTrackingRequest(item);
-                      setShowTrackingModal(true);
-                    }}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:text-[#7a0019] hover:bg-slate-50 rounded-lg transition-colors border border-slate-200"
-                  >
-                    <Eye className="h-3.5 w-3.5" />
-                    Track
-                  </button>
-                  <svg className="h-5 w-5 text-slate-300 group-hover:text-[#7A0010] transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </div>
-              </div>
+                showActions={true}
+                onView={() => setSelected(item)}
+                onTrack={() => {
+                  setTrackingRequest(item);
+                  setShowTrackingModal(true);
+                }}
+              />
             );
           })}
         </div>

@@ -20,6 +20,7 @@ export default function ProfileMenu({ name = "Profile", avatarUrl }: Props) {
         onClick={() => setOpenSheet(true)}
         className="inline-flex h-9 items-center gap-2 rounded-full border border-white/60 bg-white/90 px-3 text-sm text-neutral-900 shadow-inner transition hover:bg-white focus:outline-none focus:ring-2 focus:ring-white/70"
         aria-label="Open profile"
+        suppressHydrationWarning
       >
         {avatarUrl ? (
           <img

@@ -9,7 +9,7 @@ import type { AdminRequest } from "@/lib/admin/requests/store";
 import { AdminRequestsRepo } from "@/lib/admin/requests/store";
 import { generateRequestPDF } from "@/lib/admin/requests/pdfWithTemplate";
 import { generateSeminarPDF } from "@/lib/admin/requests/pdfSeminar";
-import { useToast } from "@/components/common/ui/ToastProvider.ui";
+import { useToast } from "@/components/common/ui/Toast";
 
 // 🔹 Detailed Seminar block (keeps this modal tidy)
 import SeminarDetails from "@/components/admin/requests/parts/SeminarDetails.ui";
@@ -237,8 +237,21 @@ export default function RequestDetailsModalUI({
         const data = await response.json();
         
         if (data.ok && data.data) {
-          // Filter only confirmed requesters
-          const confirmed = data.data.filter((req: any) => req.status === 'confirmed');
+          // Filter only confirmed requesters AND exclude the main requester
+          const confirmed = data.data.filter((req: any) => {
+            // Only include if status is confirmed
+            if (req.status !== 'confirmed') {
+              return false;
+            }
+            
+            // Exclude if this is the main requester (by user_id, email, or name match)
+            const isMainRequester = 
+              (req.user_id && row?.requester?.id && req.user_id === row.requester.id) ||
+              (req.email && row?.requester?.email && req.email.toLowerCase() === row.requester.email.toLowerCase()) ||
+              (req.name && row?.requester?.name && req.name.toLowerCase().trim() === row.requester.name.toLowerCase().trim());
+            
+            return !isMainRequester;
+          });
           setConfirmedRequesters(confirmed);
         }
       } catch (err) {
@@ -325,7 +338,9 @@ export default function RequestDetailsModalUI({
   const requiresComptroller = usesVehicle || totalCost > 0;
 
   // Can Admin approve now?
-  const awaitingHead = row?.status === "pending_head";
+  // If requester is head, they don't need head signature (they already signed as requester)
+  const requesterIsHead = (row as any)?.requester_is_head === true;
+  const awaitingHead = row?.status === "pending_head" && !requesterIsHead;
   const hasAdminApproved = !!(row as any)?.admin_approved_at; // Check if admin has already approved
   const canAdminApprove =
     !!row &&
@@ -339,7 +354,8 @@ export default function RequestDetailsModalUI({
       row.status === "pending" || // legacy fallback
       row.status === "comptroller_pending" || // allow re-approval loops if needed
       row.status === "hr_pending" ||
-      row.status === "executive_pending");
+      row.status === "executive_pending" ||
+      (row.status === "pending_head" && requesterIsHead)); // Head requester can be approved even if status is pending_head
 
   // PDF uses current driver/vehicle selections
   const handlePrintTravelPDF = React.useCallback(() => {
@@ -654,11 +670,7 @@ export default function RequestDetailsModalUI({
       const approverLabel = selectedApproverRole === 'comptroller' ? 'Comptroller' : 
                             selectedApproverRole === 'hr' ? 'HR' :
                             requiresComptroller ? 'Comptroller' : 'HR';
-      toast({
-        kind: "success",
-        message: `Request approved and sent to ${approverLabel}!`,
-        timeoutMs: 4000
-      });
+      toast.success("Request Approved", `Request approved and sent to ${approverLabel}!`);
 
       // Also update localStorage for offline support
       const nowIso = new Date().toISOString();
@@ -730,11 +742,21 @@ export default function RequestDetailsModalUI({
                 <h2 className="text-lg font-semibold text-white">
                   Request Details
                 </h2>
-                {(row as any).request_number && (
-                  <p className="text-sm text-white/80 font-mono">
-                    {(row as any).request_number}
-                  </p>
-                )}
+                <div className="space-y-1">
+                  {(row as any).request_number && (
+                    <p className="text-sm text-white/80 font-mono">
+                      {(row as any).request_number}
+                    </p>
+                  )}
+                  {(row as any).file_code && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-white/70">File Code:</span>
+                      <span className="text-xs font-mono font-semibold text-white/90">
+                        {(row as any).file_code}
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="flex items-center gap-3">
                 <span className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 ${
@@ -1115,7 +1137,7 @@ export default function RequestDetailsModalUI({
                             </tbody>
                           </table>
                         )}
-                        {hasCosts && (
+                        {hasCosts && !expenseBreakdown && (
                           <div className="mt-4 pt-4 border-t border-slate-300">
                             <div className="flex justify-between items-center">
                               <span className="text-sm font-bold text-slate-900">Total Budget</span>

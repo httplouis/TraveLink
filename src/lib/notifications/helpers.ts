@@ -22,9 +22,17 @@ export interface NotificationData {
  */
 export async function createNotification(data: NotificationData): Promise<boolean> {
   try {
+    console.log("[createNotification] Creating notification:", {
+      user_id: data.user_id,
+      notification_type: data.notification_type,
+      title: data.title,
+      message: data.message.substring(0, 50) + "...",
+      related_id: data.related_id
+    });
+    
     const supabase = await createSupabaseServerClient(true);
     
-    const { error } = await supabase
+    const { data: insertedData, error } = await supabase
       .from("notifications")
       .insert({
         user_id: data.user_id,
@@ -36,16 +44,24 @@ export async function createNotification(data: NotificationData): Promise<boolea
         action_url: data.action_url || null,
         action_label: data.action_label || null,
         priority: data.priority || "normal",
-      });
+      })
+      .select()
+      .single();
 
     if (error) {
-      console.error("[createNotification] Error:", error);
+      console.error("[createNotification] ❌ Error creating notification:", error);
+      console.error("[createNotification] Error details:", JSON.stringify(error, null, 2));
       return false;
     }
 
+    console.log("[createNotification] ✅ Notification created successfully:", {
+      id: insertedData?.id,
+      user_id: insertedData?.user_id,
+      notification_type: insertedData?.notification_type
+    });
     return true;
   } catch (err) {
-    console.error("[createNotification] Unexpected error:", err);
+    console.error("[createNotification] ❌ Unexpected error:", err);
     return false;
   }
 }

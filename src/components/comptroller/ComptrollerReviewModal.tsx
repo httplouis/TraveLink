@@ -4,7 +4,7 @@
 import React from "react";
 import { X, DollarSign, Edit2, Check, XCircle, FileText, Calendar, User, MapPin, Building2, Users, Car, UserCog, CheckCircle2 } from "lucide-react";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
-import { useToast } from "@/components/common/ui/ToastProvider.ui";
+import { useToast } from "@/components/common/ui/Toast";
 import ApproverSelectionModal from "@/components/common/ApproverSelectionModal";
 import { NameWithProfile } from "@/components/common/ProfileHoverCard";
 
@@ -49,15 +49,13 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
   const [fullRequest, setFullRequest] = React.useState<any>(null);
   const [loading, setLoading] = React.useState(true);
   const [editingBudget, setEditingBudget] = React.useState(false);
-  const [editedExpenses, setEditedExpenses] = React.useState<Array<{ item: string; amount: number }>>([]);
+  const [editedExpenses, setEditedExpenses] = React.useState<Array<{ item: string; amount: number; description?: string; justification?: string }>>([]);
   const [comptrollerNotes, setComptrollerNotes] = React.useState("");
   const [signature, setSignature] = React.useState<string | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
   const [showRejectConfirm, setShowRejectConfirm] = React.useState(false);
   const [showApproverSelection, setShowApproverSelection] = React.useState(false);
   const [approverOptions, setApproverOptions] = React.useState<any[]>([]);
-  const [sendToRequester, setSendToRequester] = React.useState(false);
-  const [paymentConfirmed, setPaymentConfirmed] = React.useState(false);
   const [nextApproverId, setNextApproverId] = React.useState<string | null>(null);
   const [nextApproverRole, setNextApproverRole] = React.useState<string | null>(null);
   const [comptrollerProfile, setComptrollerProfile] = React.useState<any>(null);
@@ -73,6 +71,57 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
     loadComptrollerProfile();
   }, [request.id]);
 
+  // Ensure expense breakdown is initialized even if API fails - RUN IMMEDIATELY
+  React.useEffect(() => {
+    // If editedExpenses is empty but we have a budget, initialize it
+    // Don't wait for loading to finish - initialize immediately if we have request prop data
+    if (editedExpenses.length === 0) {
+      const req = fullRequest || request;
+      const budgetToUse = req?.comptroller_edited_budget || req?.total_budget || 0;
+      
+      if (budgetToUse > 0) {
+        console.log("[ComptrollerReviewModal] ⚠️ editedExpenses is empty but budget exists, initializing immediately...", budgetToUse);
+        // Parse expense_breakdown if it exists
+        let expenseBreakdown = req?.expense_breakdown;
+        if (typeof expenseBreakdown === 'string') {
+          try {
+            expenseBreakdown = JSON.parse(expenseBreakdown);
+          } catch (e) {
+            expenseBreakdown = null;
+          }
+        }
+        
+        if (expenseBreakdown && Array.isArray(expenseBreakdown) && expenseBreakdown.length > 0) {
+          const validExpenses = expenseBreakdown
+            .filter((exp: any) => exp && (exp.item || exp.description || exp.label))
+            .map((exp: any) => ({
+              item: exp.item || exp.label || exp.description || "Travel Expenses",
+              amount: exp.amount || 0,
+              description: exp.description || exp.item || null
+            }));
+          if (validExpenses.length > 0) {
+            console.log("[ComptrollerReviewModal] ✅ Setting expenses from expense_breakdown in useEffect:", validExpenses);
+            setEditedExpenses(validExpenses);
+            const total = validExpenses.reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0);
+            setTotalCost(total || budgetToUse);
+            return;
+          }
+        }
+        
+        // Create default breakdown - ALWAYS create if budget exists
+        const expenses = [
+          { item: "Food", amount: Math.round(budgetToUse * 0.25), description: "Meals" },
+          { item: "Transportation", amount: Math.round(budgetToUse * 0.35), description: "Travel costs" },
+          { item: "Accommodation", amount: Math.round(budgetToUse * 0.25), description: "Lodging" },
+          { item: "Other", amount: budgetToUse - Math.round(budgetToUse * 0.25) - Math.round(budgetToUse * 0.35) - Math.round(budgetToUse * 0.25), description: "Miscellaneous" }
+        ];
+        console.log("[ComptrollerReviewModal] ✅ Setting default expenses in useEffect:", expenses);
+        setEditedExpenses(expenses);
+        setTotalCost(budgetToUse);
+      }
+    }
+  }, [fullRequest, request, editedExpenses.length]); // Removed loading dependency - initialize immediately
+
   const loadComptrollerProfile = async () => {
     try {
       const meRes = await fetch("/api/profile");
@@ -87,117 +136,235 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
 
   const loadFullRequest = async () => {
     try {
-      const res = await fetch(`/api/requests/${request.id}`);
+      setLoading(true);
+      console.log("[ComptrollerReviewModal] Loading request:", request.id);
+      
+      const res = await fetch(`/api/requests/${request.id}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+        },
+      });
+      
+      if (!res.ok) {
+        console.error("[ComptrollerReviewModal] API response not OK:", res.status, res.statusText);
+        throw new Error(`Failed to load request: ${res.status} ${res.statusText}`);
+      }
+      
       const json = await res.json();
       
-      if (json.ok && json.data) {
-        setFullRequest(json.data);
-        const req = json.data;
-        
-        // Parse expense_breakdown if it's a string (JSONB from database)
-        let expenseBreakdown = req.expense_breakdown;
-        if (typeof expenseBreakdown === 'string') {
-          try {
-            expenseBreakdown = JSON.parse(expenseBreakdown);
-          } catch (e) {
-            console.error("[ComptrollerReviewModal] Failed to parse expense_breakdown:", e);
-            expenseBreakdown = null;
-          }
+      if (!json.ok || !json.data) {
+        console.error("[ComptrollerReviewModal] API returned error:", json.error || "Unknown error");
+        throw new Error(json.error || "Failed to load request data");
+      }
+      
+      setFullRequest(json.data);
+      const req = json.data;
+      
+      console.log("[ComptrollerReviewModal] Request loaded:", {
+        id: req.id,
+        request_number: req.request_number,
+        total_budget: req.total_budget,
+        comptroller_edited_budget: req.comptroller_edited_budget,
+        has_expense_breakdown: !!req.expense_breakdown,
+        expense_breakdown_type: typeof req.expense_breakdown,
+        expense_breakdown_value: req.expense_breakdown,
+      });
+      
+      // Parse expense_breakdown if it's a string (JSONB from database)
+      let expenseBreakdown = req.expense_breakdown;
+      if (typeof expenseBreakdown === 'string') {
+        try {
+          expenseBreakdown = JSON.parse(expenseBreakdown);
+          console.log("[ComptrollerReviewModal] Parsed expense_breakdown from string");
+        } catch (e) {
+          console.error("[ComptrollerReviewModal] Failed to parse expense_breakdown:", e);
+          expenseBreakdown = null;
         }
+      }
+      
+      // Initialize edited expenses from original - similar to VP modal
+      // Use comptroller_edited_budget if available, otherwise use total_budget
+      const budgetToUse = req.comptroller_edited_budget || req.total_budget || 0;
+      
+      if (expenseBreakdown && Array.isArray(expenseBreakdown) && expenseBreakdown.length > 0) {
+        console.log("[ComptrollerReviewModal] Found expense_breakdown:", expenseBreakdown);
+        // Include ALL expenses from breakdown - show them all with their labels
+        const validExpenses = expenseBreakdown
+          .filter((exp: any) => exp && (exp.item || exp.description || exp.label))
+          .map((exp: any) => ({
+            item: exp.item || exp.label || exp.description || "Travel Expenses",
+            amount: exp.amount || 0,
+            description: exp.description || exp.item || null,
+            justification: exp.justification || exp.budget_justification || null
+          }));
         
-        // Initialize edited expenses from original
-        if (expenseBreakdown && Array.isArray(expenseBreakdown) && expenseBreakdown.length > 0) {
-          console.log("[ComptrollerReviewModal] Found expense_breakdown:", expenseBreakdown);
-          const validExpenses = expenseBreakdown
-            .filter((exp: any) => exp && (exp.amount > 0 || exp.item || exp.description))
-            .map((exp: any) => ({
-              item: exp.item || exp.description || "Travel Expenses",
-              amount: exp.amount || 0,
-              description: exp.description || null
-            }));
-          
-          if (validExpenses.length > 0) {
-            setEditedExpenses(validExpenses);
-            const total = validExpenses.reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0);
-            setTotalCost(total || req.total_budget || 0);
-          } else {
-            // If expense_breakdown exists but all amounts are 0, create from total_budget
-            if (req.total_budget && req.total_budget > 0) {
-              setEditedExpenses([{ item: "Travel Expenses", amount: req.total_budget }]);
-              setTotalCost(req.total_budget);
-            } else {
-              setEditedExpenses([]);
-              setTotalCost(0);
-            }
-          }
+        if (validExpenses.length > 0) {
+          console.log("[ComptrollerReviewModal] Setting expenses from expense_breakdown:", validExpenses);
+          setEditedExpenses(validExpenses);
+          const total = validExpenses.reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0);
+          setTotalCost(total || budgetToUse);
+          console.log("[ComptrollerReviewModal] Set expenses from expense_breakdown:", validExpenses.length, "items, total:", total);
         } else {
-          console.log("[ComptrollerReviewModal] No expense_breakdown found, using total_budget:", req.total_budget);
-          // ALWAYS create at least one expense item if total_budget > 0
-          if (req.total_budget && req.total_budget > 0) {
-            const expenses: Array<{ item: string; amount: number }> = [];
-            
-            // Check if there are any hints in the request data
-            if (req.needs_rental || req.vehicle_mode === 'rent') {
-              expenses.push({ item: "Vehicle Rental", amount: Math.round(req.total_budget * 0.4) });
-            }
-            if (req.travel_start_date && req.travel_end_date) {
-              const startDate = new Date(req.travel_start_date);
-              const endDate = new Date(req.travel_end_date);
-              const days = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-              if (days > 1) {
-                expenses.push({ item: "Accommodation", amount: Math.round(req.total_budget * 0.3) });
-              }
-            }
-            
-            // Calculate remaining amount
-            const allocated = expenses.reduce((sum, exp) => sum + exp.amount, 0);
-            const remaining = req.total_budget - allocated;
-            
-            // Always add remaining amount as "Travel Expenses" or "Other Expenses"
-            if (remaining > 0) {
-              expenses.push({ item: "Travel Expenses", amount: remaining });
-            } else if (expenses.length === 0) {
-              // If no hints, just show total budget as a single item
-              expenses.push({ item: "Travel Expenses", amount: req.total_budget });
-            }
-            
-            console.log("[ComptrollerReviewModal] Created expenses from total_budget:", expenses);
-            setEditedExpenses(expenses);
-            setTotalCost(req.total_budget);
+          // If expense_breakdown exists but no valid items, create breakdown from total_budget
+          if (budgetToUse > 0) {
+            const defaultExpenses = [
+              { item: "Food", amount: Math.round(budgetToUse * 0.3), description: "Meals" },
+              { item: "Transportation", amount: Math.round(budgetToUse * 0.4), description: "Travel costs" },
+              { item: "Other", amount: budgetToUse - Math.round(budgetToUse * 0.3) - Math.round(budgetToUse * 0.4), description: "Miscellaneous" }
+            ];
+            setEditedExpenses(defaultExpenses);
+            setTotalCost(budgetToUse);
+            console.log("[ComptrollerReviewModal] Created default expense breakdown from total_budget:", defaultExpenses);
           } else {
             setEditedExpenses([]);
             setTotalCost(0);
+            console.log("[ComptrollerReviewModal] No expenses to display");
           }
         }
-
-        // Load preferred driver
-        if (req.preferred_driver_id) {
-          try {
-            const driverRes = await fetch(`/api/users/${req.preferred_driver_id}`);
-            const driverData = await driverRes.json();
-            if (driverData.ok && driverData.data) {
-              setPreferredDriverName(driverData.data.name || "Unknown Driver");
-            }
-          } catch (err) {
-            console.error("[ComptrollerReviewModal] Failed to load driver:", err);
+      } else {
+        console.log("[ComptrollerReviewModal] No expense_breakdown found, reconstructing from total_budget:", budgetToUse);
+        // ALWAYS create expense breakdown items if total_budget > 0
+        // Show common expense categories even if breakdown doesn't exist
+        if (budgetToUse > 0) {
+          const expenses: Array<{ item: string; amount: number; description?: string }> = [];
+          
+          // Always show Food (common expense)
+          const foodAmount = Math.round(budgetToUse * 0.25);
+          expenses.push({ item: "Food", amount: foodAmount, description: "Meals" });
+          
+          // Check if there are any hints in the request data
+          if (req.needs_rental || req.vehicle_mode === 'rent') {
+            expenses.push({ item: "Transportation", amount: Math.round(budgetToUse * 0.35), description: "Vehicle rental" });
           }
-        }
-
-        // Load preferred vehicle
-        if (req.preferred_vehicle_id) {
-          try {
-            const vehicleRes = await fetch(`/api/vehicles/${req.preferred_vehicle_id}`);
-            const vehicleData = await vehicleRes.json();
-            if (vehicleData.ok && vehicleData.data) {
-              setPreferredVehicleName(vehicleData.data.name || vehicleData.data.plate_number || "Unknown Vehicle");
+          
+          if (req.travel_start_date && req.travel_end_date) {
+            const startDate = new Date(req.travel_start_date);
+            const endDate = new Date(req.travel_end_date);
+            const days = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+            if (days > 1) {
+              expenses.push({ item: "Accommodation", amount: Math.round(budgetToUse * 0.25), description: "Lodging" });
             }
-          } catch (err) {
-            console.error("[ComptrollerReviewModal] Failed to load vehicle:", err);
           }
+          
+          // Calculate remaining amount
+          const allocated = expenses.reduce((sum, exp) => sum + exp.amount, 0);
+          const remaining = budgetToUse - allocated;
+          
+          // Add remaining amount as "Other Expenses" if positive
+          if (remaining > 0) {
+            expenses.push({ item: "Other", amount: remaining, description: "Miscellaneous expenses" });
+          } else if (expenses.length === 0) {
+            // If no hints, split budget into common categories
+            expenses.push({ item: "Food", amount: Math.round(budgetToUse * 0.3), description: "Meals" });
+            expenses.push({ item: "Transportation", amount: Math.round(budgetToUse * 0.4), description: "Travel costs" });
+            expenses.push({ item: "Other", amount: budgetToUse - Math.round(budgetToUse * 0.3) - Math.round(budgetToUse * 0.4), description: "Miscellaneous" });
+          }
+          
+          console.log("[ComptrollerReviewModal] Created expense breakdown from total_budget:", expenses);
+          setEditedExpenses(expenses);
+          setTotalCost(budgetToUse);
+          console.log("[ComptrollerReviewModal] ✅ Set editedExpenses:", expenses.length, "items");
+        } else {
+          setEditedExpenses([]);
+          setTotalCost(0);
+          console.log("[ComptrollerReviewModal] No budget specified");
         }
       }
-    } catch (err) {
-      console.error("Failed to load request:", err);
+      
+      // Debug: Log final state
+      console.log("[ComptrollerReviewModal] Final state after initialization:", {
+        editedExpensesCount: editedExpenses.length,
+        totalCost,
+        budgetToUse,
+        hasExpenseBreakdown: !!expenseBreakdown
+      });
+
+      // Load preferred driver
+      if (req.preferred_driver_id) {
+        try {
+          const driverRes = await fetch(`/api/users/${req.preferred_driver_id}`);
+          const driverData = await driverRes.json();
+          if (driverData.ok && driverData.data) {
+            setPreferredDriverName(driverData.data.name || "Unknown Driver");
+          }
+        } catch (err) {
+          console.error("[ComptrollerReviewModal] Failed to load driver:", err);
+        }
+      }
+
+      // Load preferred vehicle
+      if (req.preferred_vehicle_id) {
+        try {
+          const vehicleRes = await fetch(`/api/vehicles/${req.preferred_vehicle_id}`);
+          const vehicleData = await vehicleRes.json();
+          if (vehicleData.ok && vehicleData.data) {
+            setPreferredVehicleName(vehicleData.data.name || vehicleData.data.plate_number || "Unknown Vehicle");
+          }
+        } catch (err) {
+          console.error("[ComptrollerReviewModal] Failed to load vehicle:", err);
+        }
+      }
+    } catch (err: any) {
+      console.error("[ComptrollerReviewModal] Failed to load request:", err);
+      // Don't show toast error - just use request prop data
+      // Still set fullRequest to request prop so modal can still display
+      setFullRequest(request);
+      
+      // Even if API fails, ALWAYS initialize expense breakdown from request prop
+      const req = request;
+      const budgetToUse = req?.comptroller_edited_budget || req?.total_budget || 0;
+      
+      console.log("[ComptrollerReviewModal] Error handler - initializing expenses from request prop, budget:", budgetToUse);
+      
+      // Parse expense_breakdown if it exists
+      let expenseBreakdown = req?.expense_breakdown;
+      if (typeof expenseBreakdown === 'string') {
+        try {
+          expenseBreakdown = JSON.parse(expenseBreakdown);
+        } catch (e) {
+          expenseBreakdown = null;
+        }
+      }
+      
+      // Initialize expenses from breakdown or create default - ALWAYS create if budget > 0
+      if (expenseBreakdown && Array.isArray(expenseBreakdown) && expenseBreakdown.length > 0) {
+        const validExpenses = expenseBreakdown
+          .filter((exp: any) => exp && (exp.item || exp.description || exp.label))
+          .map((exp: any) => ({
+            item: exp.item || exp.label || exp.description || "Travel Expenses",
+            amount: exp.amount || 0,
+            description: exp.description || exp.item || null,
+            justification: exp.justification || exp.budget_justification || null
+          }));
+        if (validExpenses.length > 0) {
+          console.log("[ComptrollerReviewModal] ✅ Setting expenses from expense_breakdown:", validExpenses);
+          setEditedExpenses(validExpenses);
+          const total = validExpenses.reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0);
+          setTotalCost(total || budgetToUse);
+        } else if (budgetToUse > 0) {
+          // Create default breakdown
+          const defaultExpenses = [
+            { item: "Food", amount: Math.round(budgetToUse * 0.3), description: "Meals" },
+            { item: "Transportation", amount: Math.round(budgetToUse * 0.4), description: "Travel costs" },
+            { item: "Other", amount: budgetToUse - Math.round(budgetToUse * 0.3) - Math.round(budgetToUse * 0.4), description: "Miscellaneous" }
+          ];
+          console.log("[ComptrollerReviewModal] ✅ Setting default expenses:", defaultExpenses);
+          setEditedExpenses(defaultExpenses);
+          setTotalCost(budgetToUse);
+        }
+      } else if (budgetToUse > 0) {
+        // ALWAYS create default breakdown from total_budget if no breakdown exists
+        const expenses = [
+          { item: "Food", amount: Math.round(budgetToUse * 0.25), description: "Meals" },
+          { item: "Transportation", amount: Math.round(budgetToUse * 0.35), description: "Travel costs" },
+          { item: "Accommodation", amount: Math.round(budgetToUse * 0.25), description: "Lodging" },
+          { item: "Other", amount: budgetToUse - Math.round(budgetToUse * 0.25) - Math.round(budgetToUse * 0.35) - Math.round(budgetToUse * 0.25), description: "Miscellaneous" }
+        ];
+        console.log("[ComptrollerReviewModal] ✅ Setting default expenses from budget:", expenses);
+        setEditedExpenses(expenses);
+        setTotalCost(budgetToUse);
+      }
     } finally {
       setLoading(false);
     }
@@ -212,9 +379,25 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
     });
   };
 
+  const handleJustificationEdit = (index: number, justification: string) => {
+    setEditedExpenses(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], justification };
+      return updated;
+    });
+  };
+
   const calculatedTotal = React.useMemo(() => {
-    return editedExpenses.reduce((sum, exp) => sum + exp.amount, 0);
+    return editedExpenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
   }, [editedExpenses]);
+
+  // Update totalCost when calculatedTotal changes (but not in useMemo to avoid infinite loop)
+  React.useEffect(() => {
+    if (calculatedTotal !== totalCost) {
+      setTotalCost(calculatedTotal);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calculatedTotal]);
 
   const doApprove = async () => {
     console.log("[Comptroller] ========== APPROVE BUTTON CLICKED ==========");
@@ -222,7 +405,7 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
     
     if (!signature) {
       console.log("[Comptroller] No signature - showing error toast");
-      toast({ message: "Please provide your signature", kind: "error" });
+      toast.error("Signature Required", "Please provide your signature");
       return;
     }
 
@@ -300,7 +483,7 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
     }
   };
 
-  const proceedWithApproval = async (selectedApproverId?: string | null, selectedApproverRole?: string | null, returnToRequester?: boolean, returnReason?: string) => {
+  const proceedWithApproval = async (selectedApproverId?: string | null, selectedApproverRole?: string | null) => {
     console.log("[Comptroller] Starting approval process...");
     setSubmitting(true);
     try {
@@ -313,8 +496,6 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
           signature,
           notes: comptrollerNotes,
           editedBudget: calculatedTotal !== request.total_budget ? calculatedTotal : null,
-          sendToRequester: returnToRequester || false,
-          paymentConfirmed: paymentConfirmed || false,
           nextApproverId: selectedApproverId || nextApproverId,
           nextApproverRole: selectedApproverRole || nextApproverRole || "hr",
         }),
@@ -326,10 +507,7 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
       
       if (json.ok) {
         console.log("[Comptroller Approve] Showing success toast...");
-        const message = returnToRequester 
-          ? "✅ Request sent to requester for payment confirmation"
-          : "✅ Request approved and sent to HR for review";
-        toast({ message, kind: "success" });
+        toast.success("Request Approved", "✅ Request approved and sent to HR for review");
         // Delay to show toast before closing (increased to 1500ms to ensure visibility)
         console.log("[Comptroller Approve] Closing modal in 1500ms...");
         setTimeout(() => {
@@ -338,11 +516,11 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
         }, 1500);
       } else {
         console.log("[Comptroller Approve] Showing error toast:", json.error);
-        toast({ message: json.error || "Failed to approve request", kind: "error" });
+        toast.error("Approval Failed", json.error || "Failed to approve request");
       }
     } catch (err) {
       console.error("Approve error:", err);
-      toast({ message: "Failed to approve request. Please try again.", kind: "error" });
+      toast.error("Error", "Failed to approve request. Please try again.");
     } finally {
       setSubmitting(false);
       setShowApproverSelection(false);
@@ -351,7 +529,7 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
 
   const handleReject = async () => {
     if (!comptrollerNotes.trim()) {
-      toast({ message: "Please provide a reason for rejection", kind: "error" });
+      toast.error("Reason Required", "Please provide a reason for rejection");
       return;
     }
 
@@ -376,7 +554,7 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
       
       if (json.ok) {
         console.log("[Comptroller Reject] Showing info toast...");
-        toast({ message: "❌ Request rejected and sent back to user", kind: "info" });
+        toast.info("Request Rejected", "Request rejected and sent back to user");
         // Delay to show toast before closing
         console.log("[Comptroller Reject] Closing modal in 1500ms...");
         setTimeout(() => {
@@ -384,11 +562,11 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
           onClose();
         }, 1500);
       } else {
-        toast({ message: json.error || "Failed to reject request", kind: "error" });
+        toast.error("Rejection Failed", json.error || "Failed to reject request");
       }
     } catch (err) {
       console.error("Reject error:", err);
-      toast({ message: "Failed to reject request. Please try again.", kind: "error" });
+      toast.error("Error", "Failed to reject request. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -695,34 +873,41 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
               </section>
             )}
 
-            {/* Requester Signature */}
+            {/* Requester Signature - Same style as Previous Approvals */}
             <section className="rounded-lg bg-slate-50 border border-slate-200 p-4">
               <p className="text-xs font-semibold uppercase text-slate-700 mb-3">
                 Requester's Signature
               </p>
               {(t?.requester_signature) ? (
-                <div className="bg-white rounded-lg border border-slate-200 p-4">
-                  <img
-                    src={t.requester_signature}
-                    alt="Requester signature"
-                    className="h-[100px] w-full object-contain"
-                  />
-                  <p className="text-center text-xs text-slate-600 mt-2 font-medium">
-                    Signed by: {t.requester_name || "Requester"}
-                  </p>
-                  {t.requester_signed_at && (
-                    <p className="text-center text-xs text-slate-500 mt-1">
-                      {new Date(t.requester_signed_at).toLocaleString('en-US', { 
-                        year: 'numeric', 
-                        month: 'short', 
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        hour12: true,
-                        timeZone: 'Asia/Manila'
-                      })}
+                <div className="bg-white rounded-lg border border-slate-200 p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium text-slate-900">
+                      Requester Signed
                     </p>
-                  )}
+                    {(t.requester_signed_at || t.created_at) && (
+                      <span className="text-xs text-green-600 font-medium">
+                        {new Date(t.requester_signed_at || t.created_at).toLocaleString('en-US', { 
+                          year: 'numeric', 
+                          month: 'short', 
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: true,
+                          timeZone: 'Asia/Manila'
+                        })}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-600">
+                    By: {t.requester_name || "Requester"}
+                  </p>
+                  <div className="mt-2 pt-2 border-t border-slate-100">
+                    <img
+                      src={t.requester_signature}
+                      alt="Requester signature"
+                      className="h-16 w-full object-contain"
+                    />
+                  </div>
                 </div>
               ) : (
                 <div className="flex items-center justify-center gap-2 text-sm text-slate-600 bg-white rounded-lg border border-slate-200 p-4">
@@ -883,7 +1068,7 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                   <DollarSign className="h-5 w-5 text-slate-700" />
                   <h3 className="text-sm font-semibold text-slate-900">Budget Breakdown</h3>
                 </div>
-                {!editingBudget && (
+                {!editingBudget && (fullRequest?.total_budget || fullRequest?.comptroller_edited_budget || editedExpenses.length > 0) && (
                   <button
                     onClick={() => setEditingBudget(true)}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-[#7A0010] text-white hover:bg-[#5e000d] rounded-lg transition-colors text-xs font-semibold shadow-sm"
@@ -894,80 +1079,149 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                 )}
               </div>
 
-              {editedExpenses.length > 0 ? (
+              {(() => {
+                const hasExpenses = editedExpenses.length > 0;
+                const hasBudget = fullRequest?.total_budget || fullRequest?.comptroller_edited_budget || request?.total_budget;
+                console.log("[ComptrollerReviewModal] Budget display check:", {
+                  editedExpensesLength: editedExpenses.length,
+                  hasExpenses,
+                  hasBudget,
+                  fullRequestBudget: fullRequest?.total_budget,
+                  requestBudget: request?.total_budget,
+                  expenses: editedExpenses
+                });
+                return hasExpenses || hasBudget;
+              })() ? (
                 <>
-                  <div className="space-y-2 mb-3">
-                    {editedExpenses.map((expense, index) => {
-                      const label = expense.item === "Other" && (expense as any).description 
-                        ? (expense as any).description 
-                        : expense.item || "Unknown";
-                      
-                      return expense.amount > 0 && (
-                        <div key={index} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
-                          <span className="text-sm text-slate-600 font-medium">{label}</span>
-                          {editingBudget ? (
-                            <input
-                              type="number"
-                              value={expense.amount}
-                              onChange={(e) => handleExpenseEdit(index, e.target.value)}
-                              className="w-32 px-3 py-1.5 border-2 border-[#7A0010]/20 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] text-sm"
-                            />
-                          ) : (
-                            <span className="text-sm font-semibold text-slate-900">{peso(expense.amount)}</span>
-                          )}
-                        </div>
-                      );
-                    })}
+                  <div className="space-y-3 mb-3">
+                    {editedExpenses.length > 0 ? (
+                      editedExpenses
+                        .map((expense, index) => {
+                          // Use item name as label, or description if available
+                          const label = expense.item || expense.description || "Unknown";
+                          const displayLabel = expense.item === "Other" && (expense as any).description 
+                            ? (expense as any).description 
+                            : label;
+                          
+                          // ALWAYS show items - don't filter out 0 amounts, show them all
+                          return (
+                            <div key={index} className="border-b border-slate-100 last:border-0 pb-3 last:pb-0">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-sm text-slate-600 font-medium">{displayLabel}</span>
+                                {editingBudget ? (
+                                  <input
+                                    type="number"
+                                    value={expense.amount || 0}
+                                    onChange={(e) => handleExpenseEdit(index, e.target.value)}
+                                    className="w-32 px-3 py-1.5 border-2 border-[#7A0010]/20 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] text-sm"
+                                    min="0"
+                                    step="0.01"
+                                  />
+                                ) : (
+                                  <span className="text-sm font-semibold text-slate-900">{peso(expense.amount || 0)}</span>
+                                )}
+                              </div>
+                              {editingBudget && (
+                                <div className="mt-2">
+                                  <textarea
+                                    value={expense.justification || ""}
+                                    onChange={(e) => handleJustificationEdit(index, e.target.value)}
+                                    placeholder={`Justification for ${displayLabel} (optional)`}
+                                    className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] text-sm resize-none"
+                                    rows={2}
+                                  />
+                                </div>
+                              )}
+                              {!editingBudget && expense.justification && (
+                                <div className="mt-1.5">
+                                  <p className="text-xs text-slate-500 italic">"{expense.justification}"</p>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
+                    ) : (
+                      // Fallback: If no expenses but has budget, show as single item (shouldn't happen after our fix)
+                      <div className="flex items-center justify-between py-2 border-b border-slate-100">
+                        <span className="text-sm text-slate-600 font-medium">Total Budget</span>
+                        {editingBudget ? (
+                          <input
+                            type="number"
+                            value={calculatedTotal || (fullRequest?.comptroller_edited_budget || fullRequest?.total_budget || 0)}
+                            onChange={(e) => {
+                              const amount = parseFloat(e.target.value) || 0;
+                              setEditedExpenses([{ item: "Travel Expenses", amount }]);
+                              setTotalCost(amount);
+                            }}
+                            className="w-32 px-3 py-1.5 border-2 border-[#7A0010]/20 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] text-sm"
+                            min="0"
+                            step="0.01"
+                          />
+                        ) : (
+                          <span className="text-sm font-semibold text-slate-900">
+                            {peso(fullRequest?.comptroller_edited_budget || fullRequest?.total_budget || 0)}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                   
-                  <div className="pt-3 border-t-2 border-slate-300">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-bold text-slate-900">TOTAL BUDGET</span>
-                      <div className="text-right">
-                        {calculatedTotal !== (t?.total_budget || request.total_budget) && (
-                          <div className="text-sm text-slate-500 line-through mb-1">
-                            {peso(t?.total_budget || request.total_budget)}
+                  {(calculatedTotal > 0 || (fullRequest?.total_budget || fullRequest?.comptroller_edited_budget)) && (
+                    <div className="pt-3 border-t-2 border-slate-300">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-bold text-slate-900">TOTAL BUDGET</span>
+                        <div className="text-right">
+                          {calculatedTotal > 0 && calculatedTotal !== (fullRequest?.total_budget || 0) && (
+                            <div className="text-sm text-slate-500 line-through mb-1">
+                              {peso(fullRequest?.total_budget || 0)}
+                            </div>
+                          )}
+                          <div className={`text-lg font-bold ${calculatedTotal > 0 && calculatedTotal !== (fullRequest?.total_budget || 0) ? 'text-[#7A0010]' : 'text-slate-900'}`}>
+                            {peso(calculatedTotal || fullRequest?.comptroller_edited_budget || fullRequest?.total_budget || 0)}
                           </div>
-                        )}
-                        <div className={`text-lg font-bold ${calculatedTotal !== (t?.total_budget || request.total_budget) ? 'text-[#7A0010]' : 'text-slate-900'}`}>
-                          {peso(calculatedTotal)}
                         </div>
                       </div>
                     </div>
-                  </div>
+                  )}
 
                   {editingBudget && (
-                    <div className="flex gap-2 mt-4">
-                      <button
-                        onClick={async () => {
-                          // Save budget edits without approving
-                          try {
-                            setSubmitting(true);
-                            const res = await fetch("/api/comptroller/action", {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({
-                                requestId: request.id,
-                                action: "edit_budget",
-                                editedBudget: calculatedTotal,
-                                expense_breakdown: editedExpenses, // Send updated expense breakdown
-                                notes: comptrollerNotes || "Budget edited by comptroller",
-                              }),
-                            });
+                    <div className="mt-4">
+                      <div className="flex gap-2">
+                        <button
+                          onClick={async () => {
+                            // Save budget edits without approving
+                            try {
+                              setSubmitting(true);
+                              const res = await fetch("/api/comptroller/action", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                  requestId: request.id,
+                                  action: "edit_budget",
+                                  editedBudget: calculatedTotal,
+                                  expense_breakdown: editedExpenses.map(exp => ({
+                                    item: exp.item,
+                                    amount: exp.amount,
+                                    description: exp.description,
+                                    justification: exp.justification || null
+                                  })), // Send updated expense breakdown with justifications
+                                  notes: comptrollerNotes || "Budget edited by comptroller",
+                                }),
+                              });
 
                             const json = await res.json();
                             
                             if (json.ok) {
-                              toast({ message: "✅ Budget updated successfully", kind: "success" });
+                              toast.success("Budget Updated", "Budget updated successfully");
                               setEditingBudget(false);
                               // Reload request to show updated budget
                               await loadFullRequest();
                             } else {
-                              toast({ message: json.error || "Failed to update budget", kind: "error" });
+                              toast.error("Update Failed", json.error || "Failed to update budget");
                             }
                           } catch (err) {
                             console.error("Save budget error:", err);
-                            toast({ message: "Failed to save budget. Please try again.", kind: "error" });
+                            toast.error("Save Failed", "Failed to save budget. Please try again.");
                           } finally {
                             setSubmitting(false);
                           }
@@ -981,12 +1235,17 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                       <button
                         onClick={() => {
                           // Cancel editing - revert to original
-                          setEditedExpenses(
-                            (fullRequest || request).expense_breakdown?.map((exp: any) => ({
-                              item: exp.item,
-                              amount: exp.amount
-                            })) || []
-                          );
+                          const originalExpenses = (fullRequest || request).expense_breakdown;
+                          if (originalExpenses && Array.isArray(originalExpenses)) {
+                            setEditedExpenses(
+                              originalExpenses.map((exp: any) => ({
+                                item: exp.item || exp.description || "Travel Expenses",
+                                amount: exp.amount || 0,
+                                description: exp.description || null,
+                                justification: exp.justification || exp.budget_justification || null
+                              }))
+                            );
+                          }
                           setEditingBudget(false);
                         }}
                         disabled={submitting}
@@ -995,26 +1254,9 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                         <XCircle className="h-4 w-4" />
                         Cancel
                       </button>
-                    </div>
-                  )}
-                </>
-              ) : (t?.total_budget && t.total_budget > 0) ? (
-                // If no expense breakdown but has total_budget, show it as a single item
-                <>
-                  <div className="space-y-2 mb-3">
-                    <div className="flex items-center justify-between py-2 border-b border-slate-100">
-                      <span className="text-sm text-slate-600 font-medium">Travel Expenses</span>
-                      <span className="text-sm font-semibold text-slate-900">{peso(t.total_budget)}</span>
-                    </div>
-                  </div>
-                  <div className="pt-3 border-t-2 border-slate-300">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-bold text-slate-900">TOTAL BUDGET</span>
-                      <div className="text-lg font-bold text-slate-900">
-                        {peso(t.total_budget)}
                       </div>
                     </div>
-                  </div>
+                  )}
                 </>
               ) : (
                 <div className="py-4 text-center">
@@ -1095,6 +1337,10 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                   onClear={() => {
                     setSignature(null);
                   }}
+                  onUseSaved={(dataUrl) => {
+                    setSignature(dataUrl);
+                  }}
+                  showUseSavedButton={true}
                   hideSaveButton
                 />
               </div>
@@ -1110,10 +1356,10 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
               <div className="mb-2 flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => setComptrollerNotes("Budget verified. Payment confirmed. Proceed to HR.")}
+                  onClick={() => setComptrollerNotes("Budget verified. Proceed to HR.")}
                   className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
                 >
-                  ✓ Payment Confirmed
+                  ✓ Budget Verified
                 </button>
                 <button
                   type="button"
@@ -1124,10 +1370,10 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setComptrollerNotes("Please confirm payment before proceeding. Return to requester for payment confirmation.")}
+                  onClick={() => setComptrollerNotes("Budget requires revision. Please review and resubmit with corrected amounts.")}
                   className="px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
                 >
-                  ⏳ Payment Pending
+                  ⏳ Needs Revision
                 </button>
                 <button
                   type="button"
@@ -1181,19 +1427,16 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
         <ApproverSelectionModal
           isOpen={showApproverSelection}
           onClose={() => setShowApproverSelection(false)}
-          onSelect={(approverId, approverRole, returnReason) => {
-            const returnToRequester = approverRole === "requester";
-            proceedWithApproval(approverId, approverRole, returnToRequester, returnReason);
+          onSelect={(approverId, approverRole) => {
+            proceedWithApproval(approverId, approverRole);
           }}
           title="Select Next Approver"
-          description="Choose where to send this request after approval. You can send to HR or return to requester for payment confirmation."
+          description="Choose where to send this request after approval."
           options={approverOptions}
           currentRole="comptroller"
-          allowReturnToRequester={true}
           requesterId={fullRequest?.requester_id}
           requesterName={fullRequest?.requester_name || request.requester?.name}
           returnReasons={[
-            { value: 'payment_required', label: 'Payment Confirmation Required' },
             { value: 'budget_change', label: 'Budget Change Required' },
             { value: 'other', label: 'Other' }
           ]}

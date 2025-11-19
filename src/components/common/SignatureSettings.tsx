@@ -1,77 +1,37 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useState, useEffect } from "react";
+import SignaturePad from "./inputs/SignaturePad.ui";
+import { CheckCircle2, Upload, X } from "lucide-react";
 
 export default function SignatureSettings() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
   const [signature, setSignature] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [loadingSignature, setLoadingSignature] = useState(true);
 
   useEffect(() => {
-    fetch("/api/settings/signature")
-      .then(res => res.json())
-      .then(data => {
-        if (data.ok && data.data?.signature) {
-          setSignature(data.data.signature);
-        }
-      })
-      .catch(err => console.error("Failed to load signature:", err));
+    loadSignature();
   }, []);
 
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    
-    const rect = canvas.getBoundingClientRect();
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    setIsDrawing(true);
-    ctx.beginPath();
-    ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+  const loadSignature = async () => {
+    try {
+      setLoadingSignature(true);
+      const res = await fetch("/api/settings/signature");
+      const data = await res.json();
+      if (data.ok && data.data?.signature) {
+        setSignature(data.data.signature);
+      }
+    } catch (err) {
+      console.error("Failed to load signature:", err);
+    } finally {
+      setLoadingSignature(false);
+    }
   };
 
-  const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
-    
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    
-    const rect = canvas.getBoundingClientRect();
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
-    ctx.strokeStyle = "#000";
-    ctx.lineWidth = 2;
-    ctx.lineCap = "round";
-    ctx.stroke();
-  };
-
-  const stopDrawing = () => {
-    setIsDrawing(false);
-    setMessage("");
-  };
-
-  const handleClear = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    setMessage("");
-  };
-
-  const handleSave = async () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
+  const handleSave = async (dataURL: string) => {
     setLoading(true);
-    const dataURL = canvas.toDataURL();
+    setMessage("");
 
     try {
       const res = await fetch("/api/settings/signature", {
@@ -84,69 +44,154 @@ export default function SignatureSettings() {
       if (data.ok) {
         setSignature(dataURL);
         setMessage("Signature saved successfully!");
+        setTimeout(() => setMessage(""), 3000);
       } else {
-        setMessage("Failed to save signature");
+        setMessage(data.error || "Failed to save signature");
       }
-    } catch {
-      setMessage("Error saving signature");
+    } catch (err: any) {
+      setMessage("Error saving signature: " + (err.message || "Unknown error"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpload = async (file: File) => {
+    setLoading(true);
+    setMessage("");
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const dataURL = e.target?.result as string;
+        await handleSave(dataURL);
+      };
+      reader.readAsDataURL(file);
+    } catch (err: any) {
+      setMessage("Error uploading signature: " + (err.message || "Unknown error"));
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm("Are you sure you want to delete your saved signature?")) {
+      return;
+    }
+
+    setLoading(true);
+    setMessage("");
+
+    try {
+      const res = await fetch("/api/settings/signature", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ signature: null }),
+      });
+
+      const data = await res.json();
+      if (data.ok) {
+        setSignature(null);
+        setMessage("Signature deleted successfully!");
+        setTimeout(() => setMessage(""), 3000);
+      } else {
+        setMessage(data.error || "Failed to delete signature");
+      }
+    } catch (err: any) {
+      setMessage("Error deleting signature: " + (err.message || "Unknown error"));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div>
         <h3 className="text-lg font-semibold text-slate-900 mb-2">
           Digital Signature
         </h3>
         <p className="text-sm text-slate-600 mb-4">
-          Draw your signature below. This will be automatically applied when you approve requests.
+          Save your signature here. When you need to sign a request, you can use your saved signature instead of signing each time.
         </p>
       </div>
 
-      {signature && (
-        <div className="mb-4">
-          <p className="text-sm font-medium text-slate-700 mb-2">Current Signature:</p>
-          <div className="border rounded-lg p-4 bg-white inline-block">
-            <img src={signature} alt="Current signature" className="h-20" />
+      {loadingSignature ? (
+        <div className="text-center py-8">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-[#7A0010] border-r-transparent"></div>
+          <p className="text-sm text-slate-600 mt-2">Loading signature...</p>
+        </div>
+      ) : signature ? (
+        <div className="space-y-4">
+          <div className="rounded-lg border-2 border-green-200 bg-green-50 p-4">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <CheckCircle2 className="h-5 w-5 text-green-600 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-green-900">Signature Saved</p>
+                  <p className="text-xs text-green-700 mt-1">
+                    Your signature is ready to use. Click "Use Saved Signature" when signing requests.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={handleDelete}
+                disabled={loading}
+                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                title="Delete signature"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           </div>
+
+          <div className="border rounded-lg p-4 bg-white">
+            <p className="text-xs font-medium text-slate-600 mb-2">Current Signature:</p>
+            <div className="border-2 border-slate-200 rounded-lg p-3 bg-slate-50">
+              <img src={signature} alt="Current signature" className="h-24 mx-auto object-contain" />
+            </div>
+          </div>
+
+          <div className="rounded-lg border-2 border-blue-200 bg-blue-50 p-4">
+            <p className="text-sm font-medium text-blue-900 mb-2">Update Your Signature</p>
+            <p className="text-xs text-blue-700 mb-4">
+              Draw a new signature or upload an e-signature image to replace your current one.
+            </p>
+            <SignaturePad
+              height={200}
+              value={null}
+              onSave={handleSave}
+              onClear={() => {}}
+              onUpload={handleUpload}
+              hideSaveButton={false}
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="rounded-lg border-2 border-amber-200 bg-amber-50 p-4">
+            <p className="text-sm font-medium text-amber-900 mb-1">No Signature Saved</p>
+            <p className="text-xs text-amber-700">
+              Create your signature below. You can draw it or upload an e-signature image file.
+            </p>
+          </div>
+
+          <SignaturePad
+            height={200}
+            value={null}
+            onSave={handleSave}
+            onClear={() => {}}
+            onUpload={handleUpload}
+            hideSaveButton={false}
+          />
         </div>
       )}
 
-      <div className="border-2 border-slate-300 rounded-lg bg-white overflow-hidden">
-        <canvas
-          ref={canvasRef}
-          width={600}
-          height={160}
-          className="w-full cursor-crosshair"
-          onMouseDown={startDrawing}
-          onMouseMove={draw}
-          onMouseUp={stopDrawing}
-          onMouseLeave={stopDrawing}
-        />
-      </div>
-
-      <div className="flex gap-3">
-        <button
-          onClick={handleClear}
-          className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200"
-        >
-          Clear
-        </button>
-        <button
-          onClick={handleSave}
-          disabled={loading}
-          className="px-4 py-2 text-sm font-medium text-white bg-[#7A0010] rounded-md hover:bg-[#69000d] disabled:opacity-50"
-        >
-          {loading ? "Saving..." : "Save Signature"}
-        </button>
-      </div>
-
       {message && (
-        <p className={`text-sm ${message.includes("success") ? "text-green-600" : "text-red-600"}`}>
+        <div className={`rounded-lg p-3 text-sm ${
+          message.includes("success") || message.includes("deleted")
+            ? "bg-green-50 text-green-700 border border-green-200"
+            : "bg-red-50 text-red-700 border border-red-200"
+        }`}>
           {message}
-        </p>
+        </div>
       )}
     </div>
   );
