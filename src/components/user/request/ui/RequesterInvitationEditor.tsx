@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { Mail, CheckCircle2, XCircle, Clock, Send, UserPlus, AlertCircle, Copy, Check, X, Search } from "lucide-react";
+import { Mail, CheckCircle2, XCircle, Clock, Send, UserPlus, AlertCircle, Copy, Check, X, Search, RefreshCw } from "lucide-react";
 import { useToast } from "@/components/common/ui/Toast";
 import Modal from "@/components/common/Modal";
 import UserSearchableSelect from "./UserSearchableSelect";
@@ -14,7 +14,7 @@ interface RequesterInvitation {
   department?: string; // Auto-filled from user's department
   department_id?: string; // Department ID
   user_id?: string; // User ID from database
-  status?: 'pending' | 'confirmed' | 'declined';
+  status?: 'pending' | 'confirmed' | 'declined' | 'expired';
   invitationId?: string; // ID from database after sending invitation
   signature?: string; // Base64 signature (if confirmed)
 }
@@ -249,22 +249,61 @@ export default function RequesterInvitationEditor({
 
   // Poll for requester status updates
   const checkRequesterStatus = async () => {
-    if (!requestId || !hasSentInvitations) return;
+    if (!requestId || !hasSentInvitations) {
+      console.log("[RequesterInvitationEditor] ⏭️ Skipping status check:", {
+        requestId,
+        hasSentInvitations,
+      });
+      return;
+    }
 
     try {
-      const response = await fetch(`/api/requesters/status?request_id=${requestId}`);
+      console.log("[RequesterInvitationEditor] 🔍 Checking requester status for request:", requestId);
+      // Add cache-busting parameter to ensure fresh data
+      const response = await fetch(`/api/requesters/status?request_id=${requestId}&_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+        },
+      });
+      
+      if (!response.ok) {
+        console.error("[RequesterInvitationEditor] ❌ Status API error:", {
+          status: response.status,
+          statusText: response.statusText,
+        });
+        return;
+      }
+      
       const data = await response.json();
 
       if (data.ok && data.data) {
+        console.log("[RequesterInvitationEditor] 📊 Status data received:", {
+          count: data.data.length,
+          statuses: data.data.map((d: any) => ({ email: d.email, status: d.status, id: d.id })),
+        });
         // Only update existing requesters - don't add new ones from database
         // This prevents removed requesters from being restored
         const updatedRequesters = requesters
           .map(req => {
-            const updated = data.data.find((d: any) => 
-              d.email === req.email || 
-              d.id === req.invitationId ||
-              (req.invitationId && d.id === req.invitationId)
-            );
+            // Improved matching: case-insensitive email match, or ID match
+            const updated = data.data.find((d: any) => {
+              // Match by invitation ID (most reliable)
+              if (req.invitationId && req.invitationId !== 'auto-confirmed' && d.id === req.invitationId) {
+                console.log(`[RequesterInvitationEditor] ✅ Matched by invitation ID: ${req.invitationId}`);
+                return true;
+              }
+              // Match by email (case-insensitive, trimmed)
+              if (req.email && d.email) {
+                const reqEmail = req.email.toLowerCase().trim();
+                const dEmail = d.email.toLowerCase().trim();
+                if (reqEmail === dEmail) {
+                  console.log(`[RequesterInvitationEditor] ✅ Matched by email: ${reqEmail}`);
+                  return true;
+                }
+              }
+              return false;
+            });
             if (updated) {
               // Create a unique key for this requester (use invitationId or email)
               const requesterKey = updated.id || req.invitationId || req.email || req.id;
@@ -283,13 +322,20 @@ export default function RequesterInvitationEditor({
               }
               
               // Always update with latest data (name, department, signature, etc.)
+              // Prefer database values over local state for confirmed requesters
               return { 
                 ...req, 
                 status: updated.status,
+                // Use database name if available, otherwise keep local
                 name: updated.name || req.name,
+                // Use database department if available, otherwise keep local
                 department: updated.department || req.department,
                 department_id: updated.department_id || req.department_id,
-                signature: updated.signature || req.signature, // Include signature
+                // Use database signature if available (even if null, to clear old signature)
+                // Only keep local signature if database doesn't have one yet
+                signature: updated.status === 'confirmed' 
+                  ? (updated.signature !== undefined ? updated.signature : req.signature)
+                  : (updated.signature || req.signature),
                 invitationId: updated.id || req.invitationId,
               };
             }
@@ -299,9 +345,15 @@ export default function RequesterInvitationEditor({
           // Only if they have an invitationId (were saved to database)
           .filter(req => {
             if (req.invitationId && req.invitationId !== 'auto-confirmed') {
-              const existsInDb = data.data.some((d: any) => 
-                d.id === req.invitationId || d.email === req.email
-              );
+              const existsInDb = data.data.some((d: any) => {
+                // Match by ID
+                if (d.id === req.invitationId) return true;
+                // Match by email (case-insensitive)
+                if (req.email && d.email) {
+                  return req.email.toLowerCase().trim() === d.email.toLowerCase().trim();
+                }
+                return false;
+              });
               // If it was in database but now removed, filter it out
               return existsInDb;
             }
@@ -310,14 +362,42 @@ export default function RequesterInvitationEditor({
           });
 
         // Only update if there are changes (to avoid unnecessary re-renders)
+        // Check for changes in status, invitationId, name, department, or signature
         const hasChanges = updatedRequesters.length !== requesters.length ||
           updatedRequesters.some((req, idx) => {
             const old = requesters[idx];
-            return !old || req.status !== old.status || req.invitationId !== old.invitationId;
+            if (!old) return true;
+            return (
+              req.status !== old.status ||
+              req.invitationId !== old.invitationId ||
+              req.name !== old.name ||
+              req.department !== old.department ||
+              req.signature !== old.signature
+            );
           });
         
         if (hasChanges) {
+          console.log("[RequesterInvitationEditor] 🔄 Status update detected, updating requesters:", {
+            before: requesters.map(r => ({ 
+              email: r.email, 
+              status: r.status, 
+              invitationId: r.invitationId,
+              name: r.name,
+              department: r.department,
+              hasSignature: !!r.signature,
+            })),
+            after: updatedRequesters.map(r => ({ 
+              email: r.email, 
+              status: r.status, 
+              invitationId: r.invitationId,
+              name: r.name,
+              department: r.department,
+              hasSignature: !!r.signature,
+            }))
+          });
           onChange(updatedRequesters);
+        } else {
+          console.log("[RequesterInvitationEditor] ⏭️ No changes detected, skipping update");
         }
       }
     } catch (err) {
@@ -326,12 +406,18 @@ export default function RequesterInvitationEditor({
   };
 
   const startPolling = () => {
-    if (pollingInterval) return; // Already polling
+    if (pollingInterval) {
+      console.log("[RequesterInvitationEditor] ⏭️ Already polling, skipping start");
+      return; // Already polling
+    }
 
-    // Poll every 5 seconds
-    const interval = setInterval(checkRequesterStatus, 5000);
+    // Poll every 3 seconds for faster updates
+    const interval = setInterval(() => {
+      console.log("[RequesterInvitationEditor] 🔄 Polling interval triggered");
+      checkRequesterStatus();
+    }, 3000);
     setPollingInterval(interval);
-    console.log("[RequesterInvitationEditor] ✅ Started polling for requester status updates");
+    console.log("[RequesterInvitationEditor] ✅ Started polling for requester status updates (every 3s)");
   };
 
   const stopPolling = () => {
@@ -392,6 +478,17 @@ export default function RequesterInvitationEditor({
         if (requestId && !pollingInterval) {
           startPolling();
         }
+        // Also do an immediate check after sending invitation
+        if (requestId) {
+          // Check immediately, then again after delays to catch confirmations
+          checkRequesterStatus();
+          setTimeout(() => {
+            checkRequesterStatus();
+          }, 2000); // Check after 2 seconds
+          setTimeout(() => {
+            checkRequesterStatus();
+          }, 5000); // Check after 5 seconds
+        }
         
         if (data.confirmationLink) {
           setLinkToShow({ email: requester.email, link: data.confirmationLink });
@@ -432,6 +529,17 @@ export default function RequesterInvitationEditor({
       if (requestId && !pollingInterval) {
         startPolling();
       }
+      // Also do an immediate check after sending invitations
+      if (requestId) {
+        // Check immediately, then again after delays to catch confirmations
+        checkRequesterStatus();
+        setTimeout(() => {
+          checkRequesterStatus();
+        }, 2000); // Check after 2 seconds
+        setTimeout(() => {
+          checkRequesterStatus();
+        }, 5000); // Check after 5 seconds
+      }
     } catch (error: any) {
       console.error('Failed to send all invitations:', error);
       toast.error("Error", "Some invitations failed to send");
@@ -450,6 +558,9 @@ export default function RequesterInvitationEditor({
   };
 
   const getStatusIcon = (status?: string) => {
+    if (status === 'expired') {
+      return <Clock className="h-3.5 w-3.5 text-amber-600" />;
+    }
     switch (status) {
       case 'confirmed':
         return <CheckCircle2 className="h-4 w-4 text-green-600" />;
@@ -492,15 +603,32 @@ export default function RequesterInvitationEditor({
             </p>
           )}
         </div>
-        <button
-          type="button"
-          onClick={addRequesterSlot}
-          disabled={disabled}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#7A0010] text-white hover:bg-[#5e000d] disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
-        >
-          <UserPlus className="h-3.5 w-3.5" />
-          Add Requester
-        </button>
+        <div className="flex items-center gap-2">
+          {requestId && hasSentInvitations && (
+            <button
+              type="button"
+              onClick={() => {
+                console.log("[RequesterInvitationEditor] 🔄 Manual refresh triggered");
+                checkRequesterStatus();
+              }}
+              disabled={disabled}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+              title="Refresh status"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Refresh
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={addRequesterSlot}
+            disabled={disabled}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#7A0010] text-white hover:bg-[#5e000d] disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+          >
+            <UserPlus className="h-3.5 w-3.5" />
+            Add Requester
+          </button>
+        </div>
       </div>
 
       {/* Requester Slots */}
@@ -561,38 +689,45 @@ export default function RequesterInvitationEditor({
                     </div>
                   )}
 
-                  {/* Send Invitation Button - Don't show if requester is current user (auto-confirmed) */}
+                  {/* Send/Resend Invitation Button - Don't show if requester is current user (auto-confirmed) */}
                   {requester.name && requester.email && 
                    !(currentUserEmail && requester.email.toLowerCase().trim() === currentUserEmail.toLowerCase().trim()) && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!requestId) {
-                          toast.info("Save request first", "Please save the request as draft first, then you can send invitations.");
-                          return;
-                        }
-                        sendInvitation(requester);
-                      }}
-                      disabled={disabled || sending === requester.id || !!requester.invitationId}
-                      className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm transition-colors"
-                    >
-                      {sending === requester.id ? (
-                        <>
-                          <Clock className="h-3.5 w-3.5 animate-spin" />
-                          Sending...
-                        </>
-                      ) : requester.invitationId ? (
-                        <>
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                          Invitation Sent
-                        </>
-                      ) : (
-                        <>
-                          <Send className="h-3.5 w-3.5" />
-                          Send Email Invitation
-                        </>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!requestId) {
+                            toast.info("Save request first", "Please save the request as draft first, then you can send invitations.");
+                            return;
+                          }
+                          sendInvitation(requester);
+                        }}
+                        disabled={disabled || sending === requester.id}
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm transition-colors"
+                      >
+                        {sending === requester.id ? (
+                          <>
+                            <Clock className="h-3.5 w-3.5 animate-spin" />
+                            Sending...
+                          </>
+                        ) : requester.invitationId ? (
+                          <>
+                            <Send className="h-3.5 w-3.5" />
+                            Resend Invitation
+                          </>
+                        ) : (
+                          <>
+                            <Send className="h-3.5 w-3.5" />
+                            Send Email Invitation
+                          </>
+                        )}
+                      </button>
+                      {requester.invitationId && requester.invitationId !== 'auto-confirmed' && (
+                        <span className="text-xs text-gray-500">
+                          (Invitation sent)
+                        </span>
                       )}
-                    </button>
+                    </div>
                   )}
                   
                   {/* Auto-confirmed badge for current user */}
@@ -610,8 +745,26 @@ export default function RequesterInvitationEditor({
                     <div className="flex items-center gap-2 text-sm">
                       {getStatusIcon(requester.status)}
                       <span className="text-gray-700">
-                        Invitation {requester.status === 'confirmed' ? 'confirmed' : requester.status === 'declined' ? 'declined' : 'sent'}
+                        Invitation {
+                          requester.status === 'confirmed' ? 'confirmed' : 
+                          requester.status === 'declined' ? 'declined' : 
+                          requester.status === 'expired' ? 'expired' : 
+                          'sent'
+                        }
                       </span>
+                    </div>
+                  )}
+
+                  {/* Expired Invitation Warning */}
+                  {requester.status === 'expired' && requester.invitationId && requester.invitationId !== 'auto-confirmed' && (
+                    <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+                      <div className="flex items-start gap-2">
+                        <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1">
+                          <p className="text-xs text-amber-800 font-medium mb-1">Invitation Expired</p>
+                          <p className="text-xs text-amber-700">The invitation link has expired. Click "Resend Invitation" to send a new link.</p>
+                        </div>
+                      </div>
                     </div>
                   )}
 
@@ -627,6 +780,30 @@ export default function RequesterInvitationEditor({
                         alt="Requester signature" 
                         className="w-full max-w-xs h-20 object-contain border border-green-300 rounded bg-white"
                       />
+                    </div>
+                  )}
+
+                  {/* Resend Button for Expired Invitations */}
+                  {requester.status === 'expired' && requester.invitationId && requester.invitationId !== 'auto-confirmed' && requester.email && !disabled && (
+                    <div className="mt-3">
+                      <button
+                        type="button"
+                        onClick={() => sendInvitation(requester)}
+                        disabled={sending === requester.id || !requestId}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                      >
+                        {sending === requester.id ? (
+                          <>
+                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-700 border-t-transparent" />
+                            Resending...
+                          </>
+                        ) : (
+                          <>
+                            <Send className="h-4 w-4" />
+                            Resend Invitation
+                          </>
+                        )}
+                      </button>
                     </div>
                   )}
                 </div>

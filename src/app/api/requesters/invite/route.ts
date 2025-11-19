@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { sendEmail } from "@/lib/email";
-import crypto from "crypto";
+import * as crypto from "crypto";
 
 /**
  * POST /api/requesters/invite
@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
     // Check if invitation already exists (using requester_invitations table)
     const { data: existing, error: existingError } = await supabase
       .from("requester_invitations")
-      .select("id, status, token")
+      .select("id, status, token, expires_at")
       .eq("request_id", request_id)
       .eq("email", email.toLowerCase())
       .maybeSingle();
@@ -77,11 +77,75 @@ export async function POST(req: NextRequest) {
     let alreadyExists = false;
 
     if (existing && !existingError) {
-      // Use existing invitation but still send email (resend functionality)
-      console.log(`[POST /api/requesters/invite] ✅ Invitation already exists for ${email}, will resend email`);
-      invitation = existing;
-      token = existing.token;
-      alreadyExists = true;
+      // Check if invitation is expired - if so, regenerate token and expiration
+      const isExpired = existing.status === 'expired' || (existing.expires_at && new Date(existing.expires_at) < new Date());
+      
+      if (isExpired) {
+        // Regenerate token and expiration for expired invitations
+        console.log(`[POST /api/requesters/invite] 🔄 Invitation expired, regenerating token and expiration`);
+        token = crypto.randomBytes(32).toString('hex');
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiration
+        
+        // Update expired invitation with new token and expiration
+        const { data: updatedInvitation, error: updateError } = await supabase
+          .from("requester_invitations")
+          .update({
+            token,
+            expires_at: expiresAt.toISOString(),
+            status: 'pending', // Reset to pending
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", existing.id)
+          .select()
+          .single();
+        
+        if (updateError) {
+          console.error("[POST /api/requesters/invite] ❌ Failed to regenerate expired invitation:", updateError);
+          return NextResponse.json(
+            { 
+              ok: false, 
+              error: `Failed to regenerate invitation: ${updateError.message}` 
+            },
+            { status: 500 }
+          );
+        }
+        
+        invitation = updatedInvitation;
+        alreadyExists = false; // Treat as new invitation for email sending
+      } else {
+        // Use existing invitation but still send email (resend functionality)
+        console.log(`[POST /api/requesters/invite] ✅ Invitation already exists for ${email}, will resend email`);
+        console.log(`[POST /api/requesters/invite] 📋 Existing invitation details:`, {
+          id: existing.id,
+          tokenFirst8: existing.token?.substring(0, 8),
+          tokenLength: existing.token?.length,
+          status: existing.status,
+          request_id: request_id,
+        });
+        
+        // Fetch full invitation to ensure we have the latest data
+        const { data: fullInvitation, error: fetchError } = await supabase
+          .from("requester_invitations")
+          .select("*")
+          .eq("id", existing.id)
+          .single();
+        
+        if (fetchError || !fullInvitation) {
+          console.error(`[POST /api/requesters/invite] ❌ Failed to fetch full invitation:`, fetchError);
+          // Fallback to existing data
+          invitation = existing;
+          token = existing.token;
+        } else {
+          invitation = fullInvitation;
+          token = fullInvitation.token;
+          console.log(`[POST /api/requesters/invite] ✅ Fetched full invitation with token:`, {
+            tokenFirst8: token?.substring(0, 8),
+            tokenLength: token?.length,
+          });
+        }
+        alreadyExists = true;
+      }
     } else {
       // Generate unique token for new invitation
       token = crypto.randomBytes(32).toString('hex');
@@ -116,17 +180,146 @@ export async function POST(req: NextRequest) {
       }
 
       invitation = newInvitation;
+      
+      // Verify token was saved correctly
+      console.log(`[POST /api/requesters/invite] ✅ New invitation created:`, {
+        id: newInvitation.id,
+        email: newInvitation.email,
+        tokenFirst16: newInvitation.token?.substring(0, 16),
+        tokenLast8: newInvitation.token?.substring(newInvitation.token?.length - 8),
+        tokenLength: newInvitation.token?.length,
+        request_id: newInvitation.request_id,
+        status: newInvitation.status,
+        expires_at: newInvitation.expires_at,
+      });
     }
 
-    // Generate confirmation link
+    // Generate confirmation link - use absolute URL
+    // Priority order:
+    // 1. NEXT_PUBLIC_APP_URL (explicit production URL)
+    // 2. Request headers (origin/host) - most reliable for current request
+    // 3. VERCEL_URL (auto-set by Vercel)
+    // 4. localhost (development only)
+    
     let baseUrl = process.env.NEXT_PUBLIC_APP_URL;
+    
+    // If no explicit URL, try to get from request headers (most reliable)
+    if (!baseUrl) {
+      const origin = req.headers.get('origin');
+      const host = req.headers.get('host');
+      const forwardedHost = req.headers.get('x-forwarded-host');
+      const protocol = req.headers.get('x-forwarded-proto') || 
+                      (req.headers.get('x-forwarded-ssl') === 'on' ? 'https' : 'http');
+      
+      // Prefer origin, then forwarded-host, then host
+      const requestHost = origin?.replace(/^https?:\/\//, '') || 
+                         forwardedHost || 
+                         host;
+      
+      if (requestHost && !requestHost.includes('localhost')) {
+        // Use https for production (unless explicitly http)
+        const finalProtocol = protocol === 'http' ? 'http' : 'https';
+        baseUrl = `${finalProtocol}://${requestHost}`;
+        console.log(`[POST /api/requesters/invite] 🌐 Using baseUrl from request headers: ${baseUrl}`);
+      }
+    }
+    
+    // Fallback to VERCEL_URL (auto-set by Vercel in production)
     if (!baseUrl && process.env.VERCEL_URL) {
       baseUrl = `https://${process.env.VERCEL_URL}`;
+      console.log(`[POST /api/requesters/invite] 🌐 Using baseUrl from VERCEL_URL: ${baseUrl}`);
     }
+    
+    // Last resort: localhost (ONLY for development)
     if (!baseUrl) {
-      baseUrl = "http://localhost:3000";
+      if (process.env.NODE_ENV === 'production') {
+        // In production, we should NEVER use localhost
+        console.error(`[POST /api/requesters/invite] ❌ CRITICAL: No baseUrl found in production!`);
+        console.error(`[POST /api/requesters/invite] ❌ Set NEXT_PUBLIC_APP_URL environment variable!`);
+        // Still use localhost as fallback but log warning
+        baseUrl = "http://localhost:3000";
+      } else {
+        baseUrl = "http://localhost:3000";
+      }
     }
-    const confirmationLink = `${baseUrl}/requesters/confirm/${token}`;
+    
+    // Ensure baseUrl doesn't have trailing slash
+    baseUrl = baseUrl.replace(/\/$/, '');
+    
+    // Warn if using localhost in production
+    if (baseUrl.includes('localhost') && process.env.NODE_ENV === 'production') {
+      console.error(`[POST /api/requesters/invite] ⚠️ WARNING: Using localhost in production!`);
+      console.error(`[POST /api/requesters/invite] ⚠️ Set NEXT_PUBLIC_APP_URL environment variable!`);
+    }
+    
+    console.log(`[POST /api/requesters/invite] 🌐 Base URL resolved:`, {
+      baseUrl,
+      fromEnv: process.env.NEXT_PUBLIC_APP_URL || 'not set',
+      fromHeaders: req.headers.get('origin') || req.headers.get('host') || 'not available',
+      fromVercel: process.env.VERCEL_URL || 'not set',
+      nodeEnv: process.env.NODE_ENV || 'not set',
+      isLocalhost: baseUrl.includes('localhost'),
+      warning: baseUrl.includes('localhost') && process.env.NODE_ENV === 'production' ? '⚠️ LOCALHOST IN PRODUCTION!' : 'ok',
+    });
+    
+    // Verify token exists and is valid
+    if (!token || token.length < 32) {
+      console.error(`[POST /api/requesters/invite] ❌ Invalid token:`, {
+        tokenLength: token?.length,
+        tokenFirst8: token?.substring(0, 8),
+        invitationId: invitation?.id,
+      });
+      return NextResponse.json(
+        { ok: false, error: "Invalid invitation token. Please try resending the invitation." },
+        { status: 500 }
+      );
+    }
+    
+    // Verify token in database matches what we're sending (for existing invitations)
+    let finalToken = token;
+    if (invitation?.id && alreadyExists) {
+      const { data: verifyInvitation, error: verifyError } = await supabase
+        .from("requester_invitations")
+        .select("id, token, email, request_id, status")
+        .eq("id", invitation.id)
+        .single();
+      
+      if (verifyError) {
+        console.error(`[POST /api/requesters/invite] ❌ Failed to verify invitation:`, verifyError);
+      } else if (verifyInvitation) {
+        console.log(`[POST /api/requesters/invite] ✅ Verified invitation in database:`, {
+          id: verifyInvitation.id,
+          tokenMatches: verifyInvitation.token === token,
+          tokenFirst8: verifyInvitation.token?.substring(0, 8),
+          email: verifyInvitation.email,
+          status: verifyInvitation.status,
+        });
+        
+        if (verifyInvitation.token !== token) {
+          console.error(`[POST /api/requesters/invite] ⚠️ WARNING: Token mismatch! Using database token.`, {
+            databaseToken: verifyInvitation.token?.substring(0, 8),
+            sendingToken: token.substring(0, 8),
+          });
+          // Use the token from database instead
+          finalToken = verifyInvitation.token;
+        }
+      }
+    }
+    
+    // Use absolute URL - token should be URL-safe (hex string), but encode just in case
+    // Note: encodeURIComponent is safe for hex strings, but we'll use it to handle any edge cases
+    const confirmationLink = `${baseUrl}/requesters/confirm/${encodeURIComponent(finalToken)}`;
+    
+    console.log(`[POST /api/requesters/invite] 🔗 Generated confirmation link:`, {
+      fullLink: confirmationLink,
+      baseUrl,
+      tokenFirst8: finalToken.substring(0, 8),
+      tokenLast8: finalToken.substring(finalToken.length - 8),
+      tokenLength: finalToken.length,
+      invitationId: invitation?.id,
+      email: email,
+      tokenChanged: finalToken !== token,
+    });
 
     // Prepare email content
     const requesterName = name || "Requester";
@@ -158,10 +351,14 @@ export async function POST(req: NextRequest) {
             You have been added as a requester for a travel request. Please confirm your participation by clicking the button below:
           </p>
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${confirmationLink}" style="display: inline-block; background: #7A0010; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">
+            <a href="${confirmationLink}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background: #7A0010; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">
               Confirm Participation
             </a>
           </div>
+          <p style="font-size: 14px; color: #6b7280; margin-top: 20px; text-align: center;">
+            If the button doesn't work, copy and paste this link into your browser:<br>
+            <a href="${confirmationLink}" target="_blank" rel="noopener noreferrer" style="word-break: break-all; color: #7A0010; font-size: 12px; text-decoration: underline;">${confirmationLink}</a>
+          </p>
           <div style="background: #f9fafb; padding: 20px; border-radius: 6px; margin: 20px 0;">
             <h3 style="margin-top: 0; color: #7A0010;">Request Details:</h3>
             <p style="margin: 5px 0;"><strong>Request Number:</strong> ${requestData.request_number || 'N/A'}</p>
@@ -184,6 +381,9 @@ export async function POST(req: NextRequest) {
     `;
 
     // Send email
+    console.log(`[POST /api/requesters/invite] 📧 Attempting to send email to ${email}...`);
+    console.log(`[POST /api/requesters/invite] 📧 Confirmation link in email: ${confirmationLink}`);
+    
     const emailResult = await sendEmail({
       to: email.toLowerCase(),
       subject: `Travel Request Confirmation: ${requestData.request_number || 'Request'}`,
@@ -191,18 +391,31 @@ export async function POST(req: NextRequest) {
     });
 
     if (!emailResult.success) {
-      console.warn(`[POST /api/requesters/invite] ⚠️ Email sending failed for ${email}:`, emailResult.error);
+      console.error(`[POST /api/requesters/invite] ❌ Email sending failed for ${email}:`, emailResult.error);
+      console.error(`[POST /api/requesters/invite] 📋 Confirmation link (for manual sharing): ${confirmationLink}`);
+      
+      // Still return success but with warning - invitation was created
       return NextResponse.json({
         ok: true,
         data: invitation,
         message: alreadyExists ? "Invitation resent successfully" : "Invitation created successfully",
-        warning: `Email could not be sent: ${emailResult.error}. Please check your RESEND_API_KEY configuration.`,
+        warning: `Email could not be sent: ${emailResult.error}. Please check your RESEND_API_KEY configuration. You can manually share this confirmation link.`,
         confirmationLink: confirmationLink,
         alreadyExists: alreadyExists,
+        emailSent: false,
+        emailError: emailResult.error,
       });
     }
 
     console.log(`[POST /api/requesters/invite] ✅ Email sent successfully to ${email}`);
+    console.log(`[POST /api/requesters/invite] 📧 Email ID: ${emailResult.emailId}`);
+    console.log(`[POST /api/requesters/invite] 📧 Check delivery: https://resend.com/emails/${emailResult.emailId}`);
+    
+    // Always log confirmation link for easy testing (especially in development)
+    console.log(`\n${"=".repeat(70)}`);
+    console.log(`[POST /api/requesters/invite] 🔗 CONFIRMATION LINK (for testing):`);
+    console.log(`${confirmationLink}`);
+    console.log(`${"=".repeat(70)}\n`);
 
     return NextResponse.json({
       ok: true,

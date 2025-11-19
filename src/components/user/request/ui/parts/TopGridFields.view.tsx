@@ -42,13 +42,81 @@ export default function TopGridFields({
   // Calculate if signature pad should be shown
   const shouldShowSignaturePad = !isHeadRequester && !isRepresentativeSubmission;
   
+  // Ensure requesters is always an array and memoize it to prevent unnecessary re-renders
+  const requestersArray = React.useMemo(() => {
+    const reqs = Array.isArray(data?.requesters) ? data.requesters : [];
+    console.log('[TopGridFields] 🔍 Requesters array memoized:', {
+      count: reqs.length,
+      requesters: reqs.map(r => ({ id: r.id, name: r.name }))
+    });
+    return reqs;
+  }, [data?.requesters]);
+  
+  // Stable onChange handler for requesters to prevent unnecessary re-renders
+  const handleRequestersChange = React.useCallback((requesters: any[]) => {
+    console.log('[TopGridFields] 📝 Requester onChange called:', {
+      requestersCount: requesters.length,
+      requesters: requesters.map(r => ({ id: r.id, name: r.name, email: r.email }))
+    });
+    
+    // Prepare update object with all changes at once
+    const update: any = { requesters };
+    
+    // Also update requestingPerson to first requester's name (for backward compatibility)
+    if (requesters.length > 0 && requesters[0].name) {
+      update.requestingPerson = requesters[0].name;
+      
+      // Auto-fill department: collect all unique departments from all requesters
+      const departments = requesters
+        .map(req => req.department)
+        .filter((dept): dept is string => !!dept && dept.trim() !== "");
+      
+      // Remove duplicates (case-insensitive)
+      const uniqueDepartments = Array.from(
+        new Set(departments.map(dept => dept.trim()))
+      );
+      
+      if (uniqueDepartments.length > 0) {
+        // Combine departments: "HRD and WCDEO" for 2, "HRD, WCDEO, and CCMS" for 3+
+        let combinedDepartment = "";
+        if (uniqueDepartments.length === 1) {
+          combinedDepartment = uniqueDepartments[0];
+        } else if (uniqueDepartments.length === 2) {
+          combinedDepartment = `${uniqueDepartments[0]} and ${uniqueDepartments[1]}`;
+        } else {
+          // For 3+ departments: "HRD, WCDEO, and CCMS"
+          const lastDept = uniqueDepartments[uniqueDepartments.length - 1];
+          const otherDepts = uniqueDepartments.slice(0, -1);
+          combinedDepartment = `${otherDepts.join(", ")}, and ${lastDept}`;
+        }
+        
+        // Only auto-fill if department field is empty or doesn't match the combined value
+        const currentDept = data?.department || "";
+        if (!currentDept || currentDept !== combinedDepartment) {
+          console.log('[TopGridFields] 🔄 Auto-filling department from requesters:', {
+            uniqueDepartments,
+            combinedDepartment,
+            currentDepartment: currentDept
+          });
+          // Update department separately to trigger onDepartmentChange callback
+          onDepartmentChange(combinedDepartment);
+        }
+      }
+    }
+    
+    // Single onChange call with all updates
+    console.log('[TopGridFields] ✅ Calling onChange with update:', update);
+    onChange(update);
+  }, [data?.department, onChange, onDepartmentChange]);
+  
   // Debug: Log the values to see what's happening
   React.useEffect(() => {
     console.log('[TopGridFields] 🔍 Signature pad check:');
     console.log('  - isHeadRequester:', isHeadRequester);
     console.log('  - isRepresentativeSubmission:', isRepresentativeSubmission);
     console.log('  - shouldShowSignaturePad:', shouldShowSignaturePad);
-  }, [isRepresentativeSubmission, isHeadRequester, shouldShowSignaturePad]);
+    console.log('  - requesters count:', requestersArray.length);
+  }, [isRepresentativeSubmission, isHeadRequester, shouldShowSignaturePad, requestersArray.length]);
 
   return (
     <div className="space-y-6">
@@ -70,55 +138,8 @@ export default function TopGridFields({
           {/* Show multiple requester editor if requesterRole is faculty or head */}
           {(requesterRole === "faculty" || requesterRole === "head") ? (
             <RequesterInvitationEditor
-              requesters={data?.requesters || []}
-              onChange={(requesters) => {
-                // Update requesters array
-                onChange({ requesters });
-                
-                // Also update requestingPerson to first requester's name (for backward compatibility)
-                if (requesters.length > 0 && requesters[0].name) {
-                  onChange({ 
-                    requesters,
-                    requestingPerson: requesters[0].name 
-                  });
-                  
-                  // Auto-fill department: collect all unique departments from all requesters
-                  const departments = requesters
-                    .map(req => req.department)
-                    .filter((dept): dept is string => !!dept && dept.trim() !== "");
-                  
-                  // Remove duplicates (case-insensitive)
-                  const uniqueDepartments = Array.from(
-                    new Set(departments.map(dept => dept.trim()))
-                  );
-                  
-                  if (uniqueDepartments.length > 0) {
-                    // Combine departments: "HRD and WCDEO" for 2, "HRD, WCDEO, and CCMS" for 3+
-                    let combinedDepartment = "";
-                    if (uniqueDepartments.length === 1) {
-                      combinedDepartment = uniqueDepartments[0];
-                    } else if (uniqueDepartments.length === 2) {
-                      combinedDepartment = `${uniqueDepartments[0]} and ${uniqueDepartments[1]}`;
-                    } else {
-                      // For 3+ departments: "HRD, WCDEO, and CCMS"
-                      const lastDept = uniqueDepartments[uniqueDepartments.length - 1];
-                      const otherDepts = uniqueDepartments.slice(0, -1);
-                      combinedDepartment = `${otherDepts.join(", ")}, and ${lastDept}`;
-                    }
-                    
-                    // Only auto-fill if department field is empty or doesn't match the combined value
-                    const currentDept = data?.department || "";
-                    if (!currentDept || currentDept !== combinedDepartment) {
-                      console.log('[TopGridFields] 🔄 Auto-filling department from requesters:', {
-                        uniqueDepartments,
-                        combinedDepartment,
-                        currentDepartment: currentDept
-                      });
-                      onDepartmentChange(combinedDepartment);
-                    }
-                  }
-                }
-              }}
+              requesters={requestersArray}
+              onChange={handleRequestersChange}
               requestId={requestId}
               requesterRole={requesterRole}
               currentUserEmail={currentUserEmail}
@@ -261,6 +282,8 @@ export default function TopGridFields({
             value={data?.requesterSignature || null}
             onSave={(dataUrl) => onChange({ requesterSignature: dataUrl })}
             onClear={() => onChange({ requesterSignature: "" })}
+            onUseSaved={(dataUrl) => onChange({ requesterSignature: dataUrl })}
+            showUseSavedButton={true}
             hideSaveButton
           />
         </div>

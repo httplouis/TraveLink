@@ -12,7 +12,12 @@ interface SendEmailOptions {
 }
 
 export async function sendEmail({ to, subject, html, from }: SendEmailOptions): Promise<{ success: boolean; error?: string; emailId?: string }> {
-  console.log(`[sendEmail] 🚀 Function called with:`, { to, subject: subject.substring(0, 50) + "..." });
+  console.log("\n" + "=".repeat(70));
+  console.log(`[sendEmail] 🚀 Function called`);
+  console.log("=".repeat(70));
+  console.log(`[sendEmail] To: ${to}`);
+  console.log(`[sendEmail] Subject: ${subject}`);
+  console.log(`[sendEmail] From: ${from || 'default'}`);
   
   // Support multiple API keys for testing (3 accounts)
   // Check if recipient matches specific email patterns and use corresponding API key
@@ -57,7 +62,13 @@ export async function sendEmail({ to, subject, html, from }: SendEmailOptions): 
   console.log(`  - RESEND_API_KEY length:`, apiKey?.length || 0);
   console.log(`  - RESEND_API_KEY starts with 're_':`, apiKey?.startsWith('re_') || false);
   console.log(`  - EMAIL_FROM:`, process.env.EMAIL_FROM || "not set");
+  console.log(`  - NODE_ENV:`, process.env.NODE_ENV || "not set");
   console.log(`[sendEmail] 🔑 API Key check:`, apiKey ? "✅ Found" : "❌ Not found (will use console logging)");
+  
+  // Extract confirmation link from HTML for logging
+  const linkMatch = html.match(/href=["']([^"']+)["']/);
+  const confirmationLink = linkMatch ? linkMatch[1] : "Link not found in HTML";
+  console.log(`[sendEmail] 🔗 Confirmation link in email:`, confirmationLink);
 
   // If no API key, just log to console (for development)
   if (!apiKey) {
@@ -321,6 +332,117 @@ export function generateParticipantInvitationEmail({
               <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0;">
                 <p style="margin: 0; color: #999999; font-size: 12px; line-height: 1.5;">
                   This invitation link will expire in 7 days. If you did not expect this invitation, please ignore this email.
+                </p>
+              </div>
+            </td>
+          </tr>
+          
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f9f9f9; padding: 20px 30px; text-align: center; border-radius: 0 0 8px 8px; border-top: 1px solid #e0e0e0;">
+              <p style="margin: 0; color: #666666; font-size: 12px;">
+                Travelink - Travel Request Management System<br>
+                Manuel S. Enverga University Foundation
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `.trim();
+}
+
+/**
+ * Generate HTML email template for signature request
+ */
+export function generateSignatureRequestEmail({
+  requesterName,
+  requestNumber,
+  purpose,
+  destination,
+  travelDate,
+  submittedByName,
+  signatureLink,
+}: {
+  requesterName: string;
+  requestNumber?: string;
+  purpose?: string;
+  destination?: string;
+  travelDate?: string;
+  submittedByName?: string;
+  signatureLink: string;
+}): string {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Signature Required - Travel Request</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f5f5f5;">
+  <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f5f5f5;">
+    <tr>
+      <td align="center" style="padding: 40px 20px;">
+        <table role="presentation" style="max-width: 600px; width: 100%; border-collapse: collapse; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+          <!-- Header -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #7A0010 0%, #5A0010 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: bold;">Signature Required</h1>
+            </td>
+          </tr>
+          
+          <!-- Content -->
+          <tr>
+            <td style="padding: 40px 30px;">
+              <p style="margin: 0 0 20px 0; color: #333333; font-size: 16px; line-height: 1.6;">
+                Hello <strong>${requesterName}</strong>,
+              </p>
+              
+              ${submittedByName ? `
+              <p style="margin: 0 0 20px 0; color: #333333; font-size: 16px; line-height: 1.6;">
+                <strong>${submittedByName}</strong> has submitted a travel order request on your behalf. Your signature is required to proceed with the approval process.
+              </p>
+              ` : `
+              <p style="margin: 0 0 20px 0; color: #333333; font-size: 16px; line-height: 1.6;">
+                Your signature is required for a travel order request. Please sign to proceed with the approval process.
+              </p>
+              `}
+              
+              <div style="background-color: #f9f9f9; border-left: 4px solid #7A0010; padding: 20px; margin: 20px 0; border-radius: 4px;">
+                ${requestNumber ? `<p style="margin: 5px 0; color: #666666; font-size: 14px;"><strong>Request Number:</strong> ${requestNumber}</p>` : ''}
+                ${purpose ? `<p style="margin: 5px 0; color: #666666; font-size: 14px;"><strong>Purpose:</strong> ${purpose}</p>` : ''}
+                ${destination ? `<p style="margin: 5px 0; color: #666666; font-size: 14px;"><strong>Destination:</strong> ${destination}</p>` : ''}
+                ${travelDate ? `<p style="margin: 5px 0; color: #666666; font-size: 14px;"><strong>Travel Date:</strong> ${travelDate}</p>` : ''}
+              </div>
+              
+              <p style="margin: 20px 0; color: #333333; font-size: 16px; line-height: 1.6;">
+                Please sign the request by clicking the button below:
+              </p>
+              
+              <table role="presentation" style="width: 100%; margin: 30px 0;">
+                <tr>
+                  <td align="center">
+                    <a href="${signatureLink}" style="display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #7A0010 0%, #5A0010 100%); color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px; box-shadow: 0 2px 4px rgba(122, 0, 16, 0.3);">
+                      Sign Request
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              
+              <p style="margin: 20px 0 0 0; color: #666666; font-size: 14px; line-height: 1.6;">
+                Or copy and paste this link into your browser:
+              </p>
+              <p style="margin: 5px 0 20px 0; color: #7A0010; font-size: 12px; word-break: break-all;">
+                ${signatureLink}
+              </p>
+              
+              <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0;">
+                <p style="margin: 0; color: #999999; font-size: 12px; line-height: 1.5;">
+                  This is an automated notification from the Travelink system. If you did not expect this request, please contact the system administrator.
                 </p>
               </div>
             </td>

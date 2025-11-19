@@ -1316,8 +1316,10 @@ function RequestWizardContent() {
           travelOrder: data.travelOrder,
           reason: data.reason,
           vehicleMode: data.vehicleMode,
-          schoolService: data.schoolService, // ✅ NOW INCLUDED!
+          schoolService: data.schoolService,
           seminar: data.seminar,
+          transportation: data.transportation, // Include transportation data
+          attachments: data.travelOrder?.attachments || data.seminar?.attachments || [], // Include attachments
           // Pass selected approver for head requesters (messenger-style routing)
           nextApproverId: selectedApproverId || undefined,
           nextApproverRole: selectedApproverRole || undefined,
@@ -1671,12 +1673,11 @@ function RequestWizardContent() {
             headName = requestingPersonHeadInfo.name;
           }
           
-          console.log('[RequestWizard] 🔍 Head name for confirmation dialog:', {
-            requestingPersonIsHead,
-            requestingPersonHeadInfo: requestingPersonHeadInfo?.name,
-            endorsedByHeadName: data.travelOrder?.endorsedByHeadName,
-            finalHeadName: headName
-          });
+          // Debug logging removed - too verbose
+          // Only log if there's an issue with head name resolution
+          if (!headName && requestingPersonIsHead === false) {
+            console.warn('[RequestWizard] ⚠️ No head name found for non-head requester');
+          }
           
           return headName;
         })()}

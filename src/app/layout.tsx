@@ -2,6 +2,7 @@
 import "./globals.css";
 import type { Viewport, Metadata } from "next";
 import { ToastProvider } from "@/components/common/ui/Toast";
+import TopLoadingBar from "@/components/common/TopLoadingBar";
 
 export const metadata: Metadata = {
   title: { default: "Travelink", template: "%s • Travelink" },
@@ -30,6 +31,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {supabaseUrl && <link rel="preconnect" href={supabaseUrl} crossOrigin="" />}
       </head>
       <body className="min-h-dvh antialiased bg-white text-neutral-900" suppressHydrationWarning>
+        <TopLoadingBar />
         <ToastProvider>
           {children}
         </ToastProvider>

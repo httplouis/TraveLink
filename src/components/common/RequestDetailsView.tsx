@@ -16,7 +16,10 @@ import {
   Clock,
   Route,
   CheckCircle2,
-  PenTool
+  PenTool,
+  Download,
+  FileDown,
+  Upload
 } from 'lucide-react';
 import { WowCard, WowButton } from './Modal';
 import ProfilePicture, { PersonDisplay } from './ProfilePicture';
@@ -24,14 +27,19 @@ import { NameWithProfile } from './ProfileHoverCard';
 import SignatureStageRail from './SignatureStageRail';
 import RequestStatusTracker from './RequestStatusTracker';
 import { formatLongDate, formatLongDateTime } from '@/lib/datetime';
+import FileAttachmentSection from '@/components/user/request/ui/parts/FileAttachmentSection.view';
 
 export interface RequestData {
   id: string;
   request_number: string;
+  file_code?: string; // Log book file code
   title: string;
   purpose: string;
   destination: string;
   destination_geo?: { lat: number; lng: number; address?: string } | null;
+  vehicle_mode?: 'institutional' | 'owned' | 'rent';
+  preferred_driver_name?: string;
+  preferred_vehicle_name?: string;
   travel_start_date: string;
   travel_end_date: string;
   total_budget: number;
@@ -42,11 +50,13 @@ export interface RequestData {
     description?: string;
   }>;
   transportation_type?: 'pickup' | 'self';
+  pickup_preference?: 'pickup' | 'self' | 'gymnasium';
   pickup_location?: string;
   pickup_location_lat?: number;
   pickup_location_lng?: number;
   pickup_time?: string;
   pickup_contact_number?: string;
+  requester_contact_number?: string;
   pickup_special_instructions?: string;
   return_transportation_same?: boolean;
   dropoff_location?: string;
@@ -70,6 +80,8 @@ export interface RequestData {
     phone?: string;
   };
   
+  requester_signature?: string | null;
+  
   department: {
     id: string;
     name: string;
@@ -86,6 +98,19 @@ export interface RequestData {
   
   signatures: any[]; // Will be typed properly based on SignatureStageRail
   timeline: any[]; // Will be typed properly based on TrackingTimeline
+  attachments?: Array<{
+    id: string;
+    name: string;
+    url: string;
+    mime: string;
+    size: number;
+    uploaded_at?: string;
+  }>;
+  seminar_code_per_person?: Array<{
+    person_id?: string;
+    name: string;
+    code: string;
+  }>;
   
   // Smart workflow fields
   smart_skips_applied?: string[];
@@ -97,6 +122,40 @@ export interface RequestData {
     next_approver_role?: string;
     [key: string]: any;
   };
+  
+  // Status tracking fields for RequestStatusTracker
+  requesterIsHead?: boolean;
+  hasBudget?: boolean;
+  hasParentHead?: boolean;
+  requiresPresidentApproval?: boolean;
+  headApprovedAt?: string | null;
+  headApprovedBy?: string | null;
+  head_approved_by?: string | null;
+  head_approver?: {
+    id: string;
+    name: string;
+    profile_picture?: string;
+    department?: string;
+    position?: string;
+    email?: string;
+  } | null;
+  parentHeadApprovedAt?: string | null;
+  parentHeadApprovedBy?: string | null;
+  adminProcessedAt?: string | null;
+  adminProcessedBy?: string | null;
+  comptrollerApprovedAt?: string | null;
+  comptrollerApprovedBy?: string | null;
+  hrApprovedAt?: string | null;
+  hrApprovedBy?: string | null;
+  vpApprovedAt?: string | null;
+  vpApprovedBy?: string | null;
+  presidentApprovedAt?: string | null;
+  presidentApprovedBy?: string | null;
+  execApprovedAt?: string | null;
+  execApprovedBy?: string | null;
+  rejectedAt?: string | null;
+  rejectedBy?: string | null;
+  rejectionStage?: string | null;
   
   // Seminar application fields
   request_type?: 'seminar' | 'travel_order';
@@ -153,6 +212,9 @@ export default function RequestDetailsView({
   const [loadingRequesters, setLoadingRequesters] = useState(false);
   const [routingPerson, setRoutingPerson] = useState<{ name: string; role: string; position?: string } | null>(null);
   const [loadingRoutingPerson, setLoadingRoutingPerson] = useState(false);
+  const [editingAttachments, setEditingAttachments] = useState(false);
+  const [uploadingAttachments, setUploadingAttachments] = useState(false);
+  const [currentAttachments, setCurrentAttachments] = useState<any[]>(request.attachments || []);
 
   // Fetch confirmed requesters
   useEffect(() => {
@@ -213,8 +275,9 @@ export default function RequestDetailsView({
 
       // If request was sent to a specific Admin
       // Check for pending_admin OR pending_head (when head selected Admin during submission)
+      // Also check if nextApproverRole is admin (even if status is still pending_head in multi-dept cases)
       if (nextAdminId && (request.status === 'pending_admin' || request.status === 'pending_head' || nextApproverRole === 'admin')) {
-        console.log('[RequestDetailsView] 📞 Fetching Admin user:', nextAdminId);
+        console.log('[RequestDetailsView] 📞 Fetching Admin user:', nextAdminId, 'status:', request.status, 'nextApproverRole:', nextApproverRole);
         const response = await fetch(`/api/users/${nextAdminId}`);
         const data = await response.json();
         if (data.ok && data.data) {
@@ -227,6 +290,83 @@ export default function RequestDetailsView({
           return;
         } else {
           console.error('[RequestDetailsView] ❌ Failed to fetch Admin:', data.error);
+        }
+      }
+      
+      // Also check if status is pending_head but head already sent to admin (check request_history)
+      if (request.status === 'pending_head' && !nextAdminId && !nextVpId) {
+        try {
+          const historyResponse = await fetch(`/api/requests/${request.id}/history`);
+          const historyData = await historyResponse.json();
+          if (historyData.ok && historyData.data) {
+            // API returns { ok: true, data: { request, history } }
+            const history = Array.isArray(historyData.data.history) 
+              ? historyData.data.history 
+              : (Array.isArray(historyData.data) ? historyData.data : []);
+            
+            if (history.length > 0) {
+              // Find the most recent head approval that sent to admin
+              const headApproval = history
+                .filter((h: any) => h.action === 'approved' && h.actor_role === 'head')
+                .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+              
+              if (headApproval?.metadata?.sent_to_id && headApproval.metadata.sent_to === 'admin') {
+                console.log('[RequestDetailsView] 📞 Found sent_to_id from history (pending_head case):', headApproval.metadata.sent_to_id);
+                const userResponse = await fetch(`/api/users/${headApproval.metadata.sent_to_id}`);
+                const userData = await userResponse.json();
+                if (userData.ok && userData.data) {
+                  console.log('[RequestDetailsView] ✅ Found Admin from history (pending_head):', userData.data.name);
+                  setRoutingPerson({
+                    name: userData.data.name || 'Unknown Admin',
+                    role: 'Administrator',
+                    position: userData.data.position_title || 'Admin'
+                  });
+                  return;
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[RequestDetailsView] Error fetching from history (pending_head):', err);
+        }
+      }
+      
+      // Fallback: Check request_history for sent_to_id if workflow_metadata doesn't have it
+      // This handles cases where head sent to admin but next_admin_id wasn't stored
+      if (request.status === 'pending_admin' && !nextAdminId) {
+        try {
+          const historyResponse = await fetch(`/api/requests/${request.id}/history`);
+          const historyData = await historyResponse.json();
+          if (historyData.ok && historyData.data) {
+            // API returns { ok: true, data: { request, history } }
+            const history = Array.isArray(historyData.data.history) 
+              ? historyData.data.history 
+              : (Array.isArray(historyData.data) ? historyData.data : []);
+            
+            if (history.length > 0) {
+              // Find the most recent head approval that sent to admin
+              const headApproval = history
+                .filter((h: any) => h.action === 'approved' && h.actor_role === 'head')
+                .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+              
+              if (headApproval?.metadata?.sent_to_id && headApproval.metadata.sent_to === 'admin') {
+                console.log('[RequestDetailsView] 📞 Found sent_to_id from history:', headApproval.metadata.sent_to_id);
+                const userResponse = await fetch(`/api/users/${headApproval.metadata.sent_to_id}`);
+                const userData = await userResponse.json();
+                if (userData.ok && userData.data) {
+                  console.log('[RequestDetailsView] ✅ Found Admin from history:', userData.data.name);
+                  setRoutingPerson({
+                    name: userData.data.name || 'Unknown Admin',
+                    role: 'Administrator',
+                    position: userData.data.position_title || 'Admin'
+                  });
+                  return;
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[RequestDetailsView] Error fetching from history:', err);
         }
       }
       
@@ -244,31 +384,131 @@ export default function RequestDetailsView({
   const fetchConfirmedRequesters = async () => {
     try {
       setLoadingRequesters(true);
-      const response = await fetch(`/api/requesters/status?request_id=${request.id}`);
+      console.log('[RequestDetailsView] 🔍 Fetching confirmed requesters for request:', request.id);
+      const response = await fetch(`/api/requesters/status?request_id=${request.id}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' }
+      });
       const data = await response.json();
       
+      console.log('[RequestDetailsView] 📊 Requester status response:', {
+        ok: data.ok,
+        count: data.data?.length || 0,
+        data: data.data
+      });
+      
       if (data.ok && data.data) {
-        // Filter only confirmed requesters AND exclude the main requester
+        console.log('[RequestDetailsView] 📋 All invitations received for request:', request.id, {
+          totalInvitations: data.data.length,
+          invitations: data.data.map((r: any) => ({
+            email: r.email,
+            name: r.name,
+            status: r.status,
+            hasSignature: !!r.signature,
+            confirmed_at: r.confirmed_at
+          }))
+        });
+        
+        // Include ALL confirmed requesters
+        // Note: We include ALL confirmed requesters, even if they're the main requester
+        // The UI will handle displaying them appropriately
         const confirmed = data.data.filter((req: any) => {
           // Only include if status is confirmed
-          if (req.status !== 'confirmed') return false;
+          if (req.status !== 'confirmed') {
+            console.log('[RequestDetailsView] ⏭️ Skipping requester (not confirmed):', {
+              email: req.email,
+              name: req.name,
+              status: req.status
+            });
+            return false;
+          }
           
-          // Exclude if this is the main requester (by user_id or email match)
-          const isMainRequester = 
-            (req.user_id && request.requester?.id && req.user_id === request.requester.id) ||
-            (req.email && request.requester?.email && req.email.toLowerCase() === request.requester.email.toLowerCase()) ||
-            (req.name && request.requester?.name && req.name.toLowerCase() === request.requester.name.toLowerCase());
-          
-          return !isMainRequester;
+          console.log('[RequestDetailsView] ✅ Including confirmed requester:', {
+            name: req.name || req.email,
+            email: req.email,
+            hasSignature: !!req.signature,
+            confirmed_at: req.confirmed_at,
+            requestId: request.id
+          });
+          return true;
+        });
+        
+        // Log detailed info for debugging
+        console.log('[RequestDetailsView] 🔍 Detailed confirmed requesters check:', {
+          totalInvitations: data.data.length,
+          confirmedCount: confirmed.length,
+          mainRequesterEmail: request.requester?.email,
+          mainRequesterId: request.requester?.id,
+          confirmedEmails: confirmed.map((r: any) => r.email),
+          confirmedNames: confirmed.map((r: any) => r.name),
+          allInvitationEmails: data.data.map((r: any) => ({ email: r.email, status: r.status }))
+        });
+        
+        console.log('[RequestDetailsView] ✅ Final confirmed requesters:', {
+          count: confirmed.length,
+          requesters: confirmed.map((r: any) => ({
+            name: r.name || r.email,
+            email: r.email,
+            hasSignature: !!r.signature
+          })),
+          note: confirmed.length === 0 ? 'No confirmed requesters found. If you expected someone to appear, check if they were invited and confirmed for this request.' : ''
         });
         setConfirmedRequesters(confirmed);
+      } else {
+        console.error('[RequestDetailsView] ❌ Failed to fetch requesters:', data.error);
+        setConfirmedRequesters([]);
       }
     } catch (err) {
       console.error('[RequestDetailsView] Error fetching confirmed requesters:', err);
+      setConfirmedRequesters([]);
     } finally {
       setLoadingRequesters(false);
     }
   };
+
+  const handleEditAttachments = () => {
+    setEditingAttachments(true);
+    setCurrentAttachments(request.attachments || []);
+  };
+
+  const handleSaveAttachments = async () => {
+    try {
+      setUploadingAttachments(true);
+      const response = await fetch(`/api/requests/${request.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          attachments: currentAttachments
+        })
+      });
+
+      const result = await response.json();
+      if (!result.ok) {
+        throw new Error(result.error || 'Failed to update attachments');
+      }
+
+      // Update local state
+      request.attachments = currentAttachments;
+      setEditingAttachments(false);
+      
+      // Show success message
+      alert('Attachments updated successfully!');
+      
+      // Reload page to show updated attachments
+      window.location.reload();
+    } catch (error: any) {
+      console.error('[RequestDetailsView] Error updating attachments:', error);
+      alert(`Failed to update attachments: ${error.message}`);
+    } finally {
+      setUploadingAttachments(false);
+    }
+  };
+
+  const handleCancelEditAttachments = () => {
+    setEditingAttachments(false);
+    setCurrentAttachments(request.attachments || []);
+  };
+
   const [activeTab, setActiveTab] = useState<'details' | 'timeline'>('timeline');
   
   // Function to open Google Maps
@@ -392,7 +632,15 @@ export default function RequestDetailsView({
         <div className="flex items-start justify-between">
           <div className="flex-1">
             <div className="flex items-center gap-4 mb-3 flex-wrap">
-              <h1 className="text-3xl font-extrabold tracking-tight">{request.request_number}</h1>
+              <div className="flex items-center gap-3 flex-wrap">
+                <h1 className="text-3xl font-extrabold tracking-tight">{request.request_number}</h1>
+                {request.file_code && (
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200">
+                    <span className="text-xs font-medium text-blue-600">File Code:</span>
+                    <span className="text-sm font-mono font-semibold text-blue-900">{request.file_code}</span>
+                  </div>
+                )}
+              </div>
               {/* Request Type Indicator */}
               {request.request_type === 'seminar' ? (
                 <div className="bg-white/25 backdrop-blur-md px-4 py-1.5 rounded-full text-xs font-bold flex items-center gap-2 shadow-lg border border-white/30">
@@ -470,9 +718,9 @@ export default function RequestDetailsView({
         </motion.div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         {/* Main Content */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="lg:col-span-3 space-y-6">
           {/* Tab Navigation */}
           <WowCard>
             <div className="border-b border-gray-200">
@@ -511,6 +759,16 @@ export default function RequestDetailsView({
                   <div className="bg-white rounded-lg border border-gray-200 p-6">
                     <h3 className="text-lg font-semibold text-gray-900 mb-4">Basic Information</h3>
                     <div className="space-y-4">
+                      {/* Reason of Trip */}
+                      {request.workflow_metadata?.reason_of_trip && (
+                        <div>
+                          <p className="text-xs font-medium text-gray-500 mb-1">Reason of Trip</p>
+                          <p className="text-gray-900 font-medium capitalize">
+                            {request.workflow_metadata.reason_of_trip.replace('_', ' ')}
+                          </p>
+                        </div>
+                      )}
+                      
                       {/* Purpose */}
                       <div>
                         <p className="text-xs font-medium text-gray-500 mb-1">Purpose</p>
@@ -562,12 +820,113 @@ export default function RequestDetailsView({
                     </div>
                   </div>
 
+                  {/* Department Head Endorsement */}
+                  {request.workflow_metadata?.department_head_endorsed_by && (
+                    <div className="bg-white rounded-lg border border-gray-200 p-6">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Department Head Endorsement</h3>
+                      <div className="space-y-4">
+                        <div>
+                          <p className="text-xs font-medium text-gray-500 mb-1">Endorsed By</p>
+                          <p className="text-gray-900 font-medium">{request.workflow_metadata.department_head_endorsed_by}</p>
+                        </div>
+                        {request.workflow_metadata.department_head_endorsement_date && (
+                          <div>
+                            <p className="text-xs font-medium text-gray-500 mb-1">Endorsement Date</p>
+                            <p className="text-gray-900 font-medium">
+                              {formatDate(request.workflow_metadata.department_head_endorsement_date)}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Budget Breakdown - Show expense breakdown if available */}
+                  {request.expense_breakdown && Array.isArray(request.expense_breakdown) && request.expense_breakdown.length > 0 && (
+                    <div className="bg-white rounded-lg border border-gray-200 p-6">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Budget Breakdown</h3>
+                      <div className="space-y-2 mb-3">
+                        {request.expense_breakdown.map((expense: any, idx: number) => {
+                          // Use same logic as VP modal for label
+                          const label = expense.item === "Other" && expense.description 
+                            ? expense.description 
+                            : expense.item || expense.description || expense.category || "Unknown";
+                          
+                          // Show items with amount > 0
+                          if (!expense.amount || expense.amount <= 0) return null;
+                          
+                          return (
+                            <div key={idx} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+                              <span className="text-sm text-gray-600 font-medium">{label}</span>
+                              <span className="text-sm font-semibold text-gray-900">{formatCurrency(expense.amount)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      
+                      {request.total_budget > 0 && (
+                        <div className="pt-3 border-t-2 border-gray-300">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-bold text-gray-900">TOTAL BUDGET</span>
+                            <span className="text-lg font-bold text-[#7a0019]">{formatCurrency(request.total_budget)}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Budget Justification */}
                   {request.cost_justification && (
                     <div className="bg-white rounded-lg border border-gray-200 p-6">
                       <h3 className="text-lg font-semibold text-gray-900 mb-3">Budget Justification</h3>
                       <p className="text-gray-700 whitespace-pre-wrap">{request.cost_justification}</p>
+                    </div>
+                  )}
+
+                  {/* Vehicle Mode */}
+                  {request.vehicle_mode && (
+                    <div className="bg-white rounded-lg border border-gray-200 p-6">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                        <Car className="w-5 h-5 text-[#7a0019]" />
+                        Vehicle Mode
+                      </h3>
+                      <div className="space-y-4">
+                        <div>
+                          <p className="text-xs font-medium text-gray-500 mb-1">Vehicle Type</p>
+                          <p className="text-gray-900 font-medium capitalize">
+                            {request.vehicle_mode === 'institutional' 
+                              ? 'Institutional Vehicle' 
+                              : request.vehicle_mode === 'owned'
+                              ? 'Owned Vehicle'
+                              : request.vehicle_mode === 'rent'
+                              ? 'Rent (External)'
+                              : request.vehicle_mode
+                            }
+                          </p>
+                        </div>
+                        
+                        {/* Preferred Driver */}
+                        {(request.preferred_driver_name || request.preferred_driver) && (
+                          <div>
+                            <p className="text-xs font-medium text-gray-500 mb-1">Preferred Driver (Suggestion)</p>
+                            <p className="text-gray-900 font-medium">{request.preferred_driver_name || request.preferred_driver}</p>
+                            {request.preferred_driver_note && (
+                              <p className="text-xs text-gray-500 mt-1">{request.preferred_driver_note}</p>
+                            )}
+                          </div>
+                        )}
+                        
+                        {/* Preferred Vehicle */}
+                        {(request.preferred_vehicle_name || request.preferred_vehicle) && (
+                          <div>
+                            <p className="text-xs font-medium text-gray-500 mb-1">Preferred Vehicle (Suggestion)</p>
+                            <p className="text-gray-900 font-medium">{request.preferred_vehicle_name || request.preferred_vehicle}</p>
+                            {request.preferred_vehicle_note && (
+                              <p className="text-xs text-gray-500 mt-1">{request.preferred_vehicle_note}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
 
@@ -588,6 +947,30 @@ export default function RequestDetailsView({
                             }
                           </p>
                         </div>
+
+                        {/* Pickup Preference */}
+                        {request.pickup_preference && (
+                          <div>
+                            <p className="text-xs font-medium text-gray-500 mb-1">Pickup Preference</p>
+                            <p className="text-gray-900 font-medium">
+                              {request.pickup_preference === 'pickup' 
+                                ? 'Pickup at Location' 
+                                : request.pickup_preference === 'gymnasium'
+                                ? 'Pickup at Gymnasium'
+                                : 'Self-Transport'
+                              }
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Requester Contact Number */}
+                        {request.requester_contact_number && (
+                          <div>
+                            <p className="text-xs font-medium text-gray-500 mb-1">Requester Contact Number</p>
+                            <p className="text-gray-900 font-medium">{request.requester_contact_number}</p>
+                            <p className="text-xs text-gray-500 mt-1">For driver coordination</p>
+                          </div>
+                        )}
 
                         {request.transportation_type === 'pickup' && (
                           <>
@@ -700,27 +1083,35 @@ export default function RequestDetailsView({
                           <div className="grid grid-cols-2 gap-4">
                             <div>
                               <p className="text-xs font-medium text-gray-500 mb-1">Application Date</p>
-                              <p className="text-gray-900">{request.seminar_data.applicationDate ? formatDate(request.seminar_data.applicationDate) : '—'}</p>
+                              <p className="text-gray-900">{request.seminar_data?.applicationDate ? formatDate(request.seminar_data.applicationDate) : '—'}</p>
                             </div>
                             <div>
                               <p className="text-xs font-medium text-gray-500 mb-1">Training Category</p>
-                              <p className="text-gray-900 capitalize">{request.seminar_data.trainingCategory || '—'}</p>
+                              <p className="text-gray-900 capitalize">{request.seminar_data?.trainingCategory || '—'}</p>
                             </div>
                             <div>
                               <p className="text-xs font-medium text-gray-500 mb-1">Modality</p>
-                              <p className="text-gray-900">{request.seminar_data.modality || '—'}</p>
+                              <p className="text-gray-900">{request.seminar_data?.modality || '—'}</p>
                             </div>
                             <div>
                               <p className="text-xs font-medium text-gray-500 mb-1">Sponsor / Partner</p>
-                              <p className="text-gray-900">{request.seminar_data.sponsor || '—'}</p>
+                              <p className="text-gray-900">{request.seminar_data?.sponsor || '—'}</p>
                             </div>
-                            {request.seminar_data.days && (
+                            {request.seminar_data?.dateFrom && request.seminar_data?.dateTo && (
                               <div>
-                                <p className="text-xs font-medium text-gray-500 mb-1">Number of Days</p>
-                                <p className="text-gray-900">{request.seminar_data.days} {request.seminar_data.days === 1 ? 'day' : 'days'}</p>
+                                <p className="text-xs font-medium text-gray-500 mb-1">Duration</p>
+                                <p className="text-gray-900">
+                                  {(() => {
+                                    const start = new Date(request.seminar_data.dateFrom);
+                                    const end = new Date(request.seminar_data.dateTo);
+                                    const diffTime = Math.abs(end.getTime() - start.getTime());
+                                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+                                    return `${diffDays} ${diffDays === 1 ? 'day' : 'days'}`;
+                                  })()}
+                                </p>
                               </div>
                             )}
-                            {request.seminar_data.venue && (
+                            {request.seminar_data?.venue && (
                               <div>
                                 <p className="text-xs font-medium text-gray-500 mb-1">Venue</p>
                                 <div className="flex items-center gap-2">
@@ -740,7 +1131,7 @@ export default function RequestDetailsView({
                         </div>
 
                         {/* Type of Training */}
-                        {request.seminar_data.typeOfTraining && request.seminar_data.typeOfTraining.length > 0 && (
+                        {request.seminar_data?.typeOfTraining && request.seminar_data.typeOfTraining.length > 0 && (
                           <div className="bg-white rounded-lg border border-gray-200 p-6">
                             <h4 className="text-lg font-semibold text-gray-900 mb-3">Type of Training</h4>
                             <div className="flex flex-wrap gap-2">
@@ -754,7 +1145,7 @@ export default function RequestDetailsView({
                         )}
 
                         {/* Applicants */}
-                        {request.seminar_data.applicants && request.seminar_data.applicants.length > 0 && (
+                        {request.seminar_data?.applicants && request.seminar_data.applicants.length > 0 && (
                           <div className="bg-white rounded-lg border border-gray-200 p-6">
                             <h4 className="text-lg font-semibold text-gray-900 mb-4">
                               Applicants ({request.seminar_data.applicants.length})
@@ -785,7 +1176,7 @@ export default function RequestDetailsView({
                         )}
 
                         {/* Expense Breakdown */}
-                        {request.seminar_data.breakdown && request.seminar_data.breakdown.length > 0 && (
+                        {request.seminar_data?.breakdown && request.seminar_data.breakdown.length > 0 && (
                           <div className="bg-white rounded-lg border border-gray-200 p-6">
                             <h4 className="text-lg font-semibold text-gray-900 mb-4">Expense Breakdown</h4>
                             <div className="space-y-3">
@@ -807,7 +1198,7 @@ export default function RequestDetailsView({
                             </div>
                             {/* Summary */}
                             <div className="mt-4 pt-4 border-t border-gray-200 space-y-2">
-                              {request.seminar_data.registrationCost && (
+                              {request.seminar_data?.registrationCost && (
                                 <div className="flex justify-between text-sm">
                                   <span className="text-gray-600">Registration Cost:</span>
                                   <span className="text-gray-900 font-medium">{formatCurrency(request.seminar_data.registrationCost)}</span>
@@ -817,12 +1208,12 @@ export default function RequestDetailsView({
                                 <span className="font-semibold text-gray-900">Total Amount:</span>
                                 <span className="text-[#7a0019] font-bold text-lg">
                                   {(() => {
-                                    const breakdownTotal = request.seminar_data.breakdown?.reduce((sum: number, item: any) => sum + (item.amount || 0), 0) || 0;
-                                    const registrationCost = request.seminar_data.registrationCost || 0;
+                                    const breakdownTotal = request.seminar_data?.breakdown?.reduce((sum: number, item: any) => sum + (item.amount || 0), 0) || 0;
+                                    const registrationCost = request.seminar_data?.registrationCost || 0;
                                     const calculatedTotal = breakdownTotal + registrationCost;
                                     if (calculatedTotal > 0) {
                                       return formatCurrency(calculatedTotal);
-                                    } else if (request.seminar_data.totalAmount) {
+                                    } else if (request.seminar_data?.totalAmount) {
                                       return formatCurrency(request.seminar_data.totalAmount);
                                     } else {
                                       return '₱0.00';
@@ -835,23 +1226,23 @@ export default function RequestDetailsView({
                         )}
 
                         {/* Additional Info */}
-                        {(request.seminar_data.makeUpClassSchedule || request.seminar_data.fundReleaseLine !== null || request.seminar_data.applicantUndertaking) && (
+                        {(request.seminar_data?.makeUpClassSchedule || request.seminar_data?.fundReleaseLine !== null || request.seminar_data?.applicantUndertaking) && (
                           <div className="bg-white rounded-lg border border-gray-200 p-6">
                             <h4 className="text-lg font-semibold text-gray-900 mb-4">Additional Information</h4>
                             <div className="space-y-4">
-                              {request.seminar_data.makeUpClassSchedule && (
+                              {request.seminar_data?.makeUpClassSchedule && (
                                 <div>
                                   <p className="text-xs font-medium text-gray-500 mb-1">Make-up Class Schedule</p>
                                   <p className="text-sm text-gray-700 whitespace-pre-wrap">{request.seminar_data.makeUpClassSchedule}</p>
                                 </div>
                               )}
-                              {request.seminar_data.fundReleaseLine !== null && (
+                              {request.seminar_data?.fundReleaseLine !== null && request.seminar_data?.fundReleaseLine !== undefined && (
                                 <div>
                                   <p className="text-xs font-medium text-gray-500 mb-1">Fund Release Line</p>
                                   <p className="text-gray-900 font-semibold">{formatCurrency(request.seminar_data.fundReleaseLine)}</p>
                                 </div>
                               )}
-                              {request.seminar_data.applicantUndertaking && (
+                              {request.seminar_data?.applicantUndertaking && (
                                 <div className="pt-2 border-t border-gray-100">
                                   <p className="text-xs font-medium text-gray-500 mb-1">Applicant's Undertaking</p>
                                   <p className="text-sm text-gray-700">
@@ -864,6 +1255,127 @@ export default function RequestDetailsView({
                         )}
                       </div>
                     </div>
+                  )}
+
+                  {/* Attachments Section */}
+                  <WowCard className="p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                        <FileText className="w-5 h-5 text-[#7a0019]" />
+                        Attached Documents
+                      </h3>
+                      {canEdit && !editingAttachments && (
+                        <button
+                          onClick={handleEditAttachments}
+                          className="text-sm text-[#7a0019] hover:text-[#5a0010] font-medium flex items-center gap-1"
+                        >
+                          <Upload className="w-4 h-4" />
+                          {request.attachments && request.attachments.length > 0 ? 'Edit' : 'Add'} Files
+                        </button>
+                      )}
+                    </div>
+                    
+                    {editingAttachments ? (
+                      <div className="space-y-4">
+                        <FileAttachmentSection
+                          attachments={currentAttachments}
+                          onChange={setCurrentAttachments}
+                        />
+                        <div className="flex items-center gap-3 pt-4 border-t">
+                          <button
+                            onClick={handleSaveAttachments}
+                            disabled={uploadingAttachments}
+                            className="px-4 py-2 bg-[#7a0019] text-white rounded-lg hover:bg-[#5a0010] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                          >
+                            {uploadingAttachments ? (
+                              <>
+                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                Saving...
+                              </>
+                            ) : (
+                              'Save Attachments'
+                            )}
+                          </button>
+                          <button
+                            onClick={handleCancelEditAttachments}
+                            disabled={uploadingAttachments}
+                            className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : request.attachments && Array.isArray(request.attachments) && request.attachments.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {request.attachments.map((attachment: any) => (
+                          <a
+                            key={attachment.id}
+                            href={attachment.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-3 p-4 border border-gray-200 rounded-lg hover:border-[#7a0019] hover:bg-gray-50 transition-colors group"
+                          >
+                            <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-lg bg-gray-100 group-hover:bg-[#7a0019]/10">
+                              {attachment.mime?.includes('pdf') ? (
+                                <FileText className="w-5 h-5 text-[#7a0019]" />
+                              ) : attachment.mime?.includes('image') ? (
+                                <FileText className="w-5 h-5 text-blue-600" />
+                              ) : (
+                                <FileText className="w-5 h-5 text-gray-600" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-900 truncate group-hover:text-[#7a0019]">
+                                {attachment.name}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {attachment.size ? `${(attachment.size / 1024).toFixed(1)} KB` : ''}
+                                {attachment.uploaded_at && ` • ${formatLongDate(attachment.uploaded_at)}`}
+                              </p>
+                            </div>
+                            <ExternalLink className="w-4 h-4 text-gray-400 group-hover:text-[#7a0019] flex-shrink-0" />
+                          </a>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-gray-500">
+                        <FileText className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+                        <p className="text-sm mb-2">No documents attached</p>
+                        {canEdit && (
+                          <button
+                            onClick={handleEditAttachments}
+                            className="text-sm text-[#7a0019] hover:text-[#5a0010] font-medium"
+                          >
+                            Click to add files
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </WowCard>
+
+                  {/* Seminar Codes Per Person - Show for seminar requests */}
+                  {request.request_type === 'seminar' && request.seminar_code_per_person && Array.isArray(request.seminar_code_per_person) && request.seminar_code_per_person.length > 0 && (
+                    <WowCard className="p-6">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                        <FileText className="w-5 h-5 text-blue-600" />
+                        Seminar Codes Per Person
+                      </h3>
+                      <div className="space-y-2">
+                        {request.seminar_code_per_person.map((item: any, idx: number) => (
+                          <div key={idx} className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200">
+                            <div>
+                              <p className="font-medium text-gray-900">{item.name || `Person ${idx + 1}`}</p>
+                              {item.person_id && (
+                                <p className="text-xs text-gray-500">ID: {item.person_id}</p>
+                              )}
+                            </div>
+                            <div className="px-3 py-1.5 rounded-lg bg-white border border-blue-300">
+                              <span className="text-sm font-mono font-semibold text-blue-900">{item.code}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </WowCard>
                   )}
 
                   {/* Preferred Vehicle and Driver */}
@@ -909,14 +1421,24 @@ export default function RequestDetailsView({
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900 mb-3">Participants</h3>
                       <div className="space-y-3">
-                        {request.participants.map((participant) => (
-                          <PersonDisplay
-                            key={participant.id}
-                            person={participant}
-                            size="sm"
-                            showPosition
-                          />
-                        ))}
+                        {request.participants.map((participant) => {
+                          const safeParticipant = participant || {
+                            id: 'unknown',
+                            name: 'Unknown',
+                            email: undefined,
+                            position: undefined,
+                            department: undefined,
+                            profile_picture: null
+                          };
+                          return (
+                            <PersonDisplay
+                              key={safeParticipant.id}
+                              person={safeParticipant}
+                              size="sm"
+                              showPosition
+                            />
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -1036,23 +1558,272 @@ export default function RequestDetailsView({
         </div>
 
         {/* Sidebar */}
-        <div className="space-y-6">
-          {/* Requester Panel */}
-          <WowCard className="p-6">
-            <h3 className="text-xl font-bold text-gray-900 mb-6 pb-3 border-b-2 border-gray-200">Requested By</h3>
-            <div className="mb-6">
-              <PersonDisplay
-                person={request.requester}
-                size="md"
-                showEmail
-                showPosition
-              />
-            </div>
-            <div className="pt-4 border-t border-gray-200">
-              <div className="flex items-center justify-between">
-                <span className="text-base text-gray-600 font-medium">Role</span>
-                <span className="text-base font-bold text-gray-900">Requester</span>
+        <div className="lg:col-span-2 space-y-6">
+          {/* Requester Panel - Show ALL requesters (main + confirmed) */}
+          <WowCard className="p-6 bg-gradient-to-br from-gray-50 to-white border border-gray-200 shadow-lg">
+            <div className="flex items-center gap-3 mb-6 pb-4 border-b-2 border-gray-300">
+              <div className="p-2 bg-[#7a0019] rounded-lg">
+                <Users className="w-5 h-5 text-white" />
               </div>
+              <h3 className="text-2xl font-bold text-gray-900">Requested By</h3>
+            </div>
+            <div className="space-y-4">
+              {/* Main Requester (always show) */}
+              {(() => {
+                // Get requester signature from signatures array or direct field
+                const requesterSignatureStage = request.signatures?.find((s: any) => s.id === 'requester' || s.role === 'Requester');
+                const requesterSignature = request.requester_signature || requesterSignatureStage?.signature || null;
+                
+                return (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="relative p-5 bg-gradient-to-br from-blue-50 via-white to-blue-50 border-2 border-blue-200 rounded-xl shadow-md hover:shadow-lg transition-all duration-300 overflow-hidden"
+                  >
+                    {/* Decorative corner accent */}
+                    <div className="absolute top-0 right-0 w-20 h-20 bg-blue-100 rounded-bl-full opacity-20"></div>
+                    
+                    <div className="relative flex items-start gap-4">
+                      {/* Profile Picture */}
+                      <div className="flex-shrink-0 relative z-10">
+                        <div className="p-1 bg-white rounded-full shadow-md">
+                          <ProfilePicture
+                            src={request.requester?.profile_picture || null}
+                            name={request.requester?.name || 'Unknown'}
+                            size="lg"
+                          />
+                        </div>
+                      </div>
+                      
+                      {/* Details */}
+                      <div className="flex-1 min-w-0">
+                        {/* Name and Role */}
+                        <div className="flex flex-col gap-2 mb-3">
+                          <h4 className="text-lg font-bold text-gray-900 leading-tight break-words">
+                            {request.requester?.name || 'Unknown'}
+                          </h4>
+                          {request.requester?.position && (
+                            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 border border-blue-200 w-fit">
+                              {request.requester.position}
+                            </span>
+                          )}
+                        </div>
+                        
+                        {/* Email */}
+                        {request.requester?.email && (
+                          <div className="mb-2">
+                            <p className="text-sm text-gray-700 break-all">{request.requester.email}</p>
+                          </div>
+                        )}
+                        
+                        {/* Department */}
+                        {request.requester?.department && (
+                          <div className="mb-4">
+                            <p className="text-sm font-medium text-gray-800 break-words">{request.requester.department}</p>
+                          </div>
+                        )}
+                        
+                        {/* Signature */}
+                        <div className="mt-4 pt-4 border-t-2 border-blue-100">
+                          <div className="flex items-center gap-2 mb-3">
+                            <div className="p-1.5 bg-gray-100 rounded-lg">
+                              <PenTool className="w-4 h-4 text-gray-700" />
+                            </div>
+                            <span className="text-sm font-bold text-gray-800">Digital Signature</span>
+                          </div>
+                          {requesterSignature ? (
+                            <div className="bg-white rounded-lg border-2 border-gray-200 p-3 shadow-sm">
+                              <img
+                                src={requesterSignature}
+                                alt={`${request.requester?.name || 'Requester'} signature`}
+                                className="w-full h-20 object-contain"
+                                onError={(e) => {
+                                  console.error('[RequestDetailsView] Failed to load requester signature');
+                                  e.currentTarget.style.display = 'none';
+                                }}
+                              />
+                            </div>
+                          ) : (
+                            <div className="bg-gray-50 rounded-lg border-2 border-dashed border-gray-300 p-4 text-center">
+                              <p className="text-sm text-gray-500">No signature provided</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })()}
+
+              {/* Confirmed Additional Requesters */}
+              {loadingRequesters ? (
+                <div className="text-center py-4">
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#7A0010] border-t-transparent mx-auto"></div>
+                  <p className="text-xs text-gray-500 mt-2">Loading requesters...</p>
+                </div>
+              ) : confirmedRequesters.length > 0 ? (
+                (() => {
+                  // Filter out main requester completely - they're already shown in the main requester card above
+                  const mainRequesterEmail = request.requester?.email?.toLowerCase()?.trim();
+                  const mainRequesterId = String(request.requester?.id || '');
+                  
+                  console.log('[RequestDetailsView] 🔍 Filtering confirmed requesters:', {
+                    totalBeforeFilter: confirmedRequesters.length,
+                    mainRequesterEmail,
+                    mainRequesterId,
+                    allRequesters: confirmedRequesters.map((r: any) => ({
+                      name: r.name,
+                      email: r.email,
+                      user_id: String(r.user_id || ''),
+                      invitation_id: r.id
+                    }))
+                  });
+                  
+                  const filtered = confirmedRequesters.filter((requester: any) => {
+                    const requesterEmail = String(requester.email || '').toLowerCase().trim();
+                    const requesterUserId = String(requester.user_id || '');
+                    
+                    // Check if this is the main requester by comparing:
+                    // 1. Email (case-insensitive, trimmed)
+                    // 2. user_id matches requester_id
+                    const emailMatches = mainRequesterEmail && requesterEmail && requesterEmail === mainRequesterEmail;
+                    const userIdMatches = mainRequesterId && requesterUserId && requesterUserId === mainRequesterId;
+                    const isMainRequester = emailMatches || userIdMatches;
+                    
+                    if (isMainRequester) {
+                      console.log('[RequestDetailsView] 🚫 FILTERING OUT - Main requester duplicate:', {
+                        name: requester.name,
+                        email: requester.email,
+                        requesterUserId,
+                        mainRequesterId,
+                        emailMatches,
+                        userIdMatches
+                      });
+                      return false;
+                    }
+                    
+                    console.log('[RequestDetailsView] ✅ KEEPING - Additional requester:', {
+                      name: requester.name,
+                      email: requester.email,
+                      requesterUserId,
+                      mainRequesterId
+                    });
+                    return true;
+                  });
+                  
+                  console.log('[RequestDetailsView] 📊 Filter results:', {
+                    before: confirmedRequesters.length,
+                    after: filtered.length,
+                    filteredOut: confirmedRequesters.length - filtered.length
+                  });
+                  
+                  return filtered;
+                })().map((requester: any, index: number) => {
+                    console.log('[RequestDetailsView] 🎨 Rendering confirmed requester:', {
+                      index,
+                      name: requester.name,
+                      email: requester.email,
+                      hasSignature: !!requester.signature,
+                      signatureType: typeof requester.signature,
+                      signatureLength: requester.signature?.length || 0,
+                      signaturePreview: requester.signature?.substring(0, 50) || 'none'
+                    });
+                    return (
+                  <motion.div
+                    key={requester.id || requester.user_id || index}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.1 }}
+                    className="relative p-5 bg-gradient-to-br from-green-50 via-white to-green-50 border-2 border-green-200 rounded-xl shadow-md hover:shadow-lg transition-all duration-300 overflow-hidden"
+                  >
+                    {/* Decorative corner accent */}
+                    <div className="absolute top-0 right-0 w-20 h-20 bg-green-100 rounded-bl-full opacity-20"></div>
+                    
+                    <div className="relative flex items-start gap-4">
+                      {/* Profile Picture */}
+                      <div className="flex-shrink-0 relative z-10">
+                        <div className="p-1 bg-white rounded-full shadow-md">
+                          <ProfilePicture
+                            src={requester.profile_picture || null}
+                            name={requester.name || 'Unknown'}
+                            size="lg"
+                          />
+                        </div>
+                      </div>
+                      
+                      {/* Details */}
+                      <div className="flex-1 min-w-0">
+                        {/* Name, Role, and Status */}
+                        <div className="flex flex-col gap-2 mb-3">
+                          <h4 className="text-lg font-bold text-gray-900 leading-tight break-words">
+                            {requester.name || requester.email || 'Unknown Requester'}
+                          </h4>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {requester.position_title && (
+                              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-800 border border-gray-200">
+                                {requester.position_title}
+                              </span>
+                            )}
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-green-100 border border-green-300 rounded-full shadow-sm">
+                              <CheckCircle2 className="w-4 h-4 text-green-600" />
+                              <span className="text-xs font-bold text-green-700">Confirmed</span>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Email */}
+                        {requester.email && (
+                          <div className="mb-2">
+                            <p className="text-sm text-gray-700 break-all">{requester.email}</p>
+                          </div>
+                        )}
+                        
+                        {/* Department */}
+                        {requester.department && (
+                          <div className="mb-4">
+                            <p className="text-sm font-medium text-gray-800 break-words">{requester.department}</p>
+                          </div>
+                        )}
+                        
+                        {/* Signature */}
+                        <div className="mt-4 pt-4 border-t-2 border-green-100">
+                          <div className="flex items-center gap-2 mb-3">
+                            <div className="p-1.5 bg-gray-100 rounded-lg">
+                              <PenTool className="w-4 h-4 text-gray-700" />
+                            </div>
+                            <span className="text-sm font-bold text-gray-800">Digital Signature</span>
+                          </div>
+                          {requester.signature ? (
+                            <div className="bg-white rounded-lg border-2 border-gray-200 p-3 shadow-sm">
+                              <img
+                                src={requester.signature}
+                                alt={`${requester.name || 'Requester'} signature`}
+                                className="w-full h-20 object-contain"
+                                onError={(e) => {
+                                  console.error('[RequestDetailsView] Failed to load signature image for:', requester.email);
+                                  e.currentTarget.style.display = 'none';
+                                }}
+                              />
+                            </div>
+                          ) : (
+                            <div className="bg-gray-50 rounded-lg border-2 border-dashed border-gray-300 p-4 text-center">
+                              <p className="text-sm text-gray-500">No signature provided</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                    );
+                  })
+              ) : (
+                <div className="text-center py-8">
+                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-3">
+                    <Users className="w-8 h-8 text-gray-400" />
+                  </div>
+                  <p className="text-sm font-medium text-gray-500">No additional confirmed requesters</p>
+                </div>
+              )}
             </div>
           </WowCard>
 
@@ -1088,6 +1859,8 @@ export default function RequestDetailsView({
                 
                 if (request.status === 'pending_head') {
                   // Check if head selected a specific approver (VP or Admin)
+                  // This can happen in multi-department requests where status is still pending_head
+                  // but head already sent it to admin/VP
                   if (routingPerson && (nextVpId || nextAdminId)) {
                     console.log('[RequestDetailsView] ✅ Showing routing person:', routingPerson.name);
                     routingInfo = {
@@ -1095,7 +1868,24 @@ export default function RequestDetailsView({
                       value: routingPerson.name,
                       role: routingPerson.role || (nextVpId ? 'VP' : 'Administrator')
                     };
+                  } else if (nextAdminId || nextApproverRole === 'admin') {
+                    // Head sent to admin but routingPerson not loaded yet - show loading or fetch
+                    console.log('[RequestDetailsView] ⚠️ Head sent to admin but routingPerson not loaded, nextAdminId:', nextAdminId);
+                    routingInfo = {
+                      label: 'Sent To',
+                      value: loadingRoutingPerson ? 'Loading...' : 'Administrator',
+                      role: 'Administrator'
+                    };
+                  } else if (nextVpId || nextApproverRole === 'vp') {
+                    // Head sent to VP but routingPerson not loaded yet
+                    console.log('[RequestDetailsView] ⚠️ Head sent to VP but routingPerson not loaded, nextVpId:', nextVpId);
+                    routingInfo = {
+                      label: 'Sent To',
+                      value: loadingRoutingPerson ? 'Loading...' : 'Vice President',
+                      role: 'VP'
+                    };
                   } else {
+                    // No specific approver selected - show department head
                     console.log('[RequestDetailsView] ⚠️ No routing person - showing department:', request.department?.name);
                     routingInfo = {
                       label: 'Sent To',
@@ -1111,18 +1901,28 @@ export default function RequestDetailsView({
                   };
                 } else if (request.status === 'pending_admin') {
                   // Show actual admin name if sent to specific admin
-                  if (routingPerson && nextAdminId) {
+                  if (routingPerson) {
                     routingInfo = {
                       label: 'Sent To',
                       value: routingPerson.name,
                       role: routingPerson.role
                     };
                   } else {
-                    routingInfo = {
-                      label: 'Sent To',
-                      value: 'Administrator',
-                      role: 'Administrator'
-                    };
+                    // Fallback: Check if we can get admin name from head_approved_by
+                    // If head sent to admin, we can show who approved it
+                    if (request.head_approved_by) {
+                      routingInfo = {
+                        label: 'Sent To',
+                        value: 'Administrator (sent by ' + (request.head_approver?.name || 'Department Head') + ')',
+                        role: 'Administrator'
+                      };
+                    } else {
+                      routingInfo = {
+                        label: 'Sent To',
+                        value: 'Administrator',
+                        role: 'Administrator'
+                      };
+                    }
                   }
                 } else if (request.status === 'pending_comptroller') {
                   routingInfo = {
@@ -1186,95 +1986,6 @@ export default function RequestDetailsView({
             </div>
           </WowCard>
 
-          {/* Confirmed Requesters Panel */}
-          {confirmedRequesters.length > 0 && (
-            <WowCard className="p-6">
-              <h3 className="text-xl font-bold text-gray-900 mb-6 pb-3 border-b-2 border-gray-200">
-                Additional Requesters
-              </h3>
-              <div className="space-y-4">
-                {loadingRequesters ? (
-                  <div className="text-center py-4">
-                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#7A0010] border-t-transparent mx-auto"></div>
-                    <p className="text-xs text-gray-500 mt-2">Loading requesters...</p>
-                  </div>
-                ) : (
-                  confirmedRequesters.map((requester, index) => (
-                    <motion.div
-                      key={requester.id || index}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.1 }}
-                      className="p-4 bg-green-50 border border-green-200 rounded-lg"
-                    >
-                      {/* Requester Info */}
-                      <div className="flex items-start gap-3 mb-3">
-                        <div className="flex-shrink-0">
-                          {requester.user_id ? (
-                            <ProfilePicture
-                              userId={requester.user_id}
-                              name={requester.name || 'Unknown'}
-                              size="sm"
-                            />
-                          ) : (
-                            <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
-                              <User className="w-5 h-5 text-green-600" />
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-base font-semibold text-gray-900 truncate">
-                            {requester.name || requester.email || 'Unknown Requester'}
-                          </p>
-                          {requester.department && (
-                            <p className="text-sm text-gray-600 mt-1">{requester.department}</p>
-                          )}
-                          {requester.email && (
-                            <p className="text-sm text-gray-500 mt-0.5 truncate">{requester.email}</p>
-                          )}
-                        </div>
-                        <div className="flex-shrink-0">
-                          <div className="flex items-center gap-1 px-2 py-1 bg-green-100 rounded-full">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
-                            <span className="text-xs font-medium text-green-700">Confirmed</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Signature */}
-                      {requester.signature && (
-                        <div className="mt-3 pt-3 border-t border-green-200">
-                          <div className="flex items-center gap-2 mb-2">
-                            <PenTool className="w-4 h-4 text-green-600" />
-                            <span className="text-xs font-semibold text-green-900">Signature</span>
-                          </div>
-                          <div className="bg-white rounded-lg p-2 border border-green-200">
-                            <img
-                              src={requester.signature}
-                              alt={`${requester.name || 'Requester'} signature`}
-                              className="w-full h-16 object-contain"
-                            />
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Confirmation Time */}
-                      {requester.confirmed_at && (
-                        <div className="mt-3 pt-3 border-t border-green-200">
-                          <div className="flex items-center gap-2">
-                            <Clock className="w-3.5 h-3.5 text-gray-500" />
-                            <span className="text-xs text-gray-600">
-                              Confirmed: <span className="font-medium text-gray-900">{formatLongDateTime(requester.confirmed_at)}</span>
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                    </motion.div>
-                  ))
-                )}
-              </div>
-            </WowCard>
-          )}
 
           {/* Moved signatures to bottom */}
 
@@ -1282,23 +1993,30 @@ export default function RequestDetailsView({
           <WowCard className="p-6">
             <h3 className="text-xl font-bold text-gray-900 mb-6 pb-3 border-b-2 border-gray-200">Actions</h3>
             <div className="space-y-4">
-              <WowButton 
-                variant="outline" 
-                className="w-full justify-start"
-                onClick={onPrint}
+              <button
+                onClick={async () => {
+                  try {
+                    // Use the same PDF generation as admin modal
+                    const { generateRequestPDF } = await import('@/lib/admin/requests/pdfWithTemplate');
+                    const { generateSeminarPDF } = await import('@/lib/admin/requests/pdfSeminar');
+                    
+                    // Check if it's a seminar request
+                    if (request.request_type === 'seminar' && request.seminar_data) {
+                      await generateSeminarPDF(request as any);
+                    } else {
+                      // Regular travel order
+                      await generateRequestPDF(request as any);
+                    }
+                  } catch (err) {
+                    console.error('Failed to generate PDF:', err);
+                    alert('Failed to generate PDF. Please try again.');
+                  }
+                }}
+                className="flex items-center gap-2 w-full justify-center rounded-md bg-[#7A0010] hover:bg-[#5c000c] px-4 py-2.5 text-sm font-medium text-white transition"
               >
-                <Printer className="w-4 h-4" />
-                Print Request
-              </WowButton>
-              
-              
-              <WowButton 
-                variant="outline" 
-                className="w-full justify-start"
-              >
-                <ExternalLink className="w-4 h-4" />
-                Copy Link
-              </WowButton>
+                <FileDown className="h-4 w-4" />
+                Travel Order PDF
+              </button>
             </div>
           </WowCard>
         </div>

@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Bell, CheckCircle, XCircle, AlertCircle, Clock } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { createSupabaseClient } from "@/lib/supabase/client";
 
 type Notification = {
   id: string;
@@ -31,9 +32,10 @@ export default function NotificationDropdown() {
   const loadNotifications = async () => {
     // Don't show loading spinner - just update silently
     try {
+      console.log("[NotificationDropdown] Loading notifications...");
       // Load both in parallel for speed
       const [notificationsRes, inboxRes] = await Promise.all([
-        fetch("/api/notifications?limit=10", { 
+        fetch("/api/notifications?limit=50", { 
           cache: "no-store",
           headers: {
             'Cache-Control': 'no-cache'
@@ -47,10 +49,19 @@ export default function NotificationDropdown() {
         inboxRes.json()
       ]);
       
+      console.log("[NotificationDropdown] Notifications response:", {
+        ok: notificationsData.ok,
+        dataLength: notificationsData.data?.length || 0,
+        data: notificationsData.data
+      });
+      
       let notificationsList: Notification[] = [];
       
       if (notificationsData.ok) {
         notificationsList = Array.isArray(notificationsData.data) ? notificationsData.data : [];
+        console.log("[NotificationDropdown] Parsed notifications:", notificationsList.length);
+      } else {
+        console.error("[NotificationDropdown] Failed to load notifications:", notificationsData.error);
       }
 
       // Convert inbox items to notification format
@@ -98,6 +109,17 @@ export default function NotificationDropdown() {
       
       const unread = uniqueNotifications.filter((n: Notification) => !n.is_read || n.is_read === false);
       setUnreadCount(unread.length);
+      
+      console.log("[NotificationDropdown] Final notifications:", {
+        total: uniqueNotifications.length,
+        unread: unread.length,
+        notifications: uniqueNotifications.map(n => ({
+          id: n.id,
+          type: n.notification_type,
+          title: n.title,
+          is_read: n.is_read
+        }))
+      });
     } catch (error) {
       console.error("[NotificationDropdown] Failed to load notifications:", error);
       setNotifications([]);
@@ -119,16 +141,95 @@ export default function NotificationDropdown() {
   };
 
 
-  // Load on mount
+  // Load on mount and set up real-time subscription
   useEffect(() => {
+    let isMounted = true;
+    let channel: any = null;
+    
+    // Initial load
     loadNotifications();
     loadInboxCount();
-    // Refresh every 30 seconds
+    
+    // Set up real-time subscription for notifications
+    const setupRealtime = async () => {
+      const supabase = createSupabaseClient();
+      console.log("[NotificationDropdown] Setting up real-time subscription...");
+      
+      // Get current user profile ID first
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.log("[NotificationDropdown] No user found, skipping real-time subscription");
+        return;
+      }
+      
+      const { data: profile } = await supabase
+        .from("users")
+        .select("id")
+        .eq("auth_user_id", user.id)
+        .single();
+      
+      if (!profile) {
+        console.log("[NotificationDropdown] No profile found, skipping real-time subscription");
+        return;
+      }
+      
+      const currentUserId = profile.id;
+      console.log("[NotificationDropdown] Current user ID:", currentUserId);
+      
+      // Subscribe to all notification changes (we'll filter by user_id in the handler)
+      channel = supabase
+        .channel("user-notifications-changes")
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "notifications",
+          },
+          (payload: any) => {
+            if (!isMounted) return;
+            
+            // Filter by user_id in the handler
+            const notificationUserId = payload.new?.user_id || payload.old?.user_id;
+            if (notificationUserId !== currentUserId) {
+              return; // Not for this user
+            }
+            
+            console.log("[NotificationDropdown] 🔔 Real-time notification change:", {
+              eventType: payload.eventType,
+              user_id: notificationUserId,
+              notification_id: payload.new?.id || payload.old?.id
+            });
+            
+            // Reload notifications when there's a change
+            if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
+              loadNotifications();
+            }
+          }
+        )
+        .subscribe((status: string) => {
+          console.log("[NotificationDropdown] Real-time subscription status:", status);
+        });
+    };
+    
+    setupRealtime();
+    
+    // Fallback polling every 30 seconds
     const interval = setInterval(() => {
-      loadNotifications();
-      loadInboxCount();
+      if (isMounted) {
+        loadNotifications();
+        loadInboxCount();
+      }
     }, 30000);
-    return () => clearInterval(interval);
+    
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      if (channel) {
+        const supabase = createSupabaseClient();
+        supabase.removeChannel(channel);
+      }
+    };
   }, []);
 
   // Close dropdown when clicking outside

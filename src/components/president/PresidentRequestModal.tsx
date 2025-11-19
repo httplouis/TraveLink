@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { X, CheckCircle2, XCircle, Users, Car, UserCog, MapPin, Calendar, DollarSign, FileText, Edit2, Check } from "lucide-react";
-import { useToast } from "@/components/common/ui/ToastProvider.ui";
+import { useToast } from "@/components/common/ui/Toast";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import { NameWithProfile } from "@/components/common/ProfileHoverCard";
 import ApproverSelectionModal from "@/components/common/ApproverSelectionModal";
@@ -108,7 +108,7 @@ export default function PresidentRequestModal({
 
   const handleApprove = async () => {
     if (!presidentSignature) {
-      toast({ message: "Please provide your signature", kind: "error" });
+      toast.error("Signature Required", "Please provide your signature");
       return;
     }
 
@@ -207,7 +207,7 @@ export default function PresidentRequestModal({
       setLoadingApprovers(false);
       setApproverOptions([]);
       setShowApproverSelection(true);
-      toast({ message: "Could not fetch approvers. You can still return the request to the requester.", kind: "warning" });
+      toast.warning("Warning", "Could not fetch approvers. You can still return the request to the requester.");
     }
   };
 
@@ -234,17 +234,17 @@ export default function PresidentRequestModal({
         const roleLabel = selectedRole === "requester" ? "Requester" : 
                          selectedRole === "comptroller" ? "Comptroller" : 
                          selectedRole === "hr" ? "HR" : "Next Approver";
-        toast({ message: `Request has been sent to ${roleLabel}`, kind: "success" });
+        toast.success("Request Approved", `Request has been sent to ${roleLabel}`);
         setShowApproverSelection(false);
         setTimeout(() => {
           onApproved(request.id);
           onClose();
         }, 1500);
       } else {
-        toast({ message: data.error || "Failed to approve request", kind: "error" });
+        toast.error("Approval Failed", data.error || "Failed to approve request");
       }
     } catch (error) {
-      toast({ message: "An error occurred", kind: "error" });
+      toast.error("Error", "An error occurred");
     } finally {
       setSubmitting(false);
     }
@@ -252,7 +252,7 @@ export default function PresidentRequestModal({
 
   const handleReject = async () => {
     if (!notes.trim()) {
-      toast({ message: "Please provide a reason for rejection", kind: "error" });
+      toast.error("Reason Required", "Please provide a reason for rejection");
       return;
     }
 
@@ -271,16 +271,16 @@ export default function PresidentRequestModal({
       const data = await res.json();
 
       if (data.ok) {
-        toast({ message: "Request rejected", kind: "info" });
+        toast.info("Request Rejected", "Request rejected successfully");
         setTimeout(() => {
           onRejected(request.id);
           onClose();
         }, 1500);
       } else {
-        toast({ message: data.error || "Failed to reject request", kind: "error" });
+        toast.error("Rejection Failed", data.error || "Failed to reject request");
       }
     } catch (error) {
-      toast({ message: "An error occurred", kind: "error" });
+      toast.error("Error", "An error occurred");
     } finally {
       setSubmitting(false);
     }
@@ -565,26 +565,41 @@ export default function PresidentRequestModal({
               </section>
             )}
 
-            {/* Requester Signature */}
+            {/* Requester Signature - Same style as Previous Approvals */}
             <section className="rounded-lg bg-slate-50 border border-slate-200 p-4">
               <p className="text-xs font-semibold uppercase text-slate-700 mb-3">
                 Requester's Signature
               </p>
               {(t.requester_signature) ? (
-                <div className="bg-white rounded-lg border border-slate-200 p-4">
-                  <img
-                    src={t.requester_signature}
-                    alt="Requester signature"
-                    className="h-[100px] w-full object-contain"
-                  />
-                  <p className="text-center text-xs text-slate-600 mt-2 font-medium">
-                    Signed by: {t.requester_name || "Requester"}
-                  </p>
-                  {t.requester_signed_at && (
-                    <p className="text-center text-xs text-slate-500 mt-1">
-                      {new Date(t.requester_signed_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                <div className="bg-white rounded-lg border border-slate-200 p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium text-slate-900">
+                      Requester Signed
                     </p>
-                  )}
+                    {(t.requester_signed_at || t.created_at) && (
+                      <span className="text-xs text-green-600 font-medium">
+                        {new Date(t.requester_signed_at || t.created_at).toLocaleString('en-US', { 
+                          year: 'numeric', 
+                          month: 'short', 
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: true,
+                          timeZone: 'Asia/Manila'
+                        })}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-600">
+                    By: {t.requester_name || "Requester"}
+                  </p>
+                  <div className="mt-2 pt-2 border-t border-slate-100">
+                    <img
+                      src={t.requester_signature}
+                      alt="Requester signature"
+                      className="h-16 w-full object-contain"
+                    />
+                  </div>
                 </div>
               ) : (
                 <div className="flex items-center justify-center gap-2 text-sm text-slate-600 bg-white rounded-lg border border-slate-200 p-4">
@@ -848,17 +863,17 @@ export default function PresidentRequestModal({
                             const json = await res.json();
                             
                             if (json.ok) {
-                              toast({ message: "✅ Budget updated successfully", kind: "success" });
+                              toast.success("Budget Updated", "Budget updated successfully");
                               setEditingBudget(false);
                               // Update expense breakdown to reflect changes
                               setExpenseBreakdown(editedExpenses);
                               setTotalCost(calculatedTotal);
                             } else {
-                              toast({ message: json.error || "Failed to update budget", kind: "error" });
+                              toast.error("Update Failed", json.error || "Failed to update budget");
                             }
                           } catch (err) {
                             console.error("Save budget error:", err);
-                            toast({ message: "Failed to save budget. Please try again.", kind: "error" });
+                            toast.error("Save Failed", "Failed to save budget. Please try again.");
                           } finally {
                             setSubmitting(false);
                           }
@@ -994,6 +1009,10 @@ export default function PresidentRequestModal({
                     onClear={() => {
                       setPresidentSignature("");
                     }}
+                    onUseSaved={(dataUrl) => {
+                      setPresidentSignature(dataUrl);
+                    }}
+                    showUseSavedButton={true}
                     hideSaveButton
                   />
                 </div>

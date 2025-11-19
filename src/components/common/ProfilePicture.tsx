@@ -194,17 +194,34 @@ export function PersonDisplay({
   size = 'md',
   className = ''
 }: PersonDisplayProps) {
+  // Guard against undefined/null person
+  if (!person) {
+    console.warn("[PersonDisplay] person prop is undefined or null");
+    return (
+      <div className={`flex items-start gap-3 ${className}`}>
+        <ProfilePicture
+          src={null}
+          name="Unknown"
+          size={size}
+        />
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-gray-900 truncate">Unknown</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`flex items-start gap-3 ${className}`}>
       <ProfilePicture
-        src={person.profile_picture}
-        name={person.name}
+        src={person.profile_picture || null}
+        name={person.name || "Unknown"}
         size={size}
         isOnline={person.is_online}
       />
       <div className="flex-1 min-w-0">
         <p className="font-semibold text-gray-900 truncate">
-          {person.name}
+          {person.name || "Unknown"}
         </p>
         {showPosition && (person.position || person.department) && (
           <p className="text-sm text-gray-600 truncate">

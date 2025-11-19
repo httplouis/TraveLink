@@ -113,8 +113,23 @@ export async function GET(
       console.error("[PDF] Error fetching multi-department requesters:", err);
     }
 
-    // Load PDF template from public folder
-    const templatePath = path.join(process.cwd(), 'public', 'Travel-Order_Rev12_Jan2024.pdf');
+    // Load PDF template from public folder based on request type
+    const isSeminar = request.request_type === 'seminar';
+    const templateFileName = isSeminar 
+      ? 'Seminar-Application_Rev06_May2024 (2).pdf'
+      : 'Travel-Order_Rev12_Jan2024.pdf';
+    
+    const templatePath = path.join(process.cwd(), 'public', templateFileName);
+    
+    // Check if template file exists
+    if (!fs.existsSync(templatePath)) {
+      console.error(`[PDF] Template file not found: ${templatePath}`);
+      return NextResponse.json(
+        { ok: false, error: `PDF template not found: ${templateFileName}` },
+        { status: 500 }
+      );
+    }
+    
     const templateBytes = fs.readFileSync(templatePath);
     
     // Load the PDF template
@@ -181,58 +196,142 @@ export async function GET(
       }).format(date);
     };
     
-    // Fill in using exact coordinates from pdfWithTemplate.ts
+    // Fill in data based on request type (Travel Order vs Seminar Application)
     const reqName = requesterName || request.requester_name || "Unknown";
     let deptName = department?.name || "Unknown";
     
-    // If multiple requesters, combine names and departments
-    if (multiDeptRequesters.length > 0) {
-      const allNames = [reqName, ...multiDeptRequesters.map((r: any) => r.name)].filter(Boolean);
-      const allDepts = new Set([deptName]);
-      multiDeptRequesters.forEach((r: any) => {
-        if (r.department) allDepts.add(r.department);
-      });
-      deptName = Array.from(allDepts).join(", ");
-      // Show all requesters' names
-      const requestingPersons = allNames.join(", ");
-      drawInRect(requestingPersons, 150, 180, 210, 14, 9); // Smaller font if multiple
-    } else {
-      drawInRect(reqName, 150, 180, 210, 14, 10);
-    }
-    
-    // Created date
-    drawInRect(fmtLongDate(request.created_at), 100, 123, 150, 14, 10);
-    
-    // Department(s) - show all if multiple
-    drawInRect(deptName, 450, 169, 146, 42, 10);
-    
-    // Destination
-    drawInRect(request.destination || "", 150, 205, 446, 32, 10);
-    
-    // Departure and return dates
-    drawInRect(fmtLongDate(request.travel_start_date), 150, 235, 210, 14, 10);
-    drawInRect(fmtLongDate(request.travel_end_date), 450, 235, 150, 14, 10);
-    
-    // Purpose of travel
-    drawInRect(request.purpose || "", 150, 260, 446, 26, 9);
-    
-    // Travel Cost breakdown (if exists) - match template format
-    if (request.expense_breakdown && Array.isArray(request.expense_breakdown)) {
-      let costY = 295;
-      const maxItems = 12; // Limit to fit on page
-      request.expense_breakdown.slice(0, maxItems).forEach((item: any) => {
-        const label = item.category || item.label || "Other";
-        const amount = item.amount || 0;
-        if (amount > 0) {
-          const costText = `${label} - Php ${amount.toLocaleString()}`;
-          drawInRect(costText, 150, costY, 446, 8, 8);
-          costY += 8;
-        }
-      });
+    if (isSeminar) {
+      // ===== SEMINAR APPLICATION TEMPLATE =====
+      // Extract seminar data
+      const seminarData = request.seminar_data || {};
+      const seminarTitle = seminarData.title || request.title || "";
+      const trainingCategory = seminarData.trainingCategory || seminarData.category || "";
+      const dateFrom = seminarData.dateFrom || request.travel_start_date || "";
+      const dateTo = seminarData.dateTo || request.travel_end_date || "";
+      const venue = seminarData.venue || request.destination || "";
+      const modality = seminarData.modality || "";
       
-      // Total if available
-      if (request.total_budget) {
-        drawInRect(`Total: Php ${request.total_budget.toLocaleString()}`, 150, costY + 4, 446, 10, 9, true);
+      // SEMINAR APPLICATION SIGNATURE COORDINATES
+      // These coordinates are based on the Seminar-Application_Rev06_May2024 template
+      // If the template changes, these coordinates need to be updated
+      // To find exact coordinates:
+      // 1. Open the PDF template in a PDF editor (Adobe Acrobat, PDFtk, etc.)
+      // 2. Measure the signature box positions from the bottom-left corner (0,0)
+      // 3. Update the coordinates below
+      // Note: PDF coordinates use bottom-left as origin, so top = PAGE_H - y
+      // Applicant Name
+      if (multiDeptRequesters.length > 0) {
+        const allNames = [reqName, ...multiDeptRequesters.map((r: any) => r.name)].filter(Boolean);
+        drawInRect(allNames.join(", "), 150, 180, 210, 14, 9);
+      } else {
+        drawInRect(reqName, 150, 180, 210, 14, 10);
+      }
+      
+      // Department
+      if (multiDeptRequesters.length > 0) {
+        const allDepts = new Set([deptName]);
+        multiDeptRequesters.forEach((r: any) => {
+          if (r.department) allDepts.add(r.department);
+        });
+        deptName = Array.from(allDepts).join(", ");
+      }
+      drawInRect(deptName, 450, 169, 146, 42, 10);
+      
+      // Training Title
+      drawInRect(seminarTitle, 150, 205, 446, 32, 10);
+      
+      // Training Category
+      drawInRect(trainingCategory, 150, 235, 210, 14, 10);
+      
+      // Dates
+      if (dateFrom) drawInRect(fmtLongDate(dateFrom), 150, 250, 210, 14, 10);
+      if (dateTo) drawInRect(fmtLongDate(dateTo), 450, 250, 150, 14, 10);
+      
+      // Venue
+      drawInRect(venue, 150, 265, 446, 26, 10);
+      
+      // Modality
+      drawInRect(modality, 150, 290, 210, 14, 10);
+      
+      // Estimated Costs
+      const registrationCost = seminarData.registrationCost || 0;
+      const totalAmount = seminarData.totalAmount || request.total_budget || 0;
+      
+      if (registrationCost > 0) {
+        drawInRect(`Registration Cost: Php ${registrationCost.toLocaleString()}`, 150, 310, 446, 10, 9);
+      }
+      
+      // Breakdown items
+      if (seminarData.breakdown && Array.isArray(seminarData.breakdown)) {
+        let costY = 325;
+        seminarData.breakdown.slice(0, 5).forEach((item: any) => {
+          const label = item.label || item.category || "Other";
+          const amount = item.amount || 0;
+          if (amount > 0) {
+            drawInRect(`${label}: Php ${amount.toLocaleString()}`, 150, costY, 446, 8, 8);
+            costY += 8;
+          }
+        });
+        
+        // Total
+        if (totalAmount > 0) {
+          drawInRect(`Total Amount: Php ${totalAmount.toLocaleString()}`, 150, costY + 4, 446, 10, 9, true);
+        }
+      } else if (totalAmount > 0) {
+        drawInRect(`Total Amount: Php ${totalAmount.toLocaleString()}`, 150, 325, 446, 10, 9, true);
+      }
+      
+    } else {
+      // ===== TRAVEL ORDER TEMPLATE =====
+      // If multiple requesters, combine names and departments
+      if (multiDeptRequesters.length > 0) {
+        const allNames = [reqName, ...multiDeptRequesters.map((r: any) => r.name)].filter(Boolean);
+        const allDepts = new Set([deptName]);
+        multiDeptRequesters.forEach((r: any) => {
+          if (r.department) allDepts.add(r.department);
+        });
+        deptName = Array.from(allDepts).join(", ");
+        // Show all requesters' names
+        const requestingPersons = allNames.join(", ");
+        drawInRect(requestingPersons, 150, 180, 210, 14, 9); // Smaller font if multiple
+      } else {
+        drawInRect(reqName, 150, 180, 210, 14, 10);
+      }
+      
+      // Created date
+      drawInRect(fmtLongDate(request.created_at), 100, 123, 150, 14, 10);
+      
+      // Department(s) - show all if multiple
+      drawInRect(deptName, 450, 169, 146, 42, 10);
+      
+      // Destination
+      drawInRect(request.destination || "", 150, 205, 446, 32, 10);
+      
+      // Departure and return dates
+      drawInRect(fmtLongDate(request.travel_start_date), 150, 235, 210, 14, 10);
+      drawInRect(fmtLongDate(request.travel_end_date), 450, 235, 150, 14, 10);
+      
+      // Purpose of travel
+      drawInRect(request.purpose || "", 150, 260, 446, 26, 9);
+      
+      // Travel Cost breakdown (if exists) - match template format
+      if (request.expense_breakdown && Array.isArray(request.expense_breakdown)) {
+        let costY = 295;
+        const maxItems = 12; // Limit to fit on page
+        request.expense_breakdown.slice(0, maxItems).forEach((item: any) => {
+          const label = item.category || item.label || "Other";
+          const amount = item.amount || 0;
+          if (amount > 0) {
+            const costText = `${label} - Php ${amount.toLocaleString()}`;
+            drawInRect(costText, 150, costY, 446, 8, 8);
+            costY += 8;
+          }
+        });
+        
+        // Total if available
+        if (request.total_budget) {
+          drawInRect(`Total: Php ${request.total_budget.toLocaleString()}`, 150, costY + 4, 446, 10, 9, true);
+        }
       }
     }
     
@@ -260,16 +359,20 @@ export async function GET(
     }
     
     // Admin/Coordinator signature (RIGHT)
+    // Position: "School Transportation Coordinator" or "Approved by" section
     if (request.admin_signature) {
-      await drawSignature(request.admin_signature, 340, 455, 200, 34);
+      const adminSigY = isSeminar ? 455 : 455; // Adjust if Seminar template differs
+      await drawSignature(request.admin_signature, 340, adminSigY, 200, 34);
     }
     
     // President/COO signature (Approved by section)
     if (presidentApproverName) {
-      drawInRect(presidentApproverName, 125, 550, 260, 14, 10);
+      const presidentNameY = isSeminar ? 550 : 550;
+      drawInRect(presidentApproverName, 125, presidentNameY, 260, 14, 10);
     }
     if (request.president_signature) {
-      await drawSignature(request.president_signature, 85, 530, 180, 34);
+      const presidentSigY = isSeminar ? 530 : 530;
+      await drawSignature(request.president_signature, 85, presidentSigY, 180, 34);
     }
     
     // Executive signature (fallback if president_signature not available)
@@ -281,42 +384,53 @@ export async function GET(
     }
     
     // Comptroller signature and name (For Travel Cost - Recommending Approval)
+    // Position: Right side, "Recommending Approval" section
     if (comptrollerApproverName) {
-      drawInRect(comptrollerApproverName, 480, 600, 200, 14, 10);
+      const comptrollerNameY = isSeminar ? 600 : 600;
+      drawInRect(comptrollerApproverName, 480, comptrollerNameY, 200, 14, 10);
     }
     if (request.comptroller_signature) {
-      await drawSignature(request.comptroller_signature, 480, 570, 150, 30);
+      const comptrollerSigY = isSeminar ? 570 : 570;
+      await drawSignature(request.comptroller_signature, 480, comptrollerSigY, 150, 30);
     }
     
     // Comptroller recommended amount if exists
     if (request.comptroller_edited_budget) {
       const recAmount = `Rec Amt: ${request.comptroller_edited_budget.toLocaleString()} subject to liquidation`;
-      drawInRect(recAmount, 480, 620, 200, 14, 9);
+      const recAmountY = isSeminar ? 620 : 620;
+      drawInRect(recAmount, 480, recAmountY, 200, 14, 9);
     }
     
     // VP signatures (Recommending Approval section)
-    // First VP
+    // First VP - Position: Left side, "Recommending Approval" section
     if (vpApproverName) {
-      drawInRect(vpApproverName, 125, 750, 260, 14, 10);
+      const vpNameY = isSeminar ? 750 : 750;
+      drawInRect(vpApproverName, 125, vpNameY, 260, 14, 10);
     }
     if (request.vp_signature) {
-      await drawSignature(request.vp_signature, 85, 730, 180, 34);
+      const vpSigY = isSeminar ? 730 : 730;
+      await drawSignature(request.vp_signature, 85, vpSigY, 180, 34);
     }
     
     // Second VP (if both VPs approved - for multi-department requests)
     if (request.both_vps_approved && vp2ApproverName) {
-      drawInRect(vp2ApproverName, 125, 700, 260, 14, 10);
+      const vp2NameY = isSeminar ? 700 : 700;
+      drawInRect(vp2ApproverName, 125, vp2NameY, 260, 14, 10);
     }
     if (request.vp2_signature) {
-      await drawSignature(request.vp2_signature, 85, 680, 180, 34);
+      const vp2SigY = isSeminar ? 680 : 680;
+      await drawSignature(request.vp2_signature, 85, vp2SigY, 180, 34);
     }
     
     // HR Director signature (Noted by section)
+    // Position: Left side, "Noted by" section
     if (hrApproverName) {
-      drawInRect(hrApproverName, 125, 650, 260, 14, 10);
+      const hrNameY = isSeminar ? 650 : 650;
+      drawInRect(hrApproverName, 125, hrNameY, 260, 14, 10);
     }
     if (request.hr_signature) {
-      await drawSignature(request.hr_signature, 85, 630, 180, 34);
+      const hrSigY = isSeminar ? 630 : 630;
+      await drawSignature(request.hr_signature, 85, hrSigY, 180, 34);
     }
     
     // Get all participants/requesters for multi-page support
@@ -358,8 +472,9 @@ export async function GET(
         
         // Draw page header
         const headerFont = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
+        const docTitle = isSeminar ? 'Seminar Application' : 'Travel Order';
         newPage.drawText(
-          `Travel Order - Participants (Page ${pageNum + 1})`,
+          `${docTitle} - Participants (Page ${pageNum + 1})`,
           {
             x: 50,
             y: PAGE_H - 30,

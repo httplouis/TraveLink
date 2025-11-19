@@ -42,7 +42,7 @@ export function formatPhilippineDate(dateStr: string): string {
 }
 
 /**
- * Format date to long format: "November 13, 2025"
+ * Format date to long format: "Tuesday, November 13, 2025"
  */
 export function formatLongDate(dateStr: string): string {
   if (!dateStr) return '';
@@ -55,6 +55,7 @@ export function formatLongDate(dateStr: string): string {
   const date = new Date(adjustedDateStr);
   return date.toLocaleDateString('en-US', {
     timeZone: 'Asia/Manila',
+    weekday: 'long',
     year: 'numeric',
     month: 'long',
     day: 'numeric'

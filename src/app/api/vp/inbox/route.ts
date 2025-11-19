@@ -407,6 +407,122 @@ export async function GET(req: NextRequest) {
 
     console.log("[VP Inbox] Requests enriched, returning data");
 
+    // Auto-create notifications for pending_exec requests that don't have notifications yet
+    // This ensures VPs get notified even for existing requests
+    try {
+      const { createNotification } = await import("@/lib/notifications/helpers");
+      const { createClient } = await import("@supabase/supabase-js");
+      
+      // Create service role client for database operations (bypasses RLS)
+      const supabaseServiceRole = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        {
+          auth: {
+            autoRefreshToken: false,
+            persistSession: false
+          }
+        }
+      );
+      
+      // Get all pending_exec requests that need notifications
+      const pendingExecRequests = enrichedRequests.filter((req: any) => 
+        req.status === 'pending_exec' && 
+        (req.head_approved_at || req.head_signature || req.parent_head_approved_at || req.parent_head_signature || req.hr_approved_at)
+      );
+      
+      if (pendingExecRequests.length > 0) {
+        console.log("[VP Inbox API] 📧 Checking notifications for", pendingExecRequests.length, "pending_exec requests");
+        
+        // Get all VP user IDs
+        const { data: allVPs } = await supabaseServiceRole
+          .from("users")
+          .select("id")
+          .eq("is_vp", true)
+          .eq("status", "active");
+        
+        if (allVPs && allVPs.length > 0) {
+          // For each pending_exec request, check if notifications exist
+          for (const req of pendingExecRequests) {
+            // Determine which VP(s) should be notified
+            const workflowMetadata = req.workflow_metadata || {};
+            const nextVpId = workflowMetadata?.next_vp_id;
+            const nextApproverId = workflowMetadata?.next_approver_id;
+            const nextApproverRole = workflowMetadata?.next_approver_role;
+            
+            // Get requester name
+            const requestingPersonName = req.requester_name || req.requester?.name || req.requester?.email || "Requester";
+            
+            // Determine which VPs to notify
+            let vpsToNotify = allVPs;
+            
+            // If request is assigned to specific VP(s), only notify them
+            if (nextVpId) {
+              vpsToNotify = allVPs.filter((vp: any) => vp.id === nextVpId);
+            } else if (nextApproverId && nextApproverRole === "vp") {
+              vpsToNotify = allVPs.filter((vp: any) => vp.id === nextApproverId);
+            } else {
+              // No specific VP assigned - notify all VPs (first come first serve)
+              // But only if no VP has approved yet, or first VP approved but second hasn't
+              if (req.vp_approved_by) {
+                // First VP already approved - only notify second VP (if exists and hasn't approved)
+                if (req.vp2_approved_by) {
+                  // Both VPs approved - no need to notify
+                  continue;
+                } else {
+                  // First VP approved, second hasn't - notify all VPs except the first one
+                  vpsToNotify = allVPs.filter((vp: any) => vp.id !== req.vp_approved_by);
+                }
+              }
+              // If no VP approved, notify all VPs
+            }
+            
+            if (vpsToNotify.length === 0) {
+              continue;
+            }
+            
+            // Check existing notifications for this request
+            const { data: existingNotifications } = await supabaseServiceRole
+              .from("notifications")
+              .select("user_id")
+              .eq("related_type", "request")
+              .eq("related_id", req.id)
+              .eq("notification_type", "request_pending_signature");
+            
+            const notifiedVPIds = new Set(
+              (existingNotifications || []).map((n: any) => n.user_id)
+            );
+            
+            // Create notifications for VPs that don't have one yet
+            const notificationsToCreate = vpsToNotify
+              .filter((vp: any) => !notifiedVPIds.has(vp.id))
+              .map((vp: any) =>
+                createNotification({
+                  user_id: vp.id,
+                  notification_type: "request_pending_signature",
+                  title: "Request Requires Your Approval",
+                  message: `A travel order request ${req.request_number || ''} from ${requestingPersonName} requires your approval.`,
+                  related_type: "request",
+                  related_id: req.id,
+                  action_url: `/vp/inbox?view=${req.id}`,
+                  action_label: "Review Request",
+                  priority: "high",
+                })
+              );
+            
+            if (notificationsToCreate.length > 0) {
+              const results = await Promise.allSettled(notificationsToCreate);
+              const successful = results.filter((r) => r.status === "fulfilled" && r.value).length;
+              console.log(`[VP Inbox API] ✅ Created ${successful} notification(s) for request ${req.request_number || req.id}`);
+            }
+          }
+        }
+      }
+    } catch (notifError: any) {
+      console.error("[VP Inbox API] ⚠️ Failed to create notifications (non-fatal):", notifError);
+      // Don't fail the request if notifications fail
+    }
+
     return NextResponse.json({
       ok: true,
       data: enrichedRequests,

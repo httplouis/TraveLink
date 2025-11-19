@@ -7,6 +7,8 @@ import { Inbox, Search, FileText, Calendar, MapPin, CheckCircle, History, Clock 
 import UserRequestModal from "@/components/user/UserRequestModal";
 import { useToast } from "@/components/common/ui/Toast";
 import { createSupabaseClient } from "@/lib/supabase/client";
+import { SkeletonRequestCard } from "@/components/common/SkeletonLoader";
+import { createLogger } from "@/lib/debug";
 
 type Request = {
   id: string;
@@ -353,12 +355,28 @@ function UserInboxPageContent() {
   const displayRequests = activeTab === "pending" ? requests : historyRequests;
   const isLoading = activeTab === "pending" ? loading : historyLoading;
 
+  const logger = createLogger("UserInbox");
+
   if (isLoading) {
     return (
-      <div className="p-6">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-gray-200 rounded w-1/4"></div>
-          <div className="h-64 bg-gray-200 rounded"></div>
+      <div className="p-6 space-y-6">
+        {/* Header Skeleton */}
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <div className="h-8 w-48 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer bg-[length:200%_100%]" />
+            <div className="h-5 w-64 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer bg-[length:200%_100%]" />
+          </div>
+        </div>
+        {/* Tabs Skeleton */}
+        <div className="flex gap-2 border-b border-gray-200">
+          <div className="h-10 w-32 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded-t animate-shimmer bg-[length:200%_100%]" />
+          <div className="h-10 w-24 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded-t animate-shimmer bg-[length:200%_100%]" />
+        </div>
+        {/* Request Cards Skeleton */}
+        <div className="space-y-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <SkeletonRequestCard key={i} />
+          ))}
         </div>
       </div>
     );
@@ -425,103 +443,71 @@ function UserInboxPageContent() {
         </div>
 
         {/* Requests List */}
-        <div className="bg-white rounded-xl border-2 border-gray-200 shadow-sm overflow-hidden">
-          {displayRequests.length === 0 ? (
-            <div className="text-center py-12">
-              <Inbox className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-500 font-medium">
-                {searchQuery 
-                  ? "No requests match your search" 
-                  : activeTab === "pending"
-                    ? "No pending requests"
-                    : "No signed requests yet"}
-              </p>
-              <p className="text-sm text-gray-400 mt-1">
-                {searchQuery 
-                  ? "Try a different search term" 
-                  : activeTab === "pending"
-                    ? "Requests submitted on your behalf will appear here"
-                    : "Requests you've signed will appear here"}
-              </p>
-            </div>
-          ) : (
-            <div className="divide-y divide-gray-200">
-              {displayRequests
-                .filter(req => {
-                  const query = searchQuery.toLowerCase();
-                  return req.request_number?.toLowerCase().includes(query) ||
-                         req.purpose?.toLowerCase().includes(query) ||
-                         req.destination?.toLowerCase().includes(query) ||
-                         req.submitted_by_name?.toLowerCase().includes(query);
-                })
-                .map((req) => (
-                <div
+        {displayRequests.length === 0 ? (
+          <div className="bg-white rounded-xl border-2 border-gray-200 shadow-sm text-center py-12">
+            <Inbox className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-500 font-medium">
+              {searchQuery 
+                ? "No requests match your search" 
+                : activeTab === "pending"
+                  ? "No pending requests"
+                  : "No signed requests yet"}
+            </p>
+            <p className="text-sm text-gray-400 mt-1">
+              {searchQuery 
+                ? "Try a different search term" 
+                : activeTab === "pending"
+                  ? "Requests submitted on your behalf will appear here"
+                  : "Requests you've signed will appear here"}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {displayRequests
+              .filter(req => {
+                const query = searchQuery.toLowerCase();
+                return req.request_number?.toLowerCase().includes(query) ||
+                       req.purpose?.toLowerCase().includes(query) ||
+                       req.destination?.toLowerCase().includes(query) ||
+                       req.submitted_by_name?.toLowerCase().includes(query);
+              })
+              .map((req) => (
+                <RequestCardEnhanced
                   key={req.id}
-                  className="p-4 hover:bg-gray-50 transition-colors cursor-pointer"
-                  onClick={() => handleReviewClick(req)}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <div className="flex items-center gap-2">
-                          <FileText className="h-4 w-4 text-gray-400" />
-                          <span className="text-sm font-semibold text-gray-900">
-                            {req.request_number || `Request ${req.id.slice(0, 8)}`}
-                          </span>
-                        </div>
-                        {req.is_representative && req.submitted_by_name && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-medium">
-                            Submitted by {req.submitted_by_name}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-sm font-medium text-gray-900 mb-1">
-                        {req.purpose || "No purpose specified"}
-                      </p>
-                      <div className="flex items-center gap-4 text-xs text-gray-500 mt-2">
-                        <div className="flex items-center gap-1">
-                          <MapPin className="h-3 w-3" />
-                          <span>{req.destination || "—"}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
-                          <span>
-                            {formatDate(req.travel_start_date)} - {formatDate(req.travel_end_date)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="ml-4">
-                      {activeTab === "pending" ? (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleReviewClick(req);
-                          }}
-                          className="px-4 py-2 rounded-lg bg-gradient-to-r from-[#7A0010] to-[#5A0010] text-white text-sm font-semibold hover:shadow-md transition-all flex items-center gap-2"
-                        >
-                          <CheckCircle className="h-4 w-4" />
-                          Review & Sign
-                        </button>
-                      ) : (
-                        <div className="text-xs text-gray-500">
-                          {req.requester_signature && (
-                            <div className="text-green-600 font-medium">✓ Signed</div>
-                          )}
-                          <div className="mt-1">
-                            {req.requester_signed_at 
-                              ? new Date(req.requester_signed_at).toLocaleDateString()
-                              : "—"}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                  request={{
+                    id: req.id,
+                    request_number: req.request_number || `Request ${req.id.slice(0, 8)}`,
+                    file_code: (req as any).file_code,
+                    title: (req as any).title,
+                    purpose: req.purpose || "No purpose specified",
+                    destination: req.destination,
+                    travel_start_date: req.travel_start_date,
+                    travel_end_date: req.travel_end_date,
+                    status: req.status,
+                    created_at: req.created_at,
+                    total_budget: (req as any).total_budget,
+                    request_type: (req as any).request_type,
+                    requester_name: (req as any).requester_name,
+                    requester: {
+                      name: (req as any).requester_name || "Unknown",
+                      email: (req as any).requester?.email,
+                      profile_picture: (req as any).requester?.profile_picture,
+                      department: (req as any).department?.name,
+                      position: (req as any).requester?.position_title,
+                    },
+                    department: (req as any).department,
+                    submitted_by_name: req.submitted_by_name,
+                    is_representative: req.is_representative,
+                    requester_signed_at: (req as any).requester_signed_at,
+                    requester_signature: (req as any).requester_signature,
+                  }}
+                  showActions={true}
+                  onView={() => handleReviewClick(req)}
+                  onApprove={activeTab === "pending" ? () => handleReviewClick(req) : undefined}
+                />
               ))}
-            </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Modal */}

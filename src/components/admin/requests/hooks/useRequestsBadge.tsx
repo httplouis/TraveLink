@@ -11,11 +11,16 @@ export function useRequestsNavBadge() {
     
     const fetchPendingCount = async () => {
       try {
-        // Fetch requests waiting for ADMIN action
-        // Count only requests where admin hasn't acted yet (same logic as pending filter)
-        const { data, error } = await supabase
+        // Optimized: Use count query with WHERE clauses instead of fetching all rows
+        // Count requests waiting for ADMIN action where admin hasn't acted yet
+        // Focus on the main pending statuses that need admin action
+        
+        const { count, error } = await supabase
           .from("requests")
-          .select("id, status, request_number, admin_approved_at, admin_approved_by");
+          .select("*", { count: "exact", head: true })
+          .in("status", ["pending_head", "pending_admin"])
+          .is("admin_approved_at", null)
+          .is("admin_approved_by", null);
 
         if (error) {
           console.error("[useRequestsNavBadge] ❌ Query error:", error);
@@ -24,40 +29,10 @@ export function useRequestsNavBadge() {
           return;
         }
 
-        // Filter: Only count requests where admin hasn't acted yet
-        const pendingRequests = (data || []).filter((r: any) => {
-          // Check if admin has already acted on this request
-          const adminActed = !!(r.admin_approved_at || r.admin_approved_by);
-          
-          // If admin already acted, don't count it
-          if (adminActed) {
-            return false;
-          }
-          
-          // Only count requests that are waiting for admin action
-          const isWaitingForAdmin = [
-            "pending_head",
-            "pending_admin"
-          ].includes(r.status);
-          
-          // Also include requests that are in pending state but admin hasn't acted yet
-          // Exclude final states (approved, rejected, completed)
-          const isNotFinalState = ![
-            "approved",
-            "rejected", 
-            "completed"
-          ].includes(r.status);
-          
-          return isWaitingForAdmin || (isNotFinalState && !adminActed);
-        });
-
-        const count = pendingRequests.length;
-        console.log("[useRequestsNavBadge] ✅ Success! Admin pending requests:", count);
-        if (count > 0) {
-          console.log("[useRequestsNavBadge] 📋 Request IDs:", pendingRequests.map((r: any) => r.request_number).join(", "));
-        }
+        const totalCount = count || 0;
+        console.log("[useRequestsNavBadge] ✅ Success! Admin pending requests:", totalCount);
         
-        setCount(count);
+        setCount(totalCount);
       } catch (error) {
         console.error("[useRequestsNavBadge] ⚠️ Caught error:", error);
         setCount(0);

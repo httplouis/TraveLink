@@ -47,10 +47,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    // Check if user can sign (head, hr, exec, comptroller, admin)
+    // Get user profile
     const { data: profile } = await supabase
       .from("users")
-      .select("id, is_head, is_hr, is_exec, is_admin, role")
+      .select("id")
       .eq("auth_user_id", user.id)
       .single();
 
@@ -58,14 +58,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: "Profile not found" }, { status: 404 });
     }
 
-    const canSign = profile.is_head || profile.is_hr || profile.is_exec || profile.is_admin || 
-                    profile.role === 'comptroller';
-    
-    if (!canSign) {
-      return NextResponse.json({ ok: false, error: "You don't have permission to save signatures" }, { status: 403 });
-    }
-
-    // Save signature to user profile
+    // Save signature to user profile - ALL users can save their signature
     const { error: updateError } = await supabase
       .from("users")
       .update({ signature_url: signature })

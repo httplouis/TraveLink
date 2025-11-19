@@ -78,7 +78,7 @@ export default function UserRequestModal({
   const [preferredVehicleName, setPreferredVehicleName] = React.useState<string>("");
 
   const expenseBreakdown = request.expense_breakdown || fullRequestData?.expense_breakdown || [];
-  const totalBudget = request.total_budget || fullRequestData?.total_budget || 0;
+  const totalBudget = request.comptroller_edited_budget || fullRequestData?.comptroller_edited_budget || request.total_budget || fullRequestData?.total_budget || 0;
 
   // Fetch full request details and history when modal opens
   React.useEffect(() => {
@@ -785,6 +785,8 @@ export default function UserRequestModal({
                         value={signature || null}
                         onSave={(dataUrl) => setSignature(dataUrl)}
                         onClear={() => setSignature("")}
+                        onUseSaved={(dataUrl) => setSignature(dataUrl)}
+                        showUseSavedButton={true}
                         hideSaveButton
                       />
                     </div>

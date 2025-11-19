@@ -5,15 +5,13 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useToast } from "@/components/common/ui/ToastProvider.ui";
 
 import ConfirmUI from "@/components/admin/requests/ui/Confirm.ui";
-import RequestsSummaryUI from "@/components/admin/requests/ui/RequestsSummary.ui";
 import RequestsReceiverViewUI from "@/components/admin/requests/ui/RequestsReceiverView.ui";
 import RequestDetailsModalUI from "@/components/admin/requests/ui/RequestDetailsModal.ui";
-import RequestsToolbarUI from "@/components/admin/requests/toolbar/RequestsToolbar.ui";
 import KPICards from "@/components/admin/requests/ui/KPICards.ui";
 import UnifiedFilterBar from "@/components/admin/requests/ui/UnifiedFilterBar.ui";
 
 import { useDebouncedValue } from "@/lib/common/useDebouncedValue";
-import { AdminRequestsRepo, type AdminRequest } from "@/lib/admin/requests/store";
+import type { AdminRequest } from "@/lib/admin/requests/store";
 import type { RequestRow, Pagination as Pg, FilterState } from "@/lib/admin/types";
 import * as TrashRepo from "@/lib/admin/requests/trashRepo";
 import { DEPARTMENTS } from "@/lib/org/departments";
@@ -26,7 +24,8 @@ import {
 } from "@/lib/admin/requests/notifs";
 
 import { useRequestsFromSupabase } from "@/lib/admin/requests/useRequestsFromSupabase";
-import { fetchRequest } from "@/lib/admin/requests/api";
+import { fetchRequest, transformToAdminRequest } from "@/lib/admin/requests/api";
+import { createLogger } from "@/lib/debug";
 
 /* helpers -------------------------------------------------- */
 type RowStatus = RequestRow["status"];
@@ -63,7 +62,7 @@ function toRequestRowLocal(req: AdminRequest): RequestRow {
 function toRequestRowRemote(r: any): RequestRow | null {
   // Skip invalid requests (missing ID or critical data)
   if (!r || !r.id) {
-    console.warn("[toRequestRowRemote] Skipping invalid request (no ID):", r);
+    // Skipping invalid request (no ID) - handled by filter
     return null;
   }
 
@@ -115,6 +114,7 @@ const PAGE_SIZE = 12;
 
 export default function PageInner() {
   const toast = useToast();
+  const logger = createLogger("AdminRequests");
 
   const [mounted, setMounted] = useState(false);
   
@@ -200,9 +200,95 @@ export default function PageInner() {
     // Process even if empty array - this allows clearing the list
     if (!remoteRequests) return;
 
-    // ADMIN CAN SEE ALL REQUESTS - Split into pending and history
+    // ADMIN CAN ONLY SEE REQUESTS APPROVED BY HEADS - Split into pending and history
+    // Exclude drafts and pending_head (not yet approved by head)
+    const headApprovedRequests = remoteRequests.filter((r: any) => {
+      // Exclude drafts - these are not submitted yet
+      if (r.status === 'draft') {
+        return false;
+      }
+      
+      // Check if head has already approved FIRST (before excluding pending_head)
+      // This handles multi-department requests where status might still be pending_head
+      // but one or more heads have already approved
+      const headApproved = !!(r.head_approved_at || r.head_signature || r.parent_head_approved_at || r.parent_head_signature);
+      
+      // Parse workflow_metadata if it's a string (JSONB from database)
+      let workflowMetadata: any = {};
+      if (r.workflow_metadata) {
+        if (typeof r.workflow_metadata === 'string') {
+          try {
+            workflowMetadata = JSON.parse(r.workflow_metadata);
+          } catch (e) {
+            console.warn(`[PageInner] Failed to parse workflow_metadata for ${r.request_number || r.id}:`, e);
+            workflowMetadata = {};
+          }
+        } else {
+          workflowMetadata = r.workflow_metadata;
+        }
+      }
+      
+      // Also check if head sent this to admin (via workflow_metadata)
+      // OR if requester is head and status is pending_head/pending_admin (head requester can send directly to admin)
+      const sentToAdmin = workflowMetadata.next_approver_role === 'admin' || workflowMetadata.next_admin_id;
+      const isHeadRequester = r.requester_is_head === true;
+      
+      // SPECIAL CASE: Head requester with next_approver_role = 'admin' should be visible to admin
+      // This handles cases where head submits and selects admin during submission
+      // Even if head hasn't "approved" yet (because they're the requester), they've selected admin
+      const headRequesterSentToAdmin = isHeadRequester && sentToAdmin && (r.status === 'pending_head' || r.status === 'pending_admin');
+      
+      // Debug logging for TO-2025-155
+      if (r.request_number === 'TO-2025-155') {
+        console.log(`[PageInner] 🔍 DEBUG TO-2025-155:`, {
+          status: r.status,
+          requester_is_head: r.requester_is_head,
+          headApproved,
+          workflowMetadata,
+          sentToAdmin,
+          isHeadRequester,
+          headRequesterSentToAdmin,
+          shouldInclude: headApproved || sentToAdmin || headRequesterSentToAdmin
+        });
+      }
+      
+      // If head has approved, include it even if status is still pending_head
+      // (this happens in multi-department requests where not all heads have approved yet)
+      // OR if head explicitly sent it to admin
+      // OR if head requester sent it to admin (special case)
+      if (headApproved || sentToAdmin || headRequesterSentToAdmin) {
+        if (r.request_number === 'TO-2025-155') {
+          console.log(`[PageInner] ✅ INCLUDING TO-2025-155 in headApprovedRequests`);
+        }
+        return true;
+      }
+      
+      // Exclude pending_head - these are still waiting for head approval
+      // Only exclude if head hasn't approved yet AND hasn't sent to admin AND not head requester
+      if (r.status === 'pending_head') {
+        if (r.request_number === 'TO-2025-155') {
+          console.log(`[PageInner] ❌ EXCLUDING TO-2025-155 - headApproved: ${headApproved}, sentToAdmin: ${sentToAdmin}, headRequesterSentToAdmin: ${headRequesterSentToAdmin}`);
+        }
+        return false;
+      }
+      
+      // Include requests that are explicitly waiting for admin
+      if (r.status === 'pending_admin') {
+        return true;
+      }
+      
+      // Include requests where head has already approved (has head_approved_at or head_signature)
+      if (headApproved) {
+        return true;
+      }
+      
+      // Include all other statuses after head approval (pending_comptroller, pending_hr, etc.)
+      // These are requests that have passed head approval stage
+      return true;
+    });
+    
     // Pending: Only requests waiting for admin action (NOT yet approved by admin)
-    const pendingRequests = remoteRequests.filter((r: any) => {
+    const pendingRequests = headApprovedRequests.filter((r: any) => {
       // Check if admin has already acted on this request
       const adminActed = !!(r.admin_approved_at || r.admin_approved_by);
       
@@ -211,12 +297,31 @@ export default function PageInner() {
         return false;
       }
       
+      // SPECIAL CASE: Include pending_head if head requester sent to admin
+      // This was already included in headApprovedRequests, so keep it here
+      if (r.status === 'pending_head' && r.requester_is_head) {
+        let workflowMetadata: any = {};
+        if (r.workflow_metadata) {
+          if (typeof r.workflow_metadata === 'string') {
+            try {
+              workflowMetadata = JSON.parse(r.workflow_metadata);
+            } catch (e) {
+              workflowMetadata = {};
+            }
+          } else {
+            workflowMetadata = r.workflow_metadata;
+          }
+        }
+        if (workflowMetadata.next_approver_role === 'admin' || workflowMetadata.next_admin_id) {
+          if (r.request_number === 'TO-2025-155') {
+            console.log(`[PageInner] ✅ Keeping TO-2025-155 in pendingRequests (head requester sent to admin)`);
+          }
+          return true;
+        }
+      }
+      
       // Only show requests that are waiting for admin action
-      // These are requests that haven't been approved/rejected/completed yet
-      const isWaitingForAdmin = [
-        "pending_head",
-        "pending_admin"
-      ].includes(r.status);
+      const isWaitingForAdmin = r.status === "pending_admin";
       
       // Also include requests that are in pending state but admin hasn't acted yet
       // Exclude final states (approved, rejected, completed)
@@ -230,7 +335,8 @@ export default function PageInner() {
     });
     
     // History: All requests where admin already acted OR final states
-    const historyRequests = remoteRequests.filter((r: any) => {
+    // Only include requests that have been approved by heads (use headApprovedRequests)
+    const historyRequests = headApprovedRequests.filter((r: any) => {
       // Include requests where admin already acted (regardless of current status)
       const adminActed = !!(r.admin_approved_at || r.admin_approved_by);
       
@@ -260,13 +366,15 @@ export default function PageInner() {
       .map((r: any) => toRequestRowRemote(r))
       .filter((row): row is RequestRow => row !== null); // Filter out null values
 
-    console.log("[PageInner] 📊 Real-time update: Pending requests for admin:", pendingList.length);
-    console.log("[PageInner] 📚 Real-time update: History requests (admin acted):", historyList.length);
-    console.log("[PageInner] 🔄 Total remote requests received:", remoteRequests.length);
+    logger.debug("Real-time update:", {
+      pending: pendingList.length,
+      history: historyList.length,
+      total: remoteRequests.length
+    });
     
     // Debug: Log pending requests details
     if (pendingList.length > 0) {
-      console.log("[PageInner] 🔍 Pending requests details:", pendingList.map((r: any) => ({
+      logger.debug("Pending requests details:", pendingList.map((r: any) => ({
         id: r.id,
         status: r.status,
         dept: r.dept,
@@ -274,33 +382,26 @@ export default function PageInner() {
         requester: r.requester,
         date: r.date
       })));
-      console.log("[PageInner] 🔍 Full pending request object:", JSON.stringify(pendingList[0], null, 2));
     }
     
     // Debug: Log the actual remote request that should be pending
     const pendingAdminRequests = remoteRequests.filter((r: any) => r.status === "pending_admin");
     if (pendingAdminRequests.length > 0) {
-      console.log("[PageInner] 🎯 Requests with status 'pending_admin':", pendingAdminRequests.map((r: any) => ({
+      logger.debug("Requests with status 'pending_admin':", pendingAdminRequests.map((r: any) => ({
         id: r.id,
         request_number: r.request_number,
-        status: r.status,
-        workflow_metadata: r.workflow_metadata,
-        department: r.department,
-        requester: r.requester,
-        purpose: r.purpose,
-        created_at: r.created_at
+        status: r.status
       })));
-      console.log("[PageInner] 🎯 Full remote request object:", JSON.stringify(pendingAdminRequests[0], null, 2));
     }
     
     // Debug: Check what toRequestRowRemote is producing
     if (pendingRequests.length > 0) {
       const testRow = toRequestRowRemote(pendingRequests[0]);
-      console.log("[PageInner] 🧪 Test transformation result:", testRow);
-      console.log("[PageInner] 🧪 Original remote request:", pendingRequests[0]);
+      logger.debug("Test transformation result:", testRow);
+      logger.debug("Original remote request:", pendingRequests[0]);
     }
 
-    console.log("[PageInner] ✅ Setting allRows and filteredRows:", {
+    logger.debug("Setting allRows and filteredRows:", {
       pendingListLength: pendingList.length,
       firstRow: pendingList.length > 0 ? pendingList[0] : null,
       allRowsBefore: allRows.length,
@@ -552,7 +653,7 @@ export default function PageInner() {
     });
   };
 
-  const openRow = (r: RequestRow) => {
+  const openRow = async (r: RequestRow) => {
     // Try to get from remote (Supabase) first
     const remoteReq = remoteRequests?.find((req: any) => req.id === r.id);
     
@@ -695,12 +796,10 @@ export default function PageInner() {
         tmNote: remoteReq.admin_notes || null,
         
         // Preserve approval timestamps and signatures for submission history
-        head_approved_at: remoteReq.head_approved_at,
-        head_signature: remoteReq.head_signature,
         admin_approved_at: remoteReq.admin_approved_at,
         admin_approved_by: remoteReq.admin_approved_by,
         admin_signature: remoteReq.admin_signature,
-        admin_approver: remoteReq.admin_approver,
+        admin_approver: (remoteReq as any).admin_approver || null,
       };
       
       setActiveRow(transformed);

@@ -7,6 +7,8 @@ import StatusBadge from "@/components/common/StatusBadge";
 import PersonDisplay from "@/components/common/PersonDisplay";
 import TrackingModal from "@/components/common/TrackingModal";
 import { cardVariants, staggerContainer } from "@/lib/animations";
+import { SkeletonRequestCard } from "@/components/common/SkeletonLoader";
+import { createLogger } from "@/lib/debug";
 
 export default function PresidentHistoryPage() {
   const [items, setItems] = React.useState<any[]>([]);
@@ -19,16 +21,23 @@ export default function PresidentHistoryPage() {
     document.title = "President History - Travelink";
   }, []);
 
+  const logger = createLogger("PresidentHistory");
+
   React.useEffect(() => {
+    logger.info("Loading President history...");
     fetch("/api/president/history")
       .then(res => res.json())
       .then(data => {
         if (data.ok) {
           setItems(data.data || []);
+          logger.success(`Loaded ${data.data?.length || 0} history items`);
+        } else {
+          logger.warn("Failed to load President history:", data.error);
         }
         setLoading(false);
       })
-      .catch(() => {
+      .catch((error) => {
+        logger.error("Error loading President history:", error);
         setItems([]);
         setLoading(false);
       });
@@ -63,8 +72,21 @@ export default function PresidentHistoryPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin h-8 w-8 border-4 border-[#7a0019] border-t-transparent rounded-full"></div>
+      <div className="space-y-6">
+        {/* Header Skeleton */}
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <div className="h-9 w-64 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer bg-[length:200%_100%]" />
+            <div className="h-5 w-96 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer bg-[length:200%_100%]" />
+          </div>
+          <div className="h-10 w-40 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded-lg animate-shimmer bg-[length:200%_100%]" />
+        </div>
+        {/* Request Cards Skeleton */}
+        <div className="space-y-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <SkeletonRequestCard key={i} />
+          ))}
+        </div>
       </div>
     );
   }

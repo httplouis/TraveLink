@@ -7,6 +7,7 @@ import RequestStatusTracker from "@/components/common/RequestStatusTracker";
 import TrackingModal from "@/components/common/TrackingModal";
 import StatusBadge from "@/components/common/StatusBadge";
 import PersonDisplay from "@/components/common/PersonDisplay";
+import RequestCardEnhanced from "@/components/common/RequestCardEnhanced";
 import { Eye, Search, FileText } from "lucide-react";
 import { createSupabaseClient } from "@/lib/supabase/client";
 
@@ -147,83 +148,49 @@ export default function ExecInboxContainer() {
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {filteredItems.map((item) => {
-            const requester = item.requester_name || item.requester?.name || "Unknown";
-            const submittedBy = item.submitted_by_name || item.submitted_by?.name || null;
-            const isRepresentative = item.is_representative && submittedBy && submittedBy !== requester;
-            const department = item.department?.name || item.department?.code || "Not specified";
-            const purpose = item.purpose || "No purpose indicated";
-            const requestNumber = item.request_number || "—";
-            const travelDate = item.travel_start_date
-              ? new Date(item.travel_start_date).toLocaleDateString()
-              : "—";
-
+        <div className="space-y-4">
+          {filteredItems.map((item, index) => {
             return (
-              <div
+              <motion.div
                 key={item.id}
-                onClick={() => setSelected(item)}
-                className="group flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-5 py-4 text-left shadow-sm transition-all hover:border-[#7A0010]/30 hover:shadow-lg hover:scale-[1.01] cursor-pointer"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.05 }}
               >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2.5 mb-3">
-                    <span className="rounded-md bg-[#7A0010] px-2.5 py-0.5 text-xs font-bold text-white">
-                      {requestNumber}
-                    </span>
-                    <span className="text-xs text-slate-400">•</span>
-                    <span className="text-xs font-medium text-slate-500">{travelDate}</span>
-                  </div>
-                  
-                  {/* Use PersonDisplay component */}
-                  <PersonDisplay
-                    name={requester}
-                    position={item.requester?.position_title}
-                    department={department}
-                    profilePicture={item.requester?.profile_picture}
-                    size="sm"
-                  />
-                  
-                  {/* Show submitted by if different from requester */}
-                  {isRepresentative && (
-                    <div className="mt-1 mb-1">
-                      <span className="text-xs text-purple-600 font-medium">
-                        Submitted by: <span className="font-bold">{submittedBy}</span>
-                      </span>
-                    </div>
-                  )}
-                  
-                  <p className="text-sm text-slate-600 line-clamp-1 mt-2 mb-1">
-                    {purpose}
-                  </p>
-                  {/* Approval Progress Tracker */}
-                  <div className="mt-2">
-                    <RequestStatusTracker
-                      status={item.status}
-                      requesterIsHead={item.requester_is_head}
-                      hasBudget={item.has_budget}
-                      hasParentHead={item.has_parent_head}
-                      compact={true}
-                    />
-                  </div>
-                </div>
-                <div className="flex flex-col items-end gap-2 ml-4">
-                  <StatusBadge status="pending_exec" size="md" showIcon={true} />
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setTrackingRequest(item);
-                      setShowTrackingModal(true);
-                    }}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:text-[#7a0019] hover:bg-slate-50 rounded-lg transition-colors border border-slate-200"
-                  >
-                    <Eye className="h-3.5 w-3.5" />
-                    Track
-                  </button>
-                  <svg className="h-5 w-5 text-slate-300 group-hover:text-[#7A0010] transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </div>
-              </div>
+                <RequestCardEnhanced
+                  request={{
+                    id: item.id,
+                    request_number: item.request_number || "—",
+                    file_code: item.file_code,
+                    title: item.title,
+                    purpose: item.purpose || "No purpose indicated",
+                    destination: item.destination,
+                    travel_start_date: item.travel_start_date,
+                    travel_end_date: item.travel_end_date,
+                    status: item.status,
+                    created_at: item.created_at,
+                    total_budget: item.total_budget,
+                    request_type: item.request_type,
+                    requester_name: item.requester_name || item.requester?.name,
+                    requester: {
+                      name: item.requester_name || item.requester?.name || "Unknown",
+                      email: item.requester?.email,
+                      profile_picture: item.requester?.profile_picture,
+                      department: item.department?.name || item.department?.code,
+                      position: item.requester?.position_title,
+                    },
+                    department: item.department,
+                    submitted_by_name: item.submitted_by_name || item.submitted_by?.name,
+                    is_representative: item.is_representative,
+                  }}
+                  showActions={true}
+                  onView={() => setSelected(item)}
+                  onTrack={() => {
+                    setTrackingRequest(item);
+                    setShowTrackingModal(true);
+                  }}
+                />
+              </motion.div>
             );
           })}
         </div>

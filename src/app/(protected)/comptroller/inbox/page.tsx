@@ -4,9 +4,12 @@
 import React from "react";
 import { Search, Clock, User, Building2, MapPin, Calendar, DollarSign, FileText } from "lucide-react";
 import ComptrollerReviewModal from "@/components/comptroller/ComptrollerReviewModal";
+import RequestCardEnhanced from "@/components/common/RequestCardEnhanced";
 import { motion } from "framer-motion";
 import PageTitle from "@/components/common/PageTitle";
 import { createSupabaseClient } from "@/lib/supabase/client";
+import { SkeletonRequestCard } from "@/components/common/SkeletonLoader";
+import { createLogger } from "@/lib/debug";
 
 type Request = {
   id: string;
@@ -46,8 +49,11 @@ export default function ComptrollerInboxPage() {
   }, []);
 
   const loadRequests = async () => {
+    const logger = createLogger("ComptrollerInbox");
     try {
       setLoading(true);
+      logger.info("Loading comptroller requests...");
+      
       // Get current user's ID for filtering
       const profileRes = await fetch("/api/profile", { cache: "no-store" });
       const profileData = await profileRes.json();
@@ -58,11 +64,11 @@ export default function ComptrollerInboxPage() {
       // This allows any comptroller to see and process requests
       const url = `/api/requests/list?status=pending_comptroller${comptrollerId ? `&comptroller_id=${comptrollerId}` : ''}`;
       
-      console.log("[Comptroller Inbox] Fetching requests from:", url);
+      logger.debug("Fetching requests from:", url);
       const res = await fetch(url, { cache: "no-store" });
       const data = await res.json();
       
-      console.log("[Comptroller Inbox] Received data:", Array.isArray(data) ? `${data.length} requests` : "Not an array", data);
+      logger.debug("Received data:", { isArray: Array.isArray(data), count: Array.isArray(data) ? data.length : 0 });
       
       if (Array.isArray(data)) {
         // Filter to only show requests that are actually pending comptroller review
@@ -70,14 +76,14 @@ export default function ComptrollerInboxPage() {
           const status = req.status;
           return status === "pending_comptroller";
         });
-        console.log("[Comptroller Inbox] Filtered to", pendingRequests.length, "pending requests");
+        logger.success(`Filtered to ${pendingRequests.length} pending requests`);
         setRequests(pendingRequests);
       } else {
-        console.error("[Comptroller Inbox] Invalid response format:", data);
+        logger.error("Invalid response format:", data);
         setRequests([]);
       }
     } catch (err) {
-      console.error("[Comptroller Inbox] Failed to load requests:", err);
+      logger.error("Failed to load requests:", err);
       setRequests([]);
     } finally {
       setLoading(false);
@@ -108,12 +114,27 @@ export default function ComptrollerInboxPage() {
     }
   };
 
+  const logger = createLogger("ComptrollerInbox");
+
   if (loading) {
     return (
-      <div className="p-6">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-gray-200 rounded w-1/4"></div>
-          <div className="h-64 bg-gray-200 rounded"></div>
+      <div className="p-6 space-y-6">
+        <PageTitle title="Budget Review Queue • Comptroller" />
+        {/* Header Skeleton */}
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <div className="h-9 w-64 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer bg-[length:200%_100%]" />
+            <div className="h-5 w-96 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer bg-[length:200%_100%]" />
+          </div>
+          <div className="h-20 w-32 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded-xl animate-shimmer bg-[length:200%_100%]" />
+        </div>
+        {/* Search Skeleton */}
+        <div className="h-12 w-full bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded-lg animate-shimmer bg-[length:200%_100%]" />
+        {/* Request Cards Skeleton */}
+        <div className="space-y-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <SkeletonRequestCard key={i} />
+          ))}
         </div>
       </div>
     );
@@ -182,102 +203,35 @@ export default function ComptrollerInboxPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.05 }}
-              whileHover={{ scale: 1.01 }}
-              className="bg-white rounded-2xl shadow-md hover:shadow-xl border border-gray-200 overflow-hidden cursor-pointer transition-all duration-200"
-              onClick={() => handleReviewClick(req)}
             >
-              <div className="p-6">
-                <div className="flex items-start justify-between gap-6">
-                  <div className="flex-1 space-y-4">
-                    {/* Header */}
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0">
-                        <FileText className="h-5 w-5 text-white" />
-                      </div>
-                      <div>
-                        <div className="font-bold text-lg text-gray-900">{req.request_number}</div>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs font-semibold">
-                            Pending Budget Review
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Details Grid */}
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="flex items-center gap-2">
-                        <div className="h-7 w-7 rounded-lg bg-green-50 flex items-center justify-center flex-shrink-0">
-                          <User className="h-3.5 w-3.5 text-green-600" />
-                        </div>
-                        <div>
-                          <div className="text-xs text-gray-500">Requester</div>
-                          <div className="text-sm font-semibold text-gray-900">{req.requester_name || req.requester?.name || "—"}</div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <div className="h-7 w-7 rounded-lg bg-purple-50 flex items-center justify-center flex-shrink-0">
-                          <Building2 className="h-3.5 w-3.5 text-purple-600" />
-                        </div>
-                        <div>
-                          <div className="text-xs text-gray-500">Department</div>
-                          <div className="text-sm font-semibold text-gray-900">{req.department?.code || "—"}</div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Purpose */}
-                    <div className="flex items-start gap-2 bg-gray-50 rounded-lg p-3">
-                      <MapPin className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                      <div>
-                        <div className="text-xs text-gray-500 mb-0.5">Purpose</div>
-                        <div className="text-sm text-gray-700 line-clamp-2">{req.purpose}</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right Side - Budget & Action */}
-                  <div className="flex flex-col items-end gap-4 flex-shrink-0">
-                    <div className="text-right">
-                      <div className="text-xs text-gray-500 mb-1 flex items-center gap-1 justify-end">
-                        <DollarSign className="h-3 w-3" />
-                        Requested Budget
-                      </div>
-                      <div className="text-2xl font-bold bg-gradient-to-r from-[#7A0010] to-[#9c2a3a] bg-clip-text text-transparent">
-                        ₱{req.total_budget?.toLocaleString() || "0"}
-                      </div>
-                    </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleReviewClick(req);
-                      }}
-                      className="px-6 py-3 bg-gradient-to-r from-[#7A0010] to-[#9c2a3a] text-white text-sm font-semibold rounded-xl hover:shadow-lg transition-all duration-200 flex items-center gap-2"
-                    >
-                      <FileText className="h-4 w-4" />
-                      Review Budget
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Bottom Bar */}
-              <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-3 border-t border-gray-200">
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-1.5 text-gray-600">
-                      <Calendar className="h-3.5 w-3.5" />
-                      <span>Travel: {new Date(req.travel_start_date).toLocaleDateString()}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-gray-600">
-                      <Clock className="h-3.5 w-3.5" />
-                      <span>Submitted: {new Date(req.created_at).toLocaleDateString()}</span>
-                    </div>
-                  </div>
-                  <div className="text-[#7A0010] font-semibold">Click to review →</div>
-                </div>
-              </div>
+              <RequestCardEnhanced
+                request={{
+                  id: req.id,
+                  request_number: req.request_number || "—",
+                  file_code: req.file_code,
+                  title: req.title,
+                  purpose: req.purpose || "No purpose indicated",
+                  destination: req.destination,
+                  travel_start_date: req.travel_start_date,
+                  travel_end_date: req.travel_end_date,
+                  status: req.status,
+                  created_at: req.created_at,
+                  total_budget: req.total_budget,
+                  request_type: req.request_type,
+                  requester_name: req.requester_name || req.requester?.name,
+                  requester: {
+                    name: req.requester_name || req.requester?.name || "Unknown",
+                    email: req.requester?.email,
+                    profile_picture: req.requester?.profile_picture,
+                    department: req.department?.name || req.department?.code,
+                    position: req.requester?.position_title,
+                  },
+                  department: req.department,
+                }}
+                showActions={true}
+                onView={() => handleReviewClick(req)}
+                className="border-blue-200 bg-blue-50/20"
+              />
             </motion.div>
           ))
         )}

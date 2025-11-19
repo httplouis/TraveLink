@@ -35,7 +35,7 @@ export async function GET(request: Request) {
     console.log("[API /drivers] Starting queries with direct client...");
     const { data: usersData, error: usersError } = await supabase
       .from("users")
-      .select("id, name, email, phone_number, status, role")
+      .select("id, name, email, phone_number, status, role, department")
       .eq("role", "driver")
       .order("name", { ascending: true });
 
@@ -120,6 +120,7 @@ export async function GET(request: Request) {
         name: user.name || 'Unknown',
         email: user.email || '',
         phone: driverInfo?.phone || user.phone_number || '',
+        department: user.department || 'Transport Office', // Get from database, default to Transport Office if null
         licenseNumber: driverInfo?.license_no || null,
         licenseExpiry: driverInfo?.license_expiry || null,
         rating: driverInfo?.driver_rating ? parseFloat(driverInfo.driver_rating) : null,
@@ -190,14 +191,14 @@ export async function POST(request: Request) {
       // Existing user
       userId = body.userId;
     } else {
-      // Create new user
+      // Create new user - ALWAYS use Transport Office as department for drivers
       const { data: user, error: userError } = await supabase
         .from("users")
         .insert({
           name: body.name,
           email: body.email,
           role: "driver",
-          department: body.department || "Transport Office",
+          department: "Transport Office", // Drivers always belong to Transport Office
           status: body.status || "active",
         })
         .select()
@@ -297,12 +298,13 @@ export async function PATCH(request: Request) {
       );
     }
 
-    // Also update user info if provided
+    // Also update user info if provided (but keep department as Transport Office)
     if (updates.name || updates.email || updates.status) {
       const userUpdates: any = {};
       if (updates.name) userUpdates.name = updates.name;
       if (updates.email) userUpdates.email = updates.email;
       if (updates.status) userUpdates.status = updates.status;
+      // Department should always be "Transport Office" for drivers - don't allow changing it
 
       await supabase
         .from("users")

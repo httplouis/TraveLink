@@ -1,102 +1,301 @@
 // Get full request details by ID
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  let requestId: string | undefined;
   try {
-    const supabase = await createSupabaseServerClient(true);
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    console.log("[GET /api/requests/[id]] ========== STARTING REQUEST ==========");
+    
+    // Step 1: Get params
+    try {
+      console.log("[GET /api/requests/[id]] Step 1: Getting params...");
+      const resolvedParams = await params;
+      requestId = resolvedParams.id;
+      console.log("[GET /api/requests/[id]] Step 1: ✅ Request ID:", requestId);
+      
+      if (!requestId) {
+        console.error("[GET /api/requests/[id]] Step 1: ❌ Missing request ID");
+        return NextResponse.json({ ok: false, error: "Missing request ID" }, { status: 400 });
+      }
+    } catch (paramsErr: any) {
+      console.error("[GET /api/requests/[id]] Step 1: ❌ ERROR getting params:", {
+        message: paramsErr?.message,
+        stack: paramsErr?.stack
+      });
+      return NextResponse.json({ 
+        ok: false, 
+        error: "Failed to parse request parameters",
+        details: paramsErr?.message 
+      }, { status: 400 });
     }
 
-    const { id: requestId } = await params;
+    // Step 2: Create Supabase clients
+    let supabase: any; // For auth
+    let supabaseServiceRole: any; // For queries (bypasses RLS)
+    try {
+      console.log("[GET /api/requests/[id]] Step 2: Creating Supabase clients...");
+      
+      // Use createServerClient for auth (needs cookies)
+      supabase = await createSupabaseServerClient(false);
+      
+      // Use createClient directly for queries to truly bypass RLS
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      
+      if (!supabaseUrl || !supabaseServiceKey) {
+        console.error("[GET /api/requests/[id]] Step 2: ❌ Missing Supabase configuration");
+        return NextResponse.json({ 
+          ok: false, 
+          error: "Missing Supabase configuration"
+        }, { status: 500 });
+      }
+      
+      supabaseServiceRole = createClient(supabaseUrl, supabaseServiceKey, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
+      });
+      
+      console.log("[GET /api/requests/[id]] Step 2: ✅ Supabase clients created");
+    } catch (supabaseErr: any) {
+      console.error("[GET /api/requests/[id]] Step 2: ❌ ERROR creating Supabase clients:", {
+        message: supabaseErr?.message,
+        stack: supabaseErr?.stack
+      });
+      return NextResponse.json({ 
+        ok: false, 
+        error: "Failed to initialize database connection",
+        details: supabaseErr?.message 
+      }, { status: 500 });
+    }
+
+    // Step 3: Authenticate
+    try {
+      console.log("[GET /api/requests/[id]] Step 3: Authenticating user...");
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        console.error("[GET /api/requests/[id]] Step 3: ❌ Auth error:", authError);
+        return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+      }
+      console.log("[GET /api/requests/[id]] Step 3: ✅ User authenticated:", user.id);
+    } catch (authErr: any) {
+      console.error("[GET /api/requests/[id]] Step 3: ❌ ERROR during authentication:", {
+        message: authErr?.message,
+        stack: authErr?.stack
+      });
+      return NextResponse.json({ 
+        ok: false, 
+        error: "Authentication failed",
+        details: authErr?.message 
+      }, { status: 401 });
+    }
 
     if (!requestId) {
       return NextResponse.json({ ok: false, error: "Missing request ID" }, { status: 400 });
     }
 
-    // Fetch full request details with all approver information
-    const { data: request, error } = await supabase
-      .from("requests")
-      .select(`
-        *,
-        requester:users!requester_id(
-          id, name, email, profile_picture, phone_number, 
-          position_title, department_id,
-          department:departments!users_department_id_fkey(id, name, code)
-        ),
-        department:departments!department_id(id, code, name),
-        submitted_by:users!submitted_by_user_id(
-          id, name, email, profile_picture, phone_number, position_title
-        ),
-        head_approver:users!head_approved_by(
-          id, name, email, profile_picture, phone_number, position_title,
-          department_id, is_head, is_vp,
-          department:departments!users_department_id_fkey(id, name, code)
-        ),
-        parent_head_approver:users!parent_head_approved_by(
-          id, name, email, profile_picture, phone_number, position_title,
-          department_id, is_head, is_vp,
-          department:departments!users_department_id_fkey(id, name, code)
-        ),
-        vp_approver:users!vp_approved_by(
-          id, name, email, profile_picture, phone_number, position_title,
-          department_id, is_head, is_vp,
-          department:departments!users_department_id_fkey(id, name, code)
-        ),
-        admin_approver:users!admin_approved_by(
-          id, name, email, profile_picture, phone_number, position_title
-        ),
-        comptroller_approver:users!comptroller_approved_by(
-          id, name, email, profile_picture, phone_number, position_title
-        ),
-        hr_approver:users!hr_approved_by(
-          id, name, email, profile_picture, phone_number, position_title
-        ),
-        vp_approver:users!vp_approved_by(
-          id, name, email, profile_picture, phone_number, position_title,
-          department_id, is_head, is_vp,
-          department:departments!users_department_id_fkey(id, name, code)
-        ),
-        vp2_approver:users!vp2_approved_by(
-          id, name, email, profile_picture, phone_number, position_title
-        ),
-        president_approver:users!president_approved_by(
-          id, name, email, profile_picture, phone_number, position_title
-        ),
-        exec_approver:users!exec_approved_by(
-          id, name, email, profile_picture, phone_number, position_title
-        )
-      `)
-      .eq("id", requestId)
-      .single();
+    // Step 4: Fetch main request
+    console.log(`[GET /api/requests/[id]] Step 4: Fetching request with ID: ${requestId}`);
+    let request: any;
+    try {
+      // Use service role client to bypass RLS completely
+      // Use maybeSingle() instead of single() to handle 0 rows gracefully
+      const { data, error } = await supabaseServiceRole
+        .from("requests")
+        .select("*")
+        .eq("id", requestId)
+        .maybeSingle(); // Changed from .single() to .maybeSingle()
 
-    if (error) {
-      console.error("[GET /api/requests/[id]] Error:", error);
-      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+      if (error) {
+        console.error("[GET /api/requests/[id]] Step 4: ❌ DATABASE ERROR:", {
+          message: error.message,
+          code: error.code,
+          details: error.details,
+          hint: error.hint
+        });
+        return NextResponse.json({ 
+          ok: false, 
+          error: error.message || "Failed to fetch request",
+          code: error.code,
+          details: error.details
+        }, { status: 500 });
+      }
+
+      if (!data) {
+        console.warn(`[GET /api/requests/[id]] Step 4: ❌ Request not found: ${requestId}`);
+        // Request not found - return 404
+        console.error(`[GET /api/requests/[id]] Step 4: Request ID ${requestId} not found in database`);
+        return NextResponse.json({ ok: false, error: "Request not found" }, { status: 404 });
+      } else {
+        request = data;
+        console.log(`[GET /api/requests/[id]] Step 4: ✅ Request fetched:`, {
+          id: request.id,
+          request_number: request.request_number,
+          status: request.status
+        });
+      }
+    } catch (e: any) {
+      console.error("[GET /api/requests/[id]] Step 4: ❌ EXCEPTION:", {
+        message: e?.message,
+        stack: e?.stack,
+        name: e?.name,
+        cause: e?.cause
+      });
+      return NextResponse.json({ 
+        ok: false, 
+        error: e?.message || "Failed to fetch request",
+        details: process.env.NODE_ENV === 'development' ? e?.stack : undefined
+      }, { status: 500 });
     }
 
-    if (!request) {
-      return NextResponse.json({ ok: false, error: "Request not found" }, { status: 404 });
+    // Step 5: Fetch related data separately to avoid foreign key relationship issues
+    console.log(`[GET /api/requests/[id]] Step 5: Fetching related data...`);
+    const relatedData: any = {};
+
+    // Fetch requester
+    if (request.requester_id) {
+      try {
+        const { data: requester, error: requesterError } = await supabaseServiceRole
+          .from("users")
+          .select("id, name, email, profile_picture, phone_number, position_title, department_id")
+          .eq("id", request.requester_id)
+          .single();
+        if (requester && !requesterError) {
+          relatedData.requester = requester;
+          // Fetch requester's department
+          if (requester.department_id) {
+            try {
+                    const { data: dept, error: deptError } = await supabaseServiceRole
+                      .from("departments")
+                .select("id, name, code")
+                .eq("id", requester.department_id)
+                .single();
+              if (dept && !deptError) {
+                relatedData.requester.department = dept;
+              }
+            } catch (e) {
+              console.warn(`[GET /api/requests/${requestId}] Error fetching requester department:`, e);
+            }
+          }
+        } else if (requesterError) {
+          console.warn(`[GET /api/requests/${requestId}] Error fetching requester:`, requesterError);
+        }
+      } catch (e) {
+        console.warn(`[GET /api/requests/${requestId}] Exception fetching requester:`, e);
+      }
+    }
+
+    // Fetch request department
+    if (request.department_id) {
+      try {
+        const { data: dept, error: deptError } = await supabaseServiceRole
+          .from("departments")
+          .select("id, code, name")
+          .eq("id", request.department_id)
+          .single();
+        if (dept && !deptError) {
+          relatedData.department = dept;
+        } else if (deptError) {
+          console.warn(`[GET /api/requests/${requestId}] Error fetching department:`, deptError);
+        }
+      } catch (e) {
+        console.warn(`[GET /api/requests/${requestId}] Exception fetching department:`, e);
+      }
+    }
+
+    // Fetch submitted_by user
+    if (request.submitted_by_user_id) {
+      try {
+        const { data: submittedBy, error: submittedByError } = await supabaseServiceRole
+          .from("users")
+          .select("id, name, email, profile_picture, phone_number, position_title")
+          .eq("id", request.submitted_by_user_id)
+          .single();
+        if (submittedBy && !submittedByError) {
+          relatedData.submitted_by = submittedBy;
+        } else if (submittedByError) {
+          console.warn(`[GET /api/requests/${requestId}] Error fetching submitted_by:`, submittedByError);
+        }
+      } catch (e) {
+        console.warn(`[GET /api/requests/${requestId}] Exception fetching submitted_by:`, e);
+      }
+    }
+
+    // Fetch approvers (simplified - only fetch if IDs exist)
+    const approverFields = [
+      'head_approved_by', 'parent_head_approved_by', 'vp_approved_by',
+      'admin_approved_by', 'comptroller_approved_by', 'hr_approved_by',
+      'vp2_approved_by', 'president_approved_by', 'exec_approved_by'
+    ];
+
+    for (const field of approverFields) {
+      const approverId = request[field];
+      if (approverId) {
+              try {
+                const { data: approver, error: approverError } = await supabaseServiceRole
+                  .from("users")
+                  .select("id, name, email, profile_picture, phone_number, position_title, department_id, is_head, is_vp")
+                  .eq("id", approverId)
+                  .single();
+          if (approver && !approverError) {
+            const approverKey = field.replace('_approved_by', '_approver');
+            relatedData[approverKey] = approver;
+            // Fetch department if exists
+            if (approver.department_id) {
+              try {
+                    const { data: dept, error: deptError } = await supabaseServiceRole
+                      .from("departments")
+                  .select("id, name, code")
+                  .eq("id", approver.department_id)
+                  .single();
+                if (dept && !deptError) {
+                  relatedData[approverKey].department = dept;
+                }
+              } catch (e) {
+                console.warn(`[GET /api/requests/${requestId}] Error fetching department for approver ${approverId}:`, e);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn(`[GET /api/requests/${requestId}] Error fetching approver ${field}:`, e);
+          // Continue with other approvers even if one fails
+        }
+      }
+    }
+
+    // Step 6: Merge related data into request
+    console.log(`[GET /api/requests/[id]] Step 6: Merging related data...`);
+    let fullRequest: any;
+    try {
+      fullRequest = { ...request, ...relatedData };
+      console.log(`[GET /api/requests/${requestId}] Step 6: ✅ Merged related data successfully`);
+    } catch (e: any) {
+      console.error(`[GET /api/requests/${requestId}] Step 6: ❌ Error merging:`, {
+        message: e?.message,
+        stack: e?.stack
+      });
+      // If merge fails, just return the request without related data
+      fullRequest = request;
     }
 
     // Fetch driver and vehicle names if IDs are present
-    console.log(`[GET /api/requests/${requestId}] Preferred driver ID:`, request.preferred_driver_id);
-    console.log(`[GET /api/requests/${requestId}] Preferred vehicle ID:`, request.preferred_vehicle_id);
+    console.log(`[GET /api/requests/${requestId}] Preferred driver ID:`, fullRequest.preferred_driver_id);
+    console.log(`[GET /api/requests/${requestId}] Preferred vehicle ID:`, fullRequest.preferred_vehicle_id);
     
-    if (request.preferred_driver_id || request.preferred_vehicle_id) {
+    if (fullRequest.preferred_driver_id || fullRequest.preferred_vehicle_id) {
       // Fetch driver name
-      if (request.preferred_driver_id) {
-        console.log(`[GET /api/requests/${requestId}] Fetching driver name for ID:`, request.preferred_driver_id);
-        const { data: driver, error: driverError } = await supabase
+      if (fullRequest.preferred_driver_id) {
+        console.log(`[GET /api/requests/${requestId}] Fetching driver name for ID:`, fullRequest.preferred_driver_id);
+        const { data: driver, error: driverError } = await supabaseServiceRole
           .from("users")
           .select("name")
-          .eq("id", request.preferred_driver_id)
+          .eq("id", fullRequest.preferred_driver_id)
           .single();
         
         if (driverError) {
@@ -104,20 +303,20 @@ export async function GET(
         }
         
         if (driver) {
-          request.preferred_driver_name = driver.name;
+          fullRequest.preferred_driver_name = driver.name;
           console.log(`[GET /api/requests/${requestId}] Driver name found:`, driver.name);
         } else {
-          console.warn(`[GET /api/requests/${requestId}] Driver not found for ID:`, request.preferred_driver_id);
+          console.warn(`[GET /api/requests/${requestId}] Driver not found for ID:`, fullRequest.preferred_driver_id);
         }
       }
 
       // Fetch vehicle name
-      if (request.preferred_vehicle_id) {
-        console.log(`[GET /api/requests/${requestId}] Fetching vehicle for ID:`, request.preferred_vehicle_id);
-        const { data: vehicle, error: vehicleError } = await supabase
+      if (fullRequest.preferred_vehicle_id) {
+        console.log(`[GET /api/requests/${requestId}] Fetching vehicle for ID:`, fullRequest.preferred_vehicle_id);
+        const { data: vehicle, error: vehicleError } = await supabaseServiceRole
           .from("vehicles")
           .select("vehicle_name, plate_number")
-          .eq("id", request.preferred_vehicle_id)
+          .eq("id", fullRequest.preferred_vehicle_id)
           .single();
         
         if (vehicleError) {
@@ -125,10 +324,10 @@ export async function GET(
         }
         
         if (vehicle) {
-          request.preferred_vehicle_name = `${vehicle.vehicle_name} • ${vehicle.plate_number}`;
-          console.log(`[GET /api/requests/${requestId}] Vehicle found:`, request.preferred_vehicle_name);
+          fullRequest.preferred_vehicle_name = `${vehicle.vehicle_name} • ${vehicle.plate_number}`;
+          console.log(`[GET /api/requests/${requestId}] Vehicle found:`, fullRequest.preferred_vehicle_name);
         } else {
-          console.warn(`[GET /api/requests/${requestId}] Vehicle not found for ID:`, request.preferred_vehicle_id);
+          console.warn(`[GET /api/requests/${requestId}] Vehicle not found for ID:`, fullRequest.preferred_vehicle_id);
         }
       }
     } else {
@@ -136,36 +335,220 @@ export async function GET(
     }
 
     // Parse seminar_data if it's a string
-    if (request.seminar_data && typeof request.seminar_data === 'string') {
-      try {
-        request.seminar_data = JSON.parse(request.seminar_data);
-      } catch (e) {
-        console.warn(`[GET /api/requests/${requestId}] Failed to parse seminar_data:`, e);
+    try {
+      if (fullRequest.seminar_data && typeof fullRequest.seminar_data === 'string') {
+        try {
+          fullRequest.seminar_data = JSON.parse(fullRequest.seminar_data);
+        } catch (e) {
+          console.warn(`[GET /api/requests/${requestId}] Failed to parse seminar_data:`, e);
+        }
       }
+    } catch (e) {
+      console.warn(`[GET /api/requests/${requestId}] Error processing seminar_data:`, e);
     }
 
     // Parse expense_breakdown if it's a string (JSONB from database)
-    if (request.expense_breakdown && typeof request.expense_breakdown === 'string') {
-      try {
-        request.expense_breakdown = JSON.parse(request.expense_breakdown);
-        console.log(`[GET /api/requests/${requestId}] Parsed expense_breakdown:`, request.expense_breakdown);
-      } catch (e) {
-        console.warn(`[GET /api/requests/${requestId}] Failed to parse expense_breakdown:`, e);
+    try {
+      if (fullRequest.expense_breakdown && typeof fullRequest.expense_breakdown === 'string') {
+        try {
+          fullRequest.expense_breakdown = JSON.parse(fullRequest.expense_breakdown);
+          console.log(`[GET /api/requests/${requestId}] Parsed expense_breakdown:`, fullRequest.expense_breakdown);
+        } catch (e) {
+          console.warn(`[GET /api/requests/${requestId}] Failed to parse expense_breakdown:`, e);
+          fullRequest.expense_breakdown = null;
+        }
       }
+
+      // Ensure expense_breakdown is always an array or null
+      if (fullRequest.expense_breakdown && !Array.isArray(fullRequest.expense_breakdown)) {
+        console.warn(`[GET /api/requests/${requestId}] expense_breakdown is not an array, converting...`);
+        fullRequest.expense_breakdown = null;
+      }
+    } catch (e) {
+      console.warn(`[GET /api/requests/${requestId}] Error processing expense_breakdown:`, e);
+      fullRequest.expense_breakdown = null;
     }
 
     // Log expense_breakdown for debugging
-    console.log(`[GET /api/requests/${requestId}] Expense breakdown:`, {
-      type: typeof request.expense_breakdown,
-      isArray: Array.isArray(request.expense_breakdown),
-      length: Array.isArray(request.expense_breakdown) ? request.expense_breakdown.length : null,
-      value: request.expense_breakdown
-    });
+    try {
+      console.log(`[GET /api/requests/${requestId}] Expense breakdown:`, {
+        type: typeof fullRequest.expense_breakdown,
+        isArray: Array.isArray(fullRequest.expense_breakdown),
+        length: Array.isArray(fullRequest.expense_breakdown) ? fullRequest.expense_breakdown.length : null,
+        total_budget: fullRequest.total_budget,
+        comptroller_edited_budget: fullRequest.comptroller_edited_budget,
+        value: fullRequest.expense_breakdown
+      });
+    } catch (e) {
+      console.warn(`[GET /api/requests/${requestId}] Error logging expense_breakdown:`, e);
+    }
 
-    return NextResponse.json({ ok: true, data: request });
+    // Parse workflow_metadata if it's a string
+    try {
+      if (fullRequest.workflow_metadata && typeof fullRequest.workflow_metadata === 'string') {
+        try {
+          fullRequest.workflow_metadata = JSON.parse(fullRequest.workflow_metadata);
+        } catch (e) {
+          console.warn(`[GET /api/requests/${requestId}] Failed to parse workflow_metadata:`, e);
+        }
+      }
+    } catch (e) {
+      console.warn(`[GET /api/requests/${requestId}] Error processing workflow_metadata:`, e);
+    }
+
+    // Parse destination_geo if it's a string
+    try {
+      if (fullRequest.destination_geo && typeof fullRequest.destination_geo === 'string') {
+        try {
+          fullRequest.destination_geo = JSON.parse(fullRequest.destination_geo);
+        } catch (e) {
+          console.warn(`[GET /api/requests/${requestId}] Failed to parse destination_geo:`, e);
+        }
+      }
+    } catch (e) {
+      console.warn(`[GET /api/requests/${requestId}] Error processing destination_geo:`, e);
+    }
+
+    // Parse attachments if it's a string (JSONB from database)
+    try {
+      if (fullRequest.attachments && typeof fullRequest.attachments === 'string') {
+        try {
+          fullRequest.attachments = JSON.parse(fullRequest.attachments);
+          console.log(`[GET /api/requests/${requestId}] Parsed attachments:`, {
+            count: Array.isArray(fullRequest.attachments) ? fullRequest.attachments.length : 0,
+            attachments: fullRequest.attachments
+          });
+        } catch (e) {
+          console.warn(`[GET /api/requests/${requestId}] Failed to parse attachments:`, e);
+          fullRequest.attachments = [];
+        }
+      }
+      // Ensure attachments is always an array
+      if (fullRequest.attachments && !Array.isArray(fullRequest.attachments)) {
+        console.warn(`[GET /api/requests/${requestId}] attachments is not an array, converting...`);
+        fullRequest.attachments = [];
+      }
+    } catch (e) {
+      console.warn(`[GET /api/requests/${requestId}] Error processing attachments:`, e);
+      fullRequest.attachments = [];
+    }
+
+    // Step 7: Clean up and serialize response
+    console.log(`[GET /api/requests/[id]] Step 7: Serializing response...`);
+    try {
+      // Remove any functions or circular references
+      const cleanData = JSON.parse(JSON.stringify(fullRequest, (key, value) => {
+        // Remove functions
+        if (typeof value === 'function') {
+          return undefined;
+        }
+        // Remove undefined values
+        if (value === undefined) {
+          return null;
+        }
+        return value;
+      }));
+      
+      console.log(`[GET /api/requests/${requestId}] Step 7: ✅ Successfully serialized, returning response`);
+      return NextResponse.json({ ok: true, data: cleanData });
+    } catch (e: any) {
+      console.error(`[GET /api/requests/${requestId}] Step 7: ❌ SERIALIZATION ERROR:`, {
+        message: e?.message,
+        stack: e?.stack,
+        name: e?.name
+      });
+      // Try to return at least basic request data
+      try {
+        console.log(`[GET /api/requests/${requestId}] Step 7: Attempting fallback serialization...`);
+        const basicData = JSON.parse(JSON.stringify(request, (key, value) => {
+          if (typeof value === 'function' || value === undefined) return null;
+          return value;
+        }));
+        console.log(`[GET /api/requests/${requestId}] Step 7: ✅ Fallback serialization successful`);
+        return NextResponse.json({ ok: true, data: basicData });
+      } catch (fallbackErr: any) {
+        console.error(`[GET /api/requests/${requestId}] Step 7: ❌ Fallback also failed:`, {
+          message: fallbackErr?.message,
+          stack: fallbackErr?.stack
+        });
+        throw e; // Re-throw original error to be caught by outer catch
+      }
+    }
   } catch (err: any) {
-    console.error("[GET /api/requests/[id]] Unexpected error:", err);
-    return NextResponse.json({ ok: false, error: "Internal server error" }, { status: 500 });
+    console.error("[GET /api/requests/[id]] ========== UNEXPECTED ERROR ==========");
+    console.error("[GET /api/requests/[id]] Error message:", err?.message);
+    console.error("[GET /api/requests/[id]] Error name:", err?.name);
+    console.error("[GET /api/requests/[id]] Error code:", err?.code);
+    console.error("[GET /api/requests/[id]] Error stack:", err?.stack);
+    console.error("[GET /api/requests/[id]] Error cause:", err?.cause);
+    console.error("[GET /api/requests/[id]] Full error object:", JSON.stringify(err, Object.getOwnPropertyNames(err)));
+    
+    // Try to return at least the basic request data if we can get it
+    if (requestId) {
+      try {
+        console.log("[GET /api/requests/[id]] Attempting fallback: fetching basic request...");
+        // Use direct createClient for fallback to bypass RLS
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+        if (supabaseUrl && supabaseServiceKey) {
+          const fallbackClient = createClient(supabaseUrl, supabaseServiceKey, {
+            auth: { persistSession: false, autoRefreshToken: false }
+          });
+          const { data: basicRequest, error: basicError } = await fallbackClient
+            .from("requests")
+            .select("*")
+            .eq("id", requestId)
+            .maybeSingle();
+        
+          if (basicRequest && !basicError) {
+            console.log("[GET /api/requests/[id]] ✅ Fallback successful: returning basic request data");
+            // Clean the data before returning
+            try {
+              const cleanData = JSON.parse(JSON.stringify(basicRequest, (key, value) => {
+                if (typeof value === 'function' || value === undefined) return null;
+                return value;
+              }));
+              return NextResponse.json({ ok: true, data: cleanData });
+            } catch (cleanErr) {
+              console.error("[GET /api/requests/[id]] Error cleaning fallback data:", cleanErr);
+              return NextResponse.json({ ok: true, data: basicRequest });
+            }
+          } else if (basicError) {
+            console.error("[GET /api/requests/[id]] ❌ Fallback query error:", {
+              message: basicError.message,
+              code: basicError.code,
+              details: basicError.details
+            });
+          } else {
+            console.error("[GET /api/requests/[id]] ❌ Fallback: No data returned");
+          }
+        } else {
+          console.error("[GET /api/requests/[id]] ❌ Fallback: Missing Supabase configuration");
+        }
+      } catch (fallbackErr: any) {
+        console.error("[GET /api/requests/[id]] ❌ Fallback exception:", {
+          message: fallbackErr?.message,
+          stack: fallbackErr?.stack
+        });
+      }
+    } else {
+      console.error("[GET /api/requests/[id]] ❌ No requestId available for fallback");
+    }
+    
+    // Return error with detailed info in development
+    const errorResponse: any = { 
+      ok: false, 
+      error: err?.message || "Internal server error"
+    };
+    
+    if (process.env.NODE_ENV === 'development') {
+      errorResponse.details = err?.stack;
+      errorResponse.errorName = err?.name;
+      errorResponse.errorCode = err?.code;
+    }
+    
+    console.error("[GET /api/requests/[id]] ========== RETURNING ERROR ==========");
+    return NextResponse.json(errorResponse, { status: 500 });
   }
 }
 
@@ -241,6 +624,7 @@ export async function PATCH(
       total_budget,
       expense_breakdown,
       cost_justification,
+      attachments, // Allow updating attachments
       // Allow updating other fields as needed
       ...otherFields
     } = body;
@@ -275,6 +659,15 @@ export async function PATCH(
     }
     if (cost_justification !== undefined) {
       updateData.cost_justification = cost_justification || null;
+    }
+
+    // Allow updating attachments
+    if (attachments !== undefined) {
+      updateData.attachments = Array.isArray(attachments) ? attachments : [];
+      console.log(`[PATCH /api/requests/${requestId}] Updating attachments:`, {
+        count: updateData.attachments.length,
+        attachments: updateData.attachments
+      });
     }
 
     // Allow other safe fields to be updated

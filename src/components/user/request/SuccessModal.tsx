@@ -14,13 +14,19 @@ export default function SuccessModal({ data, onClose }: SuccessModalProps) {
   const requestNumber = data?.request_number || "—";
   const status = data?.status || "pending_head";
   const department = data?.department?.name || data?.department?.code || "your department";
+  const requesterIsHead = data?.requester_is_head || false;
   
   // Determine who receives it next
-  const nextApprover = getNextApproverText(status);
+  const nextApprover = getNextApproverText(status, requesterIsHead);
 
   function handleViewMyRequests() {
     onClose();
-    router.push("/user/submissions");
+    // Navigate based on user role - heads go to /head/submissions, others go to /user/submissions
+    if (requesterIsHead) {
+      router.push("/head/submissions");
+    } else {
+      router.push("/user/submissions");
+    }
   }
 
   function handleNewRequest() {
@@ -68,7 +74,9 @@ export default function SuccessModal({ data, onClose }: SuccessModalProps) {
                     {nextApprover}
                   </p>
                   <p className="mt-2 text-xs text-blue-600">
-                    You will be notified once your department head reviews your request.
+                    {requesterIsHead 
+                      ? "You will be notified once the Transport Office processes your request."
+                      : "You will be notified once your department head reviews your request."}
                   </p>
                 </div>
               </div>
@@ -87,30 +95,54 @@ export default function SuccessModal({ data, onClose }: SuccessModalProps) {
                 <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
-                <div className="flex items-center gap-2">
-                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-400 text-white">
-                    <div className="h-2 w-2 animate-pulse rounded-full bg-white"></div>
-                  </div>
-                  <span className="font-medium text-amber-700">Dept. Head</span>
-                </div>
-                <svg className="h-4 w-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-                <div className="flex items-center gap-2">
-                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-300 text-white">
-                    •
-                  </div>
-                  <span className="text-gray-400">Admin</span>
-                </div>
-                <svg className="h-4 w-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-                <div className="flex items-center gap-2">
-                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-300 text-white">
-                    •
-                  </div>
-                  <span className="text-gray-400">...</span>
-                </div>
+                {requesterIsHead ? (
+                  // Head requester: skip Dept. Head, go directly to Admin
+                  <>
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-400 text-white">
+                        <div className="h-2 w-2 animate-pulse rounded-full bg-white"></div>
+                      </div>
+                      <span className="font-medium text-amber-700">Admin</span>
+                    </div>
+                    <svg className="h-4 w-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-300 text-white">
+                        •
+                      </div>
+                      <span className="text-gray-400">...</span>
+                    </div>
+                  </>
+                ) : (
+                  // Regular requester: go through Dept. Head first
+                  <>
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-400 text-white">
+                        <div className="h-2 w-2 animate-pulse rounded-full bg-white"></div>
+                      </div>
+                      <span className="font-medium text-amber-700">Dept. Head</span>
+                    </div>
+                    <svg className="h-4 w-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-300 text-white">
+                        •
+                      </div>
+                      <span className="text-gray-400">Admin</span>
+                    </div>
+                    <svg className="h-4 w-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-300 text-white">
+                        •
+                      </div>
+                      <span className="text-gray-400">...</span>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -146,9 +178,13 @@ export default function SuccessModal({ data, onClose }: SuccessModalProps) {
   );
 }
 
-function getNextApproverText(status: string): string {
+function getNextApproverText(status: string, requesterIsHead: boolean = false): string {
   switch (status) {
     case "pending_head":
+      // If requester is head, they skip dept head approval and go to admin
+      if (requesterIsHead) {
+        return "Your request has been sent to the Transport Office for processing.";
+      }
       return "Your request has been sent to your Department Head for review and endorsement.";
     case "pending_admin":
       return "Your request has been sent to the Transport Office for processing.";
