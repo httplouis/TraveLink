@@ -14,7 +14,7 @@ const TOPBAR_H = 64; // adjust if your Topbar is not h-16
 export default function DriverLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
-      <PageTitle title="TraviLink | Driver" />
+      <PageTitle title="Travelink | Driver" />
       <div data-role="driver" className="min-h-screen bg-[var(--bg)]">
       {/* keep the topbar visible while center scrolls */}
       <div className="sticky top-0 z-40">

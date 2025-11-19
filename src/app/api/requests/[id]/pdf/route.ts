@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabaseClient";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import fs from "fs";
 import path from "path";
@@ -10,6 +10,7 @@ export async function GET(
 ) {
   try {
     const requestId = params.id;
+    const supabase = await createSupabaseServerClient(true);
 
     // Get full request details
     const { data: request, error } = await supabase
@@ -30,10 +31,10 @@ export async function GET(
       if (!userId) return null;
       const { data } = await supabase
         .from("users")
-        .select("full_name")
+        .select("name")
         .eq("id", userId)
         .single();
-      return data?.full_name || null;
+      return data?.name || null;
     };
 
     const fetchDepartment = async (deptId: string | null) => {
@@ -318,17 +319,134 @@ export async function GET(
       await drawSignature(request.hr_signature, 85, 630, 180, 34);
     }
     
+    // Get all participants/requesters for multi-page support
+    const allParticipants: Array<{ name: string; department: string; signature?: string | null }> = [];
+    
+    // Add primary requester
+    if (requesterName) {
+      allParticipants.push({
+        name: requesterName,
+        department: deptName,
+        signature: request.requester_signature || null,
+      });
+    }
+    
+    // Add confirmed requesters from invitations
+    if (multiDeptRequesters.length > 0) {
+      multiDeptRequesters.forEach((r: any) => {
+        allParticipants.push({
+          name: r.name,
+          department: r.department || deptName,
+          signature: r.signature || null,
+        });
+      });
+    }
+    
+    // If many participants, create additional pages
+    const PARTICIPANTS_PER_PAGE = 8; // Max participants per page
+    const needsMultiplePages = allParticipants.length > PARTICIPANTS_PER_PAGE;
+    
+    if (needsMultiplePages) {
+      // Create additional pages for extra participants
+      const totalPages = Math.ceil(allParticipants.length / PARTICIPANTS_PER_PAGE);
+      
+      for (let pageNum = 1; pageNum < totalPages; pageNum++) {
+        const newPage = pdfDoc.addPage([PAGE_W, PAGE_H]);
+        const startIdx = pageNum * PARTICIPANTS_PER_PAGE;
+        const endIdx = Math.min(startIdx + PARTICIPANTS_PER_PAGE, allParticipants.length);
+        const pageParticipants = allParticipants.slice(startIdx, endIdx);
+        
+        // Draw page header
+        const headerFont = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
+        newPage.drawText(
+          `Travel Order - Participants (Page ${pageNum + 1})`,
+          {
+            x: 50,
+            y: PAGE_H - 30,
+            size: 12,
+            font: headerFont,
+            color: rgb(0, 0, 0),
+          }
+        );
+        
+        // Draw participants table
+        let yPos = PAGE_H - 60;
+        const rowHeight = 30;
+        const colWidths = [200, 200, 150];
+        
+        // Table header
+        newPage.drawText("Name", { x: 50, y: yPos, size: 10, font: headerFont });
+        newPage.drawText("Department", { x: 250, y: yPos, size: 10, font: headerFont });
+        newPage.drawText("Signature", { x: 450, y: yPos, size: 10, font: headerFont });
+        yPos -= 20;
+        
+        // Draw line
+        newPage.drawLine({
+          start: { x: 50, y: yPos },
+          end: { x: PAGE_W - 50, y: yPos },
+          thickness: 1,
+          color: rgb(0, 0, 0),
+        });
+        yPos -= 10;
+        
+        // Draw participants
+        for (const participant of pageParticipants) {
+          const regularFont = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+          newPage.drawText(participant.name || "—", { x: 50, y: yPos, size: 9, font: regularFont });
+          newPage.drawText(participant.department || "—", { x: 250, y: yPos, size: 9, font: regularFont });
+          
+          // Draw signature if available
+          if (participant.signature) {
+            try {
+              const base64 = participant.signature.split(',')[1];
+              const sigBytes = Buffer.from(base64, 'base64');
+              const isPng = participant.signature.startsWith('data:image/png');
+              const img = isPng ? await pdfDoc.embedPng(sigBytes) : await pdfDoc.embedJpg(sigBytes);
+              
+              const sigWidth = 100;
+              const sigHeight = 20;
+              const scale = Math.min(sigWidth / img.width, sigHeight / img.height);
+              
+              newPage.drawImage(img, {
+                x: 450,
+                y: yPos - 5,
+                width: img.width * scale,
+                height: img.height * scale,
+                opacity: 0.95,
+              });
+            } catch (err) {
+              console.error('Error embedding participant signature:', err);
+            }
+          }
+          
+          yPos -= rowHeight;
+          
+          // Draw line between rows
+          newPage.drawLine({
+            start: { x: 50, y: yPos },
+            end: { x: PAGE_W - 50, y: yPos },
+            thickness: 0.5,
+            color: rgb(0.7, 0.7, 0.7),
+          });
+          yPos -= 5;
+        }
+      }
+    }
+
     // Save the PDF
     const pdfBytes = await pdfDoc.save();
 
     // Convert to Buffer for NextResponse
     const buffer = Buffer.from(pdfBytes);
 
+    // Use file_code for filename if available, otherwise use request_number
+    const filename = request.file_code || request.request_number || `request-${requestId}`;
+
     // Return PDF as download
     return new NextResponse(buffer, {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${request.request_number}.pdf"`,
+        "Content-Disposition": `attachment; filename="${filename}.pdf"`,
       },
     });
   } catch (err: any) {

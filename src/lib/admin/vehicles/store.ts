@@ -1,36 +1,13 @@
 import type { Vehicle, VehicleFilters, VehicleStatus, VehicleType } from "./types";
-import { sampleVehicles } from "./data";
 
 /**
- * IMPORTANT (SSR-safe):
- * - We initialize with sample data for BOTH server & client so the first render matches.
- * - After mount (in your page), call VehiclesRepo.hydrateFromStorage() to replace with persisted data.
+ * SUPABASE-ONLY STORE:
+ * - All data comes from Supabase database via API
+ * - No localStorage usage - everything is in database
  */
 
-// In-memory DB (module-level)
-let db: Vehicle[] = sampleVehicles.map(v => ({ ...v })) as Vehicle[];
-
-// ---- localStorage helpers (client only; safe to import on server) ----
-const LS_KEY = "travilink_vehicles";
-const canStorage = () => typeof window !== "undefined" && !!window.localStorage;
-
-function saveToStorage(rows: Vehicle[]) {
-  if (!canStorage()) return;
-  try { localStorage.setItem(LS_KEY, JSON.stringify(rows)); } catch {}
-}
-
-/** Load from localStorage into in-memory DB. Returns true if hydrated. */
-function hydrateFromStorage(): boolean {
-  if (!canStorage()) return false;
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return false;
-    db = JSON.parse(raw) as Vehicle[];
-    return true;
-  } catch {
-    return false;
-  }
-}
+// In-memory cache (from last API fetch)
+let db: Vehicle[] = [];
 
 // ---- Utils ----
 function matches(v: Vehicle, f: VehicleFilters) {
@@ -43,21 +20,18 @@ function matches(v: Vehicle, f: VehicleFilters) {
 
 // ---- Public API ----
 export const VehiclesRepo = {
-  // expose so the page can hydrate AFTER mount (prevents hydration mismatch)
-  hydrateFromStorage,
-
   constants: {
     types: ["Bus", "Van", "Car", "SUV", "Motorcycle"] as readonly VehicleType[],
     statuses: ["active", "maintenance", "inactive"] as readonly VehicleStatus[],
   },
 
-  // Synchronous method to get local db (for SSR/build time)
+  // Synchronous method to get cached data (from last API fetch)
   listLocal(filters: VehicleFilters = {}) {
     return db.filter(v => matches(v, filters));
   },
 
   async list(filters: VehicleFilters = {}) {
-    // NOW USES API! Fetch from database
+    // FETCH FROM SUPABASE ONLY - No localStorage
     try {
       const params = new URLSearchParams();
       if (filters.status) params.set('status', filters.status);
@@ -69,24 +43,53 @@ export const VehiclesRepo = {
       
       if (result.ok && result.data) {
         // Transform to match Vehicle type
-        db = result.data.map((v: any) => ({
-          id: v.id,
-          plateNo: v.plate_number || v.plateNo,
-          code: v.code || `V${v.id.slice(0, 4)}`,
-          brand: v.brand || 'Unknown',
-          model: v.vehicle_name || v.model,
-          type: v.type,
-          capacity: v.capacity,
-          status: v.status,
-          notes: v.notes,
-          createdAt: v.created_at,
-          updatedAt: v.updated_at,
-        }));
-        saveToStorage(db); // Cache locally
+        db = result.data.map((v: any) => {
+          // Parse vehicle_name to extract brand/model if possible
+          // Format could be: "DAEWOO BUS", "MAXIMA BUS", "ISUZU ELF", etc.
+          const vehicleName = v.vehicle_name || v.model || '';
+          const nameParts = vehicleName.trim().split(/\s+/);
+          
+          // If vehicle_name has multiple words, first word is brand, rest is model
+          // Otherwise, use vehicle_name as model
+          let brand = v.brand || v.manufacturer || '';
+          let model = v.model || '';
+          
+          if (!brand && !model && vehicleName) {
+            if (nameParts.length > 1) {
+              brand = nameParts[0];
+              model = nameParts.slice(1).join(' ');
+            } else {
+              // Single word - use as model, no brand
+              model = vehicleName;
+              brand = '';
+            }
+          } else if (!model && vehicleName) {
+            // If model is missing but vehicle_name exists, use vehicle_name as model
+            model = vehicleName;
+          }
+          
+          return {
+            id: v.id,
+            plateNo: v.plate_number || v.plateNo,
+            code: v.code || `V${v.id.slice(0, 4)}`,
+            brand: brand || '',
+            model: model || vehicleName || '',
+            type: v.type,
+            capacity: v.capacity,
+            status: v.status,
+            notes: v.notes,
+            createdAt: v.created_at,
+            updatedAt: v.updated_at,
+            photoUrl: v.photo_url || v.photoUrl, // Include photo URL
+          };
+        });
+      } else {
+        console.error('[VehiclesRepo] API returned error:', result);
+        db = [];
       }
     } catch (error) {
       console.error('[VehiclesRepo] API fetch failed:', error);
-      // Fall back to localStorage
+      db = [];
     }
     
     return db.filter(v => matches(v, filters));
@@ -114,34 +117,16 @@ export const VehiclesRepo = {
       
       const result = await response.json();
       if (result.ok && result.data) {
-        // Add to local cache
-        const v: Vehicle = {
-          id: result.data.id,
-          plateNo: result.data.plate_number,
-          code: data.code || `V${result.data.id.slice(0, 4)}`,
-          brand: data.brand || 'Unknown',
-          model: result.data.vehicle_name,
-          type: result.data.type,
-          capacity: result.data.capacity,
-          status: result.data.status,
-          notes: result.data.notes,
-          createdAt: result.data.created_at,
-          updatedAt: result.data.updated_at,
-        } as Vehicle;
-        db.push(v);
-        saveToStorage(db);
-        return v.id;
+        // Refresh from API to get latest data
+        await this.list();
+        return result.data.id;
+      } else {
+        throw new Error(result.error || 'Failed to create vehicle');
       }
     } catch (error) {
       console.error('[VehiclesRepo] API create failed:', error);
+      throw error;
     }
-    
-    // Fallback to local
-    const now = new Date().toISOString();
-    const v: Vehicle = { ...data, id: crypto.randomUUID(), createdAt: now, updatedAt: now } as Vehicle;
-    db.push(v);
-    saveToStorage(db);
-    return v.id;
   },
 
   async update(id: string, patch: Partial<Vehicle>) {
@@ -163,23 +148,15 @@ export const VehiclesRepo = {
       
       const result = await response.json();
       if (result.ok) {
-        // Update local cache
-        const i = db.findIndex(v => v.id === id);
-        if (i >= 0) {
-          db[i] = { ...db[i], ...patch, updatedAt: new Date().toISOString() };
-          saveToStorage(db);
-        }
+        // Refresh from API to get latest data
+        await this.list();
         return;
+      } else {
+        throw new Error(result.error || 'Failed to update vehicle');
       }
     } catch (error) {
       console.error('[VehiclesRepo] API update failed:', error);
-    }
-    
-    // Fallback to local
-    const i = db.findIndex(v => v.id === id);
-    if (i >= 0) {
-      db[i] = { ...db[i], ...patch, updatedAt: new Date().toISOString() };
-      saveToStorage(db);
+      throw error;
     }
   },
 
@@ -192,29 +169,15 @@ export const VehiclesRepo = {
       
       const result = await response.json();
       if (result.ok) {
-        // Remove from local cache
-        const i = db.findIndex(v => v.id === id);
-        if (i >= 0) {
-          db.splice(i, 1);
-          saveToStorage(db);
-        }
+        // Refresh from API to get latest data
+        await this.list();
         return;
+      } else {
+        throw new Error(result.error || 'Failed to delete vehicle');
       }
     } catch (error) {
       console.error('[VehiclesRepo] API remove failed:', error);
+      throw error;
     }
-    
-    // Fallback to local
-    const i = db.findIndex(v => v.id === id);
-    if (i >= 0) {
-      db.splice(i, 1);
-      saveToStorage(db);
-    }
-  },
-
-  /** DEV helper: restore sample seed (also persists) */
-  resetToSample() {
-    db = sampleVehicles.map(v => ({ ...v })) as Vehicle[];
-    saveToStorage(db);
   },
 };

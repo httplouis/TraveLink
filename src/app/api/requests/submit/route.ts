@@ -765,6 +765,7 @@ export async function POST(req: Request) {
     } else if (requestingPersonIsHead) {
       // Requesting person is a head: they sign first, then send to parent head (if exists) or admin
       // Status will be pending_head so they can sign their own request first
+      // The selected approver (VP/Admin) will be saved in workflow_metadata for routing display
       initialStatus = "pending_head";
     } else {
       // Requesting person is NOT a head, send to their department head first
@@ -996,10 +997,10 @@ export async function POST(req: Request) {
       : (travelOrder.returnDate || travelOrder.dateTo || travelOrder.date || finalTravelStartDate);
     
     // Ensure dates are in correct order (end date must be >= start date)
-    const startDate = new Date(finalTravelStartDate);
-    const endDate = new Date(finalTravelEndDate);
+    const validationStartDate = new Date(finalTravelStartDate);
+    const validationEndDate = new Date(finalTravelEndDate);
     
-    if (endDate < startDate) {
+    if (validationEndDate < validationStartDate) {
       console.warn("[/api/requests/submit] ⚠️ End date is before start date, swapping dates");
       // Swap dates if they're in wrong order
       const temp = finalTravelStartDate;
@@ -1096,6 +1097,7 @@ export async function POST(req: Request) {
       // Transportation fields (for institutional vehicles)
       ...(body.transportation ? {
         transportation_type: body.transportation.transportation_type || null,
+        pickup_preference: body.transportation.pickup_preference || null,
         pickup_location: body.transportation.pickup_location || null,
         pickup_location_lat: body.transportation.pickup_location_lat || null,
         pickup_location_lng: body.transportation.pickup_location_lng || null,
@@ -1109,19 +1111,40 @@ export async function POST(req: Request) {
         own_vehicle_details: body.transportation.own_vehicle_details || null,
       } : {}),
       
+      // File attachments
+      attachments: Array.isArray(body.attachments) ? body.attachments.map((att: any) => ({
+        id: att.id || crypto.randomUUID(),
+        name: att.name,
+        url: att.url,
+        mime: att.mime,
+        size: att.size,
+        uploaded_at: att.uploaded_at || new Date().toISOString(),
+        uploaded_by: att.uploaded_by || profile.id,
+      })) : [],
+      
+      // Requester contact number (for driver coordination)
+      requester_contact_number: body.transportation?.pickup_contact_number || body.requester_contact_number || null,
+      
       status: initialStatus,
       current_approver_role: WorkflowEngine.getApproverRole(initialStatus),
       
-      // Store selected approver for head requesters (messenger-style routing)
-      // This will be used when the head approves the request
-      ...(nextApproverId && nextApproverRole ? {
-        next_approver_id: nextApproverId,
-        next_approver_role: nextApproverRole,
-        // Also set specific fields based on role for backward compatibility
-        ...(nextApproverRole === 'vp' ? { next_vp_id: nextApproverId } : {}),
-        ...(nextApproverRole === 'admin' ? { next_admin_id: nextApproverId } : {}),
-        ...(nextApproverRole === 'president' ? { next_president_id: nextApproverId } : {}),
-      } : {}),
+      // Save workflow_metadata with selected approver if head selected VP/admin during submission
+      workflow_metadata: (() => {
+        const metadata: any = {};
+        if (nextApproverId && nextApproverRole) {
+          if (nextApproverRole === "vp") {
+            metadata.next_vp_id = nextApproverId;
+            metadata.next_approver_role = "vp";
+            metadata.next_approver_id = nextApproverId;
+          } else if (nextApproverRole === "admin") {
+            // Don't set next_admin_id - allow all admins to see it
+            // metadata.next_admin_id = nextApproverId;
+            metadata.next_approver_role = "admin";
+            metadata.next_approver_id = nextApproverId;
+          }
+        }
+        return Object.keys(metadata).length > 0 ? metadata : null;
+      })(),
       
       // For seminar requests, save full seminar data including applicants
       ...(isSeminar ? {
@@ -1223,6 +1246,56 @@ export async function POST(req: Request) {
       console.log("[/api/requests/submit] Seminar data present:", !!requestData.seminar_data);
     }
     console.log("[/api/requests/submit] ============================================");
+    
+    // Check slot availability (max 5 slots per day)
+    // Count how many requests are already approved and assigned for each date in the travel range
+    const MAX_SLOTS_PER_DAY = 5;
+    const slotStartDate = new Date(requestData.travel_start_date);
+    const slotEndDate = new Date(requestData.travel_end_date);
+    const datesToCheck: string[] = [];
+    
+    // Get all dates in the travel range
+    const currentDate = new Date(slotStartDate);
+    while (currentDate <= slotEndDate) {
+      datesToCheck.push(currentDate.toISOString().split('T')[0]);
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+    
+    // Check slot availability for each date
+    // Count requests that overlap with this date (not just start on this date)
+    for (const dateISO of datesToCheck) {
+      const dateStart = `${dateISO}T00:00:00`;
+      const dateEnd = `${dateISO}T23:59:59`;
+      
+      const { data: existingRequests, error: slotError } = await supabase
+        .from("requests")
+        .select("id, travel_start_date, travel_end_date")
+        .lte("travel_start_date", dateEnd) // Request starts before or on this date
+        .gte("travel_end_date", dateStart) // Request ends on or after this date
+        .not("admin_processed_by", "is", null) // Admin must have processed
+        .not("assigned_vehicle_id", "is", null) // Vehicle must be assigned
+        .not("assigned_driver_id", "is", null) // Driver must be assigned
+        .not("status", "in", "(rejected,cancelled)");
+      
+      if (slotError) {
+        console.error("[/api/requests/submit] Error checking slot availability:", slotError);
+        // Continue on error - don't block submission
+      } else {
+        const slotCount = existingRequests?.length || 0;
+        if (slotCount >= MAX_SLOTS_PER_DAY) {
+          const dateFormatted = new Date(dateISO).toLocaleDateString('en-US', { 
+            weekday: 'long', 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+          });
+          return NextResponse.json({ 
+            ok: false, 
+            error: `Date ${dateFormatted} is already fully booked (${MAX_SLOTS_PER_DAY} slots). Please choose a different date.` 
+          }, { status: 400 });
+        }
+      }
+    }
     
     // Insert request with retry logic for duplicate key errors
     let data: any = null;

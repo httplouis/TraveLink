@@ -36,12 +36,17 @@ export async function GET(
         ),
         head_approver:users!head_approved_by(
           id, name, email, profile_picture, phone_number, position_title,
-          department_id,
+          department_id, is_head, is_vp,
           department:departments!users_department_id_fkey(id, name, code)
         ),
         parent_head_approver:users!parent_head_approved_by(
           id, name, email, profile_picture, phone_number, position_title,
-          department_id,
+          department_id, is_head, is_vp,
+          department:departments!users_department_id_fkey(id, name, code)
+        ),
+        vp_approver:users!vp_approved_by(
+          id, name, email, profile_picture, phone_number, position_title,
+          department_id, is_head, is_vp,
           department:departments!users_department_id_fkey(id, name, code)
         ),
         admin_approver:users!admin_approved_by(
@@ -54,7 +59,9 @@ export async function GET(
           id, name, email, profile_picture, phone_number, position_title
         ),
         vp_approver:users!vp_approved_by(
-          id, name, email, profile_picture, phone_number, position_title
+          id, name, email, profile_picture, phone_number, position_title,
+          department_id, is_head, is_vp,
+          department:departments!users_department_id_fkey(id, name, code)
         ),
         vp2_approver:users!vp2_approved_by(
           id, name, email, profile_picture, phone_number, position_title
@@ -136,6 +143,24 @@ export async function GET(
         console.warn(`[GET /api/requests/${requestId}] Failed to parse seminar_data:`, e);
       }
     }
+
+    // Parse expense_breakdown if it's a string (JSONB from database)
+    if (request.expense_breakdown && typeof request.expense_breakdown === 'string') {
+      try {
+        request.expense_breakdown = JSON.parse(request.expense_breakdown);
+        console.log(`[GET /api/requests/${requestId}] Parsed expense_breakdown:`, request.expense_breakdown);
+      } catch (e) {
+        console.warn(`[GET /api/requests/${requestId}] Failed to parse expense_breakdown:`, e);
+      }
+    }
+
+    // Log expense_breakdown for debugging
+    console.log(`[GET /api/requests/${requestId}] Expense breakdown:`, {
+      type: typeof request.expense_breakdown,
+      isArray: Array.isArray(request.expense_breakdown),
+      length: Array.isArray(request.expense_breakdown) ? request.expense_breakdown.length : null,
+      value: request.expense_breakdown
+    });
 
     return NextResponse.json({ ok: true, data: request });
   } catch (err: any) {

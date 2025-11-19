@@ -61,5 +61,12 @@ export type MaintFilters = {
   driverIds?: UUID[];
 };
 
-export type Vehicle = { id: UUID; plate?: string; name?: string };
+export type Vehicle = { 
+  id: UUID; 
+  plate?: string; 
+  name?: string;
+  vehicle_name?: string;
+  brand?: string;
+  model?: string;
+};
 export type Driver = { id: UUID; name: string; badge?: string };

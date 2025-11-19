@@ -60,18 +60,55 @@ function toRequestRowLocal(req: AdminRequest): RequestRow {
   };
 }
 
-function toRequestRowRemote(r: any): RequestRow {
+function toRequestRowRemote(r: any): RequestRow | null {
+  // Skip invalid requests (missing ID or critical data)
+  if (!r || !r.id) {
+    console.warn("[toRequestRowRemote] Skipping invalid request (no ID):", r);
+    return null;
+  }
+
   // New schema: data is directly on request object, not in payload
-  return {
+  // Handle missing department data gracefully
+  let dept = "";
+  if (r.department) {
+    if (typeof r.department === 'object') {
+      dept = r.department.name || r.department.code || "";
+    } else if (typeof r.department === 'string') {
+      dept = r.department;
+    }
+  }
+  if (!dept && r.department_id) {
+    dept = `Department ${r.department_id}`; // Fallback if department object is missing
+  }
+
+  // Handle missing requester data gracefully
+  let requester = "";
+  if (r.requester) {
+    if (typeof r.requester === 'object') {
+      requester = r.requester.name || r.requester.email || "";
+    } else if (typeof r.requester === 'string') {
+      requester = r.requester;
+    }
+  }
+  if (!requester) {
+    requester = r.requester_name || r.requester_email || `User ${r.requester_id || 'Unknown'}`;
+  }
+
+  // Handle missing purpose/title
+  const purpose = r.purpose || r.title || r.request_number || "No purpose specified";
+
+  const row: RequestRow = {
     id: r.id,
-    dept: r.department?.name || r.department?.code || "",
-    purpose: r.purpose || "",
-    requester: r.requester?.name || r.requester?.email || "",
-    driver: r.assigned_driver_id || "—",
-    vehicle: r.assigned_vehicle_id || "—",
-    date: r.created_at,
+    dept: dept || "Unknown Department",
+    purpose: purpose,
+    requester: requester || "Unknown User",
+    driver: r.assigned_driver_id ? `Driver ${r.assigned_driver_id}` : "—",
+    vehicle: r.assigned_vehicle_id ? `Vehicle ${r.assigned_vehicle_id}` : "—",
+    date: r.created_at || r.date || new Date().toISOString(),
     status: normalizeStatus(r.status as any),
   };
+  
+  return row;
 }
 
 const PAGE_SIZE = 12;
@@ -163,34 +200,121 @@ export default function PageInner() {
     // Process even if empty array - this allows clearing the list
     if (!remoteRequests) return;
 
-    // Split requests into pending and history (using actual enum values)
-    const pendingRequests = remoteRequests.filter((r: any) => 
-      r.status === "pending_admin"  // Waiting for admin (Ma'am TM) to process
-    );
-    
-    // History: Requests where ADMIN already took action (approved/rejected)
-    const historyRequests = remoteRequests.filter((r: any) => {
-      // Must have admin approval timestamp = admin acted on it
-      const adminActed = r.admin_approved_at || r.admin_approved_by;
+    // ADMIN CAN SEE ALL REQUESTS - Split into pending and history
+    // Pending: Only requests waiting for admin action (NOT yet approved by admin)
+    const pendingRequests = remoteRequests.filter((r: any) => {
+      // Check if admin has already acted on this request
+      const adminActed = !!(r.admin_approved_at || r.admin_approved_by);
       
-      return adminActed && (
-        r.status === "pending_comptroller" ||  // Admin approved, sent to comptroller
-        r.status === "pending_hr" ||           // Admin approved, sent to HR
-        r.status === "pending_exec" ||         // Admin approved, sent to exec
-        r.status === "approved" ||             // Fully approved
-        r.status === "rejected"                // Admin rejected
-      );
+      // If admin already acted, it should be in history, not pending
+      if (adminActed) {
+        return false;
+      }
+      
+      // Only show requests that are waiting for admin action
+      // These are requests that haven't been approved/rejected/completed yet
+      const isWaitingForAdmin = [
+        "pending_head",
+        "pending_admin"
+      ].includes(r.status);
+      
+      // Also include requests that are in pending state but admin hasn't acted yet
+      // Exclude final states (approved, rejected, completed)
+      const isNotFinalState = ![
+        "approved",
+        "rejected", 
+        "completed"
+      ].includes(r.status);
+      
+      return isWaitingForAdmin || (isNotFinalState && !adminActed);
+    });
+    
+    // History: All requests where admin already acted OR final states
+    const historyRequests = remoteRequests.filter((r: any) => {
+      // Include requests where admin already acted (regardless of current status)
+      const adminActed = !!(r.admin_approved_at || r.admin_approved_by);
+      
+      // Include all final states
+      const isFinalState = [
+        "approved",
+        "rejected", 
+        "completed"
+      ].includes(r.status);
+      
+      // Include requests that admin processed and sent to next stage
+      // (pending_comptroller, pending_hr, pending_exec, pending_hr_ack)
+      const adminProcessed = adminActed && [
+        "pending_comptroller",
+        "pending_hr",
+        "pending_exec",
+        "pending_hr_ack"
+      ].includes(r.status);
+      
+      return isFinalState || adminActed || adminProcessed;
     });
 
-    const pendingList = pendingRequests.map((r: any) => toRequestRowRemote(r));
-    const historyList = historyRequests.map((r: any) => toRequestRowRemote(r));
+    const pendingList = pendingRequests
+      .map((r: any) => toRequestRowRemote(r))
+      .filter((row): row is RequestRow => row !== null); // Filter out null values
+    const historyList = historyRequests
+      .map((r: any) => toRequestRowRemote(r))
+      .filter((row): row is RequestRow => row !== null); // Filter out null values
 
     console.log("[PageInner] 📊 Real-time update: Pending requests for admin:", pendingList.length);
     console.log("[PageInner] 📚 Real-time update: History requests (admin acted):", historyList.length);
     console.log("[PageInner] 🔄 Total remote requests received:", remoteRequests.length);
+    
+    // Debug: Log pending requests details
+    if (pendingList.length > 0) {
+      console.log("[PageInner] 🔍 Pending requests details:", pendingList.map((r: any) => ({
+        id: r.id,
+        status: r.status,
+        dept: r.dept,
+        purpose: r.purpose,
+        requester: r.requester,
+        date: r.date
+      })));
+      console.log("[PageInner] 🔍 Full pending request object:", JSON.stringify(pendingList[0], null, 2));
+    }
+    
+    // Debug: Log the actual remote request that should be pending
+    const pendingAdminRequests = remoteRequests.filter((r: any) => r.status === "pending_admin");
+    if (pendingAdminRequests.length > 0) {
+      console.log("[PageInner] 🎯 Requests with status 'pending_admin':", pendingAdminRequests.map((r: any) => ({
+        id: r.id,
+        request_number: r.request_number,
+        status: r.status,
+        workflow_metadata: r.workflow_metadata,
+        department: r.department,
+        requester: r.requester,
+        purpose: r.purpose,
+        created_at: r.created_at
+      })));
+      console.log("[PageInner] 🎯 Full remote request object:", JSON.stringify(pendingAdminRequests[0], null, 2));
+    }
+    
+    // Debug: Check what toRequestRowRemote is producing
+    if (pendingRequests.length > 0) {
+      const testRow = toRequestRowRemote(pendingRequests[0]);
+      console.log("[PageInner] 🧪 Test transformation result:", testRow);
+      console.log("[PageInner] 🧪 Original remote request:", pendingRequests[0]);
+    }
 
+    console.log("[PageInner] ✅ Setting allRows and filteredRows:", {
+      pendingListLength: pendingList.length,
+      firstRow: pendingList.length > 0 ? pendingList[0] : null,
+      allRowsBefore: allRows.length,
+      filteredRowsBefore: filteredRows.length
+    });
+    
+    // Always update - this ensures the UI reflects the latest data from Supabase
     setAllRows(pendingList);
     setFilteredRows(pendingList);
+    console.log("[PageInner] ✅ Updated allRows and filteredRows:", {
+      allRowsAfter: pendingList.length,
+      filteredRowsAfter: pendingList.length,
+      previousAllRowsCount: allRows.length
+    });
     
     // Sort history by most recent first (admin_approved_at or created_at)
     const sortedHistory = historyList.sort((a, b) => {
@@ -210,34 +334,19 @@ export default function PageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadingRemote, remoteError, remoteRequestIds]);
 
-  // CASE 2: remote FAILED → saka lang mag-local
+  // CASE 2: remote FAILED → Show error (no localStorage fallback)
   useEffect(() => {
     if (!remoteSettled) return;
-    if (remoteRequests && !remoteError) return; // may remote, wag na mag-local
+    if (remoteRequests && !remoteError) return; // may remote, ok na
 
-    const loadLocal = () => {
-      console.log("📦 Loading from LocalStorage (fallback)");
-      const allLocal = AdminRequestsRepo.list();
-      console.log("📦 Total localStorage requests:", allLocal.length);
-      
-      const list = allLocal
-        // TEMP: Comment out filter
-        // .filter((r) => r.status !== "pending_head" && r.status !== "head_rejected")
-        .map(toRequestRowLocal);
-
-      setAllRows(list);
-      setFilteredRows(list);
-
-      const read = getReadIds();
-      const unread = new Set<string>(
-        list.filter((r) => !read.has(r.id)).map((r) => r.id),
-      );
-      setUnreadIds(unread);
-    };
-
-    loadLocal();
-    const id = setInterval(loadLocal, 2000); // Poll every 2 seconds for faster updates
-    return () => clearInterval(id);
+    // No localStorage fallback - everything from Supabase
+    if (remoteError) {
+      console.error("[PageInner] Failed to load requests from Supabase:", remoteError);
+      setAllRows([]);
+      setFilteredRows([]);
+      setHistoryRows([]);
+      setFilteredHistoryRows([]);
+    }
   }, [remoteSettled, remoteRequests, remoteError]);
 
   const applyFilters = () => {
@@ -271,6 +380,15 @@ export default function PageInner() {
 
   // Filter pending rows based on status, department, and date range
   useEffect(() => {
+    console.log("[PageInner] 🔍 Filtering rows:", {
+      allRowsCount: allRows.length,
+      pendingStatusFilter,
+      pendingDeptFilter,
+      pendingDateFrom,
+      pendingDateTo,
+      sampleRow: allRows.length > 0 ? allRows[0] : null
+    });
+    
     const filtered = allRows.filter((r) => {
       // Status filter
       const statusMatch = pendingStatusFilter === "All" || r.status === pendingStatusFilter;
@@ -283,7 +401,26 @@ export default function PageInner() {
       const fromMatch = !pendingDateFrom || requestDate >= new Date(pendingDateFrom);
       const toMatch = !pendingDateTo || requestDate <= new Date(pendingDateTo + "T23:59:59");
       
-      return statusMatch && deptMatch && fromMatch && toMatch;
+      const passes = statusMatch && deptMatch && fromMatch && toMatch;
+      
+      if (!passes && allRows.length > 0) {
+        console.log("[PageInner] 🔍 Row filtered out:", {
+          id: r.id,
+          statusMatch,
+          deptMatch,
+          fromMatch,
+          toMatch,
+          rowStatus: r.status,
+          filterStatus: pendingStatusFilter
+        });
+      }
+      
+      return passes;
+    });
+    
+    console.log("[PageInner] 🔍 Filter result:", {
+      filteredCount: filtered.length,
+      allRowsCount: allRows.length
     });
     
     setFilteredRows(filtered);
@@ -342,24 +479,68 @@ export default function PageInner() {
         )
       : filteredRows;
 
-    return [...searched].sort((a, b) =>
+    const sorted = [...searched].sort((a, b) =>
       sortDir === "desc"
         ? b.date.localeCompare(a.date)
         : a.date.localeCompare(b.date),
     );
+    
+    // Debug logging
+    console.log("[PageInner] 🔍 postFilterRows calculation:", {
+      filteredRowsCount: filteredRows.length,
+      searchQuery: q,
+      searchedCount: searched.length,
+      sortedCount: sorted.length,
+      sampleRow: sorted.length > 0 ? sorted[0] : null
+    });
+    
+    return sorted;
   }, [filteredRows, debouncedQ, sortDir]);
 
   useEffect(() => {
     setPagination((p) => {
       const total = postFilterRows.length;
       const maxPage = Math.max(1, Math.ceil(total / p.pageSize) || 1);
-      return { ...p, total, page: Math.min(p.page, maxPage) };
+      const newPage = Math.min(p.page, maxPage);
+      console.log("[PageInner] 📄 Updating pagination:", {
+        total,
+        maxPage,
+        currentPage: p.page,
+        newPage,
+        pageSize: p.pageSize
+      });
+      return { ...p, total, page: newPage };
     });
   }, [postFilterRows]);
 
   const pageRows = useMemo(() => {
     const start = (pagination.page - 1) * pagination.pageSize;
-    return postFilterRows.slice(start, start + pagination.pageSize);
+    const sliced = postFilterRows.slice(start, start + pagination.pageSize);
+    
+    // Debug logging
+    console.log("[PageInner] 📄 pageRows calculation:", {
+      postFilterRowsCount: postFilterRows.length,
+      paginationPage: pagination.page,
+      pageSize: pagination.pageSize,
+      start,
+      end: start + pagination.pageSize,
+      slicedCount: sliced.length,
+      sampleRow: sliced.length > 0 ? {
+        id: sliced[0].id,
+        dept: sliced[0].dept,
+        purpose: sliced[0].purpose,
+        status: sliced[0].status,
+        requester: sliced[0].requester
+      } : null,
+      allPostFilterRows: postFilterRows.map(r => ({
+        id: r.id,
+        dept: r.dept,
+        purpose: r.purpose,
+        status: r.status
+      }))
+    });
+    
+    return sliced;
   }, [postFilterRows, pagination.page, pagination.pageSize]);
 
   const markOneRead = (id: string) => {
@@ -379,6 +560,13 @@ export default function PageInner() {
     console.log("📡 Remote data found?", !!remoteReq);
     if (remoteReq) {
       console.log("✅ Using SUPABASE data for:", remoteReq.requester?.name || remoteReq.requester?.email);
+      console.log("🔍 VP Approval Data:", {
+        vp_approved_at: (remoteReq as any).vp_approved_at,
+        vp_approved_by: (remoteReq as any).vp_approved_by,
+        vp_signature: (remoteReq as any).vp_signature ? "EXISTS" : "NULL",
+        vp_approver: (remoteReq as any).vp_approver,
+        vp_approver_is_head: (remoteReq as any).vp_approver?.is_head
+      });
     }
     
     if (remoteReq) {
@@ -481,6 +669,24 @@ export default function PageInner() {
         hrSignature: remoteReq.hr_signature || null,
         hrAt: remoteReq.hr_approved_at || null,
         hrBy: remoteReq.hr_approved_by || null,
+        
+        // VP approval fields (important for head endorsement if VP is also head)
+        vp_approved_at: (remoteReq as any).vp_approved_at || null,
+        vp_approved_by: (remoteReq as any).vp_approved_by || null,
+        vp_signature: (remoteReq as any).vp_signature || null,
+        vp_approver: (remoteReq as any).vp_approver || null,
+        
+        // Parent head approval fields
+        parent_head_approved_at: (remoteReq as any).parent_head_approved_at || null,
+        parent_head_approved_by: (remoteReq as any).parent_head_approved_by || null,
+        parent_head_signature: (remoteReq as any).parent_head_signature || null,
+        parent_head_approver: (remoteReq as any).parent_head_approver || null,
+        
+        // Head approval fields (for direct head)
+        head_approved_at: remoteReq.head_approved_at || null,
+        head_approved_by: remoteReq.head_approved_by || null,
+        head_signature: remoteReq.head_signature || null,
+        head_approver: (remoteReq as any).head_approver || null,
         
         executiveSignature: remoteReq.executive_signature || null,
         executiveAt: remoteReq.executive_approved_at || null,

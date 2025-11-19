@@ -1,14 +1,23 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
-import { X, CheckCircle2, XCircle } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { X, CheckCircle2, XCircle, Users, Car, UserCog, MapPin, Calendar, DollarSign, FileText } from "lucide-react";
 import { useToast } from "@/components/common/ui/ToastProvider.ui";
+import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
+import { NameWithProfile } from "@/components/common/ProfileHoverCard";
+import ApproverSelectionModal from "@/components/common/ApproverSelectionModal";
 
 interface VPRequestModalProps {
   request: any;
   onClose: () => void;
   onApproved: (id: string) => void;
   onRejected: (id: string) => void;
+  viewOnly?: boolean;
+}
+
+function peso(n?: number | null) {
+  if (!n) return "₱0.00";
+  return `₱${Number(n).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 export default function VPRequestModal({
@@ -16,88 +25,179 @@ export default function VPRequestModal({
   onClose,
   onApproved,
   onRejected,
+  viewOnly = false,
 }: VPRequestModalProps) {
   const toast = useToast();
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [hasSignature, setHasSignature] = useState(false);
+  const [vpSignature, setVpSignature] = useState<string>(request.vp_signature || request.vp2_signature || "");
+  const [vpProfile, setVpProfile] = useState<any>(null);
+  const [expenseBreakdown, setExpenseBreakdown] = useState<any[]>([]);
+  const [totalCost, setTotalCost] = useState(0);
+  const [preferredDriverName, setPreferredDriverName] = useState<string>("");
+  const [preferredVehicleName, setPreferredVehicleName] = useState<string>("");
+  const [showApproverSelection, setShowApproverSelection] = useState(false);
+  const [approverOptions, setApproverOptions] = useState<any[]>([]);
+  const [loadingApprovers, setLoadingApprovers] = useState(false);
 
+  const t = request;
+
+  // Load VP profile and expense breakdown
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    async function loadData() {
+      try {
+        // Load current VP info
+        const meRes = await fetch("/api/profile");
+        const meData = await meRes.json();
+        if (meData.ok && meData.data) {
+          setVpProfile(meData.data);
+        } else {
+          console.error("[VPRequestModal] Failed to load profile:", meData);
+        }
 
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+        // Load expense breakdown
+        if (t.expense_breakdown && Array.isArray(t.expense_breakdown)) {
+          setExpenseBreakdown(t.expense_breakdown);
+          const total = t.expense_breakdown.reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0);
+          setTotalCost(total || t.total_budget || 0);
+        } else {
+          setTotalCost(t.total_budget || 0);
+        }
 
-    canvas.width = canvas.offsetWidth;
-    canvas.height = 150;
-    ctx.strokeStyle = "#000";
-    ctx.lineWidth = 2;
-    ctx.lineCap = "round";
-  }, []);
+        // Load preferred driver
+        if (t.preferred_driver_id) {
+          try {
+            const driverRes = await fetch(`/api/users/${t.preferred_driver_id}`);
+            const driverData = await driverRes.json();
+            if (driverData.ok && driverData.data) {
+              setPreferredDriverName(driverData.data.name || "Unknown Driver");
+            }
+          } catch (err) {
+            console.error("[VPRequestModal] Failed to load driver:", err);
+          }
+        }
 
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.beginPath();
-    ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
-    setIsDrawing(true);
-    setHasSignature(true);
-  };
+        // Load preferred vehicle
+        if (t.preferred_vehicle_id) {
+          try {
+            const vehicleRes = await fetch(`/api/vehicles/${t.preferred_vehicle_id}`);
+            const vehicleData = await vehicleRes.json();
+            if (vehicleData.ok && vehicleData.data) {
+              setPreferredVehicleName(vehicleData.data.name || vehicleData.data.plate_number || "Unknown Vehicle");
+            }
+          } catch (err) {
+            console.error("[VPRequestModal] Failed to load vehicle:", err);
+          }
+        }
+      } catch (err) {
+        console.error("[VPRequestModal] Error loading data:", err);
+      }
+    }
+    loadData();
+  }, [t]);
 
-  const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
-    ctx.stroke();
-  };
-
-  const stopDrawing = () => {
-    setIsDrawing(false);
-  };
-
-  const clearSignature = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    setHasSignature(false);
-  };
-
-  const getSignatureData = (): string | null => {
-    if (!hasSignature) return null;
-    const canvas = canvasRef.current;
-    return canvas?.toDataURL() || null;
-  };
+  // Check if other VP has already signed
+  const otherVPApproved = request.vp_approved_by && request.vp_approved_by !== request.vp2_approved_by;
+  const isSecondVP = !!request.vp_approved_by && !request.vp2_approved_by;
+  const firstVPName = request.vp_approver?.name || "First VP";
 
   const handleApprove = async () => {
-    if (!hasSignature) {
-      toast({ message: "⚠️ Please provide your signature", kind: "error" });
+    if (!vpSignature) {
+      toast({ message: "Please provide your signature", kind: "error" });
       return;
     }
 
-    // Validate notes
     if (!notes.trim() || notes.trim().length < 10) {
       toast({ message: "Notes are required and must be at least 10 characters long", kind: "error" });
       return;
     }
 
+    // Check if other VP has already signed
+    const otherVPApproved = request.vp_approved_by && request.vp_approved_by !== request.vp2_approved_by;
+    const isFirstVP = !request.vp_approved_by;
+    const isSecondVP = !!request.vp_approved_by && !request.vp2_approved_by;
+
+    // If first VP and multiple departments, wait for second VP (no selection needed)
+    // Otherwise, show approver selection
+    const needsApproverSelection = !(isFirstVP && request.requester_invitations?.length > 1);
+
+    if (needsApproverSelection) {
+      // Fetch available approvers
+      setLoadingApprovers(true);
+      try {
+        const options: any[] = [];
+
+        // Fetch Presidents
+        const presidentRes = await fetch(`/api/approvers/list?role=president`);
+        if (presidentRes.ok) {
+          const presidentData = await presidentRes.json();
+          if (presidentData.ok && presidentData.data && presidentData.data.length > 0) {
+            const presidentOptions = presidentData.data.map((p: any) => ({
+              id: p.id,
+              name: p.name,
+              email: p.email,
+              profile_picture: p.profile_picture,
+              phone: p.phone,
+              position: p.position || "President",
+              department: p.department,
+              role: "president",
+              roleLabel: "President"
+            }));
+            options.push(...presidentOptions);
+          }
+        }
+
+        // Fetch Admins
+        const adminRes = await fetch(`/api/approvers/list?role=admin`);
+        if (adminRes.ok) {
+          const adminData = await adminRes.json();
+          if (adminData.ok && adminData.data && adminData.data.length > 0) {
+            const adminOptions = adminData.data.map((a: any) => ({
+              id: a.id,
+              name: a.name,
+              email: a.email,
+              profile_picture: a.profile_picture,
+              phone: a.phone,
+              position: a.position || "Administrator",
+              department: a.department,
+              role: "admin",
+              roleLabel: "Administrator"
+            }));
+            options.push(...adminOptions);
+          }
+        }
+
+        setApproverOptions(options);
+        setLoadingApprovers(false);
+        setShowApproverSelection(true);
+      } catch (err) {
+        console.error("[VPRequestModal] Error fetching approvers:", err);
+        setLoadingApprovers(false);
+        setApproverOptions([]);
+        setShowApproverSelection(true);
+        toast({ message: "Could not fetch approvers. You can still return the request to the requester.", kind: "warning" });
+      }
+      return;
+    }
+
+    // If no selection needed, proceed with default
+    proceedWithApproval(null, "president");
+  };
+
+  const proceedWithApproval = async (selectedApproverId: string | null, selectedRole: string, returnReason?: string) => {
     setSubmitting(true);
     try {
-      const signature = getSignatureData();
-      
-      // Check if requester is a head (Dean/Director) - if so, must go to President
       const isHeadRequest = request.requester_is_head || false;
+      
+      console.log("[VPRequestModal] Sending approval request:", {
+        requestId: request.id,
+        action: "approve",
+        hasSignature: !!vpSignature,
+        notesLength: notes.trim().length,
+        isHeadRequest,
+        nextApproverId: selectedApproverId,
+        nextApproverRole: selectedRole
+      });
       
       const res = await fetch("/api/vp/action", {
         method: "POST",
@@ -105,25 +205,45 @@ export default function VPRequestModal({
         body: JSON.stringify({
           requestId: request.id,
           action: "approve",
-          signature,
+          signature: vpSignature,
           notes: notes.trim(),
-          is_head_request: isHeadRequest, // Flag to indicate if this is from a head
+          is_head_request: isHeadRequest,
+          nextApproverId: selectedApproverId,
+          nextApproverRole: selectedRole,
+          returnReason: returnReason || null,
         }),
       });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error("[VPRequestModal] API error:", res.status, errorText);
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { error: errorText || `HTTP ${res.status}` };
+        }
+        toast({ message: errorData.error || "Failed to approve request", kind: "error" });
+        return;
+      }
 
       const data = await res.json();
 
       if (data.ok) {
-        toast({ message: "✅ " + data.message, kind: "success" });
+        const roleLabel = selectedRole === "requester" ? "Requester" : 
+                         selectedRole === "admin" ? "Admin" : 
+                         selectedRole === "president" ? "President" : "Next Approver";
+        toast({ message: `Request has been sent to ${roleLabel}`, kind: "success" });
+        setShowApproverSelection(false);
         setTimeout(() => {
           onApproved(request.id);
           onClose();
         }, 1500);
       } else {
-        toast({ message: "❌ " + (data.error || "Failed to approve request"), kind: "error" });
+        toast({ message: data.error || "Failed to approve request", kind: "error" });
       }
     } catch (error) {
-      toast({ message: "❌ An error occurred", kind: "error" });
+      toast({ message: "An error occurred", kind: "error" });
     } finally {
       setSubmitting(false);
     }
@@ -131,7 +251,7 @@ export default function VPRequestModal({
 
   const handleReject = async () => {
     if (!notes.trim()) {
-      toast({ message: "⚠️ Please provide a reason for rejection", kind: "error" });
+      toast({ message: "Please provide a reason for rejection", kind: "error" });
       return;
     }
 
@@ -150,208 +270,729 @@ export default function VPRequestModal({
       const data = await res.json();
 
       if (data.ok) {
-        toast({ message: "❌ Request rejected", kind: "info" });
+        toast({ message: "Request rejected", kind: "info" });
         setTimeout(() => {
           onRejected(request.id);
           onClose();
         }, 1500);
       } else {
-        toast({ message: "❌ " + (data.error || "Failed to reject request"), kind: "error" });
+        toast({ message: data.error || "Failed to reject request", kind: "error" });
       }
     } catch (error) {
-      toast({ message: "❌ An error occurred", kind: "error" });
+      toast({ message: "An error occurred", kind: "error" });
     } finally {
       setSubmitting(false);
     }
   };
 
-  // Check if other VP has already signed
-  const otherVPApproved = request.vp_approved_by && request.vp_approved_by !== request.vp2_approved_by;
-  const isSecondVP = !!request.vp_approved_by && !request.vp2_approved_by;
-  const firstVPName = request.vp_approver?.name || "First VP";
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto mx-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 pt-20 pb-8">
+      <div className="relative w-full max-w-5xl max-h-[85vh] rounded-3xl bg-white shadow-2xl transform transition-all duration-300 scale-100 flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+        <div className="flex items-center justify-between border-b bg-[#7A0010] px-6 py-4 rounded-t-3xl flex-shrink-0">
           <div>
-            <h2 className="text-xl font-bold text-gray-900">VP Review</h2>
-            <p className="text-sm text-gray-600">{request.request_number}</p>
+            <h2 className="text-lg font-semibold text-white">
+              VP Review
+            </h2>
+            {t.request_number && (
+              <p className="text-sm text-white/80 font-mono">
+                {t.request_number}
+              </p>
+            )}
             {isSecondVP && (
               <div className="mt-2 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg">
                 <p className="text-xs font-medium text-blue-900">
-                  ✓ {firstVPName} has already approved this request. Your approval will complete the VP review process.
+                  {firstVPName} has already approved this request. Your approval will complete the VP review process.
                 </p>
               </div>
             )}
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-3">
+            <span className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 ${
+              t.status === 'pending_exec' || t.status === 'pending_head' ? 'bg-amber-100 text-amber-700' :
+              t.status === 'approved' ? 'bg-green-100 text-green-700' :
+              t.status === 'rejected' ? 'bg-red-100 text-red-700' :
+              'bg-slate-100 text-slate-700'
+            }`}>
+              {t.status === 'pending_exec' || t.status === 'pending_head' ? 'Pending Review' :
+               t.status === 'approved' ? 'Approved' :
+               t.status === 'rejected' ? 'Rejected' :
+               t.status || 'Pending'}
+            </span>
+            <button
+              onClick={onClose}
+              className="rounded-full p-1 text-white/80 hover:bg-white/10 transition-colors"
+            >
+              <X className="h-6 w-6" />
+            </button>
+          </div>
         </div>
 
-        {/* Content */}
-        <div className="p-6 space-y-6">
-          {/* Request Details */}
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-sm font-medium text-gray-700">Requester</label>
-                <p className="text-base text-gray-900">{request.requester_name}</p>
-                <p className="text-sm text-gray-600">{request.requester?.position_title}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-700">Department</label>
-                <p className="text-base text-gray-900">{request.department?.name || 'N/A'}</p>
-              </div>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-gray-700">Purpose</label>
-              <p className="text-base text-gray-900">{request.purpose}</p>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-gray-700">Destination</label>
-              <p className="text-base text-gray-900">{request.destination}</p>
-            </div>
-
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <label className="text-sm font-medium text-gray-700">Travel Start</label>
-                <p className="text-base text-gray-900">
-                  {new Date(request.travel_start_date).toLocaleDateString()}
-                </p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-700">Travel End</label>
-                <p className="text-base text-gray-900">
-                  {new Date(request.travel_end_date).toLocaleDateString()}
-                </p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-700">Budget</label>
-                <p className="text-lg font-bold text-[#7a0019]">
-                  ₱{request.total_budget?.toLocaleString()}
-                </p>
-              </div>
-            </div>
-
-            {/* Previous Approvals */}
-            <div className="bg-gray-50 p-4 rounded-lg space-y-2">
-              <h4 className="font-medium text-gray-900">Previous Approvals</h4>
+        {/* Body */}
+        <div className="grid gap-8 px-6 py-6 lg:grid-cols-[1.1fr_0.9fr] overflow-y-auto flex-1">
+          {/* LEFT */}
+          <div className="space-y-5">
+            {/* Requester Information */}
+            <section className="rounded-lg bg-white p-5 border border-slate-200 shadow-sm">
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-500 mb-3">
+                Requesting Person
+              </p>
               
-              {request.head_approved_at && (
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">Head Approved:</span>
-                  <span className="text-green-600 font-medium">
-                    {new Date(request.head_approved_at).toLocaleDateString()}
-                  </span>
+              <div className="flex items-start gap-3">
+                {(t.requester?.profile_picture || t.requester?.avatar_url) ? (
+                  <img 
+                    src={t.requester.profile_picture || t.requester.avatar_url} 
+                    alt={t.requester_name || "Requester"}
+                    className="h-12 w-12 rounded-full object-cover border-2 border-slate-200 flex-shrink-0"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = 'none';
+                      const parent = target.parentElement;
+                      if (parent && !parent.querySelector('.fallback-avatar')) {
+                        const fallback = document.createElement('div');
+                        fallback.className = 'h-12 w-12 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-lg flex-shrink-0 fallback-avatar';
+                        fallback.textContent = (t.requester_name || "U").charAt(0).toUpperCase();
+                        parent.appendChild(fallback);
+                      }
+                    }}
+                  />
+                ) : (
+                  <div className="h-12 w-12 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
+                    {(t.requester_name || "U").charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div className="flex-1">
+                  <p className="text-base font-semibold text-slate-900 mb-1">
+                    <NameWithProfile
+                      name={t.requester_name || t.requester?.name || t.requester?.email || "Unknown Requester"}
+                      profile={{
+                        id: t.requester?.id || '',
+                        name: t.requester_name || t.requester?.name || '',
+                        email: t.requester?.email,
+                        department: t.department?.name || t.department?.code,
+                        position: t.requester?.position_title,
+                        profile_picture: t.requester?.profile_picture,
+                      }}
+                    />
+                  </p>
+                  <p className="text-sm text-slate-600">
+                    {t.department?.name || t.department?.code || "No department indicated"}
+                  </p>
+                  {t.requester?.position_title && (
+                    <p className="text-xs text-slate-500 mt-0.5">{t.requester.position_title}</p>
+                  )}
+                  {t.requester?.role && (
+                    <p className="text-xs text-slate-500 mt-0.5">Role: {t.requester.role}</p>
+                  )}
                 </div>
-              )}
+              </div>
               
-              {request.hr_approved_at && (
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">HR Approved:</span>
-                  <span className="text-green-600 font-medium">
-                    {new Date(request.hr_approved_at).toLocaleDateString()}
-                  </span>
+              {t.created_at && (
+                <div className="mt-4 pt-4 border-t border-slate-100">
+                  <p className="text-xs text-slate-500 flex items-center gap-1.5">
+                    <Calendar className="h-3.5 w-3.5" />
+                    Submitted {new Date(t.created_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                  </p>
                 </div>
               )}
+            </section>
 
-              {request.hr_comments && (
-                <div className="mt-2 p-2 bg-white rounded border border-gray-200">
-                  <p className="text-xs text-gray-500">HR Comments:</p>
-                  <p className="text-sm text-gray-700">{request.hr_comments}</p>
+            {/* Service Preferences */}
+            <section className="rounded-lg bg-white p-5 border border-slate-200 shadow-sm">
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-500 mb-3">
+                Service Preferences
+              </p>
+              
+              {(t.preferred_driver_id || t.preferred_vehicle_id) ? (
+                <div className="space-y-3">
+                  {t.preferred_driver_id ? (
+                    <div className="flex items-start gap-3 pb-3 border-b border-slate-100 last:border-0 last:pb-0">
+                      <div className="h-9 w-9 rounded-lg bg-slate-50 flex items-center justify-center flex-shrink-0">
+                        <UserCog className="h-5 w-5 text-slate-500" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-slate-500 mb-1">Preferred Driver</p>
+                        <p className="text-sm font-medium text-slate-900">
+                          {preferredDriverName || "Loading..."}
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
+                  
+                  {t.preferred_vehicle_id ? (
+                    <div className="flex items-start gap-3">
+                      <div className="h-9 w-9 rounded-lg bg-slate-50 flex items-center justify-center flex-shrink-0">
+                        <Car className="h-5 w-5 text-slate-500" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-slate-500 mb-1">Preferred Vehicle</p>
+                        <p className="text-sm font-medium text-slate-900">
+                          {preferredVehicleName || "Loading..."}
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="text-center py-6">
+                  <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-slate-50 mb-3">
+                    <Car className="h-6 w-6 text-slate-400" />
+                  </div>
+                  <p className="text-sm text-slate-600">No driver or vehicle preferences</p>
+                  <p className="text-xs text-slate-500 mt-1">Admin will assign resources</p>
                 </div>
               )}
+            </section>
+
+            {/* Request Details Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <section className="rounded-lg bg-blue-50/50 border border-blue-100 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-600 flex items-center gap-1.5 mb-2">
+                  <FileText className="h-4 w-4" />
+                  Purpose
+                </p>
+                <p className="text-sm text-slate-800 font-medium">
+                  {t.purpose || "No purpose indicated"}
+                </p>
+              </section>
+              <section className="rounded-lg bg-green-50/50 border border-green-100 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-green-600 flex items-center gap-1.5 mb-2">
+                  <Calendar className="h-4 w-4" />
+                  Travel Dates
+                </p>
+                <p className="text-sm text-slate-800 font-medium">
+                  {t.travel_start_date && t.travel_end_date
+                    ? `${new Date(t.travel_start_date).toLocaleDateString()} – ${new Date(t.travel_end_date).toLocaleDateString()}`
+                    : "—"}
+                </p>
+              </section>
+              <section className="rounded-lg bg-amber-50/50 border border-amber-100 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-600 flex items-center gap-1.5 mb-2">
+                  <DollarSign className="h-4 w-4" />
+                  Budget
+                </p>
+                <p className="text-lg font-bold text-[#7A0010]">
+                  {peso(totalCost || t.total_budget)}
+                </p>
+              </section>
             </div>
+
+            {/* Transportation Mode */}
+            <section className="rounded-lg p-4 border-2 shadow-sm" style={{
+              backgroundColor: (t as any).vehicle_mode === 'owned' ? '#f0fdf4' : (t as any).vehicle_mode === 'rent' ? '#fefce8' : '#eff6ff',
+              borderColor: (t as any).vehicle_mode === 'owned' ? '#86efac' : (t as any).vehicle_mode === 'rent' ? '#fde047' : '#93c5fd'
+            }}>
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-full flex items-center justify-center" style={{
+                  backgroundColor: (t as any).vehicle_mode === 'owned' ? '#d1fae5' : (t as any).vehicle_mode === 'rent' ? '#fef3c7' : '#dbeafe'
+                }}>
+                  <Car className="h-5 w-5" style={{
+                    color: (t as any).vehicle_mode === 'owned' ? '#059669' : (t as any).vehicle_mode === 'rent' ? '#d97706' : '#2563eb'
+                  }} />
+                </div>
+                <div className="flex-1">
+                  <div className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{
+                    color: (t as any).vehicle_mode === 'owned' ? '#059669' : (t as any).vehicle_mode === 'rent' ? '#d97706' : '#2563eb'
+                  }}>
+                    Transportation Mode
+                  </div>
+                  <div className="text-sm font-bold text-gray-900">
+                    {(t as any).vehicle_mode === 'owned' && 'Personal Vehicle (Owned)'}
+                    {(t as any).vehicle_mode === 'institutional' && 'University Vehicle'}
+                    {(t as any).vehicle_mode === 'rent' && 'Rental Vehicle'}
+                    {!(t as any).vehicle_mode && (t.vehicle_type || 'Not specified')}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* Destination */}
+            <section className="rounded-lg bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <MapPin className="h-5 w-5 text-blue-600" />
+                <p className="text-xs font-bold uppercase tracking-wide text-blue-700">
+                  Destination
+                </p>
+              </div>
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-sm font-semibold text-slate-900 flex-1">
+                  {t.destination || "No destination provided."}
+                </p>
+                {t.destination && (
+                  <button
+                    onClick={() => {
+                      const encodedDest = encodeURIComponent(t.destination);
+                      window.open(`https://www.google.com/maps/search/?api=1&query=${encodedDest}`, '_blank');
+                    }}
+                    className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors shadow-sm"
+                    title="View on Google Maps"
+                  >
+                    <MapPin className="h-4 w-4" />
+                    View Map
+                  </button>
+                )}
+              </div>
+            </section>
 
             {/* Participants */}
-            {request.participants && request.participants.length > 0 && (
-              <div>
-                <label className="text-sm font-medium text-gray-700">Participants</label>
-                <div className="mt-2 space-y-1">
-                  {request.participants.map((p: any, i: number) => (
-                    <p key={i} className="text-sm text-gray-900">• {p.name}</p>
-                  ))}
+            {t.participants && Array.isArray(t.participants) && t.participants.length > 0 && (
+              <section className="rounded-lg bg-gradient-to-br from-purple-50 to-pink-50 border-2 border-purple-200 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Users className="h-5 w-5 text-purple-600" />
+                  <p className="text-xs font-bold uppercase tracking-wide text-purple-700">
+                    Travel Participants ({t.participants.length})
+                  </p>
                 </div>
+                <div className="space-y-2">
+                  {t.participants.map((participant: any, idx: number) => {
+                    const participantName = typeof participant === 'string' 
+                      ? participant 
+                      : participant?.name || participant?.id || `Participant ${idx + 1}`;
+                    return (
+                      <div key={idx} className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-purple-100">
+                        <div className="h-8 w-8 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
+                          <span className="text-xs font-bold text-purple-700">
+                            {participantName.charAt(0).toUpperCase()}
+                          </span>
+                        </div>
+                        <span className="text-sm font-medium text-slate-900">{participantName}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                {t.head_included && (
+                  <div className="mt-3 pt-3 border-t border-purple-200">
+                    <p className="text-xs text-purple-700 font-medium flex items-center gap-1.5">
+                      <CheckCircle2 className="h-4 w-4" />
+                      Department Head is included in travel
+                    </p>
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* Requester Signature */}
+            <section className="rounded-lg bg-slate-50 border border-slate-200 p-4">
+              <p className="text-xs font-semibold uppercase text-slate-700 mb-3">
+                Requester's Signature
+              </p>
+              {(t.requester_signature) ? (
+                <div className="bg-white rounded-lg border border-slate-200 p-4">
+                  <img
+                    src={t.requester_signature}
+                    alt="Requester signature"
+                    className="h-[100px] w-full object-contain"
+                  />
+                  <p className="text-center text-xs text-slate-600 mt-2 font-medium">
+                    Signed by: {t.requester_name || "Requester"}
+                  </p>
+                  {t.requester_signed_at && (
+                    <p className="text-center text-xs text-slate-500 mt-1">
+                      {new Date(t.requester_signed_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center justify-center gap-2 text-sm text-slate-600 bg-white rounded-lg border border-slate-200 p-4">
+                  <FileText className="h-4 w-4" />
+                  <span>No signature provided by requester</span>
+                </div>
+              )}
+            </section>
+
+            {/* Previous Approvals */}
+            <section className="rounded-lg bg-slate-50 border border-slate-200 p-4">
+              <p className="text-xs font-semibold uppercase text-slate-700 mb-3">
+                Previous Approvals
+              </p>
+              <div className="space-y-3">
+                {t.head_approved_at && (
+                  <div className="bg-white rounded-lg border border-slate-200 p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-medium text-slate-900">Head Approved</p>
+                      <span className="text-xs text-green-600 font-medium">
+                        {new Date(t.head_approved_at).toLocaleDateString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                      </span>
+                    </div>
+                    {t.head_approved_by && (
+                      <p className="text-xs text-slate-600">
+                        By: {t.head_approver?.name || t.head_signed_by || "Department Head"}
+                      </p>
+                    )}
+                    {t.head_signature && (
+                      <div className="mt-2 pt-2 border-t border-slate-100">
+                        <img
+                          src={t.head_signature}
+                          alt="Head signature"
+                          className="h-16 w-full object-contain"
+                        />
+                      </div>
+                    )}
+                    {t.head_comments && (
+                      <div className="mt-2 pt-2 border-t border-slate-100">
+                        <p className="text-xs text-slate-500 mb-1">Comments:</p>
+                        <p className="text-xs text-slate-700">{t.head_comments}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                {t.hr_approved_at && (
+                  <div className="bg-white rounded-lg border border-slate-200 p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-medium text-slate-900">HR Approved</p>
+                      <span className="text-xs text-green-600 font-medium">
+                        {new Date(t.hr_approved_at).toLocaleDateString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                      </span>
+                    </div>
+                    {t.hr_approved_by && (
+                      <p className="text-xs text-slate-600">
+                        By: {t.hr_approver?.name || "HR Officer"}
+                      </p>
+                    )}
+                    {t.hr_comments && (
+                      <div className="mt-2 pt-2 border-t border-slate-100">
+                        <p className="text-xs text-slate-500 mb-1">Comments:</p>
+                        <p className="text-xs text-slate-700">{t.hr_comments}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {t.vp_approved_at && (
+                  <div className="bg-white rounded-lg border border-slate-200 p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-medium text-slate-900">First VP Approved</p>
+                      <span className="text-xs text-green-600 font-medium">
+                        {new Date(t.vp_approved_at).toLocaleDateString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                      </span>
+                    </div>
+                    {t.vp_approved_by && (
+                      <p className="text-xs text-slate-600">
+                        By: {t.vp_approver?.name || "Vice President"}
+                      </p>
+                    )}
+                    {t.vp_signature && (
+                      <div className="mt-2 pt-2 border-t border-slate-100">
+                        <img
+                          src={t.vp_signature}
+                          alt="VP signature"
+                          className="h-16 w-full object-contain"
+                        />
+                      </div>
+                    )}
+                    {t.vp_comments && (
+                      <div className="mt-2 pt-2 border-t border-slate-100">
+                        <p className="text-xs text-slate-500 mb-1">Comments:</p>
+                        <p className="text-xs text-slate-700">{t.vp_comments}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {!t.head_approved_at && !t.hr_approved_at && !t.vp_approved_at && (
+                  <div className="text-center py-4 text-sm text-slate-500">
+                    No previous approvals yet
+                  </div>
+                )}
               </div>
+            </section>
+
+            {/* Budget Breakdown */}
+            <section className="rounded-lg bg-slate-50 border border-slate-200 p-4">
+              <div className="flex items-center gap-2 mb-3 pb-3 border-b border-slate-200">
+                <DollarSign className="h-5 w-5 text-slate-700" />
+                <h3 className="text-sm font-semibold text-slate-900">Budget Breakdown</h3>
+              </div>
+
+              {expenseBreakdown.length > 0 ? (
+                <>
+                  <div className="space-y-2 mb-3">
+                    {expenseBreakdown.map((expense: any, idx: number) => {
+                      const label = expense.item === "Other" && expense.description 
+                        ? expense.description 
+                        : expense.item || expense.description;
+                      
+                      return expense.amount > 0 && (
+                        <div key={idx} className="flex items-center justify-between py-2">
+                          <span className="text-sm text-slate-600">{label}</span>
+                          <span className="text-sm font-semibold text-slate-900">{peso(expense.amount)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  
+                  {totalCost > 0 && (
+                    <div className="pt-3 border-t border-slate-300">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-bold text-slate-900">TOTAL BUDGET</span>
+                        <span className="text-lg font-bold text-[#7A0010]">{peso(totalCost)}</span>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="py-4 text-center">
+                  <p className="text-sm text-slate-500">No budget specified</p>
+                </div>
+              )}
+            </section>
+
+            {/* Cost Justification */}
+            {t.cost_justification && (
+              <section className="rounded-lg bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 p-4">
+                <h3 className="text-sm font-bold text-amber-900 flex items-center gap-2 mb-3">
+                  <FileText className="h-4 w-4" />
+                  Cost Justification
+                </h3>
+                <div className="bg-white rounded-md border border-amber-200 p-3 text-sm text-gray-800 leading-relaxed shadow-sm">
+                  {t.cost_justification}
+                </div>
+              </section>
             )}
           </div>
 
-          {/* VP Signature */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              VP Signature <span className="text-red-500">*</span>
-            </label>
-            <div className="relative border-2 border-gray-300 rounded-lg bg-white">
-              <canvas
-                ref={canvasRef}
-                onMouseDown={startDrawing}
-                onMouseMove={draw}
-                onMouseUp={stopDrawing}
-                onMouseLeave={stopDrawing}
-                className="w-full h-[150px] cursor-crosshair"
-              />
-              {hasSignature && (
-                <button
-                  type="button"
-                  onClick={clearSignature}
-                  className="absolute top-2 right-2 px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700"
-                >
-                  Clear
-                </button>
+          {/* RIGHT */}
+          <div className="space-y-5 rounded-xl border-2 border-[#7A0010]/20 bg-gradient-to-br from-white to-red-50/30 p-6 shadow-lg">
+            <div className="flex items-center gap-3 pb-4 border-b-2 border-[#7A0010]/10">
+              {(vpProfile?.profile_picture || vpProfile?.avatar_url || vpProfile?.avatarUrl) ? (
+                <img 
+                  src={vpProfile.profile_picture || vpProfile.avatar_url || vpProfile.avatarUrl} 
+                  alt={vpProfile?.name || "VP"}
+                  className="h-14 w-14 rounded-full object-cover border-2 border-[#7A0010] shadow-lg flex-shrink-0"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = 'none';
+                    const parent = target.parentElement;
+                    if (parent && !parent.querySelector('.fallback-avatar-vp')) {
+                      const fallback = document.createElement('div');
+                      fallback.className = 'h-14 w-14 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-xl shadow-lg flex-shrink-0 fallback-avatar-vp';
+                      fallback.textContent = (vpProfile?.name || 'VP').charAt(0).toUpperCase();
+                      parent.appendChild(fallback);
+                    }
+                  }}
+                />
+              ) : (
+                <div className="h-14 w-14 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-xl shadow-lg flex-shrink-0">
+                  {(vpProfile?.name || 'VP').charAt(0).toUpperCase()}
+                </div>
               )}
+              <div className="flex-1">
+                <p className="text-xs font-bold uppercase tracking-wider text-[#7A0010]/70">
+                  Vice President Review
+                </p>
+                <div className="text-base font-bold text-slate-900 mt-1">
+                  {vpProfile?.name || vpProfile?.email || "Loading..."}
+                </div>
+                {vpProfile?.department && (
+                  <p className="text-xs text-slate-600 mt-0.5 font-medium">
+                    {typeof vpProfile.department === 'string' 
+                      ? vpProfile.department 
+                      : (vpProfile.department.name || vpProfile.department.code)}
+                  </p>
+                )}
+                {vpProfile?.position_title && (
+                  <p className="text-xs text-slate-500 mt-0.5">{vpProfile.position_title}</p>
+                )}
+              </div>
             </div>
-            <p className="text-xs text-gray-500 mt-1">Draw your signature above</p>
-          </div>
 
-          {/* VP Notes */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              VP Notes/Comments
-            </label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={4}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#7a0019] focus:border-transparent resize-none"
-              placeholder="Add your comments here..."
-            />
+            {viewOnly ? (
+              // View-only: Show saved signature
+              <div>
+                <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
+                  VP Signature
+                </label>
+                <div className="rounded-xl bg-slate-50 p-4 border-2 border-slate-200">
+                  {(t.vp_signature || t.vp2_signature) ? (
+                    <>
+                      <img 
+                        src={t.vp_signature || t.vp2_signature} 
+                        alt="VP Signature" 
+                        className="max-h-40 mx-auto"
+                      />
+                      {(t.vp_approved_at || t.vp2_approved_at) && (
+                        <p className="text-xs text-slate-500 text-center mt-2">
+                          Signed on {new Date(t.vp_approved_at || t.vp2_approved_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-sm text-slate-500 text-center py-8">
+                      No signature available
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : (
+              // Edit mode: Signature pad
+              <div>
+                <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
+                  Your Signature <span className="text-red-500">*</span>
+                </label>
+                <div className="rounded-xl bg-white p-3 border-2 border-[#7A0010]/20 shadow-sm">
+                  <SignaturePad
+                    height={160}
+                    value={vpSignature || null}
+                    onSave={(dataUrl) => {
+                      setVpSignature(dataUrl);
+                    }}
+                    onClear={() => {
+                      setVpSignature("");
+                    }}
+                    hideSaveButton
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* VP Notes/Comments */}
+            {!viewOnly && (
+              <div>
+                <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
+                  VP Notes/Comments <span className="text-red-500">*</span>
+                </label>
+                
+                {/* Quick Fill Buttons */}
+                <div className="mb-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNotes("Okay, approved.")}
+                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+                  >
+                    ✓ Okay, approved
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNotes("Request approved. Proceed with the travel order.")}
+                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+                  >
+                    ✓ Approved
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNotes("Request approved. All requirements are in order.")}
+                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+                  >
+                    ✓ Fully Approved
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNotes("Request rejected. Please review and resubmit with corrections.")}
+                    className="px-3 py-1.5 text-xs font-medium bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
+                  >
+                    ✗ Rejected
+                  </button>
+                </div>
+                
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={4}
+                  className="w-full px-4 py-3 border-2 border-[#7A0010]/20 rounded-xl focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] resize-none text-sm"
+                  placeholder="Add your comments here (minimum 10 characters)..."
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Minimum 10 characters required
+                </p>
+              </div>
+            )}
+
+            {viewOnly && t.vp_comments && (
+              <div>
+                <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
+                  VP Comments
+                </label>
+                <div className="rounded-xl bg-slate-50 p-4 border-2 border-slate-200">
+                  <p className="text-sm text-slate-700">{t.vp_comments}</p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
         {/* Actions */}
-        <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex gap-3">
-          <button
-            onClick={handleApprove}
-            disabled={submitting}
-            className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <CheckCircle2 className="h-5 w-5" />
-            {submitting ? "Approving..." : "Approve Request"}
-          </button>
-          <button
-            onClick={handleReject}
-            disabled={submitting}
-            className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white font-medium py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <XCircle className="h-5 w-5" />
-            {submitting ? "Rejecting..." : "Reject Request"}
-          </button>
-          <button
-            onClick={onClose}
-            className="px-6 py-3 border border-gray-300 hover:bg-gray-100 text-gray-700 font-medium rounded-lg transition-colors"
-          >
-            Cancel
-          </button>
-        </div>
+        {!viewOnly && (
+          <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex gap-3 flex-shrink-0">
+            <button
+              onClick={handleApprove}
+              disabled={submitting || !vpSignature || !notes.trim() || notes.trim().length < 10}
+              className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <CheckCircle2 className="h-5 w-5" />
+              {submitting ? "Approving..." : "Approve Request"}
+            </button>
+            <button
+              onClick={handleReject}
+              disabled={submitting || !notes.trim()}
+              className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white font-medium py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <XCircle className="h-5 w-5" />
+              {submitting ? "Rejecting..." : "Reject Request"}
+            </button>
+            <button
+              onClick={onClose}
+              className="px-6 py-3 border border-gray-300 hover:bg-gray-100 text-gray-700 font-medium rounded-lg transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
+        {viewOnly && (
+          <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex justify-end flex-shrink-0">
+            <button
+              onClick={onClose}
+              className="px-6 py-3 border border-gray-300 hover:bg-gray-100 text-gray-700 font-medium rounded-lg transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* Approver Selection Modal */}
+      {showApproverSelection && (
+        <ApproverSelectionModal
+          isOpen={showApproverSelection}
+          onClose={() => setShowApproverSelection(false)}
+          onSelect={(approverId, approverRole, returnReason) => {
+            proceedWithApproval(approverId, approverRole, returnReason);
+          }}
+          title="Select Next Approver"
+          description="Choose who should review this request next, or return it to the requester for revision."
+          options={approverOptions}
+          currentRole="vp"
+          allowReturnToRequester={true}
+          requesterId={request.requester_id}
+          requesterName={request.requester?.name || "Requester"}
+          loading={loadingApprovers}
+          allowAllUsers={true}
+          fetchAllUsers={async () => {
+            try {
+              const allUsersRes = await fetch("/api/users/all");
+              const allUsersData = await allUsersRes.json();
+              if (allUsersData.ok && allUsersData.data) {
+                return allUsersData.data.map((u: any) => ({
+                  id: u.id,
+                  name: u.name,
+                  email: u.email,
+                  profile_picture: u.profile_picture,
+                  phone: u.phone,
+                  position: u.position,
+                  department: u.department,
+                  role: u.role,
+                  roleLabel: u.roleLabel
+                }));
+              }
+              return [];
+            } catch (err) {
+              console.error("[VPRequestModal] Error fetching all users:", err);
+              return [];
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

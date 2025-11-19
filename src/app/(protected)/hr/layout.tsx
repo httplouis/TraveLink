@@ -14,7 +14,7 @@ export default function HRLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <ToastProvider>
-      <PageTitle title="TraviLink | HR" />
+      <PageTitle title="Travelink | HR" />
       <div
         className="bg-[var(--background)] text-[var(--foreground)]"
         style={{ ["--topbar-h" as any]: topbarH }}

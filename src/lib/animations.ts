@@ -1,5 +1,5 @@
 /**
- * iOS-Inspired Animation System for TraviLink
+ * iOS-Inspired Animation System for Travelink
  * Consistent animations across all components
  */
 

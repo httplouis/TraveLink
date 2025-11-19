@@ -24,7 +24,6 @@ type Props = {
   onChange: (v: MaintFilters) => void; // called on Apply and for density immediate change
   onClear: () => void;
   onApply: () => void;                 // parent can re-run loadMaintenance
-  onFillMock?: () => void;             // dev-only seeding
 };
 
 export default function FiltersBar({
@@ -32,7 +31,6 @@ export default function FiltersBar({
   onChange,
   onClear,
   onApply,
-  onFillMock,
 }: Props) {
   const [draft, setDraft] = React.useState<MaintFilters>(value);
   React.useEffect(() => setDraft(value), [value]);
@@ -48,7 +46,7 @@ export default function FiltersBar({
   }
 
   return (
-    <div className="rounded-xl bg-white/80 backdrop-blur-sm ring-1 ring-black/5 shadow-sm p-3 md:p-4 space-y-3">
+    <div className="rounded-xl bg-white shadow-md ring-1 ring-black/5 p-4 md:p-5 space-y-4">
       {/* Search */}
       <input
         placeholder="Search vehicle, vendor, description…"
@@ -139,26 +137,17 @@ export default function FiltersBar({
               onChange(draft);
               onApply();
             }}
-            className="px-3 py-1 rounded-lg bg-[#7a1f2a] text-white"
+            className="px-4 py-1.5 rounded-lg bg-gradient-to-r from-[#7a1f2a] to-[#9a2f3a] text-white hover:from-[#6a1a24] hover:to-[#8a1f2a] transition-all shadow-md hover:shadow-lg font-medium"
           >
             Apply
           </button>
 
           <button
             onClick={onClear}
-            className="px-3 py-1 rounded-lg ring-1 ring-black/10"
+            className="px-3 py-1 rounded-lg ring-1 ring-black/10 hover:bg-neutral-50 transition-colors"
           >
             Clear
           </button>
-
-          {onFillMock && (
-            <button
-              onClick={onFillMock}
-              className="px-3 py-1 rounded-lg ring-1 ring-black/10"
-            >
-              Fill Mock Data
-            </button>
-          )}
         </div>
       </div>
     </div>

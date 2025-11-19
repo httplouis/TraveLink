@@ -35,7 +35,7 @@ export default function ComptrollerLayout({
               <DollarSign className="h-6 w-6 text-white" />
             </div>
             <div>
-              <h1 className="text-base font-bold text-gray-900">TraviLink</h1>
+              <h1 className="text-base font-bold text-gray-900">Travelink</h1>
               <p className="text-xs text-gray-600">Comptroller</p>
             </div>
           </div>

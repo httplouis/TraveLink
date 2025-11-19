@@ -30,6 +30,7 @@ export async function POST(request: Request) {
       signature, 
       notes, 
       editedBudget,
+      expense_breakdown, // NEW: Updated expense breakdown array
       sendToRequester, // NEW: Option to send back to requester for payment
       paymentConfirmed, // NEW: If payment is confirmed
       nextApproverId, // NEW: Choice-based sending
@@ -79,20 +80,171 @@ export async function POST(request: Request) {
         updateData.payment_confirmed = false;
         updateData.sent_to_requester_for_payment_at = now;
       } else if (paymentConfirmed || !sendToRequester) {
-        // Payment confirmed or not needed: go to HR
-        nextStatus = "pending_hr";
-        nextApproverRoleFinal = nextApproverRole || "hr";
-        updateData.status = nextStatus;
-        updateData.current_approver_role = nextApproverRoleFinal;
+        // Check if VP already approved (as head) - if so, skip HR and go to President
+        const vpAlreadyApproved = request.vp_approved_at && request.vp_approved_by;
+        
+        // Check if VP is also a head (dual role)
+        let vpIsHead = false;
+        if (vpAlreadyApproved && request.vp_approved_by) {
+          try {
+            const { data: vpUser } = await supabase
+              .from("users")
+              .select("is_head")
+              .eq("id", request.vp_approved_by)
+              .single();
+            vpIsHead = vpUser?.is_head === true;
+          } catch (err) {
+            console.error("[Comptroller Approve] Error checking VP head status:", err);
+          }
+        }
+        
+        // If VP already approved as head, skip HR and go to President
+        if (vpAlreadyApproved && vpIsHead) {
+          console.log("[Comptroller Approve] ⏭️ VP already approved as head, skipping HR and going to President");
+          nextStatus = "pending_exec";
+          nextApproverRoleFinal = "president";
+          updateData.status = nextStatus;
+          updateData.current_approver_role = nextApproverRoleFinal;
+          // Don't set next_president_id - allow all presidents to see it
+        } else {
+          // Payment confirmed or not needed: go to HR
+          nextStatus = "pending_hr";
+          nextApproverRoleFinal = nextApproverRole || "hr";
+          updateData.status = nextStatus;
+          updateData.current_approver_role = nextApproverRoleFinal;
+        }
         updateData.payment_confirmed = paymentConfirmed || false;
         updateData.payment_confirmed_at = paymentConfirmed ? now : null;
       } else {
-        // Default: go to HR
-        nextStatus = "pending_hr";
-        nextApproverRoleFinal = "hr";
+        // Default: go to HR (unless VP already approved)
+        const vpAlreadyApproved = request.vp_approved_at && request.vp_approved_by;
+        let vpIsHead = false;
+        if (vpAlreadyApproved && request.vp_approved_by) {
+          try {
+            const { data: vpUser } = await supabase
+              .from("users")
+              .select("is_head")
+              .eq("id", request.vp_approved_by)
+              .single();
+            vpIsHead = vpUser?.is_head === true;
+          } catch (err) {
+            console.error("[Comptroller Approve] Error checking VP head status:", err);
+          }
+        }
+        
+        if (vpAlreadyApproved && vpIsHead) {
+          console.log("[Comptroller Approve] ⏭️ VP already approved as head, skipping HR and going to President");
+          nextStatus = "pending_exec";
+          nextApproverRoleFinal = "president";
+        } else {
+          nextStatus = "pending_hr";
+          nextApproverRoleFinal = "hr";
+        }
         updateData.status = nextStatus;
         updateData.current_approver_role = nextApproverRoleFinal;
       }
+
+      // Set next approver ID if provided (choice-based sending)
+      if (nextApproverId) {
+        // Fetch user's actual role to determine correct routing
+        try {
+          const { data: approverUser } = await supabase
+            .from("users")
+            .select("id, role, is_admin, is_hr, is_vp, is_president, is_head, is_comptroller, exec_type")
+            .eq("id", nextApproverId)
+            .single();
+          
+          if (approverUser) {
+            // Determine approver role based on user's actual role
+            if (approverUser.is_hr || approverUser.role === "hr") {
+              nextApproverRoleFinal = "hr";
+              // Don't set next_hr_id - allow all HRs to see it
+              // updateData.next_hr_id = nextApproverId;
+            } else if (approverUser.is_admin || approverUser.role === "admin") {
+              nextApproverRoleFinal = "admin";
+              // Don't set next_admin_id - allow all admins to see it
+              // updateData.next_admin_id = nextApproverId;
+              nextStatus = "pending_admin";
+            } else if (approverUser.is_comptroller || approverUser.role === "comptroller") {
+              nextApproverRoleFinal = "comptroller";
+              // Don't set next_comptroller_id - allow all comptrollers to see it
+              // updateData.next_comptroller_id = nextApproverId;
+              nextStatus = "pending_comptroller";
+            } else if (approverUser.is_vp || approverUser.role === "exec") {
+              nextApproverRoleFinal = "vp";
+              updateData.next_vp_id = nextApproverId;
+              nextStatus = "pending_exec";
+            } else if (approverUser.is_president || approverUser.exec_type === "president") {
+              nextApproverRoleFinal = "president";
+              updateData.next_president_id = nextApproverId;
+              nextStatus = "pending_exec";
+            } else {
+              // Use role from selection or default to hr
+              if (nextApproverRole === "hr") {
+                nextApproverRoleFinal = "hr";
+                // Don't set next_hr_id - allow all HRs to see it
+                // updateData.next_hr_id = nextApproverId;
+              }
+            }
+            updateData.status = nextStatus;
+            updateData.current_approver_role = nextApproverRoleFinal;
+          } else {
+            // User not found - use role from selection
+            if (nextApproverRole === "hr") {
+              nextApproverRoleFinal = "hr";
+              // Don't set next_hr_id - allow all HRs to see it
+              // updateData.next_hr_id = nextApproverId;
+            }
+          }
+        } catch (err) {
+          console.error("[Comptroller Action] Error fetching approver user:", err);
+          // Fallback to role from selection
+          if (nextApproverRole === "hr") {
+            nextApproverRoleFinal = "hr";
+            // Don't set next_hr_id - allow all HRs to see it
+            // updateData.next_hr_id = nextApproverId;
+          }
+        }
+      }
+
+      // Update workflow_metadata with routing information
+      const workflowMetadata: any = request.workflow_metadata || {};
+      
+      // IMPORTANT: For comptroller, hr, admin, and president - don't set next_approver_id
+      // This allows ALL users in that role to see the request
+      if (nextApproverRoleFinal === "comptroller" || nextApproverRoleFinal === "hr" || nextApproverRoleFinal === "admin" || nextApproverRoleFinal === "president") {
+        // Clear any existing next_approver_id to ensure all users in that role can see it
+        workflowMetadata.next_approver_id = null;
+        workflowMetadata.next_approver_role = nextApproverRoleFinal;
+        // Explicitly clear role-specific IDs
+        workflowMetadata.next_comptroller_id = null;
+        workflowMetadata.next_hr_id = null;
+        workflowMetadata.next_admin_id = null;
+        workflowMetadata.next_president_id = null;
+      } else if (nextApproverId && nextApproverRoleFinal) {
+        // For other roles (VP, Head), set the specific approver ID
+        workflowMetadata.next_approver_id = nextApproverId;
+        workflowMetadata.next_approver_role = nextApproverRoleFinal;
+        
+        // Store role-specific IDs for inbox filtering
+        if (nextApproverRoleFinal === "vp") {
+          workflowMetadata.next_vp_id = nextApproverId;
+        } else if (nextApproverRoleFinal === "head") {
+          workflowMetadata.next_head_id = nextApproverId;
+        }
+      }
+      
+      if (sendToRequester) {
+        workflowMetadata.return_reason = "payment_confirmation";
+      }
+      
+      // If skipping HR, add metadata note
+      if (nextApproverRoleFinal === "president" && request.vp_approved_at) {
+        workflowMetadata.skipped_hr = true;
+        workflowMetadata.skip_reason = "VP already approved as head";
+      }
+      
+      updateData.workflow_metadata = workflowMetadata;
 
       // Update request
       const { error: updateError } = await supabase
@@ -106,6 +258,11 @@ export async function POST(request: Request) {
       }
 
       // Log to request history with complete tracking
+      let historyComments = notes || (sendToRequester ? "Sent to requester for payment confirmation" : "Approved by comptroller");
+      if (nextApproverRoleFinal === "president" && request.vp_approved_at) {
+        historyComments += " (HR skipped - VP already approved as head)";
+      }
+      
       await supabase.from("request_history").insert({
         request_id: requestId,
         action: sendToRequester ? "sent_to_requester_for_payment" : "approved",
@@ -113,7 +270,7 @@ export async function POST(request: Request) {
         actor_role: "comptroller",
         previous_status: request.status,
         new_status: nextStatus,
-        comments: notes || (sendToRequester ? "Sent to requester for payment confirmation" : "Approved by comptroller"),
+        comments: historyComments,
         metadata: {
           signature_at: now,
           signature_time: now, // Track signature time
@@ -123,7 +280,8 @@ export async function POST(request: Request) {
           sent_to_id: nextApproverId || null,
           payment_required: sendToRequester || false,
           payment_confirmed: paymentConfirmed || false,
-          edited_budget: editedBudget || null
+          edited_budget: editedBudget || null,
+          skipped_hr: nextApproverRoleFinal === "president" && request.vp_approved_at ? true : false
         }
       });
 
@@ -162,11 +320,17 @@ export async function POST(request: Request) {
         console.error("[Comptroller Approve] Failed to create notifications:", notifError);
       }
 
-      console.log(`[Comptroller Approve] ✅ Request ${requestId} ${sendToRequester ? 'sent to requester for payment' : 'approved, sent to HR'}`);
+      const finalMessage = sendToRequester 
+        ? "Request sent to requester for payment confirmation"
+        : (nextApproverRoleFinal === "president" 
+          ? "Request approved, skipping HR (VP already approved as head), sent to President"
+          : "Request approved and sent to HR");
+      
+      console.log(`[Comptroller Approve] ✅ Request ${requestId} ${sendToRequester ? 'sent to requester for payment' : `approved, sent to ${nextApproverRoleFinal}`}`);
       
       return NextResponse.json({
         ok: true,
-        message: sendToRequester ? "Request sent to requester for payment confirmation" : "Request approved and sent to HR",
+        message: finalMessage,
         data: {
           nextStatus,
           nextApproverRole: nextApproverRoleFinal
@@ -215,14 +379,35 @@ export async function POST(request: Request) {
       });
 
     } else if (action === "edit_budget") {
-      // Just update the edited budget without changing status
+      // Get current request to track budget change
+      const { data: currentRequest } = await supabase
+        .from("requests")
+        .select("total_budget, comptroller_edited_budget, requester_id, status")
+        .eq("id", requestId)
+        .single();
+
+      if (!currentRequest) {
+        return NextResponse.json({ ok: false, error: "Request not found" }, { status: 404 });
+      }
+
+      const oldBudget = currentRequest.comptroller_edited_budget || currentRequest.total_budget || 0;
+      const newBudget = editedBudget || 0;
+
+      // Update the edited budget and expense_breakdown without changing status
+      const updateData: any = {
+        comptroller_edited_budget: editedBudget,
+        comptroller_comments: notes || null,
+        updated_at: getPhilippineTimestamp(),
+      };
+      
+      // Update expense_breakdown if provided
+      if (expense_breakdown && Array.isArray(expense_breakdown)) {
+        updateData.expense_breakdown = expense_breakdown;
+      }
+      
       const { error: updateError } = await supabase
         .from("requests")
-        .update({
-          comptroller_edited_budget: editedBudget,
-          comptroller_comments: notes || null,
-          updated_at: getPhilippineTimestamp(),
-        })
+        .update(updateData)
         .eq("id", requestId);
 
       if (updateError) {
@@ -230,7 +415,46 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: false, error: updateError.message }, { status: 500 });
       }
 
-      console.log(`[Comptroller Edit Budget] 💰 Budget edited for request ${requestId}`);
+      // Log budget change to request_history
+      await supabase.from("request_history").insert({
+        request_id: requestId,
+        action: "budget_modified",
+        actor_id: comptrollerUser.id,
+        actor_role: "comptroller",
+        previous_status: currentRequest.status || "pending_comptroller",
+        new_status: currentRequest.status || "pending_comptroller",
+        comments: `Budget modified: ₱${oldBudget.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} → ₱${newBudget.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        metadata: {
+          original_budget: oldBudget,
+          new_budget: newBudget,
+          edited_by: comptrollerUser.id,
+          edited_by_name: comptrollerUser.name,
+          edited_at: getPhilippineTimestamp(),
+          notes: notes || null
+        }
+      });
+
+      // Notify requester about budget change
+      try {
+        const { createNotification } = await import("@/lib/notifications/helpers");
+        if (currentRequest.requester_id) {
+          await createNotification({
+            user_id: currentRequest.requester_id,
+            notification_type: "budget_modified",
+            title: "Budget Modified by Comptroller",
+            message: `Your travel order budget has been modified from ₱${oldBudget.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} to ₱${newBudget.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`,
+            related_type: "request",
+            related_id: requestId,
+            action_url: `/user/submissions?view=${requestId}`,
+            action_label: "View Request",
+            priority: "normal",
+          });
+        }
+      } catch (notifError) {
+        console.error("[Comptroller Edit Budget] Failed to create notification:", notifError);
+      }
+
+      console.log(`[Comptroller Edit Budget] 💰 Budget edited: ₱${oldBudget} → ₱${newBudget}`);
       
       return NextResponse.json({
         ok: true,

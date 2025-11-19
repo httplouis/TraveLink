@@ -37,57 +37,48 @@ export default function ComptrollerInboxPage() {
 
   // Set page title
   React.useEffect(() => {
-    document.title = "Comptroller Inbox - TraviLink";
+    document.title = "Comptroller Inbox - Travelink";
   }, []);
 
   React.useEffect(() => {
+    // Only load once on mount - no auto-reload
     loadRequests();
-    
-    // Set up Supabase Realtime subscription for instant updates
-    const supabase = createSupabaseClient();
-    let mutateTimeout: NodeJS.Timeout | null = null;
-    
-    const channel = supabase
-      .channel("comptroller-inbox-changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "requests",
-        },
-        (payload: any) => {
-          // Debounce: only trigger refetch after 500ms
-          if (mutateTimeout) clearTimeout(mutateTimeout);
-          mutateTimeout = setTimeout(() => {
-            loadRequests();
-          }, 500);
-        }
-      )
-      .subscribe((status: string) => {
-        console.log("[Comptroller Inbox] Realtime subscription status:", status);
-      });
-
-    // Fallback polling every 30 seconds
-    const interval = setInterval(loadRequests, 30000);
-    
-    return () => {
-      clearInterval(interval);
-      if (mutateTimeout) clearTimeout(mutateTimeout);
-      supabase.removeChannel(channel);
-    };
   }, []);
 
   const loadRequests = async () => {
     try {
-      const res = await fetch("/api/requests/list?status=pending_comptroller", { cache: "no-store" });
+      setLoading(true);
+      // Get current user's ID for filtering
+      const profileRes = await fetch("/api/profile", { cache: "no-store" });
+      const profileData = await profileRes.json();
+      const comptrollerId = profileData?.ok ? profileData.data?.id : null;
+      
+      // Fetch requests with comptroller_id filter if available
+      // IMPORTANT: Show ALL requests with status="pending_comptroller" regardless of assignment
+      // This allows any comptroller to see and process requests
+      const url = `/api/requests/list?status=pending_comptroller${comptrollerId ? `&comptroller_id=${comptrollerId}` : ''}`;
+      
+      console.log("[Comptroller Inbox] Fetching requests from:", url);
+      const res = await fetch(url, { cache: "no-store" });
       const data = await res.json();
       
+      console.log("[Comptroller Inbox] Received data:", Array.isArray(data) ? `${data.length} requests` : "Not an array", data);
+      
       if (Array.isArray(data)) {
-        setRequests(data);
+        // Filter to only show requests that are actually pending comptroller review
+        const pendingRequests = data.filter((req: any) => {
+          const status = req.status;
+          return status === "pending_comptroller";
+        });
+        console.log("[Comptroller Inbox] Filtered to", pendingRequests.length, "pending requests");
+        setRequests(pendingRequests);
+      } else {
+        console.error("[Comptroller Inbox] Invalid response format:", data);
+        setRequests([]);
       }
     } catch (err) {
-      console.error("Failed to load requests:", err);
+      console.error("[Comptroller Inbox] Failed to load requests:", err);
+      setRequests([]);
     } finally {
       setLoading(false);
     }
@@ -111,7 +102,10 @@ export default function ComptrollerInboxPage() {
   const handleModalClose = () => {
     setShowModal(false);
     setSelectedRequest(null);
-    loadRequests(); // Refresh list
+    // Only refresh if modal was actually showing (to avoid unnecessary refreshes)
+    if (showModal) {
+      loadRequests(); // Refresh list without page reload
+    }
   };
 
   if (loading) {

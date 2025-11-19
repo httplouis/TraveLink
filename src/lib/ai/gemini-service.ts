@@ -1,18 +1,18 @@
 /**
  * Google Gemini AI Service
- * Handles AI chatbot interactions for TraviLink
+ * Handles AI chatbot interactions for Travelink
  * Using direct REST API calls to bypass SDK version issues
  */
 
-// System prompt with ACCURATE TraviLink information
-const SYSTEM_PROMPT = `You are Travie, the AI assistant for TraviLink Campus Transport Management System.
+// System prompt with ACCURATE Travelink information
+const SYSTEM_PROMPT = `You are Travie, the AI assistant for Travelink Campus Transport Management System.
 
 **Answer questions directly and specifically. Don't repeat generic information unless asked.**
 
 ## SYSTEM KNOWLEDGE:
 
 ### Vehicles:
-- TraviLink has various vehicles: vans, buses, cars, motorcycles
+- Travelink has various vehicles: vans, buses, cars, motorcycles
 - Check the "Vehicles" page to see all available vehicles with details like plate number, capacity, and status
 - Only admins assign vehicles to requests
 

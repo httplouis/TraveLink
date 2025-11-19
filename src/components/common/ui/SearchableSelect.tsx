@@ -116,7 +116,7 @@ export default function SearchableSelect({
       {/* Dropdown */}
       {isOpen && (
         <div 
-          className="absolute z-[99999] mt-1 bg-white border-2 border-gray-300 rounded-lg shadow-2xl max-h-80 overflow-hidden"
+          className="absolute z-[100000] mt-1 bg-white border-2 border-gray-300 rounded-lg shadow-2xl max-h-80 overflow-hidden"
           style={{ 
             top: '100%',
             left: 0,

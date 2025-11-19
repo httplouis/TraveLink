@@ -8,7 +8,7 @@ interface PageTitleProps {
 
 /**
  * Component to set browser tab title dynamically
- * Usage: <PageTitle title="TraviLink | Faculty" />
+ * Usage: <PageTitle title="Travelink | Faculty" />
  */
 export default function PageTitle({ title }: PageTitleProps) {
   useEffect(() => {

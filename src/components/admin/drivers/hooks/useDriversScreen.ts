@@ -18,16 +18,27 @@ export function useDriversScreen() {
   const [selection, setSelection] = React.useState<string[]>([]);
   const [form, setForm] = React.useState<FormState>(null);
 
-  const [rows, setRows] = React.useState<Driver[]>(() => DriversRepo.listLocal({}));
+  const [rows, setRows] = React.useState<Driver[]>([]);
+  const [loading, setLoading] = React.useState(true);
 
-  const refresh = React.useCallback(() => {
-    const base = DriversRepo.listLocal(filters);
-    setRows(applyTab(base, tab));
+  const refresh = React.useCallback(async () => {
+    try {
+      setLoading(true);
+      // Fetch from Supabase API
+      await DriversRepo.list(filters);
+      const base = DriversRepo.listLocal(filters);
+      setRows(applyTab(base, tab));
+    } catch (error) {
+      console.error('[useDriversScreen] Error fetching drivers:', error);
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
   }, [filters, tab]);
 
   React.useEffect(() => {
     refresh();
-  }, [filters, tab, refresh]);
+  }, [refresh]);
 
   return {
     filters,

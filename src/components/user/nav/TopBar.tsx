@@ -18,7 +18,7 @@ export default function TopBar() {
               <div className="absolute inset-0 rounded-lg bg-gradient-to-br from-white to-gray-50 opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
             <div className="flex flex-col">
-              <span className="font-semibold text-base leading-tight">TraviLink</span>
+              <span className="font-semibold text-base leading-tight">Travelink</span>
               <span className="text-xs opacity-80 font-normal">Travel Management System</span>
             </div>
           </Link>

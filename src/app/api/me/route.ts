@@ -60,6 +60,7 @@ export async function GET(request: NextRequest) {
         is_vp,
         is_president,
         is_admin,
+        is_comptroller,
         admins (
           user_id,
           super_admin
@@ -101,6 +102,7 @@ export async function GET(request: NextRequest) {
   const isVp = profile.is_vp === true;
   const isPresident = profile.is_president === true;
   const isDriver = userRole === 'driver';
+  const isComptroller = userRole === 'comptroller' || profile.is_comptroller === true;
 
   return NextResponse.json({
     id: profile.id,
@@ -114,6 +116,7 @@ export async function GET(request: NextRequest) {
     is_president: isPresident,
     is_admin: isSuperAdmin,
     is_driver: isDriver,
+    is_comptroller: isComptroller,
   });
   } catch (error) {
     console.error('[/api/me] Unexpected error:', error);

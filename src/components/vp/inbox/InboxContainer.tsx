@@ -164,15 +164,66 @@ export default function VPInboxContainer() {
                     )}
                   </div>
                   <p className="text-sm font-medium text-gray-900 mb-1">{purpose}</p>
-                  <div className="flex items-center gap-4 text-xs text-gray-500">
-                    <PersonDisplay person={{ name: requester, email: item.requester?.email }} size="xs" />
+                  <div className="flex items-center gap-4 text-xs text-gray-500 mb-2">
+                    <PersonDisplay 
+                      name={requester || "Unknown"} 
+                      email={item.requester?.email} 
+                      size="sm" 
+                    />
                     <span>{department}</span>
                     {item.vp_approver && (
                       <span className="text-blue-600">
-                        ✓ Approved by {item.vp_approver.name}
+                        Approved by {item.vp_approver.name}
                       </span>
                     )}
                   </div>
+                  
+                  {/* Time of Receive */}
+                  {item.created_at && (
+                    <div className="mb-2">
+                      <span className="text-xs text-gray-500">
+                        Time of receive: <span className="font-medium text-gray-700">
+                          {new Date(item.created_at).toLocaleString('en-US', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: true
+                          })}
+                        </span>
+                      </span>
+                    </div>
+                  )}
+                  
+                  {/* Routing Information - Who sent this to VP */}
+                  {(item.sent_by || item.routed_from || item.assigned_to_vp) && (
+                    <div className="mt-2 pt-2 border-t border-gray-100">
+                      <div className="flex flex-wrap items-center gap-2 text-xs">
+                        {item.sent_by && item.routed_from && (
+                          <span className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded-md font-medium">
+                            Sent by: <span className="font-semibold">{item.sent_by}</span>
+                            {item.routing_details?.position && (
+                              <span className="text-purple-600"> ({item.routing_details.position})</span>
+                            )}
+                          </span>
+                        )}
+                        {item.routed_from && (
+                          <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md">
+                            Routed from: <span className="font-medium">{item.routed_from}</span>
+                          </span>
+                        )}
+                        {item.assigned_to_vp && (
+                          <span className="px-2 py-0.5 bg-green-50 text-green-700 rounded-md">
+                            Assigned to: <span className="font-semibold">{item.assigned_to_vp.name}</span>
+                            {item.assigned_to_vp.position && (
+                              <span className="text-green-600"> ({item.assigned_to_vp.position})</span>
+                            )}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div className="ml-4 flex items-center gap-2">
                   <button
@@ -207,6 +258,7 @@ export default function VPInboxContainer() {
       {showTrackingModal && trackingRequest && (
         <TrackingModal
           requestId={trackingRequest.id}
+          isOpen={showTrackingModal}
           onClose={() => {
             setShowTrackingModal(false);
             setTrackingRequest(null);

@@ -16,10 +16,19 @@ export default function ReportPage() {
   const [page, setPage] = React.useState(1);
   const [pageSize] = React.useState(10);
   const [data, setData] = React.useState<{ rows: TripRow[]; total: number }>({ rows: [], total: 0 });
+  const [loading, setLoading] = React.useState(true);
 
   const load = React.useCallback(async () => {
-    const res = await queryReport(filters, page, pageSize);
-    setData({ rows: res.rows, total: res.total });
+    setLoading(true);
+    try {
+      const res = await queryReport(filters, page, pageSize);
+      setData({ rows: res.rows, total: res.total });
+    } catch (error) {
+      console.error("[ReportPage] Error loading data:", error);
+      setData({ rows: [], total: 0 });
+    } finally {
+      setLoading(false);
+    }
   }, [filters, page, pageSize]);
 
   React.useEffect(() => {
@@ -49,8 +58,13 @@ export default function ReportPage() {
   );
 
   return (
-    <div className="p-4 space-y-4">
-      <h1 className="text-xl font-semibold">Report / Exports</h1>
+    <div className="p-4 md:p-6 space-y-6 bg-gradient-to-br from-neutral-50 to-neutral-100 min-h-[calc(100vh-64px)]">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-sm text-neutral-500 mb-1">Admin • Report</div>
+          <h1 className="text-3xl font-bold text-neutral-900">Report / Exports</h1>
+        </div>
+      </div>
 
       <ReportFilterBar
         value={filters}
@@ -67,28 +81,37 @@ export default function ReportPage() {
       {/* Keep your existing ExportBar for full dataset export; add our hotkey export for quick current-page CSV */}
       <ExportBar rows={data.rows} tableId={tableId} />
 
-      <ReportTable rows={data.rows} tableId={tableId} />
-
-      <div className="flex items-center justify-between">
-        <div className="text-sm opacity-70">
-          Showing {(data.rows.length && (page - 1) * pageSize + 1) || 0}
-          {"–"}
-          {(page - 1) * pageSize + data.rows.length} of {data.total}
+      {loading ? (
+        <div className="flex items-center justify-center py-16 bg-white rounded-xl shadow-md">
+          <div className="text-center">
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-[#7a1f2a]"></div>
+            <p className="mt-2 text-neutral-600">Loading reports...</p>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+      ) : (
+        <ReportTable rows={data.rows} tableId={tableId} />
+      )}
+
+      <div className="flex items-center justify-between bg-white rounded-xl px-6 py-4 shadow-sm border border-neutral-200">
+        <div className="text-sm text-neutral-600 font-medium">
+          Showing <span className="font-semibold text-neutral-900">{(data.rows.length && (page - 1) * pageSize + 1) || 0}</span>
+          {" – "}
+          <span className="font-semibold text-neutral-900">{(page - 1) * pageSize + data.rows.length}</span> of <span className="font-semibold text-neutral-900">{data.total}</span>
+        </div>
+        <div className="flex items-center gap-3">
           <button
-            className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"
+            className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-50 hover:border-[#7a1f2a] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
             title="ArrowLeft"
           >
             Prev
           </button>
-          <span className="text-sm">
+          <span className="text-sm font-medium text-neutral-700 min-w-[80px] text-center">
             Page {page} / {totalPages}
           </span>
           <button
-            className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"
+            className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-50 hover:border-[#7a1f2a] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page >= totalPages}
             title="ArrowRight"

@@ -91,6 +91,12 @@ export interface RequestData {
   smart_skips_applied?: string[];
   efficiency_boost?: number;
   requires_budget?: boolean;
+  workflow_metadata?: {
+    next_vp_id?: string;
+    next_admin_id?: string;
+    next_approver_role?: string;
+    [key: string]: any;
+  };
   
   // Seminar application fields
   request_type?: 'seminar' | 'travel_order';
@@ -145,6 +151,8 @@ export default function RequestDetailsView({
 }: RequestDetailsViewProps) {
   const [confirmedRequesters, setConfirmedRequesters] = useState<any[]>([]);
   const [loadingRequesters, setLoadingRequesters] = useState(false);
+  const [routingPerson, setRoutingPerson] = useState<{ name: string; role: string; position?: string } | null>(null);
+  const [loadingRoutingPerson, setLoadingRoutingPerson] = useState(false);
 
   // Fetch confirmed requesters
   useEffect(() => {
@@ -153,6 +161,86 @@ export default function RequestDetailsView({
     }
   }, [request?.id]);
 
+  // Fetch routing person (who the request was sent to)
+  useEffect(() => {
+    console.log('[RequestDetailsView] 🔄 useEffect triggered for routing person:', {
+      hasWorkflowMetadata: !!request?.workflow_metadata,
+      workflowMetadata: request?.workflow_metadata,
+      status: request?.status
+    });
+    if (request?.workflow_metadata) {
+      fetchRoutingPerson();
+    } else {
+      console.log('[RequestDetailsView] ⚠️ No workflow_metadata found in request');
+      setRoutingPerson(null);
+    }
+  }, [request?.workflow_metadata, request?.status]);
+
+  const fetchRoutingPerson = async () => {
+    try {
+      setLoadingRoutingPerson(true);
+      const workflowMetadata = request.workflow_metadata || {};
+      const nextVpId = workflowMetadata?.next_vp_id;
+      const nextAdminId = workflowMetadata?.next_admin_id;
+      const nextApproverRole = workflowMetadata?.next_approver_role;
+
+      console.log('[RequestDetailsView] 🔍 Fetching routing person:', {
+        workflowMetadata,
+        nextVpId,
+        nextAdminId,
+        nextApproverRole,
+        status: request.status
+      });
+
+      // If request was sent to a specific VP
+      // Check for pending_exec OR pending_head (when head selected VP during submission)
+      if (nextVpId && (request.status === 'pending_exec' || request.status === 'pending_head' || nextApproverRole === 'vp')) {
+        console.log('[RequestDetailsView] 📞 Fetching VP user:', nextVpId);
+        const response = await fetch(`/api/users/${nextVpId}`);
+        const data = await response.json();
+        if (data.ok && data.data) {
+          console.log('[RequestDetailsView] ✅ Found VP:', data.data.name);
+          setRoutingPerson({
+            name: data.data.name || 'Unknown VP',
+            role: 'Vice President',
+            position: data.data.position_title || 'VP'
+          });
+          return;
+        } else {
+          console.error('[RequestDetailsView] ❌ Failed to fetch VP:', data.error);
+        }
+      }
+
+      // If request was sent to a specific Admin
+      // Check for pending_admin OR pending_head (when head selected Admin during submission)
+      if (nextAdminId && (request.status === 'pending_admin' || request.status === 'pending_head' || nextApproverRole === 'admin')) {
+        console.log('[RequestDetailsView] 📞 Fetching Admin user:', nextAdminId);
+        const response = await fetch(`/api/users/${nextAdminId}`);
+        const data = await response.json();
+        if (data.ok && data.data) {
+          console.log('[RequestDetailsView] ✅ Found Admin:', data.data.name);
+          setRoutingPerson({
+            name: data.data.name || 'Unknown Admin',
+            role: 'Administrator',
+            position: data.data.position_title || 'Admin'
+          });
+          return;
+        } else {
+          console.error('[RequestDetailsView] ❌ Failed to fetch Admin:', data.error);
+        }
+      }
+      
+      // No routing person found
+      console.log('[RequestDetailsView] ⚠️ No routing person found - clearing state');
+      setRoutingPerson(null);
+    } catch (err) {
+      console.error('[RequestDetailsView] Error fetching routing person:', err);
+      setRoutingPerson(null);
+    } finally {
+      setLoadingRoutingPerson(false);
+    }
+  };
+
   const fetchConfirmedRequesters = async () => {
     try {
       setLoadingRequesters(true);
@@ -160,8 +248,19 @@ export default function RequestDetailsView({
       const data = await response.json();
       
       if (data.ok && data.data) {
-        // Filter only confirmed requesters
-        const confirmed = data.data.filter((req: any) => req.status === 'confirmed');
+        // Filter only confirmed requesters AND exclude the main requester
+        const confirmed = data.data.filter((req: any) => {
+          // Only include if status is confirmed
+          if (req.status !== 'confirmed') return false;
+          
+          // Exclude if this is the main requester (by user_id or email match)
+          const isMainRequester = 
+            (req.user_id && request.requester?.id && req.user_id === request.requester.id) ||
+            (req.email && request.requester?.email && req.email.toLowerCase() === request.requester.email.toLowerCase()) ||
+            (req.name && request.requester?.name && req.name.toLowerCase() === request.requester.name.toLowerCase());
+          
+          return !isMainRequester;
+        });
         setConfirmedRequesters(confirmed);
       }
     } catch (err) {
@@ -950,10 +1049,140 @@ export default function RequestDetailsView({
               />
             </div>
             <div className="pt-4 border-t border-gray-200">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-600 font-medium">Role</span>
-                <span className="font-bold text-gray-900">Requester</span>
+              <div className="flex items-center justify-between">
+                <span className="text-base text-gray-600 font-medium">Role</span>
+                <span className="text-base font-bold text-gray-900">Requester</span>
               </div>
+            </div>
+          </WowCard>
+
+          {/* Routing Information Panel */}
+          <WowCard className="p-6">
+            <h3 className="text-xl font-bold text-gray-900 mb-4 pb-3 border-b-2 border-gray-200">Routing Information</h3>
+            <div className="space-y-3">
+              {/* Current Status */}
+              <div className="flex items-start justify-between">
+                <span className="text-base text-gray-600 font-medium">Current Status</span>
+                <span className="text-base font-semibold text-gray-900">{formatStatus(request.status)}</span>
+              </div>
+              
+              {/* Determine routing based on status and workflow_metadata */}
+              {(() => {
+                const workflowMetadata = request.workflow_metadata || {};
+                const nextVpId = workflowMetadata?.next_vp_id;
+                const nextAdminId = workflowMetadata?.next_admin_id;
+                const nextApproverRole = workflowMetadata?.next_approver_role;
+                
+                console.log('[RequestDetailsView] 🔍 Routing info check:', {
+                  status: request.status,
+                  workflowMetadata,
+                  nextVpId,
+                  nextAdminId,
+                  nextApproverRole,
+                  routingPerson,
+                  department: request.department?.name
+                });
+                
+                // Determine where request is currently routed
+                let routingInfo = null;
+                
+                if (request.status === 'pending_head') {
+                  // Check if head selected a specific approver (VP or Admin)
+                  if (routingPerson && (nextVpId || nextAdminId)) {
+                    console.log('[RequestDetailsView] ✅ Showing routing person:', routingPerson.name);
+                    routingInfo = {
+                      label: 'Sent To',
+                      value: routingPerson.name,
+                      role: routingPerson.role || (nextVpId ? 'VP' : 'Administrator')
+                    };
+                  } else {
+                    console.log('[RequestDetailsView] ⚠️ No routing person - showing department:', request.department?.name);
+                    routingInfo = {
+                      label: 'Sent To',
+                      value: request.department?.name || 'Department Head',
+                      role: 'Department Head'
+                    };
+                  }
+                } else if (request.status === 'pending_parent_head') {
+                  routingInfo = {
+                    label: 'Sent To',
+                    value: 'Parent Department Head',
+                    role: 'Parent Head'
+                  };
+                } else if (request.status === 'pending_admin') {
+                  // Show actual admin name if sent to specific admin
+                  if (routingPerson && nextAdminId) {
+                    routingInfo = {
+                      label: 'Sent To',
+                      value: routingPerson.name,
+                      role: routingPerson.role
+                    };
+                  } else {
+                    routingInfo = {
+                      label: 'Sent To',
+                      value: 'Administrator',
+                      role: 'Administrator'
+                    };
+                  }
+                } else if (request.status === 'pending_comptroller') {
+                  routingInfo = {
+                    label: 'Sent To',
+                    value: 'Comptroller',
+                    role: 'Comptroller'
+                  };
+                } else if (request.status === 'pending_hr') {
+                  routingInfo = {
+                    label: 'Sent To',
+                    value: 'Human Resources',
+                    role: 'HR'
+                  };
+                } else if (request.status === 'pending_exec') {
+                  // Show actual VP name if sent to specific VP
+                  if (routingPerson && nextVpId) {
+                    routingInfo = {
+                      label: 'Sent To',
+                      value: routingPerson.name,
+                      role: routingPerson.role
+                    };
+                  } else {
+                    routingInfo = {
+                      label: 'Sent To',
+                      value: 'Vice President',
+                      role: 'VP'
+                    };
+                  }
+                } else if (request.status === 'pending_president') {
+                  routingInfo = {
+                    label: 'Sent To',
+                    value: 'President',
+                    role: 'President'
+                  };
+                } else if (request.status === 'approved' || request.status === 'dispatched' || request.status === 'completed') {
+                  routingInfo = {
+                    label: 'Status',
+                    value: 'Approved',
+                    role: 'Completed'
+                  };
+                }
+                
+                return routingInfo ? (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3 }}
+                    className="flex items-start justify-between pt-3 border-t border-gray-200"
+                  >
+                    <span className="text-base text-gray-600 font-medium flex items-center gap-2">
+                      <Route className="w-4 h-4 text-gray-400" />
+                      {routingInfo.label}
+                    </span>
+                    <div className="text-right">
+                      <span className="text-base font-semibold text-gray-900 block">{routingInfo.value}</span>
+                      <span className="text-sm text-gray-500">{routingInfo.role}</span>
+                    </div>
+                  </motion.div>
+                ) : null;
+              })()}
             </div>
           </WowCard>
 
@@ -994,14 +1223,14 @@ export default function RequestDetailsView({
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-gray-900 truncate">
+                          <p className="text-base font-semibold text-gray-900 truncate">
                             {requester.name || requester.email || 'Unknown Requester'}
                           </p>
                           {requester.department && (
-                            <p className="text-xs text-gray-600 mt-0.5">{requester.department}</p>
+                            <p className="text-sm text-gray-600 mt-1">{requester.department}</p>
                           )}
                           {requester.email && (
-                            <p className="text-xs text-gray-500 mt-0.5 truncate">{requester.email}</p>
+                            <p className="text-sm text-gray-500 mt-0.5 truncate">{requester.email}</p>
                           )}
                         </div>
                         <div className="flex-shrink-0">

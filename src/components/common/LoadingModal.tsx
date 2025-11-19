@@ -32,7 +32,7 @@ export default function LoadingModal({ isOpen, message = "Loading..." }: Props) 
             <div className="absolute inset-0 bg-[#7A0010]/20 rounded-full blur-xl animate-pulse" />
             <img 
               src="/euwhite.png" 
-              alt="TraviLink Logo" 
+              alt="Travelink Logo" 
               width="64"
               height="64"
               className="relative h-16 w-16 drop-shadow-lg animate-bounce"

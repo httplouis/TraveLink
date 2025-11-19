@@ -13,7 +13,6 @@ function LoginPageContent() {
 
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [loginMode, setLoginMode] = useState<"microsoft" | "email">("microsoft");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
@@ -112,10 +111,8 @@ function LoginPageContent() {
     <LoginView
       loading={loading}
       err={err}
-      loginMode={loginMode}
       email={email}
       password={password}
-      onLoginModeChange={setLoginMode}
       onEmailChange={setEmail}
       onPasswordChange={setPassword}
       onMicrosoftLogin={handleMicrosoftLogin}

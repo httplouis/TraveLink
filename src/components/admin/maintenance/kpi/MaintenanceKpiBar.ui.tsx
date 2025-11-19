@@ -17,14 +17,20 @@ export default function MaintenanceKpiBar({ rows }: { rows: MaintRecord[] }) {
   const counts = ORDER.map((s) => rows.filter((r) => r.status === s).length);
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
       {ORDER.map((s, i) => (
         <div
           key={s}
-          className={`rounded-xl p-4 ${COLORS[s]} ring-1 ring-black/5 shadow-sm`}
+          className={`rounded-xl p-5 ${COLORS[s]} ring-1 ring-black/5 shadow-md hover:shadow-lg transition-shadow border-l-4 ${
+            s === "Submitted" ? "border-slate-400" :
+            s === "Acknowledged" ? "border-blue-400" :
+            s === "In-Progress" ? "border-amber-400" :
+            s === "Completed" ? "border-emerald-400" :
+            "border-rose-400"
+          }`}
         >
-          <div className="text-xs text-neutral-600">{s}</div>
-          <div className="text-2xl font-semibold mt-1 text-neutral-900">{counts[i]}</div>
+          <div className="text-xs font-medium text-neutral-600 uppercase tracking-wide">{s}</div>
+          <div className="text-3xl font-bold mt-2 text-neutral-900">{counts[i]}</div>
         </div>
       ))}
     </div>

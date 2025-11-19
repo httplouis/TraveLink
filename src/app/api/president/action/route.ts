@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { requestId, action, signature, notes } = body;
+    const { requestId, action, signature, notes, nextApproverId, nextApproverRole, returnReason, editedBudget } = body;
 
     if (!requestId || !action) {
       return NextResponse.json(
@@ -50,19 +50,148 @@ export async function POST(request: Request) {
 
       const now = getPhilippineTimestamp();
       
-      // President is the final approver - mark as fully approved
+      // Determine next status and approver based on selection
+      let newStatus: string;
+      let nextApproverRoleFinal: string | null = null;
+      let updateData: any = {
+        president_approved_at: now,
+        president_approved_by: presidentUser.id,
+        president_signature: signature || null,
+        president_comments: notes || null,
+        updated_at: now,
+      };
+
+      if (returnReason) {
+        // Return to requester
+        newStatus = "pending_requester";
+        nextApproverRoleFinal = "requester";
+        updateData.return_reason = returnReason;
+      } else if (nextApproverId && nextApproverRole) {
+        // User selected specific approver - fetch user's actual role to determine correct status
+        try {
+          const { data: approverUser } = await supabase
+            .from("users")
+            .select("id, role, is_admin, is_hr, is_vp, is_president, is_head, is_comptroller, exec_type")
+            .eq("id", nextApproverId)
+            .single();
+          
+          if (approverUser) {
+            // Determine status based on user's actual role
+            if (approverUser.is_comptroller || approverUser.role === "comptroller") {
+              newStatus = "pending_comptroller";
+              nextApproverRoleFinal = "comptroller";
+              // Don't set next_comptroller_id - allow all comptrollers to see it
+              // updateData.next_comptroller_id = nextApproverId;
+            } else if (approverUser.is_hr || approverUser.role === "hr") {
+              newStatus = "pending_hr";
+              nextApproverRoleFinal = "hr";
+              // Don't set next_hr_id - allow all HRs to see it
+              // updateData.next_hr_id = nextApproverId;
+            } else if (approverUser.is_admin || approverUser.role === "admin") {
+              newStatus = "pending_admin";
+              nextApproverRoleFinal = "admin";
+              // Don't set next_admin_id - allow all admins to see it
+              // updateData.next_admin_id = nextApproverId;
+            } else if (approverUser.is_vp || approverUser.role === "exec") {
+              newStatus = "pending_exec";
+              nextApproverRoleFinal = "vp";
+              updateData.next_vp_id = nextApproverId;
+            } else {
+              // Unknown role - use role from selection or default to approved
+              if (nextApproverRole === "comptroller") {
+                newStatus = "pending_comptroller";
+                nextApproverRoleFinal = "comptroller";
+                // Don't set next_comptroller_id - allow all comptrollers to see it
+                // updateData.next_comptroller_id = nextApproverId;
+              } else if (nextApproverRole === "hr") {
+                newStatus = "pending_hr";
+                nextApproverRoleFinal = "hr";
+                // Don't set next_hr_id - allow all HRs to see it
+                // updateData.next_hr_id = nextApproverId;
+              } else {
+                // Default to fully approved
+                newStatus = "approved";
+                updateData.final_approved_at = now;
+              }
+            }
+          } else {
+            // User not found - use role from selection
+            if (nextApproverRole === "comptroller") {
+              newStatus = "pending_comptroller";
+              nextApproverRoleFinal = "comptroller";
+              // Don't set next_comptroller_id - allow all comptrollers to see it
+              // updateData.next_comptroller_id = nextApproverId;
+            } else if (nextApproverRole === "hr") {
+              newStatus = "pending_hr";
+              nextApproverRoleFinal = "hr";
+              // Don't set next_hr_id - allow all HRs to see it
+              // updateData.next_hr_id = nextApproverId;
+            } else {
+              // Default to fully approved
+              newStatus = "approved";
+              updateData.final_approved_at = now;
+            }
+          }
+        } catch (err) {
+          console.error("[President Action] Error fetching approver user:", err);
+          // Fallback to role-based logic
+          if (nextApproverRole === "comptroller") {
+            newStatus = "pending_comptroller";
+            nextApproverRoleFinal = "comptroller";
+            // Don't set next_comptroller_id - allow all comptrollers to see it
+            // updateData.next_comptroller_id = nextApproverId;
+          } else if (nextApproverRole === "hr") {
+            newStatus = "pending_hr";
+            nextApproverRoleFinal = "hr";
+            // Don't set next_hr_id - allow all HRs to see it
+            // updateData.next_hr_id = nextApproverId;
+          } else {
+            // Default to fully approved
+            newStatus = "approved";
+            updateData.final_approved_at = now;
+          }
+        }
+      } else {
+        // Default: fully approved (no selection means final approval)
+        newStatus = "approved";
+        updateData.final_approved_at = now;
+      }
+
+      updateData.status = newStatus;
+      updateData.current_approver_role = nextApproverRoleFinal;
+
+      // Update workflow_metadata with routing information
+      const workflowMetadata: any = request.workflow_metadata || {};
+      if (nextApproverId && nextApproverRoleFinal) {
+        workflowMetadata.next_approver_id = nextApproverId;
+        workflowMetadata.next_approver_role = nextApproverRoleFinal;
+        // Store role-specific IDs for inbox filtering
+        // Note: Don't set next_comptroller_id, next_hr_id, or next_admin_id - allow all to see it
+        if (nextApproverRoleFinal === "comptroller") {
+          // Don't set - allow all comptrollers to see it
+          // workflowMetadata.next_comptroller_id = nextApproverId;
+        } else if (nextApproverRoleFinal === "hr") {
+          // Don't set - allow all HRs to see it
+          // workflowMetadata.next_hr_id = nextApproverId;
+        } else if (nextApproverRoleFinal === "admin") {
+          // Don't set - allow all admins to see it
+          // workflowMetadata.next_admin_id = nextApproverId;
+        } else if (nextApproverRoleFinal === "vp") {
+          workflowMetadata.next_vp_id = nextApproverId;
+        } else if (nextApproverRoleFinal === "president") {
+          workflowMetadata.next_president_id = nextApproverId;
+        } else if (nextApproverRoleFinal === "head") {
+          workflowMetadata.next_head_id = nextApproverId;
+        }
+      }
+      if (returnReason) {
+        workflowMetadata.return_reason = returnReason;
+      }
+      updateData.workflow_metadata = workflowMetadata;
+
       const { error: updateError } = await supabase
         .from("requests")
-        .update({
-          status: "approved",
-          current_approver_role: null,
-          president_approved_at: now,
-          president_approved_by: presidentUser.id,
-          president_signature: signature || null,
-          president_comments: notes || null,
-          final_approved_at: now,
-          updated_at: now,
-        })
+        .update(updateData)
         .eq("id", requestId);
 
       if (updateError) {
@@ -84,8 +213,8 @@ export async function POST(request: Request) {
           signature_time: now, // Track signature time
           receive_time: request.created_at || now, // Track when request was received
           submission_time: request.created_at || null, // Track original submission time
-          sent_to: "requester",
-          final_approval: true,
+          sent_to: nextApproverRoleFinal || "requester",
+          final_approval: newStatus === "approved",
           requester_type: request.requester_is_head ? "head" : "faculty",
           head_included: request.head_included || false
         }
@@ -110,25 +239,112 @@ export async function POST(request: Request) {
           });
         }
 
-        // Notify all admins
-        const { data: admins } = await supabase
-          .from("users")
-          .select("id")
-          .eq("is_admin", true);
-
-        if (admins && admins.length > 0) {
-          for (const admin of admins) {
+        // Notify next approver if not fully approved
+        if (nextApproverId && nextApproverRoleFinal) {
+          if (nextApproverRoleFinal === "comptroller") {
             await createNotification({
-              user_id: admin.id,
-              notification_type: "request_approved",
-              title: "New Approved Request",
-              message: `Travel order ${request.request_number || ''} has been fully approved and is ready for processing.`,
+              user_id: nextApproverId,
+              notification_type: "request_pending_signature",
+              title: "Request Requires Your Review",
+              message: `A travel order request ${request.request_number || ''} has been sent to you for budget review.`,
               related_type: "request",
               related_id: requestId,
-              action_url: `/admin/requests`,
-              action_label: "View Requests",
-              priority: "high",
+              action_url: `/comptroller/review?view=${requestId}`,
+              action_label: "Review Request",
+              priority: "normal",
             });
+          } else if (nextApproverRoleFinal === "hr") {
+            await createNotification({
+              user_id: nextApproverId,
+              notification_type: "request_pending_signature",
+              title: "Request Requires Your Review",
+              message: `A travel order request ${request.request_number || ''} has been sent to you for review.`,
+              related_type: "request",
+              related_id: requestId,
+              action_url: `/hr/inbox?view=${requestId}`,
+              action_label: "Review Request",
+              priority: "normal",
+            });
+          }
+        }
+
+        // Notify all admins if fully approved
+        if (newStatus === "approved") {
+          const { data: admins } = await supabase
+            .from("users")
+            .select("id")
+            .eq("is_admin", true);
+
+          if (admins && admins.length > 0) {
+            for (const admin of admins) {
+              await createNotification({
+                user_id: admin.id,
+                notification_type: "request_approved",
+                title: "New Approved Request",
+                message: `Travel order ${request.request_number || ''} has been fully approved and is ready for processing.`,
+                related_type: "request",
+                related_id: requestId,
+                action_url: `/admin/requests`,
+                action_label: "View Requests",
+                priority: "high",
+              });
+            }
+          }
+
+          // Send SMS to driver if assigned and not already sent
+          if (request.assigned_driver_id && !request.sms_notification_sent) {
+            try {
+              // Fetch driver details
+              const { data: driver } = await supabase
+                .from("users")
+                .select("id, name, phone_number")
+                .eq("id", request.assigned_driver_id)
+                .single();
+
+              // Fetch requester details
+              const { data: requester } = await supabase
+                .from("users")
+                .select("id, name")
+                .eq("id", request.requester_id)
+                .single();
+
+              if (driver && driver.phone_number && requester) {
+                const { sendDriverTravelNotification } = await import("@/lib/sms/sms-service");
+                
+                const smsResult = await sendDriverTravelNotification({
+                  driverPhone: driver.phone_number,
+                  requesterName: requester.name || request.requester_name || "Unknown",
+                  requesterPhone: request.requester_contact_number || "",
+                  travelDate: request.travel_start_date,
+                  destination: request.destination || "",
+                  pickupLocation: request.pickup_location || undefined,
+                  pickupTime: request.pickup_time || undefined,
+                  pickupPreference: request.pickup_preference as 'pickup' | 'self' | 'gymnasium' | undefined,
+                  requestNumber: request.request_number || "",
+                });
+
+                if (smsResult.success) {
+                  // Update SMS tracking fields
+                  await supabase
+                    .from("requests")
+                    .update({
+                      sms_notification_sent: true,
+                      sms_sent_at: now,
+                      driver_contact_number: driver.phone_number,
+                    })
+                    .eq("id", requestId);
+
+                  console.log(`[President Approve] ✅ SMS sent to driver ${driver.name} (${driver.phone_number})`);
+                } else {
+                  console.error(`[President Approve] ❌ Failed to send SMS to driver:`, smsResult.error);
+                }
+              } else if (!driver?.phone_number) {
+                console.warn(`[President Approve] ⚠️ Driver ${driver?.name || request.assigned_driver_id} has no phone number - SMS not sent`);
+              }
+            } catch (smsError: any) {
+              console.error("[President Approve] Error sending SMS to driver:", smsError);
+              // Don't fail the approval if SMS fails
+            }
           }
         }
       } catch (notifError: any) {
@@ -219,6 +435,29 @@ export async function POST(request: Request) {
       return NextResponse.json({
         ok: true,
         message: "Request rejected",
+      });
+
+    } else if (action === "edit_budget") {
+      // Just update the edited budget without changing status
+      const { error: updateError } = await supabase
+        .from("requests")
+        .update({
+          president_edited_budget: editedBudget,
+          president_comments: notes || null,
+          updated_at: getPhilippineTimestamp(),
+        })
+        .eq("id", requestId);
+
+      if (updateError) {
+        console.error("[President Edit Budget] Error:", updateError);
+        return NextResponse.json({ ok: false, error: updateError.message }, { status: 500 });
+      }
+
+      console.log(`[President Edit Budget] 💰 Budget edited for request ${requestId}`);
+      
+      return NextResponse.json({
+        ok: true,
+        message: "Budget updated successfully",
       });
     }
 

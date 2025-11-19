@@ -22,12 +22,39 @@ export default function NotificationBell({
   variant = "light",
   className = "",
 }: Props) {
-  const { tab, setTab, items, unreadCount, markAll, markOne, pushDemo } =
+  const { tab, setTab, items, unreadCount, markAll, markOne, loading } =
     useNotifications();
+  const buttonRef = React.useRef<HTMLButtonElement>(null);
+  const [panelStyle, setPanelStyle] = React.useState<React.CSSProperties>({
+    right: '1.5rem',
+    top: '5.5rem'
+  });
 
   // prefer hook count; fall back to prop if provided
   const badge = typeof count === "number" ? count : unreadCount;
   const isMaroon = variant === "onMaroon";
+
+  // Update panel position when button position changes
+  React.useEffect(() => {
+    const updatePosition = () => {
+      if (buttonRef.current) {
+        const rect = buttonRef.current.getBoundingClientRect();
+        setPanelStyle({
+          right: `${window.innerWidth - rect.right}px`,
+          top: `${rect.bottom + 8}px`
+        });
+      }
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, []);
 
   const btnBase =
     "relative inline-flex h-10 items-center justify-center rounded-xl px-3 transition focus:outline-none focus:ring-2";
@@ -37,20 +64,41 @@ export default function NotificationBell({
 
   return (
     <Popover className={`relative ${className}`}>
-      <Popover.Button aria-label="Open notifications" className={`${btnBase} ${btnTheme}`}>
-        <Bell className="h-5 w-5" />
-        {badge > 0 && (
-          <span
-            className="absolute -right-1 -top-1 flex h-5 min-w-[18px] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold leading-none text-white"
-            style={{ background: BRAND }}
-          >
-            {badge > 99 ? "99+" : badge}
-          </span>
-        )}
-      </Popover.Button>
+      {({ open }) => {
+        // Update position when panel opens
+        React.useEffect(() => {
+          if (open && buttonRef.current) {
+            const rect = buttonRef.current.getBoundingClientRect();
+            setPanelStyle({
+              right: `${window.innerWidth - rect.right}px`,
+              top: `${rect.bottom + 8}px`
+            });
+          }
+        }, [open]);
 
-      {/* Dropdown panel */}
-      <Popover.Panel className="absolute right-0 z-50 mt-2 w-[380px] overflow-hidden rounded-2xl border bg-white text-neutral-900 shadow-2xl">
+        return (
+          <>
+            <Popover.Button 
+              ref={buttonRef}
+              aria-label="Open notifications" 
+              className={`${btnBase} ${btnTheme}`}
+            >
+              <Bell className="h-5 w-5" />
+              {badge > 0 && (
+                <span
+                  className="absolute -right-1 -top-1 flex h-5 min-w-[18px] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold leading-none text-white"
+                  style={{ background: BRAND }}
+                >
+                  {badge > 99 ? "99+" : badge}
+                </span>
+              )}
+            </Popover.Button>
+
+            {/* Dropdown panel - Fixed positioning to appear above everything */}
+            <Popover.Panel 
+              className="fixed z-[9999] w-[380px] overflow-hidden rounded-2xl border bg-white text-neutral-900 shadow-2xl"
+              style={panelStyle}
+            >
         {/* Header */}
         <div className="flex items-center justify-between border-b px-3 py-2">
           <div className="flex gap-2">
@@ -82,22 +130,18 @@ export default function NotificationBell({
             >
               Mark all read
             </button>
-            {/* demo seed — pwede mong tanggalin sa prod */}
-            <button
-              onClick={pushDemo}
-              className="rounded-md px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-100"
-              title="Push demo notification"
-            >
-              + Demo
-            </button>
           </div>
         </div>
 
         {/* List */}
         <div className="max-h-[70vh] overflow-auto p-2">
-          {items.length === 0 ? (
+          {loading ? (
             <div className="py-10 text-center text-sm text-neutral-500">
-              No notifications.
+              Loading notifications...
+            </div>
+          ) : items.length === 0 ? (
+            <div className="py-10 text-center text-sm text-neutral-500">
+              {tab === "unread" ? "No unread notifications" : "No notifications"}
             </div>
           ) : (
             <ul className="space-y-1">
@@ -121,6 +165,9 @@ export default function NotificationBell({
           </a>
         </div>
       </Popover.Panel>
+          </>
+        );
+      }}
     </Popover>
   );
 }

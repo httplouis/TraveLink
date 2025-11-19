@@ -1,8 +1,10 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
-import { X, CheckCircle2 } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { X, CheckCircle2, XCircle, Users, Car, UserCog, MapPin, Calendar, DollarSign, FileText, Edit2, Check } from "lucide-react";
 import { useToast } from "@/components/common/ui/ToastProvider.ui";
+import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
+import { NameWithProfile } from "@/components/common/ProfileHoverCard";
 import ApproverSelectionModal from "@/components/common/ApproverSelectionModal";
 
 interface HRRequestModalProps {
@@ -11,6 +13,11 @@ interface HRRequestModalProps {
   onApproved: (id: string) => void;
   onRejected: (id: string) => void;
   readOnly?: boolean;
+}
+
+function peso(n?: number | null) {
+  if (!n) return "₱0.00";
+  return `₱${Number(n).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 export default function HRRequestModal({
@@ -23,93 +30,140 @@ export default function HRRequestModal({
   const toast = useToast();
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [hasSignature, setHasSignature] = useState(false);
+  const [hrSignature, setHrSignature] = useState<string>(request.hr_signature || "");
+  const [hrProfile, setHrProfile] = useState<any>(null);
+  const [expenseBreakdown, setExpenseBreakdown] = useState<any[]>([]);
+  const [editedExpenses, setEditedExpenses] = useState<any[]>([]);
+  const [editingBudget, setEditingBudget] = useState(false);
+  const [totalCost, setTotalCost] = useState(0);
+  const [preferredDriverName, setPreferredDriverName] = useState<string>("");
+  const [preferredVehicleName, setPreferredVehicleName] = useState<string>("");
   const [showVPSelection, setShowVPSelection] = useState(false);
   const [vpOptions, setVPOptions] = useState<any[]>([]);
   const [selectedApproverId, setSelectedApproverId] = useState<string | null>(null);
   const [selectedApproverRole, setSelectedApproverRole] = useState<string | null>(null);
+  const [defaultApproverId, setDefaultApproverId] = useState<string | undefined>(undefined);
+  const [defaultApproverName, setDefaultApproverName] = useState<string | undefined>(undefined);
+  const [suggestionReason, setSuggestionReason] = useState<string | undefined>(undefined);
 
+  const [fullRequest, setFullRequest] = React.useState<any>(null);
+  const t = fullRequest || request;
+
+  // Load full request details and HR profile
+  const loadFullRequest = async () => {
+    try {
+      const res = await fetch(`/api/requests/${request.id}`);
+      const json = await res.json();
+      
+      if (json.ok && json.data) {
+        setFullRequest(json.data);
+        const req = json.data;
+        
+        // Parse expense_breakdown if it's a string (JSONB from database)
+        let expenseBreakdown = req.expense_breakdown;
+        if (typeof expenseBreakdown === 'string') {
+          try {
+            expenseBreakdown = JSON.parse(expenseBreakdown);
+          } catch (e) {
+            console.error("[HRRequestModal] Failed to parse expense_breakdown:", e);
+            expenseBreakdown = null;
+          }
+        }
+        
+        // Load expense breakdown
+        if (expenseBreakdown && Array.isArray(expenseBreakdown) && expenseBreakdown.length > 0) {
+          console.log("[HRRequestModal] Found expense_breakdown:", expenseBreakdown);
+          setExpenseBreakdown(expenseBreakdown);
+          setEditedExpenses(expenseBreakdown.map((exp: any) => ({
+            item: exp.item || exp.description || "Unknown",
+            amount: exp.amount || 0,
+            description: exp.description || null
+          })));
+          const total = expenseBreakdown.reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0);
+          setTotalCost(total || req.total_budget || 0);
+        } else {
+          console.log("[HRRequestModal] No expense_breakdown found, using total_budget:", req.total_budget);
+          // If no expense breakdown but has total_budget, create a single expense item
+          if (req.total_budget && req.total_budget > 0) {
+            setExpenseBreakdown([{
+              item: "Total Budget",
+              amount: req.total_budget
+            }]);
+            setEditedExpenses([{
+              item: "Total Budget",
+              amount: req.total_budget
+            }]);
+            setTotalCost(req.total_budget);
+          } else {
+            setExpenseBreakdown([]);
+            setEditedExpenses([]);
+            setTotalCost(0);
+          }
+        }
+
+        // Load preferred driver
+        if (req.preferred_driver_id) {
+          try {
+            const driverRes = await fetch(`/api/users/${req.preferred_driver_id}`);
+            const driverData = await driverRes.json();
+            if (driverData.ok && driverData.data) {
+              setPreferredDriverName(driverData.data.name || "Unknown Driver");
+            }
+          } catch (err) {
+            console.error("[HRRequestModal] Failed to load driver:", err);
+          }
+        }
+
+        // Load preferred vehicle
+        if (req.preferred_vehicle_id) {
+          try {
+            const vehicleRes = await fetch(`/api/vehicles/${req.preferred_vehicle_id}`);
+            const vehicleData = await vehicleRes.json();
+            if (vehicleData.ok && vehicleData.data) {
+              setPreferredVehicleName(vehicleData.data.name || vehicleData.data.plate_number || "Unknown Vehicle");
+            }
+          } catch (err) {
+            console.error("[HRRequestModal] Failed to load vehicle:", err);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[HRRequestModal] Error loading full request:", err);
+    }
+  };
+
+  // Load HR profile and full request details
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    async function loadData() {
+      try {
+        // Load current HR info
+        const meRes = await fetch("/api/profile");
+        const meData = await meRes.json();
+        if (meData) {
+          setHrProfile(meData);
+        }
 
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    // Set canvas size
-    canvas.width = canvas.offsetWidth;
-    canvas.height = 150;
-
-    // Set drawing style
-    ctx.strokeStyle = "#000";
-    ctx.lineWidth = 2;
-    ctx.lineCap = "round";
-  }, []);
-
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    setIsDrawing(true);
-    ctx.beginPath();
-    ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
-  };
-
-  const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
-
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
-    ctx.stroke();
-    setHasSignature(true);
-  };
-
-  const stopDrawing = () => {
-    setIsDrawing(false);
-  };
-
-  const clearSignature = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    setHasSignature(false);
-  };
-
-  const getSignatureData = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return "";
-    return canvas.toDataURL();
-  };
+        // Load full request details (includes all approver data and signatures)
+        await loadFullRequest();
+      } catch (err) {
+        console.error("[HRRequestModal] Error loading data:", err);
+      }
+    }
+    loadData();
+  }, [request.id]);
 
   const handleApprove = async () => {
-    if (!hasSignature) {
+    if (!hrSignature) {
       toast({ message: "Please provide your signature", kind: "error" });
       return;
     }
 
-    // Validate notes
     if (!notes.trim() || notes.trim().length < 10) {
       toast({ message: "Notes are required and must be at least 10 characters long", kind: "error" });
       return;
     }
 
-    // Fetch VPs and Presidents for selection (messenger-style)
+    // Fetch VPs and Presidents for selection
     try {
       const [vpsRes, presidentsRes] = await Promise.all([
         fetch("/api/approvers/list?role=vp"),
@@ -137,7 +191,47 @@ export default function HRRequestModal({
         })));
       }
       
+      // Smart suggestion logic
       if (options.length > 0) {
+        try {
+          const { suggestNextApprover, findSuggestedApprover } = await import('@/lib/workflow/suggest-next-approver');
+          const suggestion = suggestNextApprover({
+            status: request.status,
+            requester_is_head: request.requester_is_head || false,
+            requester_role: request.requester?.role || request.requester_role,
+            has_budget: (request.total_budget || 0) > 0,
+            head_included: request.head_included || false,
+            parent_head_approved_at: request.parent_head_approved_at,
+            parent_head_approver: request.parent_head_approver,
+            requester_signature: request.requester_signature,
+            head_approved_at: request.head_approved_at,
+            admin_approved_at: request.admin_approved_at,
+            comptroller_approved_at: request.comptroller_approved_at,
+            hr_approved_at: request.hr_approved_at,
+            vp_approved_at: request.vp_approved_at,
+            vp2_approved_at: request.vp2_approved_at,
+            both_vps_approved: request.both_vps_approved || false
+          });
+          
+          let suggestionReasonText = '';
+          
+          if (suggestion) {
+            const suggested = findSuggestedApprover(suggestion, options);
+            if (suggested) {
+              setDefaultApproverId(suggested.id);
+              setDefaultApproverName(suggested.name);
+              suggestionReasonText = suggestion.reason;
+              console.log("[HRRequestModal] ✅ Smart suggestion:", suggestion.roleLabel, "-", suggestion.reason);
+            } else {
+              console.log("[HRRequestModal] ⚠️ Suggestion not found in options:", suggestion.roleLabel);
+            }
+          }
+          
+          setSuggestionReason(suggestionReasonText);
+        } catch (err) {
+          console.error("[HRRequestModal] Error in smart suggestion:", err);
+        }
+        
         setVPOptions(options);
         setShowVPSelection(true);
         return;
@@ -146,21 +240,20 @@ export default function HRRequestModal({
       console.error("[HR] Error fetching approvers:", err);
     }
 
-    // If no approvers found or error, proceed with default
+    // If no approvers found, proceed with default
     proceedWithApproval(null);
   };
 
   const proceedWithApproval = async (selectedApproverId: string | null = null, selectedRole: string | null = null) => {
     setSubmitting(true);
     try {
-      const signatureData = getSignatureData();
       const res = await fetch("/api/hr/action", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           requestId: request.id,
           action: "approve",
-          signature: signatureData,
+          signature: hrSignature,
           notes: notes.trim(),
           next_vp_id: selectedApproverId && (selectedRole === 'vp' || !selectedRole) ? selectedApproverId : null,
           next_president_id: selectedApproverId && selectedRole === 'president' ? selectedApproverId : null,
@@ -170,10 +263,11 @@ export default function HRRequestModal({
 
       const data = await res.json();
       if (data.ok) {
-        toast({ message: "✅ Request approved and sent to VP for approval", kind: "success" });
+        toast({ message: data.message || "Request approved successfully", kind: "success" });
         setShowVPSelection(false);
         setTimeout(() => {
           onApproved(request.id);
+          onClose();
         }, 1500);
       } else {
         toast({ message: data.error || "Failed to approve request", kind: "error" });
@@ -205,589 +299,905 @@ export default function HRRequestModal({
 
       const data = await res.json();
       if (data.ok) {
-        console.log("[HR Reject] Showing info toast...");
-        toast({ message: "❌ Request rejected and returned to user", kind: "info" });
-        // Delay to show toast before closing
-        console.log("[HR Reject] Closing modal in 1500ms...");
+        toast({ message: "Request rejected", kind: "info" });
         setTimeout(() => {
-          console.log("[HR Reject] Closing modal now");
           onRejected(request.id);
+          onClose();
         }, 1500);
       } else {
         toast({ message: data.error || "Failed to reject request", kind: "error" });
       }
     } catch (err) {
-      toast({ message: "Failed to reject request. Please try again.", kind: "error" });
+      toast({ message: "An error occurred", kind: "error" });
     } finally {
       setSubmitting(false);
     }
   };
 
-  // Debug logging
-  console.log("HR Modal - Full Request Data:", request);
-  console.log("HR Modal - Department Object:", request.department);
-  console.log("HR Modal - Department ID:", request.department_id);
-  console.log("HR Modal - Requester:", request.requester);
-  
-  // For representative submissions, prioritize requester_name (the actual person traveling)
-  const requester = request.requester_name || request.requester?.name || "Unknown";
-  const department = request.department?.name || request.department?.code || request.requester?.department || "Not specified";
-  const participants = request.participants || [];
-  const expenseBreakdown = request.expense_breakdown || [];
-  
-  // Check if submitted by representative
   const isRepresentative = request.is_representative_submission || request.is_representative;
   const submittedBy = request.submitted_by_name || null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full my-8">
-        {/* Header */}
-        <div className="sticky top-0 bg-[#7A0010] text-white px-6 py-4 flex items-center justify-between rounded-t-xl z-10">
-          <div>
-            <h2 className="text-xl font-bold">{request.request_number}</h2>
-            <p className="text-sm opacity-90">HR Approval Required</p>
-          </div>
-          <button
-            onClick={onClose}
-            className="hover:bg-white/20 p-2 rounded transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="p-6 space-y-6 max-h-[calc(90vh-200px)] overflow-y-auto">
-          {/* Date Submitted */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <label className="text-xs font-medium text-blue-700">Date Submitted</label>
-            <p className="text-sm font-semibold text-blue-900">
-              {request.created_at ? new Date(request.created_at).toLocaleString() : "—"}
-            </p>
-          </div>
-
-          {/* Requester Info */}
-          <div className="bg-gray-50 rounded-lg p-4">
-            <h3 className="text-sm font-bold text-gray-700 mb-3">Requesting Person</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs font-medium text-gray-500">Name</label>
-                <p className="text-sm font-semibold">{requester}</p>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-500">Department</label>
-                <p className="text-sm font-semibold">{department}</p>
-              </div>
-              {isRepresentative && submittedBy && (
-                <div className="col-span-2 bg-blue-50 border border-blue-200 rounded p-2">
-                  <label className="text-xs font-medium text-blue-700">Submitted on behalf by:</label>
-                  <p className="text-sm font-semibold text-blue-900">{submittedBy}</p>
-                </div>
-              )}
-              <div className="col-span-2">
-                <label className="text-xs font-medium text-gray-500">Email</label>
-                <p className="text-sm">{request.requester?.email || "—"}</p>
-              </div>
-              {request.requester_signature && (
-                <div className="col-span-2">
-                  <label className="text-xs font-medium text-gray-500">Requester Digital Signature</label>
-                  <div className="mt-2 border rounded p-2 bg-white">
-                    <img
-                      src={request.requester_signature}
-                      alt="Requester Signature"
-                      className="max-h-24"
-                    />
-                  </div>
-                </div>
+    <>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 pt-20 pb-8">
+        <div className="relative w-full max-w-5xl max-h-[85vh] rounded-3xl bg-white shadow-2xl transform transition-all duration-300 scale-100 flex flex-col overflow-hidden">
+          {/* Header */}
+          <div className="flex items-center justify-between border-b bg-[#7A0010] px-6 py-4 rounded-t-3xl flex-shrink-0">
+            <div>
+              <h2 className="text-lg font-semibold text-white">
+                HR Review
+              </h2>
+              {t.request_number && (
+                <p className="text-sm text-white/80 font-mono">
+                  {t.request_number}
+                </p>
               )}
             </div>
-          </div>
-
-          {/* Travel Details */}
-          <div className="bg-gray-50 rounded-lg p-4">
-            <h3 className="text-sm font-bold text-gray-700 mb-3">Travel Details</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="col-span-2">
-                <label className="text-xs font-medium text-gray-500">Purpose</label>
-                <p className="text-sm">{request.purpose}</p>
-              </div>
-              <div className="col-span-2">
-                <label className="text-xs font-medium text-gray-500">Destination</label>
-                <p className="text-sm font-semibold">{request.destination}</p>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-500">Start Date</label>
-                <p className="text-sm">
-                  {request.travel_start_date
-                    ? new Date(request.travel_start_date).toLocaleString()
-                    : "—"}
-                </p>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-500">End Date</label>
-                <p className="text-sm">
-                  {request.travel_end_date
-                    ? new Date(request.travel_end_date).toLocaleString()
-                    : "—"}
-                </p>
-              </div>
+            <div className="flex items-center gap-3">
+              <span className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 ${
+                t.status === 'pending_hr' ? 'bg-amber-100 text-amber-700' :
+                t.status === 'approved' ? 'bg-green-100 text-green-700' :
+                t.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                'bg-slate-100 text-slate-700'
+              }`}>
+                {t.status === 'pending_hr' ? 'Pending Review' :
+                 t.status === 'approved' ? 'Approved' :
+                 t.status === 'rejected' ? 'Rejected' :
+                 t.status || 'Pending'}
+              </span>
+              <button
+                onClick={onClose}
+                className="rounded-full p-1 text-white/80 hover:bg-white/10 transition-colors"
+              >
+                <X className="h-6 w-6" />
+              </button>
             </div>
           </div>
 
-          {/* Participants */}
-          {participants.length > 0 && (
-            <div className="bg-gray-50 rounded-lg p-4">
-              <h3 className="text-sm font-bold text-gray-700 mb-3">
-                Participants ({participants.length})
-              </h3>
-              <div className="space-y-2">
-                {participants.map((p: any, i: number) => (
-                  <div key={i} className="text-sm bg-white p-2 rounded">
-                    <span className="font-medium">{p.name}</span>
-                    {p.role && <span className="text-gray-500"> • {p.role}</span>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Budget Information */}
-          {request.has_budget && (
-            <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
-              <h3 className="text-sm font-bold text-blue-700 mb-3">Budget Information</h3>
-              <div className="mb-3">
-                <label className="text-xs font-medium text-blue-600">Total Budget</label>
-                <p className="text-2xl font-bold text-blue-900">
-                  ₱{request.total_budget?.toLocaleString() || "0"}
+          {/* Body - Same structure as VPRequestModal */}
+          <div className="grid gap-8 px-6 py-6 lg:grid-cols-[1.1fr_0.9fr] overflow-y-auto flex-1">
+            {/* LEFT - Same sections as VPRequestModal */}
+            <div className="space-y-5">
+              {/* Requester Information */}
+              <section className="rounded-lg bg-white p-5 border border-slate-200 shadow-sm">
+                <p className="text-xs font-medium uppercase tracking-wider text-slate-500 mb-3">
+                  Requesting Person
                 </p>
-              </div>
-
-              {/* Expense Breakdown */}
-              {expenseBreakdown.length > 0 && (
-                <div className="mt-3">
-                  <label className="text-xs font-medium text-blue-600 block mb-2">
-                    Expense Breakdown
-                  </label>
-                  <div className="space-y-1">
-                    {expenseBreakdown.map((expense: any, i: number) => (
-                      <div
-                        key={i}
-                        className="flex justify-between items-center bg-white p-2 rounded text-sm"
-                      >
-                        <div>
-                          <span className="font-medium">{expense.item}</span>
-                          {expense.description && (
-                            <span className="text-gray-500 text-xs ml-2">
-                              ({expense.description})
-                            </span>
-                          )}
+                
+                {isRepresentative && submittedBy ? (
+                  <div className="space-y-3">
+                    <div className="flex items-start gap-3">
+                      {(t.requester?.profile_picture || t.requester?.avatar_url) ? (
+                        <img 
+                          src={t.requester.profile_picture || t.requester.avatar_url} 
+                          alt={t.requester_name || "Requester"}
+                          className="h-12 w-12 rounded-full object-cover border-2 border-slate-200 flex-shrink-0"
+                        />
+                      ) : (
+                        <div className="h-12 w-12 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
+                          {(t.requester_name || "U").charAt(0).toUpperCase()}
                         </div>
-                        <span className="font-semibold text-blue-900">
-                          ₱{expense.amount?.toLocaleString() || "0"}
-                        </span>
+                      )}
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className="text-base font-semibold text-slate-900">
+                            <NameWithProfile
+                              name={t.requester_name || t.requester?.name || "Unknown Requester"}
+                              profile={{
+                                id: t.requester?.id || '',
+                                name: t.requester_name || t.requester?.name || '',
+                                email: t.requester?.email,
+                                department: t.department?.name || t.department?.code,
+                                position: t.requester?.position_title,
+                                profile_picture: t.requester?.profile_picture,
+                              }}
+                            />
+                          </p>
+                          <span className="text-[10px] font-medium uppercase tracking-wider text-slate-500 bg-slate-50 px-2 py-1 rounded border border-slate-200">
+                            On behalf
+                          </span>
+                        </div>
+                        <p className="text-sm text-slate-600">
+                          {t.department?.name || t.department?.code || "No department indicated"}
+                        </p>
                       </div>
-                    ))}
+                    </div>
+                    <div className="pl-[64px] border-l-2 border-slate-200 ml-3 pt-2">
+                      <p className="text-xs text-slate-500 mb-1.5 font-medium">Submitted by</p>
+                      <div className="flex items-center gap-2">
+                        <div className="h-8 w-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 text-xs font-bold">
+                          {submittedBy.charAt(0).toUpperCase()}
+                        </div>
+                        <p className="text-sm font-medium text-slate-900">{submittedBy}</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-3">
+                    {(t.requester?.profile_picture || t.requester?.avatar_url) ? (
+                      <img 
+                        src={t.requester.profile_picture || t.requester.avatar_url} 
+                        alt={t.requester_name || "Requester"}
+                        className="h-12 w-12 rounded-full object-cover border-2 border-slate-200 flex-shrink-0"
+                      />
+                    ) : (
+                      <div className="h-12 w-12 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
+                        {(t.requester_name || "U").charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div className="flex-1">
+                      <p className="text-base font-semibold text-slate-900 mb-1">
+                        <NameWithProfile
+                          name={t.requester_name || t.requester?.name || t.requester?.email || "Unknown Requester"}
+                          profile={{
+                            id: t.requester?.id || '',
+                            name: t.requester_name || t.requester?.name || '',
+                            email: t.requester?.email,
+                            department: t.department?.name || t.department?.code,
+                            position: t.requester?.position_title,
+                            profile_picture: t.requester?.profile_picture,
+                          }}
+                        />
+                      </p>
+                      <p className="text-sm text-slate-600">
+                        {t.department?.name || t.department?.code || "No department indicated"}
+                      </p>
+                      {t.requester?.position_title && (
+                        <p className="text-xs text-slate-500 mt-0.5">{t.requester.position_title}</p>
+                      )}
+                      {t.requester?.role && (
+                        <p className="text-xs text-slate-500 mt-0.5">Role: {t.requester.role}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+                
+                {t.created_at && (
+                  <div className="mt-4 pt-4 border-t border-slate-100">
+                    <p className="text-xs text-slate-500 flex items-center gap-1.5">
+                      <Calendar className="h-3.5 w-3.5" />
+                      Submitted {new Date(t.created_at).toLocaleString('en-US', { 
+                        year: 'numeric', 
+                        month: 'short', 
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: true,
+                        timeZone: 'Asia/Manila'
+                      })}
+                    </p>
+                  </div>
+                )}
+              </section>
+
+              {/* Service Preferences - Same as VPRequestModal */}
+              <section className="rounded-lg bg-white p-5 border border-slate-200 shadow-sm">
+                <p className="text-xs font-medium uppercase tracking-wider text-slate-500 mb-3">
+                  Service Preferences
+                </p>
+                
+                {(t.preferred_driver_id || t.preferred_vehicle_id) ? (
+                  <div className="space-y-3">
+                    {t.preferred_driver_id ? (
+                      <div className="flex items-start gap-3 pb-3 border-b border-slate-100">
+                        <div className="h-9 w-9 rounded-lg bg-slate-50 flex items-center justify-center flex-shrink-0">
+                          <UserCog className="h-5 w-5 text-slate-500" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs text-slate-500 mb-1">Preferred Driver</p>
+                          <p className="text-sm font-medium text-slate-900">
+                            {preferredDriverName || "Loading..."}
+                          </p>
+                        </div>
+                      </div>
+                    ) : null}
+                    
+                    {t.preferred_vehicle_id ? (
+                      <div className="flex items-start gap-3">
+                        <div className="h-9 w-9 rounded-lg bg-slate-50 flex items-center justify-center flex-shrink-0">
+                          <Car className="h-5 w-5 text-slate-500" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs text-slate-500 mb-1">Preferred Vehicle</p>
+                          <p className="text-sm font-medium text-slate-900">
+                            {preferredVehicleName || "Loading..."}
+                          </p>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="text-center py-6">
+                    <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-slate-50 mb-3">
+                      <Car className="h-6 w-6 text-slate-400" />
+                    </div>
+                    <p className="text-sm text-slate-600">No driver or vehicle preferences</p>
+                    <p className="text-xs text-slate-500 mt-1">Admin will assign resources</p>
+                  </div>
+                )}
+              </section>
+
+              {/* Request Details Grid - Same as VPRequestModal */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <section className="rounded-lg bg-blue-50/50 border border-blue-100 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-600 flex items-center gap-1.5 mb-2">
+                    <FileText className="h-4 w-4" />
+                    Purpose
+                  </p>
+                  <p className="text-sm text-slate-800 font-medium">
+                    {t.purpose || "No purpose indicated"}
+                  </p>
+                </section>
+                <section className="rounded-lg bg-green-50/50 border border-green-100 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-green-600 flex items-center gap-1.5 mb-2">
+                    <Calendar className="h-4 w-4" />
+                    Travel Dates
+                  </p>
+                  <p className="text-sm text-slate-800 font-medium">
+                    {t.travel_start_date && t.travel_end_date
+                      ? `${new Date(t.travel_start_date).toLocaleDateString()} – ${new Date(t.travel_end_date).toLocaleDateString()}`
+                      : "—"}
+                  </p>
+                </section>
+                <section className="rounded-lg bg-amber-50/50 border border-amber-100 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-600 flex items-center gap-1.5 mb-2">
+                    <DollarSign className="h-4 w-4" />
+                    Budget
+                  </p>
+                  <p className="text-lg font-bold text-[#7A0010]">
+                    {peso(totalCost || t.total_budget)}
+                  </p>
+                </section>
+              </div>
+
+              {/* Transportation Mode - Same as VPRequestModal */}
+              <section className="rounded-lg p-4 border-2 shadow-sm" style={{
+                backgroundColor: (t as any).vehicle_mode === 'owned' ? '#f0fdf4' : (t as any).vehicle_mode === 'rent' ? '#fefce8' : '#eff6ff',
+                borderColor: (t as any).vehicle_mode === 'owned' ? '#86efac' : (t as any).vehicle_mode === 'rent' ? '#fde047' : '#93c5fd'
+              }}>
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-full flex items-center justify-center" style={{
+                    backgroundColor: (t as any).vehicle_mode === 'owned' ? '#d1fae5' : (t as any).vehicle_mode === 'rent' ? '#fef3c7' : '#dbeafe'
+                  }}>
+                    <Car className="h-5 w-5" style={{
+                      color: (t as any).vehicle_mode === 'owned' ? '#059669' : (t as any).vehicle_mode === 'rent' ? '#d97706' : '#2563eb'
+                    }} />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{
+                      color: (t as any).vehicle_mode === 'owned' ? '#059669' : (t as any).vehicle_mode === 'rent' ? '#d97706' : '#2563eb'
+                    }}>
+                      Transportation Mode
+                    </div>
+                    <div className="text-sm font-bold text-gray-900">
+                      {(t as any).vehicle_mode === 'owned' && 'Personal Vehicle (Owned)'}
+                      {(t as any).vehicle_mode === 'institutional' && 'University Vehicle'}
+                      {(t as any).vehicle_mode === 'rent' && 'Rental Vehicle'}
+                      {!(t as any).vehicle_mode && (t.vehicle_type || 'Not specified')}
+                    </div>
                   </div>
                 </div>
-              )}
+              </section>
 
-              {/* Comptroller Approval */}
-              {request.comptroller_approved_at && (
-                <div className="mt-3 p-2 bg-green-100 rounded">
-                  <p className="text-xs text-green-700 font-medium">
-                    ✓ Budget Approved by Comptroller
+              {/* Destination - Same as VPRequestModal */}
+              <section className="rounded-lg bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <MapPin className="h-5 w-5 text-blue-600" />
+                  <p className="text-xs font-bold uppercase tracking-wide text-blue-700">
+                    Destination
                   </p>
-                  <p className="text-xs text-green-600">
-                    {new Date(request.comptroller_approved_at).toLocaleString()}
+                </div>
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-sm font-semibold text-slate-900 flex-1">
+                    {t.destination || "No destination provided."}
                   </p>
-                  {request.comptroller_comments && (
-                    <p className="text-xs text-gray-600 mt-1">
-                      Note: {request.comptroller_comments}
-                    </p>
+                  {t.destination && (
+                    <button
+                      onClick={() => {
+                        const encodedDest = encodeURIComponent(t.destination);
+                        window.open(`https://www.google.com/maps/search/?api=1&query=${encodedDest}`, '_blank');
+                      }}
+                      className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors shadow-sm"
+                      title="View on Google Maps"
+                    >
+                      <MapPin className="h-4 w-4" />
+                      View Map
+                    </button>
                   )}
                 </div>
+              </section>
+
+              {/* Participants - Same as VPRequestModal */}
+              {t.participants && Array.isArray(t.participants) && t.participants.length > 0 && (
+                <section className="rounded-lg bg-gradient-to-br from-purple-50 to-pink-50 border-2 border-purple-200 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Users className="h-5 w-5 text-purple-600" />
+                    <p className="text-xs font-bold uppercase tracking-wide text-purple-700">
+                      Travel Participants ({t.participants.length})
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    {t.participants.map((participant: any, idx: number) => {
+                      const participantName = typeof participant === 'string' 
+                        ? participant 
+                        : participant?.name || participant?.id || `Participant ${idx + 1}`;
+                      return (
+                        <div key={idx} className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-purple-100">
+                          <div className="h-8 w-8 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
+                            <span className="text-xs font-bold text-purple-700">
+                              {participantName.charAt(0).toUpperCase()}
+                            </span>
+                          </div>
+                          <span className="text-sm font-medium text-slate-900">{participantName}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {t.head_included && (
+                    <div className="mt-3 pt-3 border-t border-purple-200">
+                      <p className="text-xs text-purple-700 font-medium flex items-center gap-1.5">
+                        <CheckCircle2 className="h-4 w-4" />
+                        Department Head is included in travel
+                      </p>
+                    </div>
+                  )}
+                </section>
               )}
-            </div>
-          )}
 
-          {/* Vehicle & Driver Assignment */}
-          {request.needs_vehicle && (
-            <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
-              <h3 className="text-sm font-bold text-blue-700 mb-3 flex items-center gap-2">
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                </svg>
-                Vehicle & Driver Assignment
-              </h3>
-
-              {/* Transportation Mode */}
-              <div className="bg-white rounded p-3 mb-3">
-                <label className="text-xs font-medium text-blue-600">TRANSPORTATION MODE</label>
-                <p className="text-sm font-semibold">
-                  {request.vehicle_mode === "owned"
-                    ? "University Vehicle (School Service)"
-                    : request.vehicle_mode === "rental"
-                    ? "Rental Vehicle"
-                    : "Personal Vehicle"}
+              {/* Requester Signature - Same as VPRequestModal */}
+              <section className="rounded-lg bg-slate-50 border border-slate-200 p-4">
+                <p className="text-xs font-semibold uppercase text-slate-700 mb-3">
+                  Requester's Signature
                 </p>
-              </div>
-
-              {/* Service Preferences */}
-              {(request.preferred_driver_id || request.preferred_vehicle_id) && (
-                <div className="bg-blue-100 border border-blue-300 rounded p-3 mb-3">
-                  <label className="text-xs font-medium text-blue-700 flex items-center gap-1">
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                    </svg>
-                    SERVICE PREFERENCES - Requester's Choice
-                  </label>
-                  <p className="text-xs text-blue-600 italic">
-                    Suggestions from requester (Admin will make final assignment)
-                  </p>
-                  <div className="grid grid-cols-2 gap-3 mt-2">
-                    {request.preferred_driver_id && (
-                      <div className="bg-white rounded p-2">
-                        <label className="text-xs font-medium text-gray-500">Preferred Driver</label>
-                        <p className="text-sm font-semibold">
-                          {request.preferred_driver?.name || "—"}
-                        </p>
-                      </div>
-                    )}
-                    {request.preferred_vehicle_id && (
-                      <div className="bg-white rounded p-2">
-                        <label className="text-xs font-medium text-gray-500">Preferred Vehicle</label>
-                        <p className="text-sm font-semibold">
-                          {request.preferred_vehicle?.vehicle_name || request.preferred_vehicle?.plate_number || "—"}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Assigned Driver & Vehicle */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-white rounded p-3 border">
-                  <label className="text-xs font-medium text-gray-500">Assigned Driver</label>
-                  <p className="text-sm font-semibold">
-                    {request.assigned_driver_id ? "Driver Assigned" : "— Select Driver —"}
-                  </p>
-                </div>
-                <div className="bg-white rounded p-3 border">
-                  <label className="text-xs font-medium text-gray-500">Assigned Vehicle</label>
-                  <p className="text-sm font-semibold">
-                    {request.assigned_vehicle_id ? "Vehicle Assigned" : "— Select Vehicle —"}
-                  </p>
-                </div>
-              </div>
-
-              {request.needs_rental && (
-                <div className="mt-3 bg-yellow-50 border border-yellow-200 rounded p-2">
-                  <p className="text-xs text-yellow-800 font-medium">
-                    ⚠ Rental vehicle required
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Department Head Endorsement */}
-          {request.head_approved_at && (
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-              <h3 className="text-sm font-bold text-green-700 mb-3 flex items-center gap-2">
-                <span className="w-4 h-4 bg-green-500 rounded-full flex items-center justify-center">
-                  <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                  </svg>
-                </span>
-                Department Head Endorsement
-              </h3>
-              {request.head_signature && (
-                <div className="bg-white border rounded p-3 mb-2">
-                  <img
-                    src={request.head_signature}
-                    alt="Head Signature"
-                    className="max-h-20"
-                  />
-                </div>
-              )}
-              <p className="text-sm text-green-800">
-                <span className="font-medium">
-                  {request.head_approver?.name || "Department Head"}
-                </span>
-                <br />
-                <span className="text-xs">
-                  Dept. Head, {department}
-                </span>
-                <br />
-                <span className="text-xs">
-                  {new Date(request.head_approved_at).toLocaleDateString()}
-                </span>
-              </p>
-              {request.head_comments && (
-                <p className="text-xs text-gray-600 mt-2 italic">
-                  Note: {request.head_comments}
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Admin Notes */}
-          {request.admin_notes && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-              <h3 className="text-sm font-bold text-yellow-700 mb-2">Admin Notes</h3>
-              <p className="text-sm text-gray-700">{request.admin_notes}</p>
-              {request.admin_approved_at && (
-                <p className="text-xs text-gray-500 mt-2">
-                  Processed on {new Date(request.admin_approved_at).toLocaleString()}
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Approval History */}
-          <div className="bg-gray-50 rounded-lg p-4">
-            <h3 className="text-sm font-bold text-gray-700 mb-3">Submission History</h3>
-            <div className="space-y-3">
-              <div className="flex items-start gap-3 text-sm">
-                <span className="w-2 h-2 bg-blue-500 rounded-full mt-1.5"></span>
-                <div className="flex-1">
-                  <p className="font-medium">Request Submitted</p>
-                  <p className="text-xs text-gray-500">
-                    by {submittedBy || requester}
-                    <br />
-                    {request.created_at ? new Date(request.created_at).toLocaleString() : "—"}
-                  </p>
-                </div>
-              </div>
-
-              {request.head_approved_at && (
-                <div className="flex items-start gap-3 text-sm">
-                  <span className="w-2 h-2 bg-green-500 rounded-full mt-1.5"></span>
-                  <div className="flex-1">
-                    <p className="font-medium text-green-700">Head Approved</p>
-                    <p className="text-xs text-gray-500">
-                      by {request.head_approver?.name || "Department Head"}
-                      <br />
-                      {new Date(request.head_approved_at).toLocaleString()}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {request.admin_approved_at && (
-                <div className="flex items-start gap-3 text-sm">
-                  <span className="w-2 h-2 bg-green-500 rounded-full mt-1.5"></span>
-                  <div className="flex-1">
-                    <p className="font-medium text-green-700">Admin Processed</p>
-                    <p className="text-xs text-gray-500">
-                      by {request.admin_approver?.name || "Admin"}
-                      <br />
-                      {new Date(request.admin_approved_at).toLocaleString()}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {request.comptroller_approved_at && (
-                <div className="flex items-start gap-3 text-sm">
-                  <span className="w-2 h-2 bg-green-500 rounded-full mt-1.5"></span>
-                  <div className="flex-1">
-                    <p className="font-medium text-green-700">Comptroller Approved</p>
-                    <p className="text-xs text-gray-500">
-                      Budget approved
-                      <br />
-                      {new Date(request.comptroller_approved_at).toLocaleString()}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {request.hr_approved_at && (
-                <div className="flex items-start gap-3 text-sm">
-                  <span className="w-2 h-2 bg-green-500 rounded-full mt-1.5"></span>
-                  <div className="flex-1">
-                    <p className="font-medium text-green-700">HR Approved</p>
-                    <p className="text-xs text-gray-500">
-                      by {request.hr_approver?.name || "HR"}
-                      <br />
-                      {new Date(request.hr_approved_at).toLocaleString()}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {!request.hr_approved_at && !request.rejected_at && (
-                <div className="flex items-start gap-3 text-sm">
-                  <span className="w-2 h-2 bg-yellow-500 rounded-full mt-1.5 animate-pulse"></span>
-                  <div className="flex-1">
-                    <p className="font-bold text-[#7A0010]">Pending HR Approval</p>
-                    <p className="text-xs text-gray-500">Awaiting your action</p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* HR Approval Section - Show if already approved/rejected */}
-          {readOnly && request.hr_approved_at ? (
-            <div className="bg-green-50 border-2 border-green-200 rounded-lg p-6">
-              <h3 className="text-lg font-bold text-green-700 mb-4 flex items-center gap-2">
-                <CheckCircle2 className="h-6 w-6" />
-                HR Approved
-              </h3>
-              
-              {request.hr_signature && (
-                <div className="mb-4">
-                  <label className="text-sm font-medium text-gray-700 block mb-2">HR Digital Signature</label>
-                  <div className="border-2 border-gray-200 rounded-lg p-4 bg-white">
+                {(t.requester_signature) ? (
+                  <div className="bg-white rounded-lg border border-slate-200 p-4">
                     <img
-                      src={request.hr_signature}
-                      alt="HR Signature"
-                      className="max-h-32 mx-auto"
+                      src={t.requester_signature}
+                      alt="Requester signature"
+                      className="h-[100px] w-full object-contain"
+                    />
+                    <p className="text-center text-xs text-slate-600 mt-2 font-medium">
+                      Signed by: {t.requester_name || "Requester"}
+                    </p>
+                    {t.requester_signed_at && (
+                      <p className="text-center text-xs text-slate-500 mt-1">
+                        {new Date(t.requester_signed_at).toLocaleString('en-US', { 
+                          year: 'numeric', 
+                          month: 'short', 
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: true,
+                          timeZone: 'Asia/Manila'
+                        })}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center gap-2 text-sm text-slate-600 bg-white rounded-lg border border-slate-200 p-4">
+                    <FileText className="h-4 w-4" />
+                    <span>No signature provided by requester</span>
+                  </div>
+                )}
+              </section>
+
+              {/* Previous Approvals - Show ALL signatures from all approvers */}
+              <section className="rounded-lg bg-slate-50 border border-slate-200 p-4">
+                <p className="text-xs font-semibold uppercase text-slate-700 mb-3">
+                  Previous Approvals
+                </p>
+                <div className="space-y-3">
+                  {/* Check for BOTH direct head approval AND parent head approval (SVP, etc.) */}
+                  {/* Also check VP approval if VP is also a head (dual role) */}
+                  {(() => {
+                    const headApprover = t.head_approver;
+                    const parentHeadApprover = t.parent_head_approver;
+                    const vpApprover = t.vp_approver;
+                    const hasHeadApproval = !!(t.head_approved_at || t.head_approved_by);
+                    const hasParentHeadApproval = !!(t.parent_head_approved_at || t.parent_head_approved_by);
+                    const hasVpApproval = !!(t.vp_approved_at || t.vp_approved_by);
+                    const vpIsHead = vpApprover?.is_head === true;
+                    
+                    // Priority: parent head > direct head > VP (if VP is head)
+                    const approverToUse = hasParentHeadApproval ? parentHeadApprover 
+                      : hasHeadApproval ? headApprover 
+                      : (hasVpApproval && vpIsHead) ? vpApprover 
+                      : null;
+                    const hasAnyHeadApproval = hasHeadApproval || hasParentHeadApproval || (hasVpApproval && vpIsHead);
+                    
+                    // Get signature - priority: parent_head_signature > head_signature > vp_signature (if VP is head)
+                    let signature: string | null = null;
+                    if (t.parent_head_signature) {
+                      signature = t.parent_head_signature;
+                    } else if (t.head_signature) {
+                      signature = t.head_signature;
+                    } else if (hasVpApproval && vpIsHead && t.vp_signature) {
+                      signature = t.vp_signature;
+                    }
+                    
+                    // Get approval date
+                    const approvalDate = t.parent_head_approved_at || t.head_approved_at || (hasVpApproval && vpIsHead ? t.vp_approved_at : null);
+                    const approverDept = approverToUse?.department?.name || approverToUse?.department_name || "";
+                    
+                    return hasAnyHeadApproval ? (
+                      <div className="bg-white rounded-lg border border-slate-200 p-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-sm font-medium text-slate-900">
+                            {hasParentHeadApproval ? "Parent Head Approved" : hasHeadApproval ? "Head Approved" : "VP Approved (as Head)"}
+                          </p>
+                          <span className="text-xs text-green-600 font-medium">
+                            {approvalDate && new Date(approvalDate).toLocaleString('en-US', { 
+                              year: 'numeric', 
+                              month: 'short', 
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              hour12: true,
+                              timeZone: 'Asia/Manila'
+                            })}
+                          </span>
+                        </div>
+                        {approverToUse && (
+                          <p className="text-xs text-slate-600">
+                            By: {approverToUse.name || (hasParentHeadApproval ? "Parent Head" : hasHeadApproval ? "Department Head" : "VP")}
+                            {approverDept ? ` (${approverDept})` : ''}
+                          </p>
+                        )}
+                        {signature && (
+                          <div className="mt-2 pt-2 border-t border-slate-100">
+                            <img
+                              src={signature}
+                              alt="Head signature"
+                              className="h-16 w-full object-contain"
+                            />
+                          </div>
+                        )}
+                        {(t.head_comments || t.parent_head_comments) && (
+                          <div className="mt-2 pt-2 border-t border-slate-100">
+                            <p className="text-xs text-slate-500 mb-1">Comments:</p>
+                            <p className="text-xs text-slate-700">{t.parent_head_comments || t.head_comments}</p>
+                          </div>
+                        )}
+                      </div>
+                    ) : null;
+                  })()}
+
+                  {t.admin_approved_at && (
+                    <div className="bg-white rounded-lg border border-slate-200 p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-sm font-medium text-slate-900">Admin Processed</p>
+                        <span className="text-xs text-green-600 font-medium">
+                          {new Date(t.admin_approved_at).toLocaleString('en-US', { 
+                            year: 'numeric', 
+                            month: 'short', 
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: true,
+                            timeZone: 'Asia/Manila'
+                          })}
+                        </span>
+                      </div>
+                      {t.admin_approved_by && (
+                        <p className="text-xs text-slate-600">
+                          By: {t.admin_approver?.name || "Administrator"}
+                        </p>
+                      )}
+                      {t.admin_signature && (
+                        <div className="mt-2 pt-2 border-t border-slate-100">
+                          <img
+                            src={t.admin_signature}
+                            alt="Admin signature"
+                            className="h-16 w-full object-contain"
+                          />
+                        </div>
+                      )}
+                      {t.admin_comments && (
+                        <div className="mt-2 pt-2 border-t border-slate-100">
+                          <p className="text-xs text-slate-500 mb-1">Comments:</p>
+                          <p className="text-xs text-slate-700">{t.admin_comments}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {t.comptroller_approved_at && (
+                    <div className="bg-white rounded-lg border border-slate-200 p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-sm font-medium text-slate-900">Comptroller Approved</p>
+                        <span className="text-xs text-green-600 font-medium">
+                          {new Date(t.comptroller_approved_at).toLocaleString('en-US', { 
+                            year: 'numeric', 
+                            month: 'short', 
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: true,
+                            timeZone: 'Asia/Manila'
+                          })}
+                        </span>
+                      </div>
+                      {t.comptroller_approved_by && (
+                        <p className="text-xs text-slate-600">
+                          By: {t.comptroller_approver?.name || "Comptroller"}
+                        </p>
+                      )}
+                      {t.comptroller_signature && (
+                        <div className="mt-2 pt-2 border-t border-slate-100">
+                          <img
+                            src={t.comptroller_signature}
+                            alt="Comptroller signature"
+                            className="h-16 w-full object-contain"
+                          />
+                        </div>
+                      )}
+                      {t.comptroller_comments && (
+                        <div className="mt-2 pt-2 border-t border-slate-100">
+                          <p className="text-xs text-slate-500 mb-1">Comments:</p>
+                          <p className="text-xs text-slate-700">{t.comptroller_comments}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {!t.head_approved_at && !t.parent_head_approved_at && !t.vp_approved_at && !t.comptroller_approved_at && !t.admin_approved_at && (
+                    <div className="text-center py-4 text-sm text-slate-500">
+                      No previous approvals yet
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              {/* Budget Breakdown - With Editing Capability */}
+              <section className="rounded-lg bg-slate-50 border-2 border-[#7A0010] p-4 shadow-lg">
+                <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-200">
+                  <div className="flex items-center gap-2">
+                    <DollarSign className="h-5 w-5 text-slate-700" />
+                    <h3 className="text-sm font-semibold text-slate-900">Budget Breakdown</h3>
+                  </div>
+                  {!editingBudget && !readOnly && (
+                    <button
+                      onClick={() => setEditingBudget(true)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-[#7A0010] text-white hover:bg-[#5e000d] rounded-lg transition-colors text-xs font-semibold shadow-sm"
+                    >
+                      <Edit2 className="h-4 w-4" />
+                      Edit Budget
+                    </button>
+                  )}
+                </div>
+
+                {editedExpenses.length > 0 ? (
+                  <>
+                    <div className="space-y-2 mb-3">
+                      {editedExpenses.map((expense: any, index: number) => {
+                        const label = expense.item === "Other" && expense.description 
+                          ? expense.description 
+                          : expense.item || expense.description;
+                        
+                        return expense.amount > 0 && (
+                          <div key={index} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
+                            <span className="text-sm text-slate-600">{label}</span>
+                            {editingBudget ? (
+                              <input
+                                type="number"
+                                value={expense.amount}
+                                onChange={(e) => {
+                                  const amount = parseFloat(e.target.value) || 0;
+                                  setEditedExpenses(prev => {
+                                    const updated = [...prev];
+                                    updated[index] = { ...updated[index], amount };
+                                    return updated;
+                                  });
+                                }}
+                                className="w-32 px-3 py-1.5 border-2 border-[#7A0010]/20 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] text-sm"
+                              />
+                            ) : (
+                              <span className="text-sm font-semibold text-slate-900">{peso(expense.amount)}</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    
+                    <div className="pt-3 border-t-2 border-slate-300">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-bold text-slate-900">TOTAL BUDGET</span>
+                        <div className="text-right">
+                          {(() => {
+                            const calculatedTotal = editedExpenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
+                            const originalTotal = expenseBreakdown.reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0) || totalCost;
+                            return calculatedTotal !== originalTotal ? (
+                              <>
+                                <div className="text-sm text-slate-500 line-through mb-1">
+                                  {peso(originalTotal)}
+                                </div>
+                                <div className="text-lg font-bold text-[#7A0010]">
+                                  {peso(calculatedTotal)}
+                                </div>
+                              </>
+                            ) : (
+                              <div className="text-lg font-bold text-[#7A0010]">
+                                {peso(calculatedTotal)}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                    </div>
+
+                    {editingBudget && !readOnly && (
+                      <div className="flex gap-2 mt-4">
+                        <button
+                          onClick={async () => {
+                            // Save budget edits without approving
+                            try {
+                              setSubmitting(true);
+                              const calculatedTotal = editedExpenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
+                              const res = await fetch("/api/hr/action", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                  requestId: request.id,
+                                  action: "edit_budget",
+                                  editedBudget: calculatedTotal,
+                                  notes: notes || "Budget edited by HR",
+                                }),
+                              });
+
+                              const json = await res.json();
+                              
+                              if (json.ok) {
+                                toast({ message: "✅ Budget updated successfully", kind: "success" });
+                                setEditingBudget(false);
+                                // Update expense breakdown to reflect changes
+                                setExpenseBreakdown(editedExpenses);
+                                setTotalCost(calculatedTotal);
+                              } else {
+                                toast({ message: json.error || "Failed to update budget", kind: "error" });
+                              }
+                            } catch (err) {
+                              console.error("Save budget error:", err);
+                              toast({ message: "Failed to save budget. Please try again.", kind: "error" });
+                            } finally {
+                              setSubmitting(false);
+                            }
+                          }}
+                          disabled={submitting}
+                          className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <Check className="h-4 w-4" />
+                          {submitting ? "Saving..." : "Save Budget Changes"}
+                        </button>
+                        <button
+                          onClick={() => {
+                            // Cancel editing - revert to original
+                            setEditedExpenses(expenseBreakdown.map((exp: any) => ({
+                              item: exp.item,
+                              amount: exp.amount
+                            })));
+                            setEditingBudget(false);
+                          }}
+                          disabled={submitting}
+                          className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors flex items-center justify-center gap-2 text-sm font-medium disabled:opacity-50"
+                        >
+                          <XCircle className="h-4 w-4" />
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="py-4 text-center">
+                    <p className="text-sm text-slate-500">No budget specified</p>
+                  </div>
+                )}
+              </section>
+
+              {/* Cost Justification - Same as VPRequestModal */}
+              {t.cost_justification && (
+                <section className="rounded-lg bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 p-4">
+                  <h3 className="text-sm font-bold text-amber-900 flex items-center gap-2 mb-3">
+                    <FileText className="h-4 w-4" />
+                    Cost Justification
+                  </h3>
+                  <div className="bg-white rounded-md border border-amber-200 p-3 text-sm text-gray-800 leading-relaxed shadow-sm">
+                    {t.cost_justification}
+                  </div>
+                </section>
+              )}
+            </div>
+
+            {/* RIGHT - HR Signature Section */}
+            <div className="space-y-5 rounded-xl border-2 border-[#7A0010]/20 bg-gradient-to-br from-white to-red-50/30 p-6 shadow-lg">
+              <div className="flex items-center gap-3 pb-4 border-b-2 border-[#7A0010]/10">
+                {(hrProfile?.profile_picture || hrProfile?.avatar_url) ? (
+                  <img 
+                    src={hrProfile.profile_picture || hrProfile.avatar_url} 
+                    alt={hrProfile?.name || "HR"}
+                    className="h-14 w-14 rounded-full object-cover border-2 border-[#7A0010] shadow-lg flex-shrink-0"
+                  />
+                ) : (
+                  <div className="h-14 w-14 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-xl shadow-lg flex-shrink-0">
+                    {(hrProfile?.name || 'HR').charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div className="flex-1">
+                  <p className="text-xs font-bold uppercase tracking-wider text-[#7A0010]/70">
+                    HR Review
+                  </p>
+                  <div className="text-base font-bold text-slate-900 mt-1">
+                    {hrProfile?.name || hrProfile?.email || "Loading..."}
+                  </div>
+                  {hrProfile?.department && (
+                    <p className="text-xs text-slate-600 mt-0.5 font-medium">
+                      {hrProfile.department.name || hrProfile.department.code}
+                    </p>
+                  )}
+                  {hrProfile?.position_title && (
+                    <p className="text-xs text-slate-500 mt-0.5">{hrProfile.position_title}</p>
+                  )}
+                </div>
+              </div>
+
+              {readOnly ? (
+                <div>
+                  <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
+                    HR Signature
+                  </label>
+                  <div className="rounded-xl bg-slate-50 p-4 border-2 border-slate-200">
+                    {t.hr_signature ? (
+                      <>
+                        <img 
+                          src={t.hr_signature} 
+                          alt="HR Signature" 
+                          className="max-h-40 mx-auto"
+                        />
+                        {t.hr_approved_at && (
+                          <p className="text-xs text-slate-500 text-center mt-2">
+                            Signed on {new Date(t.hr_approved_at).toLocaleString('en-US', { 
+                              year: 'numeric', 
+                              month: 'short', 
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              hour12: true,
+                              timeZone: 'Asia/Manila'
+                            })}
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-sm text-slate-500 text-center py-8">
+                        No signature available
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
+                    Your Signature <span className="text-red-500">*</span>
+                  </label>
+                  <div className="rounded-xl bg-white p-3 border-2 border-[#7A0010]/20 shadow-sm">
+                    <SignaturePad
+                      height={160}
+                      value={hrSignature || null}
+                      onSave={(dataUrl) => {
+                        setHrSignature(dataUrl);
+                      }}
+                      onClear={() => {
+                        setHrSignature("");
+                      }}
+                      hideSaveButton
                     />
                   </div>
                 </div>
               )}
 
-              <div className="space-y-2 text-sm">
+              {/* HR Notes/Comments */}
+              {!readOnly && (
                 <div>
-                  <span className="font-semibold text-gray-700">Approved by:</span>{" "}
-                  <span className="text-gray-900">{request.hr_approver?.name || "HR"}</span>
-                </div>
-                <div>
-                  <span className="font-semibold text-gray-700">Date:</span>{" "}
-                  <span className="text-gray-900">
-                    {new Date(request.hr_approved_at).toLocaleString()}
-                  </span>
-                </div>
-                {request.hr_comments && (
-                  <div>
-                    <span className="font-semibold text-gray-700">Comments:</span>
-                    <p className="text-gray-900 mt-1 p-3 bg-white border border-gray-200 rounded">
-                      {request.hr_comments}
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : readOnly && request.rejected_at ? (
-            <div className="bg-red-50 border-2 border-red-200 rounded-lg p-6">
-              <h3 className="text-lg font-bold text-red-700 mb-4">
-                Request Rejected by HR
-              </h3>
-              <div className="space-y-2 text-sm">
-                <div>
-                  <span className="font-semibold text-gray-700">Rejected by:</span>{" "}
-                  <span className="text-gray-900">{request.hr_approver?.name || "HR"}</span>
-                </div>
-                <div>
-                  <span className="font-semibold text-gray-700">Date:</span>{" "}
-                  <span className="text-gray-900">
-                    {new Date(request.rejected_at).toLocaleString()}
-                  </span>
-                </div>
-                {request.hr_comments && (
-                  <div>
-                    <span className="font-semibold text-gray-700">Reason:</span>
-                    <p className="text-gray-900 mt-1 p-3 bg-white border border-gray-200 rounded">
-                      {request.hr_comments}
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            <>
-              {/* HR Notes */}
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">
-                  HR Notes/Comments
-                </label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  className="w-full border-2 border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-[#7A0010] focus:border-transparent"
-                  rows={4}
-                  placeholder="Add your comments or notes about this request..."
-                />
-              </div>
-
-              {/* Signature Pad */}
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">
-                  HR Signature <span className="text-red-500">*</span>
-                </label>
-                <div className="border-2 border-gray-300 rounded-lg p-2 bg-white">
-                  <canvas
-                    ref={canvasRef}
-                    onMouseDown={startDrawing}
-                    onMouseMove={draw}
-                    onMouseUp={stopDrawing}
-                    onMouseLeave={stopDrawing}
-                    className="w-full cursor-crosshair bg-gray-50 rounded"
-                    style={{ touchAction: "none" }}
-                  />
-                  <div className="flex justify-between items-center mt-2">
-                    <p className="text-xs text-gray-500">
-                      Sign above using your mouse or touchpad
-                    </p>
+                  <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
+                    HR Notes/Comments <span className="text-red-500">*</span>
+                  </label>
+                  
+                  {/* Quick Fill Buttons */}
+                  <div className="mb-2 flex flex-wrap gap-2">
                     <button
                       type="button"
-                      onClick={clearSignature}
-                      className="text-xs text-red-600 hover:text-red-800 font-medium"
+                      onClick={() => setNotes("Okay, approved.")}
+                      className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
                     >
-                      Clear Signature
+                      ✓ Okay, approved
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNotes("Request approved. Proceed to VP for final review.")}
+                      className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+                    >
+                      ✓ Approved
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNotes("Request approved. All HR requirements are met.")}
+                      className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+                    >
+                      ✓ Fully Approved
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNotes("Request rejected. Please review and resubmit with corrections.")}
+                      className="px-3 py-1.5 text-xs font-medium bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
+                    >
+                      ✗ Rejected
                     </button>
                   </div>
+                  
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows={4}
+                    className="w-full px-4 py-3 border-2 border-[#7A0010]/20 rounded-xl focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] resize-none text-sm"
+                    placeholder="Add your comments here (minimum 10 characters)..."
+                  />
+                  <p className="text-xs text-slate-500 mt-1">
+                    Minimum 10 characters required
+                  </p>
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  By signing, you confirm that you have reviewed and verified all details of this
-                  request.
-                </p>
-              </div>
-            </>
+              )}
+
+              {readOnly && t.hr_comments && (
+                <div>
+                  <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
+                    HR Comments
+                  </label>
+                  <div className="rounded-xl bg-slate-50 p-4 border-2 border-slate-200">
+                    <p className="text-sm text-slate-700">{t.hr_comments}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Actions */}
+          {!readOnly && (
+            <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex gap-3 flex-shrink-0">
+              <button
+                onClick={handleApprove}
+                disabled={submitting || !hrSignature || !notes.trim() || notes.trim().length < 10}
+                className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <CheckCircle2 className="h-5 w-5" />
+                {submitting ? "Approving..." : "Approve Request"}
+              </button>
+              <button
+                onClick={handleReject}
+                disabled={submitting || !notes.trim()}
+                className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white font-medium py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <XCircle className="h-5 w-5" />
+                {submitting ? "Rejecting..." : "Reject Request"}
+              </button>
+              <button
+                onClick={onClose}
+                className="px-6 py-3 border border-gray-300 hover:bg-gray-100 text-gray-700 font-medium rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+
+          {readOnly && (
+            <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex justify-end flex-shrink-0">
+              <button
+                onClick={onClose}
+                className="px-6 py-3 border border-gray-300 hover:bg-gray-100 text-gray-700 font-medium rounded-lg transition-colors"
+              >
+                Close
+              </button>
+            </div>
           )}
         </div>
-
-        {/* Footer Actions - Only show if NOT read-only */}
-        {!readOnly && (
-          <div className="sticky bottom-0 bg-gray-50 px-6 py-4 flex gap-3 border-t rounded-b-xl">
-            <button
-              onClick={handleApprove}
-              disabled={submitting || !hasSignature}
-              className="flex-1 bg-green-600 text-white px-4 py-3 rounded-lg font-bold hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-lg"
-            >
-              {submitting ? "Approving..." : "✓ Approve Request"}
-            </button>
-            <button
-              onClick={handleReject}
-              disabled={submitting || !notes.trim()}
-              className="flex-1 bg-red-600 text-white px-4 py-3 rounded-lg font-bold hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-lg"
-            >
-              {submitting ? "Rejecting..." : "✗ Reject Request"}
-            </button>
-            <button
-              onClick={onClose}
-              disabled={submitting}
-              className="px-6 py-3 border-2 border-gray-300 rounded-lg font-medium hover:bg-gray-100 disabled:opacity-50 transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        )}
-
-        {/* Close button for read-only mode */}
-        {readOnly && (
-          <div className="sticky bottom-0 bg-gray-50 px-6 py-4 border-t rounded-b-xl">
-            <button
-              onClick={onClose}
-              className="w-full px-6 py-3 bg-gray-600 text-white rounded-lg font-medium hover:bg-gray-700 transition-colors"
-            >
-              Close
-            </button>
-          </div>
-        )}
       </div>
 
       {/* VP Selection Modal */}
@@ -805,8 +1215,35 @@ export default function HRRequestModal({
           options={vpOptions}
           currentRole="hr"
           allowReturnToRequester={false}
+          defaultApproverId={defaultApproverId}
+          defaultApproverName={defaultApproverName}
+          suggestionReason={suggestionReason}
+          allowAllUsers={true}
+          fetchAllUsers={async () => {
+            try {
+              const allUsersRes = await fetch("/api/users/all");
+              const allUsersData = await allUsersRes.json();
+              if (allUsersData.ok && allUsersData.data) {
+                return allUsersData.data.map((u: any) => ({
+                  id: u.id,
+                  name: u.name,
+                  email: u.email,
+                  profile_picture: u.profile_picture,
+                  phone: u.phone,
+                  position: u.position,
+                  department: u.department,
+                  role: u.role,
+                  roleLabel: u.roleLabel
+                }));
+              }
+              return [];
+            } catch (err) {
+              console.error("[HRRequestModal] Error fetching all users:", err);
+              return [];
+            }
+          }}
         />
       )}
-    </div>
+    </>
   );
 }

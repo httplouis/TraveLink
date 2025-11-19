@@ -1,11 +1,23 @@
 import type { Driver } from "./maintenance.types";
 
 export const DriverRepo = {
-  list(): Driver[] {
-    return [
-      { id: "drv-ramon", name: "Ramon Dela Cruz" },
-      { id: "drv-jose", name: "Jose Bautista" },
-      { id: "drv-gina", name: "Gina Santos" },
-    ];
+  async list(): Promise<Driver[]> {
+    try {
+      const response = await fetch('/api/drivers');
+      const result = await response.json();
+      
+      if (result.ok && result.data) {
+        return result.data.map((d: any) => ({
+          id: d.id,
+          name: d.name || 'Unknown',
+          badge: d.licenseNumber || d.license_no || undefined,
+        }));
+      }
+    } catch (error) {
+      console.error('[DriverRepo] API fetch failed:', error);
+    }
+    
+    // Fallback to empty array
+    return [];
   },
 };

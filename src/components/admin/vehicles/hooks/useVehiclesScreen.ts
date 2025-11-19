@@ -13,20 +13,32 @@ export function useVehiclesScreen() {
   const [view, setView] = React.useState<"grid" | "table">("grid");
   const [tab, setTab] = React.useState<VehiclePrimaryTab>("all");
 
-  const refresh = React.useCallback(() => {
-    let list = VehiclesRepo.listLocal(filters);
-    // apply tab logic without leaking into filters UI
-    if (tab === "assigned") list = list.filter(v => (v as any).assignedDriver);
-    if (tab === "out_of_order") list = list.filter(v => v.status === "inactive");
-    if (tab === "available") list = list.filter(v => v.status === "active" && !(v as any).assignedDriver);
-    if (tab === "service_needed") {
-      list = list.filter(v => {
-        const due = (v as any).nextServiceISO as string | undefined;
-        if (!due) return false;
-        return new Date(due) <= new Date();
-      });
+  const [loading, setLoading] = React.useState(true);
+
+  const refresh = React.useCallback(async () => {
+    try {
+      setLoading(true);
+      // Fetch from Supabase API
+      await VehiclesRepo.list(filters);
+      let list = VehiclesRepo.listLocal(filters);
+      // apply tab logic without leaking into filters UI
+      if (tab === "assigned") list = list.filter(v => (v as any).assignedDriver);
+      if (tab === "out_of_order") list = list.filter(v => v.status === "inactive");
+      if (tab === "available") list = list.filter(v => v.status === "active" && !(v as any).assignedDriver);
+      if (tab === "service_needed") {
+        list = list.filter(v => {
+          const due = (v as any).nextServiceISO as string | undefined;
+          if (!due) return false;
+          return new Date(due) <= new Date();
+        });
+      }
+      setRows(list);
+    } catch (error) {
+      console.error('[useVehiclesScreen] Error fetching vehicles:', error);
+      setRows([]);
+    } finally {
+      setLoading(false);
     }
-    setRows(list);
   }, [filters, tab]);
 
   React.useEffect(() => { refresh(); }, [refresh]);

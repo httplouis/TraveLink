@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { requestId, action, signature, notes, next_vp_id } = body;
+    const { requestId, action, signature, notes, next_vp_id, editedBudget } = body;
 
     if (!requestId || !action) {
       return NextResponse.json(
@@ -78,11 +78,27 @@ export async function POST(request: Request) {
       console.log(`[HR Action] Parent head signed: ${parentHeadSigned}, parent_head_approved_at: ${request.parent_head_approved_at}`);
       console.log(`[HR Action] Parent head is VP: ${parentHeadIsVP}, parent_head_approver:`, parentHeadApprover?.id);
 
-      // Routing logic based on requester type and parent head status:
+      // Get budget threshold from system config
+      const { data: thresholdConfig } = await supabase
+        .from("system_config")
+        .select("value")
+        .eq("key", "faculty_president_threshold")
+        .single();
+      
+      const budgetThreshold = thresholdConfig?.value 
+        ? parseFloat(thresholdConfig.value) 
+        : 5000.00; // Default: ₱5,000
+      
+      const totalBudget = request.total_budget || 0;
+      const exceedsThreshold = totalBudget >= budgetThreshold;
+
+      // Routing logic based on requester type, parent head status, and budget:
       // - Head/Director/Dean → Must go to President (skip VP if head requester OR parent head VP signed)
       // - Parent head (any VP: SVP Academics, VP External, etc.) already signed → Skip VP, go directly to President
       //   Note: Each VP has different departments under them. For CCMS, parent head is SVP Academics.
-      // - Faculty + Head → VP only (not President) - UNLESS parent head VP signed
+      // - Faculty + Head → VP only (not President) - UNLESS:
+      //   * Parent head VP signed → President
+      //   * Budget >= threshold (5-10K) → President
       // - Faculty alone → Should not reach here (validation prevents)
       
       let newStatus: string;
@@ -103,11 +119,20 @@ export async function POST(request: Request) {
           ? `Request approved and sent to President (VP skipped - parent head VP already signed)`
           : "Request approved and sent to President";
       } else if (!requesterIsHead && headIncluded) {
-        // Faculty + Head → VP only (not President)
-        newStatus = "pending_exec";
-        execLevel = "vp";
-        approverRole = "vp";
-        message = "Request approved and sent to VP";
+        // Faculty + Head → Check budget threshold
+        if (exceedsThreshold) {
+          // Budget >= threshold → President
+          newStatus = "pending_exec";
+          execLevel = "president";
+          approverRole = "president";
+          message = `Request approved and sent to President (budget ₱${totalBudget.toFixed(2)} exceeds threshold ₱${budgetThreshold.toFixed(2)})`;
+        } else {
+          // Budget < threshold → VP only
+          newStatus = "pending_exec";
+          execLevel = "vp";
+          approverRole = "vp";
+          message = "Request approved and sent to VP";
+        }
       } else {
         // Default: VP (should not happen for faculty alone)
         newStatus = "pending_exec";
@@ -131,12 +156,88 @@ export async function POST(request: Request) {
       // Set specific VP/President if selected via choice-based sending
       const { nextApproverId, nextApproverRole } = body;
       if (nextApproverId) {
-        if (approverRole === "vp") {
-          updateData.next_vp_id = nextApproverId;
-        } else if (approverRole === "president") {
-          updateData.next_president_id = nextApproverId;
+        // Fetch user's actual role to determine correct routing
+        try {
+          const { data: approverUser } = await supabase
+            .from("users")
+            .select("id, role, is_admin, is_hr, is_vp, is_president, is_head, is_comptroller, exec_type")
+            .eq("id", nextApproverId)
+            .single();
+          
+          if (approverUser) {
+            // Determine approver role based on user's actual role
+            if (approverUser.is_president || approverUser.exec_type === "president") {
+              approverRole = "president";
+              updateData.next_president_id = nextApproverId;
+            } else if (approverUser.is_vp || approverUser.role === "exec" || approverUser.exec_type?.startsWith("vp_") || approverUser.exec_type?.startsWith("svp_")) {
+              approverRole = "vp";
+              updateData.next_vp_id = nextApproverId;
+            } else if (approverUser.is_admin || approverUser.role === "admin") {
+              approverRole = "admin";
+              // Don't set next_admin_id - allow all admins to see it
+              // updateData.next_admin_id = nextApproverId;
+            } else if (approverUser.is_hr || approverUser.role === "hr") {
+              approverRole = "hr";
+              // Don't set next_hr_id - allow all HRs to see it
+              // updateData.next_hr_id = nextApproverId;
+            } else if (approverUser.is_comptroller || approverUser.role === "comptroller") {
+              approverRole = "comptroller";
+              // Don't set next_comptroller_id - allow all comptrollers to see it
+              // updateData.next_comptroller_id = nextApproverId;
+            } else {
+              // Use role from selection
+              if (nextApproverRole === "vp") {
+                approverRole = "vp";
+                updateData.next_vp_id = nextApproverId;
+              } else if (nextApproverRole === "president") {
+                approverRole = "president";
+                updateData.next_president_id = nextApproverId;
+              }
+            }
+          } else {
+            // User not found - use role from selection
+            if (nextApproverRole === "vp") {
+              approverRole = "vp";
+              updateData.next_vp_id = nextApproverId;
+            } else if (nextApproverRole === "president") {
+              approverRole = "president";
+              updateData.next_president_id = nextApproverId;
+            }
+          }
+        } catch (err) {
+          console.error("[HR Action] Error fetching approver user:", err);
+          // Fallback to role from selection
+          if (nextApproverRole === "vp") {
+            approverRole = "vp";
+            updateData.next_vp_id = nextApproverId;
+          } else if (nextApproverRole === "president") {
+            approverRole = "president";
+            updateData.next_president_id = nextApproverId;
+          }
         }
       }
+
+      // Update workflow_metadata with routing information
+      const workflowMetadata: any = request.workflow_metadata || {};
+      if (nextApproverId && approverRole) {
+        workflowMetadata.next_approver_id = nextApproverId;
+        workflowMetadata.next_approver_role = approverRole;
+        // Store role-specific IDs for inbox filtering
+        if (approverRole === "vp") {
+          workflowMetadata.next_vp_id = nextApproverId;
+        } else if (approverRole === "president") {
+          workflowMetadata.next_president_id = nextApproverId;
+        } else if (approverRole === "admin") {
+          workflowMetadata.next_admin_id = nextApproverId;
+        } else if (approverRole === "hr") {
+          workflowMetadata.next_hr_id = nextApproverId;
+        } else if (approverRole === "comptroller") {
+          workflowMetadata.next_comptroller_id = nextApproverId;
+        } else if (approverRole === "head") {
+          workflowMetadata.next_head_id = nextApproverId;
+        }
+      }
+      updateData.workflow_metadata = workflowMetadata;
 
       // Approve and route to VP
       const { error: updateError } = await supabase
@@ -253,6 +354,29 @@ export async function POST(request: Request) {
       return NextResponse.json({
         ok: true,
         message: "Request rejected",
+      });
+
+    } else if (action === "edit_budget") {
+      // Just update the edited budget without changing status
+      const { error: updateError } = await supabase
+        .from("requests")
+        .update({
+          hr_edited_budget: editedBudget,
+          hr_comments: notes || null,
+          updated_at: getPhilippineTimestamp(),
+        })
+        .eq("id", requestId);
+
+      if (updateError) {
+        console.error("[HR Edit Budget] Error:", updateError);
+        return NextResponse.json({ ok: false, error: updateError.message }, { status: 500 });
+      }
+
+      console.log(`[HR Edit Budget] 💰 Budget edited for request ${requestId}`);
+      
+      return NextResponse.json({
+        ok: true,
+        message: "Budget updated successfully",
       });
     }
 

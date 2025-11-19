@@ -2,7 +2,7 @@
 
 /**
  * AI Chatbot Widget Component - Enhanced UI
- * Floating chatbot for faculty users with TraviLink theme
+ * Floating chatbot for faculty users with Travelink theme
  */
 
 import { useState, useRef, useEffect } from 'react';
@@ -20,7 +20,7 @@ export default function ChatbotWidget() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: 'Hi! I\'m Travie, your TraviLink assistant.\n\nI can help you with transport requests, vehicle availability, approval processes, and general questions about the system.\n\nWhat can I help you with today?',
+      content: 'Hi! I\'m Travie, your Travelink assistant.\n\nI can help you with transport requests, vehicle availability, approval processes, and general questions about the system.\n\nWhat can I help you with today?',
       timestamp: new Date()
     }
   ]);

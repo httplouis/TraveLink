@@ -1,6 +1,5 @@
 import type { MaintFilters, MaintRecord, MaintType, MaintStatus } from "./maintenance.types";
 
-const KEY = "travilink_maintenance_records";
 const FKEY = "travilink_maintenance_filters";
 
 let memory: MaintRecord[] = [];
@@ -10,17 +9,12 @@ function canLS() {
   return typeof window !== "undefined" && typeof localStorage !== "undefined";
 }
 
-// Cache for performance
+// In-memory cache only (from last API fetch) - NO localStorage
 function saveToCache(items: MaintRecord[]) {
-  if (canLS()) localStorage.setItem(KEY, JSON.stringify(items));
-  else memory = items;
+  memory = items;
 }
 
 function loadFromCache(): MaintRecord[] {
-  if (canLS()) {
-    const raw = localStorage.getItem(KEY);
-    return raw ? (JSON.parse(raw) as MaintRecord[]) : [];
-  }
   return memory;
 }
 
@@ -36,21 +30,37 @@ export const MaintRepo = {
       const result = await response.json();
       
       if (result.ok && result.data) {
+        // Map database status to frontend status
+        const mapDbStatusToFrontend = (dbStatus: string): MaintStatus => {
+          const mapping: Record<string, MaintStatus> = {
+            'scheduled': 'Submitted',
+            'in_progress': 'In-Progress',
+            'completed': 'Completed',
+            'cancelled': 'Rejected',
+            'Submitted': 'Submitted',
+            'Acknowledged': 'Acknowledged',
+            'In-Progress': 'In-Progress',
+            'Completed': 'Completed',
+            'Rejected': 'Rejected',
+          };
+          return mapping[dbStatus] || 'Submitted';
+        };
+        
         // Transform from DB to frontend format
         const records: MaintRecord[] = result.data.map((d: any) => ({
           id: d.id,
           vehicleId: d.vehicle_id,
           type: d.maintenance_type as MaintType,
-          status: d.status as MaintStatus,
-          createdAt: d.created_at || new Date().toISOString(),
+          status: mapDbStatusToFrontend(d.status || 'scheduled'),
+          createdAt: d.created_at || d.scheduled_date || new Date().toISOString(),
           createdBy: d.performed_by || 'System',
-          description: d.description || d.notes,
+          description: d.description || d.notes || '',
           odometer: d.odometer_reading,
           cost: d.cost || 0,
           vendor: d.performed_by,
-          nextDueDate: d.next_service_date?.split('T')[0],
+          nextDueDate: d.next_service_date ? (typeof d.next_service_date === 'string' ? d.next_service_date.split('T')[0] : new Date(d.next_service_date).toISOString().split('T')[0]) : undefined,
           assignedDriverId: undefined,
-          attachments: d.attachments || [],
+          attachments: Array.isArray(d.attachments) ? d.attachments : [],
           history: [],
         }));
         
@@ -74,6 +84,18 @@ export const MaintRepo = {
     try {
       const isNew = !rec.id || rec.id.startsWith('temp-');
       
+      // Map frontend status to database status
+      const mapFrontendStatusToDb = (frontendStatus: MaintStatus): string => {
+        const mapping: Record<MaintStatus, string> = {
+          'Submitted': 'scheduled',
+          'Acknowledged': 'scheduled',
+          'In-Progress': 'in_progress',
+          'Completed': 'completed',
+          'Rejected': 'cancelled',
+        };
+        return mapping[frontendStatus] || 'scheduled';
+      };
+      
       const payload = {
         vehicle_id: rec.vehicleId,
         maintenance_type: rec.type,
@@ -82,7 +104,7 @@ export const MaintRepo = {
         scheduled_date: rec.createdAt,
         next_service_date: rec.nextDueDate,
         performed_by: rec.vendor,
-        status: rec.status || 'Submitted',
+        status: mapFrontendStatusToDb(rec.status || 'Submitted'),
         odometer_reading: rec.odometer,
         notes: rec.description,
       };

@@ -1,6 +1,5 @@
 // src/lib/admin/feedback/store.ts
 import type { Feedback } from "./types";
-import { MOCK_FEEDBACK } from "./mock";
 
 const STORAGE_KEY = "feedbackRepo";
 
@@ -20,19 +19,7 @@ function saveCache(rows: Feedback[]) {
   }
 }
 
-function ensureSeed() {
-  const cur = loadCache();
-  if (!cur || cur.length === 0) {
-    saveCache(MOCK_FEEDBACK);
-  }
-}
-
 export const FeedbackRepo = {
-  /** Call on mount — seeds when empty */
-  init() {
-    ensureSeed();
-  },
-
   async list(): Promise<Feedback[]> {
     try {
       const response = await fetch('/api/feedback?limit=100');
@@ -56,9 +43,8 @@ export const FeedbackRepo = {
       console.error('[FeedbackRepo] API list failed:', error);
     }
     
-    // Fallback to cache
-    ensureSeed();
-    return loadCache();
+    // Return empty array if API fails - no mock data fallback
+    return [];
   },
 
   async get(id: string): Promise<Feedback | undefined> {
@@ -100,18 +86,8 @@ export const FeedbackRepo = {
       }
     } catch (error) {
       console.error('[FeedbackRepo] API create failed:', error);
+      throw new Error('Failed to create feedback. Please try again.');
     }
-    
-    // Fallback to local
-    const all = loadCache();
-    const fb: Feedback = {
-      id: crypto?.randomUUID ? crypto.randomUUID() : `FB-${Math.random().toString(36).slice(2, 9)}`,
-      createdAt: new Date().toISOString(),
-      ...data,
-    };
-    all.push(fb);
-    saveCache(all);
-    return fb;
   },
 
   async update(id: string, patch: Partial<Feedback>): Promise<Feedback | undefined> {
@@ -139,15 +115,7 @@ export const FeedbackRepo = {
       }
     } catch (error) {
       console.error('[FeedbackRepo] API update failed:', error);
-    }
-    
-    // Fallback to local
-    const all = loadCache();
-    const i = all.findIndex((f) => f.id === id);
-    if (i >= 0) {
-      all[i] = { ...all[i], ...patch };
-      saveCache(all);
-      return all[i];
+      throw new Error('Failed to update feedback. Please try again.');
     }
     return undefined;
   },
@@ -170,16 +138,7 @@ export const FeedbackRepo = {
       saveCache(all);
     } catch (error) {
       console.error('[FeedbackRepo] API removeMany failed:', error);
-      // Fallback to local
-      const all = loadCache().filter((f) => !ids.includes(f.id));
-      saveCache(all);
+      throw new Error('Failed to delete feedback. Please try again.');
     }
-  },
-
-  /** Dev helper: clear and re-seed */
-  resetToMock() {
-    saveCache([]);
-    ensureSeed();
-    return loadCache();
   },
 };

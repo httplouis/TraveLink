@@ -1,15 +1,36 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 import { getPhilippineTimestamp } from "@/lib/datetime";
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createSupabaseServerClient(true);
+    // Use createSupabaseServerClient for auth (with cookies)
+    const authSupabase = await createSupabaseServerClient(false);
     
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser();
     if (authError || !user) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
+
+    // Use direct createClient for service role to truly bypass RLS for queries
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return NextResponse.json({ 
+        ok: false, 
+        error: "Missing Supabase configuration" 
+      }, { status: 500 });
+    }
+    
+    // Service role client for queries (bypasses RLS completely)
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
 
     // Get VP user info
     const { data: vpUser } = await supabase
@@ -24,6 +45,14 @@ export async function POST(request: Request) {
 
     const body = await request.json();
     const { requestId, action, signature, notes, is_head_request } = body;
+    
+    console.log(`[VP Action] Received request:`, {
+      requestId,
+      action,
+      hasSignature: !!signature,
+      notesLength: notes?.length || 0,
+      is_head_request
+    });
 
     if (!requestId || !action) {
       return NextResponse.json(
@@ -44,7 +73,52 @@ export async function POST(request: Request) {
 
     if (action === "approve") {
       // Get request to check requester type and if other VP has already signed
-      const { data: request } = await supabase
+      console.log(`[VP Action] Fetching request ${requestId}...`);
+      console.log(`[VP Action] Using service role client to bypass RLS`);
+      
+      // First, try to fetch without joins to see if request exists
+      const { data: requestCheck, error: checkError } = await supabase
+        .from("requests")
+        .select("id, status, requester_id, requester_is_head, head_included")
+        .eq("id", requestId)
+        .maybeSingle();
+      
+      console.log(`[VP Action] Basic fetch result:`, {
+        found: !!requestCheck,
+        error: checkError ? {
+          code: checkError.code,
+          message: checkError.message,
+          details: checkError.details,
+          hint: checkError.hint
+        } : null
+      });
+      
+      if (checkError) {
+        console.error(`[VP Action] Error checking request ${requestId}:`, {
+          code: checkError.code,
+          message: checkError.message,
+          details: checkError.details,
+          hint: checkError.hint
+        });
+        return NextResponse.json({ 
+          ok: false, 
+          error: checkError.code === 'PGRST116' ? "Request not found" : `Error fetching request: ${checkError.message}` 
+        }, { status: 404 });
+      }
+      
+      if (!requestCheck) {
+        console.error(`[VP Action] Request ${requestId} not found in database`);
+        return NextResponse.json({ ok: false, error: "Request not found" }, { status: 404 });
+      }
+      
+      console.log(`[VP Action] Request found:`, {
+        id: requestCheck.id,
+        status: requestCheck.status,
+        requester_id: requestCheck.requester_id
+      });
+      
+      // Now fetch with joins
+      const { data: requestWithJoins, error: requestError } = await supabase
         .from("requests")
         .select(`
           *, 
@@ -55,19 +129,46 @@ export async function POST(request: Request) {
         .eq("id", requestId)
         .single();
 
-      if (!request) {
-        return NextResponse.json({ ok: false, error: "Request not found" }, { status: 404 });
+      let dbRequest: any = null;
+      
+      if (requestError) {
+        console.error(`[VP Action] Error fetching request with joins ${requestId}:`, requestError);
+        // If join fails but request exists, use the basic request data
+        if (requestCheck) {
+          console.log(`[VP Action] Using basic request data without joins`);
+          dbRequest = requestCheck as any;
+          dbRequest.requester = null;
+          dbRequest.vp_approver = null;
+          dbRequest.vp2_approver = null;
+          // Continue with basic request data
+        } else {
+          return NextResponse.json({ 
+            ok: false, 
+            error: requestError.code === 'PGRST116' ? "Request not found" : `Error fetching request: ${requestError.message}` 
+          }, { status: 404 });
+        }
+      } else {
+        // Join succeeded, use the fetched request
+        dbRequest = requestWithJoins;
       }
 
-      const requester = request.requester as any;
-      const requesterIsHead = request.requester_is_head || requester?.is_head || false;
+      if (!dbRequest && !requestCheck) {
+        console.error(`[VP Action] Request ${requestId} not found in database`);
+        return NextResponse.json({ ok: false, error: "Request not found" }, { status: 404 });
+      }
+      
+      // Use dbRequest if available, otherwise use requestCheck
+      const finalRequest = dbRequest || requestCheck;
+
+      const requester = finalRequest.requester as any;
+      const requesterIsHead = finalRequest.requester_is_head || requester?.is_head || false;
       const requesterRole = requester?.role || "faculty";
-      const headIncluded = request.head_included || false;
+      const headIncluded = finalRequest.head_included || false;
 
       // Check if this VP has already approved
       const alreadyApprovedByThisVP = 
-        (request.vp_approved_by === vpUser.id) || 
-        (request.vp2_approved_by === vpUser.id);
+        (finalRequest.vp_approved_by === vpUser.id) || 
+        (finalRequest.vp2_approved_by === vpUser.id);
       
       if (alreadyApprovedByThisVP) {
         return NextResponse.json({ 
@@ -78,14 +179,14 @@ export async function POST(request: Request) {
 
       // Check if other VP has already signed
       const otherVPApproved = 
-        (request.vp_approved_by && request.vp_approved_by !== vpUser.id) ||
-        (request.vp2_approved_by && request.vp2_approved_by !== vpUser.id);
+        (finalRequest.vp_approved_by && finalRequest.vp_approved_by !== vpUser.id) ||
+        (finalRequest.vp2_approved_by && finalRequest.vp2_approved_by !== vpUser.id);
       
-      const isFirstVP = !request.vp_approved_by;
-      const isSecondVP = !isFirstVP && !request.vp2_approved_by;
+      const isFirstVP = !finalRequest.vp_approved_by;
+      const isSecondVP = !isFirstVP && !finalRequest.vp2_approved_by;
 
       const now = getPhilippineTimestamp();
-      const { nextApproverId } = body; // For choice-based sending
+      const { nextApproverId, nextApproverRole, returnReason } = body; // For choice-based sending
 
       // Check if there are multiple requesters from different departments (for tracking)
       const { data: requesters } = await supabase
@@ -102,7 +203,7 @@ export async function POST(request: Request) {
 
       let updateData: any = {};
       let newStatus: string;
-      let nextApproverRole: string;
+      let finalNextApproverRole: string;
       let message: string;
 
       if (isFirstVP) {
@@ -111,31 +212,209 @@ export async function POST(request: Request) {
         updateData.vp_approved_by = vpUser.id;
         updateData.vp_signature = signature || null;
         updateData.vp_comments = notes || null;
+        // Set both_vps_approved = true since one VP signature is sufficient
+        updateData.both_vps_approved = true;
         
-        // Check if multiple departments - if so, need both VPs to approve
-        // Request should have already gone through: Head → Admin → Comptroller → HR → VP
-        if (uniqueDepartments.size > 1) {
-          // Multiple departments - wait for second VP
-          newStatus = "pending_exec"; // Stay in pending_exec, wait for second VP
-          nextApproverRole = "vp";
-          message = "First VP approved. Waiting for second VP approval (multiple departments).";
-        } else {
-          // Single department - one VP approval is enough
-          // Request should have already gone through Admin/Comptroller/HR before reaching VP
-          // Route based on requester type
-          if (requesterIsHead || requesterRole === "director" || requesterRole === "dean") {
-            // Head/Director/Dean requester → Must go to President
-            newStatus = "pending_exec";
-            nextApproverRole = "president";
-            message = "VP approved. Request sent to President.";
+        // NEW RULE: Only one VP signature is sufficient (even for multiple departments)
+        // Request proceeds to President after any VP approval
+        // No need to wait for second VP
+        
+        // Use selected approver or default logic
+        if (returnReason) {
+            // Return to requester
+            newStatus = "pending_requester";
+            finalNextApproverRole = "requester";
+            updateData.return_reason = returnReason;
+            message = "Request returned to requester for revision.";
+          } else if (nextApproverId && nextApproverRole) {
+            // User selected specific approver - fetch user's actual role to determine correct status
+            try {
+              const { data: approverUser } = await supabase
+                .from("users")
+                .select("id, role, is_admin, is_hr, is_vp, is_president, is_head, is_comptroller, exec_type")
+                .eq("id", nextApproverId)
+                .single();
+              
+              if (approverUser) {
+                // Determine status based on user's actual role
+                if (approverUser.is_president || approverUser.exec_type === "president") {
+                  newStatus = "pending_exec";
+                  finalNextApproverRole = "president";
+                  updateData.next_president_id = nextApproverId;
+                  message = "VP approved. Request sent to President.";
+                } else if (approverUser.is_admin || approverUser.role === "admin") {
+                  newStatus = "pending_admin";
+                  finalNextApproverRole = "admin";
+                  // Don't set next_admin_id - allow all admins to see it (both Ma'am Cleofe and Ma'am TM)
+                  // updateData.next_admin_id = nextApproverId;
+                  message = "VP approved. Request sent to Administrators.";
+                } else if (approverUser.is_vp || approverUser.role === "exec") {
+                  newStatus = "pending_exec";
+                  finalNextApproverRole = "vp";
+                  updateData.next_vp_id = nextApproverId;
+                  message = "VP approved. Request sent to another VP.";
+                } else if (approverUser.is_hr || approverUser.role === "hr") {
+                  newStatus = "pending_hr";
+                  finalNextApproverRole = "hr";
+                  // Don't set next_hr_id - allow all HRs to see it
+                  // updateData.next_hr_id = nextApproverId;
+                  message = "VP approved. Request sent to HR.";
+                } else if (approverUser.is_comptroller || approverUser.role === "comptroller") {
+                  newStatus = "pending_comptroller";
+                  finalNextApproverRole = "comptroller";
+                  // Don't set next_comptroller_id - allow all comptrollers to see it
+                  // updateData.next_comptroller_id = nextApproverId;
+                  message = "VP approved. Request sent to Comptroller.";
+                } else {
+                  // Unknown role - use role from selection or default to president
+                  if (nextApproverRole === "president") {
+                    newStatus = "pending_exec";
+                    finalNextApproverRole = "president";
+                    updateData.next_president_id = nextApproverId;
+                    message = "VP approved. Request sent to President.";
+                  } else if (nextApproverRole === "admin") {
+                    newStatus = "pending_admin";
+                    finalNextApproverRole = "admin";
+                    // Don't set next_admin_id - allow all admins to see it (both Ma'am Cleofe and Ma'am TM)
+                    // updateData.next_admin_id = nextApproverId;
+                    message = "VP approved. Request sent to Administrators.";
+                  } else {
+                    // Default to president
+                    newStatus = "pending_exec";
+                    finalNextApproverRole = "president";
+                    updateData.next_president_id = nextApproverId;
+                    message = "VP approved. Request sent to President.";
+                  }
+                }
+              } else {
+                // User not found - use role from selection
+                if (nextApproverRole === "president") {
+                  newStatus = "pending_exec";
+                  finalNextApproverRole = "president";
+                  updateData.next_president_id = nextApproverId;
+                  message = "VP approved. Request sent to President.";
+                } else if (nextApproverRole === "admin") {
+                  newStatus = "pending_admin";
+                  finalNextApproverRole = "admin";
+                  // Don't set next_admin_id - allow all admins to see it (both Ma'am Cleofe and Ma'am TM)
+                  // updateData.next_admin_id = nextApproverId;
+                  message = "VP approved. Request sent to Administrators.";
+                } else {
+                  newStatus = "pending_exec";
+                  finalNextApproverRole = "president";
+                  updateData.next_president_id = nextApproverId;
+                  message = "VP approved. Request sent to President.";
+                }
+              }
+            } catch (err) {
+              console.error("[VP Action] Error fetching approver user:", err);
+              // Fallback to role-based logic
+              if (nextApproverRole === "president") {
+                newStatus = "pending_exec";
+                finalNextApproverRole = "president";
+                updateData.next_president_id = nextApproverId;
+                message = "VP approved. Request sent to President.";
+              } else if (nextApproverRole === "admin") {
+                newStatus = "pending_admin";
+                finalNextApproverRole = "admin";
+                // Don't set next_admin_id - allow all admins to see it (both Ma'am Cleofe and Ma'am TM)
+                // updateData.next_admin_id = nextApproverId;
+                message = "VP approved. Request sent to Administrators.";
+              } else {
+                newStatus = "pending_exec";
+                finalNextApproverRole = "president";
+                updateData.next_president_id = nextApproverId;
+                message = "VP approved. Request sent to President.";
+              }
+            }
           } else {
-            // Faculty requester (with head included) → Fully approved after VP
-            newStatus = "approved";
-            nextApproverRole = "requester";
-            updateData.final_approved_at = now;
-            message = "Request fully approved by VP.";
+            // Default logic based on requester type
+            if (requesterIsHead || requesterRole === "director" || requesterRole === "dean") {
+              // Head/Director/Dean requester → Must go to President
+              newStatus = "pending_exec";
+              finalNextApproverRole = "president";
+              message = "VP approved. Request sent to President.";
+            } else {
+              // Faculty requester (with head included) → Check if should go to President or stop at VP
+              // Get budget threshold to determine if should route to President
+              const { data: thresholdConfig } = await supabase
+                .from("system_config")
+                .select("value")
+                .eq("key", "faculty_president_threshold")
+                .single();
+              
+              const budgetThreshold = thresholdConfig?.value 
+                ? parseFloat(thresholdConfig.value) 
+                : 5000.00; // Default: ₱5,000
+              
+              const totalBudget = finalRequest.total_budget || 0;
+              const exceedsThreshold = totalBudget >= budgetThreshold;
+              
+              if (exceedsThreshold) {
+                // Budget >= threshold → President
+                newStatus = "pending_exec";
+                finalNextApproverRole = "president";
+                message = `VP approved. Request sent to President (budget ₱${totalBudget.toFixed(2)} exceeds threshold ₱${budgetThreshold.toFixed(2)}).`;
+              } else {
+                // Budget < threshold → Fully approved after VP (no President needed)
+                newStatus = "approved";
+                finalNextApproverRole = "requester";
+                updateData.final_approved_at = now;
+                message = "Request fully approved by VP.";
+                
+                // Send SMS to driver if assigned and not already sent
+                if (finalRequest.assigned_driver_id && !finalRequest.sms_notification_sent) {
+                  try {
+                    // Fetch driver details
+                    const { data: driver } = await supabase
+                      .from("users")
+                      .select("id, name, phone_number")
+                      .eq("id", finalRequest.assigned_driver_id)
+                      .single();
+
+                    // Fetch requester details
+                    const { data: requester } = await supabase
+                      .from("users")
+                      .select("id, name")
+                      .eq("id", finalRequest.requester_id)
+                      .single();
+
+                    if (driver && driver.phone_number && requester) {
+                      const { sendDriverTravelNotification } = await import("@/lib/sms/sms-service");
+                      
+                      const smsResult = await sendDriverTravelNotification({
+                        driverPhone: driver.phone_number,
+                        requesterName: requester.name || finalRequest.requester_name || "Unknown",
+                        requesterPhone: finalRequest.requester_contact_number || "",
+                        travelDate: finalRequest.travel_start_date,
+                        destination: finalRequest.destination || "",
+                        pickupLocation: finalRequest.pickup_location || undefined,
+                        pickupTime: finalRequest.pickup_time || undefined,
+                        pickupPreference: finalRequest.pickup_preference as 'pickup' | 'self' | 'gymnasium' | undefined,
+                        requestNumber: finalRequest.request_number || "",
+                      });
+
+                      if (smsResult.success) {
+                        // Update SMS tracking fields
+                        updateData.sms_notification_sent = true;
+                        updateData.sms_sent_at = now;
+                        updateData.driver_contact_number = driver.phone_number;
+
+                        console.log(`[VP Action] ✅ SMS sent to driver ${driver.name} (${driver.phone_number})`);
+                      } else {
+                        console.error(`[VP Action] ❌ Failed to send SMS to driver:`, smsResult.error);
+                      }
+                    } else if (!driver?.phone_number) {
+                      console.warn(`[VP Action] ⚠️ Driver ${driver?.name || finalRequest.assigned_driver_id} has no phone number - SMS not sent`);
+                    }
+                  } catch (smsError: any) {
+                    console.error("[VP Action] Error sending SMS to driver:", smsError);
+                    // Don't fail the approval if SMS fails
+                  }
+                }
+              }
+            }
           }
-        }
       } else if (isSecondVP) {
         // Second VP is signing - both VPs have now approved
         // This is just an acknowledgment that both departments' heads have been approved by their respective VPs
@@ -146,11 +425,118 @@ export async function POST(request: Request) {
         updateData.vp2_comments = notes || null;
         updateData.both_vps_approved = true;
         
-        // Both VPs approved - request should have already gone through Admin/Comptroller/HR
-        // Now route to President (both VPs approved means both departments acknowledged)
-        newStatus = "pending_exec";
-        nextApproverRole = "president";
-        message = "Both VPs have approved. Request sent to President.";
+        // Use selected approver or default to President
+        if (returnReason) {
+          // Return to requester
+          newStatus = "pending_requester";
+          finalNextApproverRole = "requester";
+          updateData.return_reason = returnReason;
+          message = "Request returned to requester for revision.";
+        } else if (nextApproverId && nextApproverRole) {
+          // User selected specific approver - fetch user's actual role to determine correct status
+          try {
+            const { data: approverUser } = await supabase
+              .from("users")
+              .select("id, role, is_admin, is_hr, is_vp, is_president, is_head, is_comptroller, exec_type")
+              .eq("id", nextApproverId)
+              .single();
+            
+            if (approverUser) {
+              // Determine status based on user's actual role
+              if (approverUser.is_president || approverUser.exec_type === "president") {
+                newStatus = "pending_exec";
+                finalNextApproverRole = "president";
+                updateData.next_president_id = nextApproverId;
+                message = "Both VPs have approved. Request sent to President.";
+              } else if (approverUser.is_admin || approverUser.role === "admin") {
+                newStatus = "pending_admin";
+                finalNextApproverRole = "admin";
+                // Don't set next_admin_id - allow all admins to see it (both Ma'am Cleofe and Ma'am TM)
+                // updateData.next_admin_id = nextApproverId;
+                message = "Both VPs have approved. Request sent to Administrators.";
+              } else if (approverUser.is_vp || approverUser.role === "exec") {
+                newStatus = "pending_exec";
+                finalNextApproverRole = "vp";
+                updateData.next_vp_id = nextApproverId;
+                message = "Both VPs have approved. Request sent to another VP.";
+              } else if (approverUser.is_hr || approverUser.role === "hr") {
+                newStatus = "pending_hr";
+                finalNextApproverRole = "hr";
+                // Don't set next_hr_id - allow all HRs to see it
+                // updateData.next_hr_id = nextApproverId;
+                message = "Both VPs have approved. Request sent to HR.";
+              } else if (approverUser.is_comptroller || approverUser.role === "comptroller") {
+                newStatus = "pending_comptroller";
+                finalNextApproverRole = "comptroller";
+                // Don't set next_comptroller_id - allow all comptrollers to see it
+                // updateData.next_comptroller_id = nextApproverId;
+                message = "Both VPs have approved. Request sent to Comptroller.";
+              } else {
+                // Unknown role - use role from selection or default to president
+                if (nextApproverRole === "president") {
+                  newStatus = "pending_exec";
+                  finalNextApproverRole = "president";
+                  updateData.next_president_id = nextApproverId;
+                  message = "Both VPs have approved. Request sent to President.";
+                } else if (nextApproverRole === "admin") {
+                  newStatus = "pending_admin";
+                  finalNextApproverRole = "admin";
+                  updateData.next_admin_id = nextApproverId;
+                  message = "Both VPs have approved. Request sent to Administrator.";
+                } else {
+                  newStatus = "pending_exec";
+                  finalNextApproverRole = "president";
+                  updateData.next_president_id = nextApproverId;
+                  message = "Both VPs have approved. Request sent to President.";
+                }
+              }
+            } else {
+              // User not found - use role from selection
+              if (nextApproverRole === "president") {
+                newStatus = "pending_exec";
+                finalNextApproverRole = "president";
+                updateData.next_president_id = nextApproverId;
+                message = "Both VPs have approved. Request sent to President.";
+              } else if (nextApproverRole === "admin") {
+                newStatus = "pending_admin";
+                finalNextApproverRole = "admin";
+                // Don't set next_admin_id - allow all admins to see it (both Ma'am Cleofe and Ma'am TM)
+                // updateData.next_admin_id = nextApproverId;
+                message = "Both VPs have approved. Request sent to Administrators.";
+              } else {
+                newStatus = "pending_exec";
+                finalNextApproverRole = "president";
+                updateData.next_president_id = nextApproverId;
+                message = "Both VPs have approved. Request sent to President.";
+              }
+            }
+          } catch (err) {
+            console.error("[VP Action] Error fetching approver user (second VP):", err);
+            // Fallback to role-based logic
+            if (nextApproverRole === "president") {
+              newStatus = "pending_exec";
+              finalNextApproverRole = "president";
+              updateData.next_president_id = nextApproverId;
+              message = "Both VPs have approved. Request sent to President.";
+            } else if (nextApproverRole === "admin") {
+              newStatus = "pending_admin";
+              finalNextApproverRole = "admin";
+              // Don't set next_admin_id - allow all admins to see it (both Ma'am Cleofe and Ma'am TM)
+              // updateData.next_admin_id = nextApproverId;
+              message = "Both VPs have approved. Request sent to Administrators.";
+            } else {
+              newStatus = "pending_exec";
+              finalNextApproverRole = "president";
+              updateData.next_president_id = nextApproverId;
+              message = "Both VPs have approved. Request sent to President.";
+            }
+          }
+        } else {
+          // Default to President (both VPs approved means both departments acknowledged)
+          newStatus = "pending_exec";
+          finalNextApproverRole = "president";
+          message = "Both VPs have approved. Request sent to President.";
+        }
       } else {
         return NextResponse.json({ 
           ok: false, 
@@ -159,14 +545,51 @@ export async function POST(request: Request) {
       }
 
       updateData.status = newStatus;
-      updateData.current_approver_role = nextApproverRole;
+      updateData.current_approver_role = finalNextApproverRole;
       updateData.exec_level = requesterIsHead ? "president" : "vp";
       updateData.updated_at = now;
 
-      // If going to President, set next president ID
-      if (newStatus === "pending_exec" && nextApproverRole === "president" && nextApproverId) {
-        updateData.next_president_id = nextApproverId;
+      // Update workflow_metadata with routing information
+      const workflowMetadata: any = finalRequest.workflow_metadata || {};
+      if (finalNextApproverRole) {
+        workflowMetadata.next_approver_role = finalNextApproverRole;
+        
+        // For roles where ALL users in that role should see it (admin, comptroller, hr),
+        // DON'T set next_approver_id - this allows all users in that role to see it
+        // For roles where a specific user is assigned (president, vp, head), set the ID
+        if (finalNextApproverRole === "president") {
+          workflowMetadata.next_approver_id = nextApproverId;
+          workflowMetadata.next_president_id = nextApproverId;
+        } else if (finalNextApproverRole === "admin") {
+          // Don't set next_approver_id or next_admin_id - allow all admins to see it
+          // Explicitly clear any existing next_approver_id to ensure all admins can see it
+          workflowMetadata.next_approver_id = null;
+          workflowMetadata.next_admin_id = null;
+        } else if (finalNextApproverRole === "vp") {
+          workflowMetadata.next_approver_id = nextApproverId;
+          workflowMetadata.next_vp_id = nextApproverId;
+        } else if (finalNextApproverRole === "hr") {
+          // Don't set next_approver_id or next_hr_id - allow all HRs to see it
+          // Explicitly clear any existing next_approver_id to ensure all HRs can see it
+          workflowMetadata.next_approver_id = null;
+          workflowMetadata.next_hr_id = null;
+        } else if (finalNextApproverRole === "comptroller") {
+          // Don't set next_approver_id or next_comptroller_id - allow all comptrollers to see it
+          // Explicitly clear any existing next_approver_id to ensure all comptrollers can see it
+          workflowMetadata.next_approver_id = null;
+          workflowMetadata.next_comptroller_id = null;
+        } else if (finalNextApproverRole === "head") {
+          workflowMetadata.next_approver_id = nextApproverId;
+          workflowMetadata.next_head_id = nextApproverId;
+        } else if (nextApproverId && finalNextApproverRole !== "admin" && finalNextApproverRole !== "comptroller" && finalNextApproverRole !== "hr") {
+          // For other roles (not admin/comptroller/hr), set next_approver_id if provided
+          workflowMetadata.next_approver_id = nextApproverId;
+        }
       }
+      if (returnReason) {
+        workflowMetadata.return_reason = returnReason;
+      }
+      updateData.workflow_metadata = workflowMetadata;
 
       // If fully approved, set final approval timestamp
       if (newStatus === "approved") {
@@ -195,15 +618,15 @@ export async function POST(request: Request) {
         action: "approved",
         actor_id: vpUser.id,
         actor_role: "vp",
-        previous_status: request.status || "pending_exec",
+        previous_status: finalRequest.status || "pending_exec",
         new_status: newStatus,
         comments: historyComment,
         metadata: {
           signature_at: now,
           signature_time: now,
-          receive_time: request.created_at || now,
-          submission_time: request.created_at || null,
-          sent_to: nextApproverRole,
+          receive_time: finalRequest.created_at || now,
+          submission_time: finalRequest.created_at || null,
+          sent_to: finalNextApproverRole,
           sent_to_id: nextApproverId || null,
           requester_type: requesterIsHead ? "head" : "faculty",
           head_included: headIncluded,
@@ -220,14 +643,14 @@ export async function POST(request: Request) {
         const { createNotification } = await import("@/lib/notifications/helpers");
         
         // Notify requester
-        if (request.requester_id) {
+        if (finalRequest.requester_id) {
           await createNotification({
-            user_id: request.requester_id,
+            user_id: finalRequest.requester_id,
             notification_type: newStatus === "approved" ? "request_approved" : "request_status_change",
             title: newStatus === "approved" ? "Request Fully Approved" : "Request Approved by VP",
             message: newStatus === "approved" 
-              ? `Your travel order request ${request.request_number || ''} has been fully approved!`
-              : `Your travel order request ${request.request_number || ''} has been approved by VP and is now with President.`,
+              ? `Your travel order request ${finalRequest.request_number || ''} has been fully approved!`
+              : `Your travel order request ${finalRequest.request_number || ''} has been approved by VP and is now with President.`,
             related_type: "request",
             related_id: requestId,
             action_url: `/user/submissions?view=${requestId}`,
@@ -236,19 +659,33 @@ export async function POST(request: Request) {
           });
         }
 
-        // Notify President if going to President
-        if (newStatus === "pending_exec" && nextApproverRole === "president" && nextApproverId) {
-          await createNotification({
-            user_id: nextApproverId,
-            notification_type: "request_pending_signature",
-            title: "Request Requires Your Approval",
-            message: `A travel order request ${request.request_number || ''} has been sent to you for final approval.`,
-            related_type: "request",
-            related_id: requestId,
-            action_url: `/president/inbox?view=${requestId}`,
-            action_label: "Review Request",
-            priority: "high",
-          });
+        // Notify next approver
+        if (nextApproverId) {
+          if (finalNextApproverRole === "president") {
+            await createNotification({
+              user_id: nextApproverId,
+              notification_type: "request_pending_signature",
+              title: "Request Requires Your Approval",
+              message: `A travel order request ${finalRequest.request_number || ''} has been sent to you for final approval.`,
+              related_type: "request",
+              related_id: requestId,
+              action_url: `/president/inbox?view=${requestId}`,
+              action_label: "Review Request",
+              priority: "high",
+            });
+          } else if (finalNextApproverRole === "admin") {
+            await createNotification({
+              user_id: nextApproverId,
+              notification_type: "request_pending_signature",
+              title: "Request Requires Your Review",
+              message: `A travel order request ${finalRequest.request_number || ''} has been sent to you for review.`,
+              related_type: "request",
+              related_id: requestId,
+              action_url: `/admin/requests?view=${requestId}`,
+              action_label: "Review Request",
+              priority: "normal",
+            });
+          }
         }
       } catch (notifError: any) {
         console.error("[VP Approve] Failed to create notifications:", notifError);
@@ -261,7 +698,7 @@ export async function POST(request: Request) {
         message: message,
         data: {
           nextStatus: newStatus,
-          nextApproverRole: nextApproverRole
+          nextApproverRole: finalNextApproverRole
         }
       });
 

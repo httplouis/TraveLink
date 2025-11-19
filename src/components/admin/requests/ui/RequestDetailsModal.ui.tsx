@@ -274,7 +274,45 @@ export default function RequestDetailsModalUI({
     return base + othersArray + singleOther;
   }, [row?.travelOrder?.costs]);
 
-  const deptName = row?.travelOrder?.department || "";
+  // Get department name from the head approver's department, not the request's department
+  // Check for BOTH direct head approval AND parent head approval (SVP, etc.)
+  // Also check VP approval if VP is also a head (dual role)
+  // Check both row and payload for VP data (data might be in payload)
+  const payload = (row as any)?.payload;
+  const headApprover = (row as any)?.head_approver || payload?.head_approver;
+  const parentHeadApprover = (row as any)?.parent_head_approver || payload?.parent_head_approver;
+  const vpApprover = (row as any)?.vp_approver || payload?.vp_approver;
+  const hasHeadApproval = !!(row as any)?.head_approved_at || !!(row as any)?.head_approved_by || payload?.head_approved_at || payload?.head_approved_by;
+  const hasParentHeadApproval = !!(row as any)?.parent_head_approved_at || !!(row as any)?.parent_head_approved_by || payload?.parent_head_approved_at || payload?.parent_head_approved_by;
+  const hasVpApproval = !!(row as any)?.vp_approved_at || !!(row as any)?.vp_approved_by || payload?.vp_approved_at || payload?.vp_approved_by;
+  
+  // Debug logging
+  console.log("🔍 Head Approval Check:", {
+    hasHeadApproval,
+    hasParentHeadApproval,
+    hasVpApproval,
+    vpApprover: vpApprover ? { id: vpApprover.id, name: vpApprover.name, is_head: vpApprover.is_head } : null,
+    vp_approved_at: (row as any)?.vp_approved_at,
+    vp_signature: (row as any)?.vp_signature ? "EXISTS" : "NULL",
+    row_vp_approver: (row as any)?.vp_approver,
+    row_vp_approved_at: (row as any)?.vp_approved_at,
+    row_vp_signature: (row as any)?.vp_signature ? "EXISTS" : "NULL"
+  });
+  
+  // If VP approved and VP is also a head, treat it as head approval
+  // Also check if VP has is_head flag OR if we have VP approval (fallback)
+  const vpIsHead = vpApprover?.is_head === true;
+  const hasAnyHeadApproval = hasHeadApproval || hasParentHeadApproval || (hasVpApproval && vpIsHead);
+  
+  // Priority: parent head > direct head > VP (if VP is head)
+  const approverToUse = hasParentHeadApproval ? parentHeadApprover 
+    : hasHeadApproval ? headApprover 
+    : (hasVpApproval && vpIsHead) ? vpApprover 
+    : null;
+  const approverDept = approverToUse?.department?.name || approverToUse?.department_name || "";
+  
+  // Only use approver's department if there's actually a head approval
+  const deptName = hasAnyHeadApproval ? (approverDept || "") : "";
 
   // Derived rules for routing after Admin approval
   const usesVehicle = React.useMemo(() => {
@@ -320,58 +358,148 @@ export default function RequestDetailsModalUI({
     ? new Date(row.approvedAt).toLocaleString()
     : null;
   
-  // Build submission history entries
+  // Build submission history entries - COMPLETE timeline with ALL signatures
   const historyEntries = React.useMemo(() => {
     if (!row) return [];
     const entries = [];
+    const r: any = row;
     
-    console.log("🔍 Building history entries for request:", (row as any).id);
-    console.log("🔍 Head signature:", (row as any).head_signature ? "EXISTS" : "NULL");
-    console.log("🔍 Admin signature:", (row as any).admin_signature ? "EXISTS" : "NULL");
-    console.log("🔍 Row admin data:", {
-      admin_approved_at: (row as any).admin_approved_at,
-      admin_approved_by: (row as any).admin_approved_by,
-      admin_signature: (row as any).admin_signature,
-      admin_approver: (row as any).admin_approver,
-    });
+    console.log("🔍 Building COMPLETE history entries for request:", r.id);
     
-    // Submitted
-    if (row.createdAt) {
+    // 1. Request Submitted
+    if (r.createdAt || r.created_at) {
       entries.push({
         action: "Request Submitted",
-        by: (row as any).requester?.name || (row as any).requester?.email || "Unknown",
-        timestamp: row.createdAt,
+        by: r.requester?.name || r.requester_name || r.requester?.email || "Unknown",
+        timestamp: r.createdAt || r.created_at,
         icon: "submitted" as const,
+        signature: r.requester_signature || null,
       });
     }
     
-    // Head Approved
-    if ((row as any).head_approved_at) {
-      const headSig = (row as any).head_signature || null;
-      console.log("✅ Adding Head Approved entry with signature:", headSig ? "YES" : "NO");
+    // 2. Parent Head Approved (if applicable - for child departments)
+    if (r.parent_head_approved_at) {
+      const parentHeadName = r.parent_head_approver?.name || r.parent_head_approver?.email || "Parent Department Head";
       entries.push({
-        action: "Head Approved",
-        by: row.travelOrder?.endorsedByHeadName || "Department Head",
-        timestamp: (row as any).head_approved_at,
+        action: "Parent Head Approved",
+        by: parentHeadName,
+        timestamp: r.parent_head_approved_at,
         icon: "approved" as const,
-        signature: headSig,
+        signature: r.parent_head_signature || null,
       });
     }
     
-    // Admin Approved
-    if ((row as any).admin_approved_at) {
-      const adminName = (row as any).admin_approver?.name || (row as any).admin_approver?.email || "Trizzia Maree Casino";
-      const adminSig = (row as any).admin_signature || null;
-      console.log("✅ Adding Admin Approved entry with signature:", adminSig ? "YES" : "NO");
+    // 3. Head Approved
+    if (r.head_approved_at) {
+      const headName = r.head_approver?.name || r.travelOrder?.endorsedByHeadName || "Department Head";
       entries.push({
-        action: "Admin Approved",
+        action: "Department Head Approved",
+        by: headName,
+        timestamp: r.head_approved_at,
+        icon: "approved" as const,
+        signature: r.head_signature || null,
+      });
+    }
+    
+    // 4. Admin Approved
+    if (r.admin_approved_at || r.admin_processed_at) {
+      const adminName = r.admin_approver?.name || r.admin_approver?.email || "Administrator";
+      entries.push({
+        action: "Administrator Approved",
         by: adminName,
-        timestamp: (row as any).admin_approved_at,
+        timestamp: r.admin_approved_at || r.admin_processed_at,
         icon: "approved" as const,
-        signature: adminSig,
+        signature: r.admin_signature || null,
       });
     }
     
+    // 5. Comptroller Approved
+    if (r.comptroller_approved_at) {
+      const comptrollerName = r.comptroller_approver?.name || r.comptroller_approver?.email || "Comptroller";
+      entries.push({
+        action: "Comptroller Approved",
+        by: comptrollerName,
+        timestamp: r.comptroller_approved_at,
+        icon: "approved" as const,
+        signature: r.comptroller_signature || null,
+      });
+    }
+    
+    // 6. HR Approved
+    if (r.hr_approved_at) {
+      const hrName = r.hr_approver?.name || r.hr_approver?.email || "HR Officer";
+      entries.push({
+        action: "HR Approved",
+        by: hrName,
+        timestamp: r.hr_approved_at,
+        icon: "approved" as const,
+        signature: r.hr_signature || null,
+      });
+    }
+    
+    // 7. First VP Approved
+    if (r.vp_approved_at || r.vp_approved_by) {
+      const vpName = r.vp_approver?.name || r.vp_approver?.email || "Vice President";
+      entries.push({
+        action: "First VP Approved",
+        by: vpName,
+        timestamp: r.vp_approved_at,
+        icon: "approved" as const,
+        signature: r.vp_signature || null,
+      });
+    }
+    
+    // 8. Second VP Approved (if applicable)
+    if (r.vp2_approved_at || r.vp2_approved_by) {
+      const vp2Name = r.vp2_approver?.name || r.vp2_approver?.email || "Second Vice President";
+      entries.push({
+        action: "Second VP Approved",
+        by: vp2Name,
+        timestamp: r.vp2_approved_at,
+        icon: "approved" as const,
+        signature: r.vp2_signature || null,
+      });
+    }
+    
+    // 9. President Approved
+    if (r.president_approved_at || r.exec_approved_at) {
+      const presidentName = r.president_approver?.name || r.exec_approver?.name || r.president_approver?.email || r.exec_approver?.email || "President";
+      entries.push({
+        action: "President Approved",
+        by: presidentName,
+        timestamp: r.president_approved_at || r.exec_approved_at,
+        icon: "approved" as const,
+        signature: r.president_signature || r.exec_signature || null,
+      });
+    }
+    
+    // 10. Final Approval
+    if (r.final_approved_at) {
+      entries.push({
+        action: "Request Fully Approved",
+        by: "System",
+        timestamp: r.final_approved_at,
+        icon: "approved" as const,
+        signature: null,
+      });
+    }
+    
+    // 11. Rejected (if applicable)
+    if (r.rejected_at) {
+      const rejectedBy = r.rejected_by_user?.name || r.rejected_by_user?.email || "Approver";
+      entries.push({
+        action: "Request Rejected",
+        by: rejectedBy,
+        timestamp: r.rejected_at,
+        icon: "rejected" as const,
+        signature: null,
+      });
+    }
+    
+    // Sort by timestamp
+    entries.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    
+    console.log(`✅ Built ${entries.length} history entries`);
     return entries;
   }, [row]);
 
@@ -390,6 +518,7 @@ export default function RequestDetailsModalUI({
   // State for default approver (Ma'am TM)
   const [defaultApproverId, setDefaultApproverId] = React.useState<string | undefined>(undefined);
   const [defaultApproverName, setDefaultApproverName] = React.useState<string | undefined>(undefined);
+  const [suggestionReason, setSuggestionReason] = React.useState<string | undefined>(undefined);
 
   // Load approver options for choice-based sending
   React.useEffect(() => {
@@ -435,23 +564,50 @@ export default function RequestDetailsModalUI({
     }
   }, [showApproverSelection, row?.id]);
 
-  // Find Ma'am TM (Trizzia Maree Casino) as default approver for admin selection
+  // Smart suggestion: Use workflow logic to suggest next approver
   React.useEffect(() => {
-    if (showApproverSelection && approverOptions.length > 0) {
-      // Try to find Ma'am TM by name or email
-      const maamTM = approverOptions.find((opt: any) => 
-        opt.name?.toLowerCase().includes('trizzia') || 
-        opt.email?.toLowerCase().includes('trizzia') ||
-        opt.name?.toLowerCase().includes('casino')
-      );
-      
-      if (maamTM) {
-        setDefaultApproverId(maamTM.id);
-        setDefaultApproverName(maamTM.name);
-        console.log('[Admin Approve] ✅ Found Ma\'am TM as default approver:', maamTM.name);
-      }
+    if (showApproverSelection && approverOptions.length > 0 && row) {
+      (async () => {
+        try {
+          const { suggestNextApprover, findSuggestedApprover } = await import('@/lib/workflow/suggest-next-approver');
+          const suggestion = suggestNextApprover({
+            status: (row as any).status,
+            requester_is_head: (row as any).requester_is_head || false,
+            requester_role: (row as any).requester?.role || (row as any).requester_role,
+            has_budget: ((row as any).total_budget || 0) > 0,
+            head_included: (row as any).head_included || false,
+            parent_head_approved_at: (row as any).parent_head_approved_at,
+            parent_head_approver: (row as any).parent_head_approver,
+            requester_signature: (row as any).requester_signature,
+            head_approved_at: (row as any).head_approved_at,
+            admin_approved_at: (row as any).admin_approved_at,
+            comptroller_approved_at: (row as any).comptroller_approved_at,
+            hr_approved_at: (row as any).hr_approved_at,
+            vp_approved_at: (row as any).vp_approved_at,
+            vp2_approved_at: (row as any).vp2_approved_at,
+            both_vps_approved: (row as any).both_vps_approved
+          });
+
+          if (suggestion) {
+            const suggested = findSuggestedApprover(suggestion, approverOptions);
+            if (suggested) {
+              setDefaultApproverId(suggested.id);
+              setDefaultApproverName(suggested.name);
+              setSuggestionReason(suggestion.reason);
+              console.log('[Admin Approve] ✅ Smart suggestion:', suggestion.roleLabel, '-', suggestion.reason);
+            } else {
+              setSuggestionReason(undefined);
+            }
+          } else {
+            setSuggestionReason(undefined);
+          }
+        } catch (err) {
+          console.error('[Admin Approve] Error getting suggestion:', err);
+          setSuggestionReason(undefined);
+        }
+      })();
     }
-  }, [showApproverSelection, approverOptions]);
+  }, [showApproverSelection, approverOptions, row]);
 
   async function confirmSignature() {
     if (!row?.id || !sigDataUrl || isApproving) return;
@@ -549,76 +705,78 @@ export default function RequestDetailsModalUI({
     <Dialog open={open} onClose={onClose} className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop with fade-in animation */}
       <div 
-        className="fixed inset-0 bg-black/30 transition-opacity duration-300 ease-out" 
+        className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-300 ease-out" 
         style={{
           animation: open ? 'fadeIn 0.3s ease-out' : 'fadeOut 0.2s ease-in'
         }}
         aria-hidden="true" 
       />
 
-      {/* Modal with scale + fade animation */}
+      {/* Modal with scale + fade animation - Consistent with other modals */}
       <div 
-        className="relative z-50 w-full max-w-5xl rounded-2xl bg-white p-6 shadow-xl transition-all duration-300 ease-out"
+        className="relative z-50 w-full max-w-5xl max-h-[85vh] rounded-3xl bg-white shadow-2xl transition-all duration-300 ease-out flex flex-col overflow-hidden"
         style={{
           animation: open ? 'popIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)' : 'popOut 0.2s ease-in',
           transformOrigin: 'center center'
         }}
       >
         {!row ? (
-          <div className="text-center text-sm text-neutral-500">No request selected</div>
+          <div className="text-center text-sm text-neutral-500 p-6">No request selected</div>
         ) : (
-          <div 
-            className="animate-fadeInUp"
-            style={{
-              animation: 'fadeInUp 0.4s ease-out 0.1s both'
-            }}
-          >
-            {/* Header */}
-            <div className="mb-4 flex items-center justify-between border-b border-neutral-200 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-[#7A0010] to-[#9c2a3a] flex items-center justify-center shadow-lg">
-                  <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                    Travel Request Overview
-                    <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-semibold">
-                      Approved
-                    </span>
-                  </h2>
-                  <p className="text-xs text-gray-500 mt-0.5">Complete request details and approval history</p>
-                </div>
+          <>
+            {/* Header - Consistent with other modals */}
+            <div className="flex items-center justify-between border-b bg-[#7A0010] px-6 py-4 rounded-t-3xl flex-shrink-0">
+              <div>
+                <h2 className="text-lg font-semibold text-white">
+                  Request Details
+                </h2>
+                {(row as any).request_number && (
+                  <p className="text-sm text-white/80 font-mono">
+                    {(row as any).request_number}
+                  </p>
+                )}
               </div>
-
-              <button
-                onClick={onClose}
-                className="ml-auto rounded-xl p-2.5 text-neutral-500 hover:bg-red-50 hover:text-red-600 transition-colors"
-                aria-label="Close"
-              >
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-3">
+                <span className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 ${
+                  (row as any).status === 'pending_admin' ? 'bg-amber-100 text-amber-700' :
+                  (row as any).status === 'approved' ? 'bg-green-100 text-green-700' :
+                  (row as any).status === 'rejected' ? 'bg-red-100 text-red-700' :
+                  'bg-slate-100 text-slate-700'
+                }`}>
+                  {(row as any).status === 'pending_admin' ? 'Pending Review' :
+                   (row as any).status === 'approved' ? 'Approved' :
+                   (row as any).status === 'rejected' ? 'Rejected' :
+                   (row as any).status || 'Pending'}
+                </span>
+                <button
+                  onClick={onClose}
+                  className="rounded-full p-1 text-white/80 hover:bg-white/10 transition-colors"
+                  aria-label="Close"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
             </div>
 
-            {/* Context banners */}
-            {awaitingHead && (
-              <div className="mb-4 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <div>
-                  <div className="font-medium">Awaiting Department Head Endorsement</div>
-                  <div>Admin approval is disabled until the Head signs.</div>
-                </div>
-              </div>
-            )}
-            {row.status === "head_approved" && (
-              <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-                Head endorsement received. You may review and approve.
-              </div>
-            )}
-
             {/* Scrollable body */}
-            <div className="space-y-6 max-h-[72vh] overflow-y-auto pr-2">
+            <div className="overflow-y-auto flex-1 px-6 py-6">
+              {/* Context banners */}
+              {awaitingHead && (
+                <div className="mb-4 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <div>
+                    <div className="font-medium">Awaiting Department Head Endorsement</div>
+                    <div>Admin approval is disabled until the Head signs.</div>
+                  </div>
+                </div>
+              )}
+              {row.status === "head_approved" && (
+                <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                  Head endorsement received. You may review and approve.
+                </div>
+              )}
+
+              <div className="space-y-6">
               {/* Travel Order */}
               <section className="rounded-xl bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200 p-5">
                 <h3 className="mb-4 text-base font-bold text-slate-800 flex items-center gap-2">
@@ -799,163 +957,290 @@ export default function RequestDetailsModalUI({
                   <dd className="col-span-1 text-slate-900">{row.travelOrder?.purposeOfTravel || "—"}</dd>
                 </dl>
 
-                {/* Estimated costs */}
-                {row.travelOrder?.costs && (
-                  <div className="mt-6 bg-white rounded-lg border border-slate-200 p-4">
-                    <h4 className="mb-3 text-sm font-bold text-slate-700 flex items-center gap-2">
-                      <span className="text-lg">₱</span>
-                      Budget Breakdown
-                    </h4>
-                    <table className="w-full text-sm">
-                      <tbody>
-                        {"food" in row.travelOrder.costs && (row.travelOrder.costs as any).food > 0 && (
-                          <tr>
-                            <td className="px-2 py-1">
-                              <div>
-                                <div className="font-medium">Food</div>
-                                {(row.travelOrder.costs as any).foodDescription && (
-                                  <div className="text-xs text-slate-500 mt-0.5">{(row.travelOrder.costs as any).foodDescription}</div>
-                                )}
+                {/* Budget Breakdown - Use expense_breakdown from API */}
+                {(() => {
+                  // Get expense_breakdown from payload (Supabase data) or travelOrder.costs (legacy)
+                  const payload = (row as any)?.payload;
+                  let expenseBreakdown = payload?.expense_breakdown || (row as any)?.expense_breakdown;
+                  
+                  // Parse if string (JSONB)
+                  if (typeof expenseBreakdown === 'string') {
+                    try {
+                      expenseBreakdown = JSON.parse(expenseBreakdown);
+                    } catch (e) {
+                      console.error("[RequestDetailsModal] Failed to parse expense_breakdown:", e);
+                      expenseBreakdown = null;
+                    }
+                  }
+                  
+                  // Fallback to travelOrder.costs if no expense_breakdown
+                  const costs = row.travelOrder?.costs;
+                  const hasExpenseBreakdown = expenseBreakdown && Array.isArray(expenseBreakdown) && expenseBreakdown.length > 0;
+                  const hasCosts = costs && Object.keys(costs).length > 0;
+                  
+                  if (hasExpenseBreakdown || hasCosts) {
+                    return (
+                      <div className="mt-6 bg-white rounded-lg border border-slate-200 p-4">
+                        <h4 className="mb-3 text-sm font-bold text-slate-700 flex items-center gap-2">
+                          <span className="text-lg">₱</span>
+                          Budget Breakdown
+                        </h4>
+                        {hasExpenseBreakdown ? (
+                          // Use expense_breakdown from API (new format)
+                          <>
+                            <div className="space-y-2 mb-3">
+                              {expenseBreakdown.map((item: any, idx: number) => {
+                                if (!item || item.amount <= 0) return null;
+                                const label = item.item || item.description || "Unknown";
+                                const description = item.description && item.item !== "Other" ? item.description : null;
+                                
+                                return (
+                                  <div key={idx} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
+                                    <div className="flex-1">
+                                      <div className="font-medium text-slate-900">{label}</div>
+                                      {description && (
+                                        <div className="text-xs text-slate-500 mt-0.5">{description}</div>
+                                      )}
+                                    </div>
+                                    <div className="text-sm font-semibold text-slate-900">{peso(item.amount)}</div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <div className="mt-4 pt-4 border-t border-slate-300">
+                              <div className="flex justify-between items-center">
+                                <span className="text-sm font-bold text-slate-900">Total Budget</span>
+                                <span className="text-lg font-bold text-[#7A0010]">
+                                  {peso(expenseBreakdown.reduce((sum: number, item: any) => sum + (item.amount || 0), 0))}
+                                </span>
                               </div>
-                            </td>
-                            <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).food)}</td>
-                          </tr>
-                        )}
-                        {"driversAllowance" in row.travelOrder.costs &&
-                          (row.travelOrder.costs as any).driversAllowance > 0 && (
-                            <tr>
-                              <td className="px-2 py-1">
-                                <div>
-                                  <div className="font-medium">Driver's allowance</div>
-                                  {(row.travelOrder.costs as any).driversAllowanceDescription && (
-                                    <div className="text-xs text-slate-500 mt-0.5">{(row.travelOrder.costs as any).driversAllowanceDescription}</div>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).driversAllowance)}</td>
-                            </tr>
-                          )}
-                        {"rentVehicles" in row.travelOrder.costs &&
-                          (row.travelOrder.costs as any).rentVehicles > 0 && (
-                            <tr>
-                              <td className="px-2 py-1">
-                                <div>
-                                  <div className="font-medium">Rent vehicles</div>
-                                  {(row.travelOrder.costs as any).rentVehiclesDescription && (
-                                    <div className="text-xs text-slate-500 mt-0.5">{(row.travelOrder.costs as any).rentVehiclesDescription}</div>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).rentVehicles)}</td>
-                            </tr>
-                          )}
-                        {"hiredDrivers" in row.travelOrder.costs &&
-                          (row.travelOrder.costs as any).hiredDrivers > 0 && (
-                            <tr>
-                              <td className="px-2 py-1">
-                                <div>
-                                  <div className="font-medium">Hired drivers</div>
-                                  {(row.travelOrder.costs as any).hiredDriversDescription && (
-                                    <div className="text-xs text-slate-500 mt-0.5">{(row.travelOrder.costs as any).hiredDriversDescription}</div>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).hiredDrivers)}</td>
-                            </tr>
-                          )}
-                        {"accommodation" in row.travelOrder.costs &&
-                          (row.travelOrder.costs as any).accommodation > 0 && (
-                            <tr>
-                              <td className="px-2 py-1">
-                                <div>
-                                  <div className="font-medium">Accommodation</div>
-                                  {(row.travelOrder.costs as any).accommodationDescription && (
-                                    <div className="text-xs text-slate-500 mt-0.5">{(row.travelOrder.costs as any).accommodationDescription}</div>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).accommodation)}</td>
-                            </tr>
-                          )}
-
-                        {"otherLabel" in row.travelOrder.costs &&
-                          "otherAmount" in row.travelOrder.costs &&
-                          (row.travelOrder.costs as any).otherLabel &&
-                          (row.travelOrder.costs as any).otherAmount > 0 && (
-                            <tr>
-                              <td className="px-2 py-1">
-                                <div>
-                                  <div className="font-medium">{(row.travelOrder.costs as any).otherLabel}</div>
-                                </div>
-                              </td>
-                              <td className="px-2 py-1 text-right">{peso((row.travelOrder.costs as any).otherAmount)}</td>
-                            </tr>
-                          )}
-
-                        {Array.isArray((row.travelOrder.costs as any).otherItems) &&
-                          (row.travelOrder.costs as any).otherItems.map(
-                            (item: { label: string; amount: number; description?: string }, i: number) =>
-                              item?.amount > 0 && (
-                                <tr key={i}>
+                            </div>
+                          </>
+                        ) : (
+                          // Fallback to travelOrder.costs (legacy format)
+                          <table className="w-full text-sm">
+                            <tbody>
+                              {"food" in costs && (costs as any).food > 0 && (
+                                <tr>
                                   <td className="px-2 py-1">
                                     <div>
-                                      <div className="font-medium">{item.label}</div>
-                                      {item.description && (
-                                        <div className="text-xs text-slate-500 mt-0.5">{item.description}</div>
+                                      <div className="font-medium">Food</div>
+                                      {(costs as any).foodDescription && (
+                                        <div className="text-xs text-slate-500 mt-0.5">{(costs as any).foodDescription}</div>
                                       )}
                                     </div>
                                   </td>
-                                  <td className="px-2 py-1 text-right">{peso(item.amount)}</td>
+                                  <td className="px-2 py-1 text-right">{peso((costs as any).food)}</td>
                                 </tr>
-                              )
-                          )}
-
-                        <tr className="border-t font-semibold">
-                          <td className="px-2 py-1">Total</td>
-                          <td className="px-2 py-1 text-right">{peso(totalCost)}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                              )}
+                              {"driversAllowance" in costs && (costs as any).driversAllowance > 0 && (
+                                <tr>
+                                  <td className="px-2 py-1">
+                                    <div>
+                                      <div className="font-medium">Driver's allowance</div>
+                                      {(costs as any).driversAllowanceDescription && (
+                                        <div className="text-xs text-slate-500 mt-0.5">{(costs as any).driversAllowanceDescription}</div>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="px-2 py-1 text-right">{peso((costs as any).driversAllowance)}</td>
+                                </tr>
+                              )}
+                              {"rentVehicles" in costs && (costs as any).rentVehicles > 0 && (
+                                <tr>
+                                  <td className="px-2 py-1">
+                                    <div>
+                                      <div className="font-medium">Rent vehicles</div>
+                                      {(costs as any).rentVehiclesDescription && (
+                                        <div className="text-xs text-slate-500 mt-0.5">{(costs as any).rentVehiclesDescription}</div>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="px-2 py-1 text-right">{peso((costs as any).rentVehicles)}</td>
+                                </tr>
+                              )}
+                              {"hiredDrivers" in costs && (costs as any).hiredDrivers > 0 && (
+                                <tr>
+                                  <td className="px-2 py-1">
+                                    <div>
+                                      <div className="font-medium">Hired drivers</div>
+                                      {(costs as any).hiredDriversDescription && (
+                                        <div className="text-xs text-slate-500 mt-0.5">{(costs as any).hiredDriversDescription}</div>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="px-2 py-1 text-right">{peso((costs as any).hiredDrivers)}</td>
+                                </tr>
+                              )}
+                              {"accommodation" in costs && (costs as any).accommodation > 0 && (
+                                <tr>
+                                  <td className="px-2 py-1">
+                                    <div>
+                                      <div className="font-medium">Accommodation</div>
+                                      {(costs as any).accommodationDescription && (
+                                        <div className="text-xs text-slate-500 mt-0.5">{(costs as any).accommodationDescription}</div>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="px-2 py-1 text-right">{peso((costs as any).accommodation)}</td>
+                                </tr>
+                              )}
+                              {"otherLabel" in costs && "otherAmount" in costs && (costs as any).otherLabel && (costs as any).otherAmount > 0 && (
+                                <tr>
+                                  <td className="px-2 py-1">
+                                    <div>
+                                      <div className="font-medium">{(costs as any).otherLabel}</div>
+                                    </div>
+                                  </td>
+                                  <td className="px-2 py-1 text-right">{peso((costs as any).otherAmount)}</td>
+                                </tr>
+                              )}
+                              {Array.isArray((costs as any).otherItems) &&
+                                (costs as any).otherItems.map(
+                                  (item: { label: string; amount: number; description?: string }, i: number) =>
+                                    item?.amount > 0 && (
+                                      <tr key={i}>
+                                        <td className="px-2 py-1">
+                                          <div>
+                                            <div className="font-medium">{item.label}</div>
+                                            {item.description && (
+                                              <div className="text-xs text-slate-500 mt-0.5">{item.description}</div>
+                                            )}
+                                          </div>
+                                        </td>
+                                        <td className="px-2 py-1 text-right">{peso(item.amount)}</td>
+                                      </tr>
+                                    )
+                                )}
+                            </tbody>
+                          </table>
+                        )}
+                        {hasCosts && (
+                          <div className="mt-4 pt-4 border-t border-slate-300">
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm font-bold text-slate-900">Total Budget</span>
+                              <span className="text-lg font-bold text-[#7A0010]">
+                                {peso(totalCost)}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
 
                 {/* Endorsement / Signature */}
                 <div className="mt-6 bg-white rounded-lg border border-slate-200 p-4">
                   <h4 className="mb-3 text-sm font-bold text-slate-700 flex items-center gap-2">
-                    <svg className="h-4 w-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
+                    {hasHeadApproval ? (
+                      <svg className="h-4 w-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    ) : (
+                      <Clock className="h-4 w-4 text-amber-600" />
+                    )}
                     Department Head Endorsement
                   </h4>
 
                   {/* Centered "signature over printed name" block */}
                   <div className="flex flex-col items-center mt-2">
-                    {row.travelOrder?.endorsedByHeadSignature ? (
-                      <img
-                        src={row.travelOrder.endorsedByHeadSignature}
-                        alt="Signature"
-                        className="h-16 object-contain -mb-3"
-                      />
+                    {hasAnyHeadApproval ? (
+                      <>
+                        {/* Get head signature from the API response - check parent, direct head, and VP (if VP is head) */}
+                        {(() => {
+                          // Priority: parent_head_signature > head_signature > vp_signature (if VP is head)
+                          let signature: string | null = null;
+                          
+                          const payload = (row as any)?.payload;
+                          // Check parent head signature first
+                          if ((row as any)?.parent_head_signature || payload?.parent_head_signature) {
+                            signature = (row as any).parent_head_signature || payload?.parent_head_signature;
+                          }
+                          // Then check direct head signature
+                          else if ((row as any)?.head_signature || payload?.head_signature) {
+                            signature = (row as any).head_signature || payload?.head_signature;
+                          }
+                          // Then check VP signature if VP is head
+                          else if (hasVpApproval && vpIsHead && ((row as any)?.vp_signature || payload?.vp_signature)) {
+                            signature = (row as any).vp_signature || payload?.vp_signature;
+                          }
+                          // Fallback to travelOrder signature
+                          else if (row.travelOrder?.endorsedByHeadSignature) {
+                            signature = row.travelOrder.endorsedByHeadSignature;
+                          }
+                          
+                          console.log("🔍 Signature check:", {
+                            parent_head_signature: !!(row as any)?.parent_head_signature,
+                            head_signature: !!(row as any)?.head_signature,
+                            vp_signature: !!(row as any)?.vp_signature,
+                            vpIsHead,
+                            hasVpApproval,
+                            vpApproverExists: !!vpApprover,
+                            finalSignature: signature ? "EXISTS" : "NULL",
+                            signatureType: typeof signature
+                          });
+                          
+                          return signature ? (
+                            <img
+                              src={signature}
+                              alt="Head Signature"
+                              className="h-16 object-contain -mb-3"
+                            />
+                          ) : (
+                            <div className="h-16" />
+                          );
+                        })()}
+
+                        {/* signature line */}
+                        <div className="w-64 border-t border-neutral-500" />
+
+                        {/* printed name - get from approver (parent or direct) or fallback */}
+                        <p className="mt-1 text-sm font-medium text-center">
+                          {approverToUse?.name || row.travelOrder?.endorsedByHeadName || "—"}
+                        </p>
+
+                        {/* role + department - use approver's department */}
+                        <p className="text-xs text-neutral-500 text-center">
+                          {hasParentHeadApproval ? "Parent " : ""}Dept. Head{deptName ? `, ${deptName}` : ""}
+                        </p>
+
+                        {/* optional date */}
+                        {(() => {
+                          const payload = (row as any)?.payload;
+                          const parentHeadDate = (row as any)?.parent_head_approved_at || payload?.parent_head_approved_at;
+                          const headDate = (row as any)?.head_approved_at || payload?.head_approved_at;
+                          const vpDate = ((row as any)?.vp_approved_at || payload?.vp_approved_at) && vpApprover?.is_head 
+                            ? ((row as any)?.vp_approved_at || payload?.vp_approved_at) 
+                            : null;
+                          const dateToShow = parentHeadDate || headDate || vpDate || row.travelOrder?.endorsedByHeadDate;
+                          
+                          return dateToShow ? (
+                            <p className="text-xs text-neutral-500">
+                              {dateToShow && typeof dateToShow === 'string' 
+                                ? new Date(dateToShow).toLocaleDateString('en-US', { 
+                                    year: 'numeric', 
+                                    month: 'long', 
+                                    day: 'numeric' 
+                                  })
+                                : dateToShow}
+                            </p>
+                          ) : null;
+                        })()}
+                      </>
                     ) : (
-                      <div className="h-16" />
-                    )}
-
-                    {/* signature line */}
-                    <div className="w-64 border-t border-neutral-500" />
-
-                    {/* printed name */}
-                    <p className="mt-1 text-sm font-medium text-center">
-                      {row.travelOrder?.endorsedByHeadName || "—"}
-                    </p>
-
-                    {/* role + department */}
-                    <p className="text-xs text-neutral-500 text-center">
-                      Dept. Head{deptName ? `, ${deptName}` : ""}
-                    </p>
-
-                    {/* optional date */}
-                    {row.travelOrder?.endorsedByHeadDate && (
-                      <p className="text-xs text-neutral-500">{row.travelOrder.endorsedByHeadDate}</p>
+                      <>
+                        {/* Awaiting endorsement - show empty signature line */}
+                        <div className="h-16" />
+                        <div className="w-64 border-t border-neutral-500" />
+                        <p className="mt-1 text-sm font-medium text-center text-slate-400">
+                          Awaiting Department Head Endorsement
+                        </p>
+                        <p className="text-xs text-neutral-400 text-center mt-1">
+                          Signature pending
+                        </p>
+                      </>
                     )}
                   </div>
                 </div>
@@ -1133,6 +1418,41 @@ export default function RequestDetailsModalUI({
                       Admin Notes <span className="text-red-600">*</span>
                       <span className="text-xs font-normal text-neutral-500 ml-2">(Required)</span>
                     </label>
+                    
+                    {/* Quick Fill Buttons */}
+                    {!isApproved && (
+                      <div className="mb-2 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setAdminNotes("Vehicle and driver assigned. Ready for processing.")}
+                          className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+                        >
+                          ✓ Assigned
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAdminNotes("Request processed. All requirements met. Proceed to comptroller.")}
+                          className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+                        >
+                          ✓ Processed
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAdminNotes("Request processed. No budget required. Proceed to HR.")}
+                          className="px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
+                        >
+                          ✓ No Budget
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAdminNotes("Request requires revision. Please review and resubmit.")}
+                          className="px-3 py-1.5 text-xs font-medium bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
+                        >
+                          ✗ Needs Revision
+                        </button>
+                      </div>
+                    )}
+                    
                     <textarea
                       value={adminNotes}
                       onChange={(e) => setAdminNotes(e.target.value)}
@@ -1191,10 +1511,11 @@ export default function RequestDetailsModalUI({
               {historyEntries.length > 0 && (
                 <SubmissionHistoryUI entries={historyEntries} />
               )}
+              </div>
             </div>
 
-            {/* Footer */}
-            <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
+            {/* Footer - Fixed at bottom */}
+            <div className="flex-shrink-0 border-t border-gray-200 bg-gray-50 px-6 py-4 flex flex-wrap items-center justify-between gap-2">
               <div className="flex gap-2">
                 <button
                   onClick={handlePrintTravelPDF}
@@ -1247,7 +1568,7 @@ export default function RequestDetailsModalUI({
                 </div>
               )}
             </div>
-          </div>
+          </>
         )}
       </div>
 
@@ -1315,6 +1636,30 @@ export default function RequestDetailsModalUI({
           allowReturnToRequester={false}
           defaultApproverId={defaultApproverId}
           defaultApproverName={defaultApproverName}
+          allowAllUsers={true}
+          fetchAllUsers={async () => {
+            try {
+              const allUsersRes = await fetch("/api/users/all");
+              const allUsersData = await allUsersRes.json();
+              if (allUsersData.ok && allUsersData.data) {
+                return allUsersData.data.map((u: any) => ({
+                  id: u.id,
+                  name: u.name,
+                  email: u.email,
+                  profile_picture: u.profile_picture,
+                  phone: u.phone,
+                  position: u.position,
+                  department: u.department,
+                  role: u.role,
+                  roleLabel: u.roleLabel
+                }));
+              }
+              return [];
+            } catch (err) {
+              console.error("[AdminRequestDetailsModal] Error fetching all users:", err);
+              return [];
+            }
+          }}
         />
       )}
     </Dialog>

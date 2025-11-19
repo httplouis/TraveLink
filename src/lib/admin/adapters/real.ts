@@ -25,11 +25,11 @@ export async function getDashboardData(): Promise<DashboardData> {
         .select("id", { count: "exact", head: true })
         .eq("status", "available"),
       
-      // Pending requests (for admin)
+      // Pending requests - ADMIN CAN SEE ALL PENDING
       supabase
         .from("requests")
         .select("id", { count: "exact", head: true })
-        .in("status", ["pending_admin", "head_approved"]),
+        .in("status", ["pending_head", "pending_admin", "pending_comptroller", "pending_hr", "pending_exec", "pending_hr_ack"]),
       
       // Total KM (mock for now - would need trip logs)
       Promise.resolve({ count: 0 }),
@@ -97,7 +97,7 @@ export async function getDashboardData(): Promise<DashboardData> {
       .sort((a, b) => b.count - a.count)
       .slice(0, 10);
 
-    // Recent requests (pending_admin for admin)
+    // Recent requests - ADMIN CAN SEE ALL REQUESTS
     const { data: recentRequestsData } = await supabase
       .from("requests")
       .select(`
@@ -111,7 +111,7 @@ export async function getDashboardData(): Promise<DashboardData> {
         departments!requests_department_id_fkey(name, code),
         users!requests_requester_id_fkey(name, email)
       `)
-      .in("status", ["pending_admin", "head_approved"])
+      // No status filter - admin can see all requests
       .order("created_at", { ascending: false })
       .limit(10);
 

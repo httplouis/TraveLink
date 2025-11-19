@@ -55,7 +55,7 @@ export default function DashboardHero({
             transition={{ delay: 0.1 }}
             className="text-sm/5 text-white/85 font-medium"
           >
-            Welcome to TraviLink 👋
+            Welcome to Travelink 👋
           </motion.p>
           <motion.h1 
             initial={{ opacity: 0, x: -10 }}

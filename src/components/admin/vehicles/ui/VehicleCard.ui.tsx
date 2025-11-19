@@ -46,12 +46,19 @@ export function VehicleCard({
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={v.photoUrl}
-              alt={v.model}
+              alt={v.model || v.brand || 'Vehicle'}
               className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+              onError={(e) => {
+                // Fallback to placeholder if image fails to load
+                (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?w=800&h=600&fit=crop';
+              }}
             />
           ) : (
-            <div className="flex h-full w-full items-center justify-center text-sm text-gray-400">
-              Vehicle photo
+            <div className="flex h-full w-full items-center justify-center text-sm text-gray-400 bg-gradient-to-br from-gray-100 to-gray-200">
+              <div className="text-center">
+                <div className="text-2xl mb-1">🚗</div>
+                <div>Vehicle photo</div>
+              </div>
             </div>
           )}
         </div>
@@ -72,7 +79,7 @@ export function VehicleCard({
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="truncate text-[13px] text-gray-500">
-              {v.brand} {v.model}
+              {v.brand ? `${v.brand} ${v.model}` : (v.model || 'Vehicle')}
             </div>
             <div className="truncate text-base font-semibold tracking-tight">
               {v.plateNo}

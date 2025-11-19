@@ -25,7 +25,7 @@ export default function ComptrollerHistory() {
 
   // Set page title
   React.useEffect(() => {
-    document.title = "Comptroller History - TraviLink";
+    document.title = "Comptroller History - Travelink";
   }, []);
 
   React.useEffect(() => {

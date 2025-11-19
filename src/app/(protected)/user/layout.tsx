@@ -38,7 +38,7 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <ToastProvider>
-      <PageTitle title="TraviLink | Faculty" />
+      <PageTitle title="Travelink | Faculty" />
       <div
         className="bg-[var(--background)] text-[var(--foreground)]"
         style={{ ["--topbar-h" as any]: topbarH }}

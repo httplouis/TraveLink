@@ -44,19 +44,67 @@ export async function GET() {
     console.log(`[GET /api/head] Fetching requests for head: ${profile.email}, dept: ${profile.department_id}`);
 
     // Get requests for THIS head's department with status = pending_head or pending_parent_head
+    // ALSO get requests from child departments (where request's department has parent_department_id = this head's department)
+    // This allows parent heads (SVP) to see requests from child departments (e.g., CCMS → OVPAR)
     // ALSO get requests with multiple requesters where at least one requester is from this head's department
-    // This allows heads to sign separately for multi-department requests
+    // IMPORTANT: Exclude requests where the requester IS the current head (they shouldn't see their own requests)
+    
+    // Query 1: Direct department requests (pending_head or pending_parent_head for this department)
     const { data: directRequests, error: directError } = await supabase
       .from("requests")
       .select(`
         *,
-        requester:users!requester_id(id, name, email, profile_picture, avatar_url, position_title),
-        department:departments!department_id(id, name, code)
+        requester:users!requests_requester_id_fkey(id, name, email, profile_picture, avatar_url, position_title),
+        department:departments!requests_department_id_fkey(id, name, code, parent_department_id)
       `)
       .in("status", ["pending_head", "pending_parent_head"])
       .eq("department_id", profile.department_id)
+      .neq("requester_id", profile.id) // Exclude requests where requester is the current head
       .order("created_at", { ascending: false })
       .limit(50);
+
+    // Query 2: Child department requests (for parent heads like SVP)
+    // Get requests where the request's department has parent_department_id = this head's department
+    // This allows SVP Academics to see CCMS requests when status is pending_parent_head
+    let childDeptRequests: any[] = [];
+    let childDeptError: any = null;
+    
+    try {
+      // First, get all departments that have this head's department as parent
+      const { data: childDepartments } = await supabase
+        .from("departments")
+        .select("id")
+        .eq("parent_department_id", profile.department_id);
+      
+      if (childDepartments && childDepartments.length > 0) {
+        const childDeptIds = childDepartments.map((d: any) => d.id);
+        
+        // Get requests from child departments with pending_parent_head status
+        const { data: childRequests, error: childError } = await supabase
+          .from("requests")
+          .select(`
+            *,
+            requester:users!requests_requester_id_fkey(id, name, email, profile_picture, avatar_url, position_title),
+            department:departments!requests_department_id_fkey(id, name, code, parent_department_id)
+          `)
+          .in("status", ["pending_parent_head"])
+          .in("department_id", childDeptIds)
+          .neq("requester_id", profile.id) // Exclude requests where requester is the current head
+          .order("created_at", { ascending: false })
+          .limit(50);
+        
+        if (!childError && childRequests) {
+          childDeptRequests = childRequests;
+          console.log(`[GET /api/head] Found ${childDeptRequests.length} requests from child departments`);
+        } else if (childError) {
+          childDeptError = childError;
+          console.error("[GET /api/head] Error fetching child department requests:", childError);
+        }
+      }
+    } catch (err: any) {
+      console.error("[GET /api/head] Exception fetching child department requests:", err);
+      childDeptError = err;
+    }
 
     // Also get requests with multiple requesters from requester_invitations where this head's department is involved
     // Use a safer approach: first get the request IDs, then fetch the requests separately
@@ -81,11 +129,12 @@ export async function GET() {
             .from("requests")
             .select(`
               *,
-              requester:users!requester_id(id, name, email, profile_picture, avatar_url, position_title),
-              department:departments!department_id(id, name, code)
+              requester:users!requests_requester_id_fkey(id, name, email, profile_picture, avatar_url, position_title),
+              department:departments!requests_department_id_fkey(id, name, code)
             `)
             .in("id", requestIds)
             .in("status", ["pending_head", "pending_parent_head"])
+            .neq("requester_id", profile.id) // Exclude requests where requester is the current head
             .order("created_at", { ascending: false })
             .limit(50);
           
@@ -102,12 +151,19 @@ export async function GET() {
       multiDeptError = err;
     }
 
-    // Combine both sets of requests, avoiding duplicates
+    // Combine all sets of requests, avoiding duplicates
     const directRequestIds = new Set((directRequests || []).map((r: any) => r.id));
     const uniqueMultiDeptRequests = multiDeptRequestList.filter((r: any) => r && !directRequestIds.has(r.id));
     
-    const data = [...(directRequests || []), ...uniqueMultiDeptRequests];
-    const error = directError || multiDeptError;
+    // Also exclude child department requests that are already in direct requests
+    const allRequestIds = new Set([
+      ...(directRequests || []).map((r: any) => r.id),
+      ...uniqueMultiDeptRequests.map((r: any) => r.id)
+    ]);
+    const uniqueChildDeptRequests = childDeptRequests.filter((r: any) => r && !allRequestIds.has(r.id));
+    
+    const data = [...(directRequests || []), ...uniqueMultiDeptRequests, ...uniqueChildDeptRequests];
+    const error = directError || multiDeptError || childDeptError;
 
     // Debug: Log profile picture data from database
     if (data && data.length > 0) {
@@ -162,6 +218,17 @@ export async function GET() {
     }
 
     console.log(`[GET /api/head] Found ${data?.length || 0} pending requests (${directRequests?.length || 0} direct, ${uniqueMultiDeptRequests.length} multi-dept)`);
+    
+    // Additional debug: Log all request IDs and requester info
+    if (data && data.length > 0) {
+      console.log(`[GET /api/head] Request IDs:`, data.map((r: any) => ({
+        id: r.id,
+        request_number: r.request_number,
+        requester_id: r.requester_id,
+        has_requester: !!r.requester,
+        requester_name: r.requester?.name || r.requester_name || 'Unknown'
+      })));
+    }
 
     return NextResponse.json({ ok: true, data: data || [] });
   } catch (err: any) {
@@ -241,9 +308,18 @@ export async function PATCH(req: Request) {
       }, { status: 400 });
     }
 
-    // Verify user is head of this department OR request has multiple requesters from different departments
-    // For multi-department requests, check if this head's department has confirmed requesters
+    // Verify user is head of this department OR parent head of child department OR request has multiple requesters
+    // For parent heads (SVP), they can approve requests from child departments when status is pending_parent_head
     let isAuthorized = request.department_id === profile.department_id;
+    
+    if (!isAuthorized && request.status === "pending_parent_head") {
+      // Check if this head is the parent head of the request's department
+      const requestDept = request.department as any;
+      if (requestDept?.parent_department_id === profile.department_id) {
+        isAuthorized = true;
+        console.log(`[PATCH /api/head] Parent head authorization: ${profile.id} is parent of ${request.department_id}`);
+      }
+    }
     
     if (!isAuthorized) {
       // Check if this request has multiple requesters and this head's department is involved
@@ -287,26 +363,99 @@ export async function PATCH(req: Request) {
         returnInfo.returned_by = profile.id;
         returnInfo.return_reason = return_reason;
       } else if (next_approver_id && next_approver_role) {
-        // Send to specific approver
-        if (next_approver_role === "admin") {
-          nextStatus = "pending_admin";
-          nextApproverRole = "admin";
-        } else if (next_approver_role === "vp") {
-          // Head is sending directly to VP (skip admin/comptroller)
-          nextStatus = "pending_exec";
-          nextApproverRole = "vp";
-          // Store which VP to send to
-          updateData.next_vp_id = next_approver_id;
-        } else {
-          // Default workflow
-          const hasParentDepartment = !!(request.department as any)?.parent_department_id;
-          nextStatus = WorkflowEngine.getNextStatus(
-            request.status,
-            request.requester_is_head || false,
-            request.has_budget || false,
-            hasParentDepartment
-          );
-          nextApproverRole = WorkflowEngine.getApproverRole(nextStatus) || "admin";
+        // Send to specific approver - fetch user's actual role to determine correct status
+        try {
+          const { data: approverUser } = await supabase
+            .from("users")
+            .select("id, role, is_admin, is_hr, is_vp, is_president, is_head, is_comptroller, exec_type")
+            .eq("id", next_approver_id)
+            .single();
+          
+          if (approverUser) {
+            // Determine status based on user's actual role
+            if (approverUser.is_admin || approverUser.role === "admin") {
+              nextStatus = "pending_admin";
+              nextApproverRole = "admin";
+            } else if (approverUser.is_vp || approverUser.role === "exec" || approverUser.exec_type?.startsWith("vp_") || approverUser.exec_type?.startsWith("svp_")) {
+              nextStatus = "pending_exec";
+              nextApproverRole = "vp";
+            } else if (approverUser.is_president || approverUser.exec_type === "president") {
+              nextStatus = "pending_exec";
+              nextApproverRole = "president";
+            } else if (approverUser.is_hr || approverUser.role === "hr") {
+              nextStatus = "pending_hr";
+              nextApproverRole = "hr";
+            } else if (approverUser.is_comptroller || approverUser.role === "comptroller") {
+              nextStatus = "pending_comptroller";
+              nextApproverRole = "comptroller";
+            } else if (approverUser.is_head || approverUser.role === "head") {
+              // Check if this is a parent head
+              const hasParentDepartment = !!(request.department as any)?.parent_department_id;
+              if (hasParentDepartment && approverUser.department_id === (request.department as any)?.parent_department_id) {
+                nextStatus = "pending_parent_head";
+              } else {
+                nextStatus = "pending_head";
+              }
+              nextApproverRole = "head";
+            } else {
+              // Unknown role - use role from selection or default to admin
+              if (next_approver_role === "admin") {
+                nextStatus = "pending_admin";
+                nextApproverRole = "admin";
+              } else if (next_approver_role === "vp") {
+                nextStatus = "pending_exec";
+                nextApproverRole = "vp";
+              } else {
+                // Default workflow
+                const hasParentDepartment = !!(request.department as any)?.parent_department_id;
+                nextStatus = WorkflowEngine.getNextStatus(
+                  request.status,
+                  request.requester_is_head || false,
+                  request.has_budget || false,
+                  hasParentDepartment
+                );
+                nextApproverRole = WorkflowEngine.getApproverRole(nextStatus) || "admin";
+              }
+            }
+          } else {
+            // User not found - use role from selection or default
+            if (next_approver_role === "admin") {
+              nextStatus = "pending_admin";
+              nextApproverRole = "admin";
+            } else if (next_approver_role === "vp") {
+              nextStatus = "pending_exec";
+              nextApproverRole = "vp";
+            } else {
+              // Default workflow
+              const hasParentDepartment = !!(request.department as any)?.parent_department_id;
+              nextStatus = WorkflowEngine.getNextStatus(
+                request.status,
+                request.requester_is_head || false,
+                request.has_budget || false,
+                hasParentDepartment
+              );
+              nextApproverRole = WorkflowEngine.getApproverRole(nextStatus) || "admin";
+            }
+          }
+        } catch (err) {
+          console.error("[PATCH /api/head] Error fetching approver user:", err);
+          // Fallback to role-based logic
+          if (next_approver_role === "admin") {
+            nextStatus = "pending_admin";
+            nextApproverRole = "admin";
+          } else if (next_approver_role === "vp") {
+            nextStatus = "pending_exec";
+            nextApproverRole = "vp";
+          } else {
+            const hasParentDepartment = !!(request.department as any)?.parent_department_id;
+            nextStatus = WorkflowEngine.getNextStatus(
+              request.status,
+              request.requester_is_head || false,
+              request.has_budget || false,
+              hasParentDepartment
+            );
+            nextApproverRole = WorkflowEngine.getApproverRole(nextStatus) || "admin";
+          }
         }
       } else {
         // Default workflow
@@ -331,12 +480,31 @@ export async function PATCH(req: Request) {
       
       // Set next approver if specified (not returning to requester)
       if (next_approver_id && next_approver_role && next_approver_role !== "requester") {
-        if (next_approver_role === "admin") {
-          updateData.next_admin_id = next_approver_id;
-        } else if (next_approver_role === "vp") {
-          // Head is sending directly to VP
-          updateData.next_vp_id = next_approver_id;
+        // Store approver ID in workflow_metadata based on their role
+        const workflowMetadata: any = request.workflow_metadata || {};
+        workflowMetadata.next_approver_id = next_approver_id;
+        workflowMetadata.next_approver_role = nextApproverRole;
+        
+        // Store role-specific IDs for inbox filtering
+        // Note: Don't set next_admin_id, next_hr_id, or next_comptroller_id - allow all users in those roles to see it
+        if (nextApproverRole === "admin") {
+          // Don't set next_admin_id - allow all admins to see it
+          // workflowMetadata.next_admin_id = next_approver_id;
+        } else if (nextApproverRole === "vp") {
+          workflowMetadata.next_vp_id = next_approver_id;
+        } else if (nextApproverRole === "president") {
+          workflowMetadata.next_president_id = next_approver_id;
+        } else if (nextApproverRole === "hr") {
+          // Don't set next_hr_id - allow all HRs to see it
+          // workflowMetadata.next_hr_id = next_approver_id;
+        } else if (nextApproverRole === "comptroller") {
+          // Don't set next_comptroller_id - allow all comptrollers to see it
+          // workflowMetadata.next_comptroller_id = next_approver_id;
+        } else if (nextApproverRole === "head") {
+          workflowMetadata.next_head_id = next_approver_id;
         }
+        
+        updateData.workflow_metadata = workflowMetadata;
       }
 
       // Set appropriate approval fields based on current status
@@ -355,7 +523,10 @@ export async function PATCH(req: Request) {
       console.log(`[PATCH /api/head] Updating request with:`, {
         id,
         updateData,
-        profile_id: profile.id
+        profile_id: profile.id,
+        workflow_metadata: updateData.workflow_metadata,
+        next_vp_id: updateData.workflow_metadata?.next_vp_id,
+        next_approver_role: updateData.workflow_metadata?.next_approver_role
       });
 
       const { error: updateError } = await supabase
@@ -368,13 +539,29 @@ export async function PATCH(req: Request) {
         return NextResponse.json({ ok: false, error: updateError.message }, { status: 500 });
       }
       
-      // Verify the update
-      const { data: verifyData } = await supabase
+      // Verify the update - check if workflow_metadata was saved correctly
+      const { data: verifyData, error: verifyError } = await supabase
         .from("requests")
-        .select("id, status, head_approved_by, parent_head_approved_by")
+        .select("id, status, head_approved_by, parent_head_approved_by, workflow_metadata")
         .eq("id", id)
         .single();
-      console.log(`[PATCH /api/head] Verification after update:`, verifyData);
+      
+      console.log(`[PATCH /api/head] Verification after update:`, {
+        id: verifyData?.id,
+        status: verifyData?.status,
+        workflow_metadata: verifyData?.workflow_metadata,
+        next_vp_id: verifyData?.workflow_metadata?.next_vp_id,
+        next_admin_id: verifyData?.workflow_metadata?.next_admin_id,
+        verifyError
+      });
+      
+      // If workflow_metadata was supposed to be set but isn't, log a warning
+      if (updateData.workflow_metadata && (!verifyData?.workflow_metadata || Object.keys(verifyData.workflow_metadata).length === 0)) {
+        console.error(`[PATCH /api/head] ⚠️ WARNING: workflow_metadata was not saved!`, {
+          expected: updateData.workflow_metadata,
+          actual: verifyData?.workflow_metadata
+        });
+      }
 
       // Log in history with complete tracking
       await supabase.from("request_history").insert({
@@ -444,6 +631,48 @@ export async function PATCH(req: Request) {
             action_label: "Review Request",
             priority: "high",
           });
+        }
+
+        // If request goes to admin (pending_admin), notify ALL admins
+        if (nextStatus === "pending_admin") {
+          console.log("[PATCH /api/head] 📧 Notifying all admins about new pending request");
+          
+          // Find all active admin users
+          const { data: admins, error: adminsError } = await supabase
+            .from("users")
+            .select("id, name, email")
+            .eq("role", "admin")
+            .eq("is_admin", true)
+            .eq("status", "active");
+
+          if (adminsError) {
+            console.error("[PATCH /api/head] ❌ Failed to fetch admins:", adminsError);
+          } else if (admins && admins.length > 0) {
+            console.log(`[PATCH /api/head] ✅ Found ${admins.length} admin(s) to notify`);
+            
+            // Get requester name for notification
+            const requestingPersonName = request.requester_name || request.requester?.name || "Requester";
+            
+            // Notify each admin
+            const adminNotifications = admins.map((admin: any) =>
+              createNotification({
+                user_id: admin.id,
+                notification_type: "request_pending_signature",
+                title: "New Request Requires Review",
+                message: `A travel order request ${request.request_number || ''} from ${requestingPersonName} requires your review.`,
+                related_type: "request",
+                related_id: id,
+                action_url: `/admin/requests?view=${id}`,
+                action_label: "Review Request",
+                priority: "high",
+              })
+            );
+
+            await Promise.allSettled(adminNotifications);
+            console.log("[PATCH /api/head] ✅ Admin notifications sent");
+          } else {
+            console.warn("[PATCH /api/head] ⚠️ No active admins found to notify");
+          }
         }
       } catch (notifError: any) {
         console.error("[PATCH /api/head] Failed to create notifications:", notifError);

@@ -16,7 +16,7 @@ export default function VPHistoryPage() {
 
   // Set page title
   React.useEffect(() => {
-    document.title = "VP History - TraviLink";
+    document.title = "VP History - Travelink";
   }, []);
 
   React.useEffect(() => {
