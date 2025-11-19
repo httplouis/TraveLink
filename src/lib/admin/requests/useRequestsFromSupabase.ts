@@ -80,12 +80,24 @@ type SupabaseRequestRecord = {
 const fetcher = (url: string) =>
   fetch(url).then((r) => {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return r.json();
+    return r.json().then((data) => {
+      // Handle both formats: direct array or { ok: true, data: [...] }
+      if (data.ok && Array.isArray(data.data)) {
+        console.log("[useRequestsFromSupabase] Received data from admin inbox:", data.data.length, "requests");
+        return data.data;
+      }
+      if (Array.isArray(data)) {
+        console.log("[useRequestsFromSupabase] Received direct array:", data.length, "requests");
+        return data;
+      }
+      console.error("[useRequestsFromSupabase] Unexpected response format:", data);
+      return [];
+    });
   });
 
 export function useRequestsFromSupabase() {
   const { data, error, isLoading, mutate } = useSWR<SupabaseRequestRecord[]>(
-    "/api/requests/list",
+    "/api/admin/inbox",
     fetcher,
     {
       refreshInterval: 5000, // Auto-refresh every 5 seconds for backup

@@ -5,6 +5,7 @@ import * as React from "react";
 import TopGridFields from "./parts/TopGridFields.view";
 import CostsSection from "./parts/CostsSection.view";
 import EndorsementSection from "./parts/EndorsementSection.view";
+import FileAttachmentSection from "./parts/FileAttachmentSection.view";
 import { UI_TEXT } from "@/lib/user/request/uiText";
 
 type ViewProps = {
@@ -88,11 +89,22 @@ export default function TravelOrderFormView({
         onChangeCosts={onChangeCosts}
       />
 
+      {/* File Attachments Section */}
+      <div className="mt-6 pt-6 border-t border-gray-200">
+        <FileAttachmentSection
+          attachments={data?.attachments || []}
+          onChange={(attachments) => onChange({ attachments })}
+          errors={errors}
+        />
+      </div>
+
       {/* Head details + (optionally) signature kapag head mismo nagrerequest */}
       <EndorsementSection
-        nameValue={isRepresentativeSubmission && requestingPersonHeadName 
-          ? requestingPersonHeadName 
-          : (data?.endorsedByHeadName ?? "")}
+        nameValue={isHeadRequester 
+          ? "" // Head requester should not have auto-filled head name - they will choose who to send to
+          : (isRepresentativeSubmission && requestingPersonHeadName 
+            ? requestingPersonHeadName 
+            : (data?.endorsedByHeadName ?? ""))}
         dateValue={data?.endorsedByHeadDate ?? ""}
         onNameChange={(v) => {
           setHeadEdited();

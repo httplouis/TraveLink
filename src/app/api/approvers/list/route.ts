@@ -7,19 +7,38 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 
 export async function GET(req: NextRequest) {
   try {
-    const supabase = await createSupabaseServerClient(true);
-    const { searchParams } = new URL(req.url);
-    const role = searchParams.get("role"); // 'admin', 'comptroller', 'hr', 'vp', 'president', 'head'
-
-    // Get current user for context
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    // Get authenticated user first (for authorization)
+    const authSupabase = await createSupabaseServerClient(false);
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser();
     if (authError || !user) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
+    // Use direct createClient for service role to truly bypass RLS for queries
+    // createServerClient with cookies might still apply RLS
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return NextResponse.json({ 
+        ok: false, 
+        error: "Missing Supabase configuration" 
+      }, { status: 500 });
+    }
+    
+    // Service role client for queries (bypasses RLS completely)
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+
+    // Get current user profile for context
     const { data: currentProfile } = await supabase
       .from("users")
       .select("id, role, is_admin, is_hr, is_vp, is_president, is_head")
@@ -29,6 +48,9 @@ export async function GET(req: NextRequest) {
     if (!currentProfile) {
       return NextResponse.json({ ok: false, error: "Profile not found" }, { status: 404 });
     }
+
+    const { searchParams } = new URL(req.url);
+    const role = searchParams.get("role"); // 'admin', 'comptroller', 'hr', 'vp', 'president', 'head'
 
     let approvers: any[] = [];
 
@@ -108,12 +130,29 @@ export async function GET(req: NextRequest) {
         const { data: testUsers, error: testError } = await supabase
           .from("users")
           .select("id, name, role, is_admin, status")
-          .limit(5);
+          .limit(10);
         
-        console.log("[GET /api/approvers/list] Test query (all users, limit 5):", {
+        console.log("[GET /api/approvers/list] 🔍 Test query (all users, limit 10):", {
           count: testUsers?.length || 0,
           error: testError?.message,
-          hasAdmins: testUsers?.some((u: any) => u.is_admin || u.role === 'admin')
+          errorCode: testError?.code,
+          errorDetails: testError?.details,
+          hasAdmins: testUsers?.some((u: any) => u.is_admin || u.role === 'admin'),
+          sampleUsers: testUsers?.slice(0, 3).map((u: any) => ({ name: u.name, role: u.role, is_admin: u.is_admin }))
+        });
+        
+        // Also test direct admin query
+        const { data: directAdmins, error: directError } = await supabase
+          .from("users")
+          .select("id, name, email, role, is_admin, status")
+          .eq("is_admin", true)
+          .limit(10);
+        
+        console.log("[GET /api/approvers/list] 🔍 Direct admin query (is_admin=true):", {
+          count: directAdmins?.length || 0,
+          error: directError?.message,
+          errorCode: directError?.code,
+          names: directAdmins?.map((a: any) => a.name)
         });
         
         // Strategy A: Query by is_admin flag
@@ -324,16 +363,23 @@ export async function GET(req: NextRequest) {
         .eq("status", "active")
         .order("name", { ascending: true });
       
-      // Filter to only include VPs (exclude President)
+      // Filter to only include VPs with specific exec_type (exclude President and generic "vp")
+      // Only show VPs with exec_type like: vp_admin, vp_finance, vp_external, svp_academics
+      // Exclude generic "vp" exec_type (those are duplicates)
       const filteredVps = (vps || []).filter((vp: any) => {
-        // Include if is_vp is true OR exec_type contains "vp" or "svp" (but not "president")
-        const isVP = vp.is_vp === true || 
-                    (vp.exec_type && (
-                      vp.exec_type.startsWith('vp') || 
-                      vp.exec_type.startsWith('svp')
-                    )) ||
-                    (vp.role === 'exec' && vp.exec_type && vp.exec_type !== 'president');
-        return isVP;
+        // Exclude President
+        if (vp.exec_type === 'president') {
+          return false;
+        }
+        
+        // Only include VPs with specific exec_type (not just "vp")
+        // Valid exec_types: vp_admin, vp_finance, vp_external, svp_academics
+        if (vp.exec_type && vp.exec_type !== 'vp') {
+          return vp.exec_type.startsWith('vp_') || vp.exec_type.startsWith('svp_');
+        }
+        
+        // If no exec_type or just "vp", exclude (these are duplicates)
+        return false;
       });
 
       if (filteredVps && filteredVps.length > 0) {

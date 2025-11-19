@@ -1,10 +1,24 @@
 // src/app/api/admin/approve/route.ts
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createSupabaseServerClient(true); // Use service role for admin operations
+    // Create a direct Supabase client with service role key to bypass RLS
+    // This ensures we can fetch and update requests regardless of RLS policies
+    const supabaseServiceRole = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    );
+
+    const supabase = await createSupabaseServerClient(true); // Use service role for auth checks
     
     // Get current user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -13,7 +27,8 @@ export async function POST(request: Request) {
     }
 
     // Get user profile (try users table first, fallback to auth user)
-    const { data: profile } = await supabase
+    // Use service role client to bypass RLS
+    const { data: profile } = await supabaseServiceRole
       .from("users")
       .select("*")
       .eq("auth_user_id", user.id)
@@ -24,6 +39,14 @@ export async function POST(request: Request) {
     const userName = profile?.name || user.email || "Admin User";
     
     console.log("[POST /api/admin/approve] User:", { userId, userName, hasProfile: !!profile });
+
+    // Verify admin access
+    if (!profile || !profile.is_admin) {
+      return NextResponse.json({ 
+        ok: false, 
+        error: "Access denied. Admin role required." 
+      }, { status: 403 });
+    }
 
     // Parse request body
     const body = await request.json();
@@ -54,12 +77,19 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    // Get request
-    const { data: req, error: fetchError } = await supabase
+    // Get request using service role client to bypass RLS
+    console.log("[POST /api/admin/approve] Fetching request:", requestId);
+    const { data: req, error: fetchError } = await supabaseServiceRole
       .from("requests")
       .select("*")
       .eq("id", requestId)
       .single();
+    
+    console.log("[POST /api/admin/approve] Request fetch result:", {
+      found: !!req,
+      error: fetchError?.message,
+      requestId
+    });
     
     // Check vehicle/driver availability if assigned
     if (driver || vehicle) {
@@ -116,12 +146,55 @@ export async function POST(request: Request) {
     const now = getPhilippineTimestamp();
 
     // Determine next status based on budget and choice-based sending
-    // If nextApproverRole is provided, use it; otherwise fall back to requiresComptroller logic
+    // If nextApproverId is provided, fetch user's actual role to determine correct status
     let nextStatus: string;
     let nextApproverRoleFinal: string;
     
-    if (nextApproverRole) {
-      // Choice-based sending
+    if (nextApproverId && nextApproverRole) {
+      // Fetch user's actual role to determine correct routing
+      // Use service role client to bypass RLS
+      try {
+        const { data: approverUser } = await supabaseServiceRole
+          .from("users")
+          .select("id, role, is_admin, is_hr, is_vp, is_president, is_head, is_comptroller, exec_type")
+          .eq("id", nextApproverId)
+          .single();
+        
+        if (approverUser) {
+          // Determine status based on user's actual role
+          if (approverUser.is_comptroller || approverUser.role === "comptroller") {
+            nextStatus = "pending_comptroller";
+            nextApproverRoleFinal = "comptroller";
+          } else if (approverUser.is_hr || approverUser.role === "hr") {
+            nextStatus = "pending_hr";
+            nextApproverRoleFinal = "hr";
+          } else if (approverUser.is_admin || approverUser.role === "admin") {
+            nextStatus = "pending_admin";
+            nextApproverRoleFinal = "admin";
+          } else if (approverUser.is_vp || approverUser.role === "exec") {
+            nextStatus = "pending_exec";
+            nextApproverRoleFinal = "vp";
+          } else if (approverUser.is_president || approverUser.exec_type === "president") {
+            nextStatus = "pending_exec";
+            nextApproverRoleFinal = "president";
+          } else {
+            // Use role from selection
+            nextApproverRoleFinal = nextApproverRole;
+            nextStatus = nextApproverRole === "comptroller" ? "pending_comptroller" : "pending_hr";
+          }
+        } else {
+          // User not found - use role from selection
+          nextApproverRoleFinal = nextApproverRole;
+          nextStatus = nextApproverRole === "comptroller" ? "pending_comptroller" : "pending_hr";
+        }
+      } catch (err) {
+        console.error("[Admin Approve] Error fetching approver user:", err);
+        // Fallback to role from selection
+        nextApproverRoleFinal = nextApproverRole;
+        nextStatus = nextApproverRole === "comptroller" ? "pending_comptroller" : "pending_hr";
+      }
+    } else if (nextApproverRole) {
+      // Choice-based sending without user ID
       nextApproverRoleFinal = nextApproverRole;
       nextStatus = nextApproverRole === "comptroller" ? "pending_comptroller" : "pending_hr";
     } else {
@@ -154,19 +227,66 @@ export async function POST(request: Request) {
     }
 
     // Set next approver ID if provided (choice-based sending)
+    // Note: Don't set next_comptroller_id or next_hr_id - allow all comptrollers/HRs to see it
+    // Only set specific IDs for VP and President (they have different roles)
     if (nextApproverId) {
+      // Store approver ID based on their actual role
       if (nextApproverRoleFinal === "comptroller") {
-        updateData.next_comptroller_id = nextApproverId;
+        // Don't set next_comptroller_id - allow all comptrollers to see it
+        // updateData.next_comptroller_id = nextApproverId;
       } else if (nextApproverRoleFinal === "hr") {
-        updateData.next_hr_id = nextApproverId;
+        // Don't set next_hr_id - allow all HRs to see it
+        // updateData.next_hr_id = nextApproverId;
+      } else if (nextApproverRoleFinal === "admin") {
+        // Don't set next_admin_id - allow all admins to see it
+        // updateData.next_admin_id = nextApproverId;
+      } else if (nextApproverRoleFinal === "vp") {
+        updateData.next_vp_id = nextApproverId;
+      } else if (nextApproverRoleFinal === "president") {
+        updateData.next_president_id = nextApproverId;
+      } else if (nextApproverRoleFinal === "head") {
+        updateData.next_head_id = nextApproverId;
       }
     }
+
+    // Update workflow_metadata with routing information
+    const workflowMetadata: any = req.workflow_metadata || {};
+    
+    // IMPORTANT: For comptroller, hr, and admin - don't set next_approver_id
+    // This allows ALL users in that role to see the request
+    if (nextApproverRoleFinal === "comptroller" || nextApproverRoleFinal === "hr" || nextApproverRoleFinal === "admin") {
+      // Clear any existing next_approver_id to ensure all users in that role can see it
+      workflowMetadata.next_approver_id = null;
+      workflowMetadata.next_approver_role = nextApproverRoleFinal;
+      // Explicitly clear role-specific IDs
+      workflowMetadata.next_comptroller_id = null;
+      workflowMetadata.next_hr_id = null;
+      workflowMetadata.next_admin_id = null;
+    } else if (nextApproverId && nextApproverRoleFinal) {
+      // For other roles (VP, President, Head), set the specific approver ID
+      workflowMetadata.next_approver_id = nextApproverId;
+      workflowMetadata.next_approver_role = nextApproverRoleFinal;
+      
+      // Store role-specific IDs for inbox filtering
+      if (nextApproverRoleFinal === "vp") {
+        workflowMetadata.next_vp_id = nextApproverId;
+      } else if (nextApproverRoleFinal === "president") {
+        workflowMetadata.next_president_id = nextApproverId;
+      } else if (nextApproverRoleFinal === "head") {
+        workflowMetadata.next_head_id = nextApproverId;
+      }
+    }
+    
+    updateData.workflow_metadata = workflowMetadata;
+    
+    console.log("[POST /api/admin/approve] Workflow metadata:", JSON.stringify(workflowMetadata, null, 2));
 
     console.log(`[POST /api/admin/approve] Approving request ${requestId}: ${req.status} → ${nextStatus}`);
     console.log(`[POST /api/admin/approve] 🖊️ Signature length:`, signature?.length || 0);
     console.log(`[POST /api/admin/approve] 📝 Update data:`, JSON.stringify(updateData, null, 2));
 
-    const { error: updateError } = await supabase
+    // Use service role client to update request (bypass RLS)
+    const { error: updateError } = await supabaseServiceRole
       .from("requests")
       .update(updateData)
       .eq("id", requestId);
@@ -177,7 +297,8 @@ export async function POST(request: Request) {
     }
 
     // Log to request_history with complete tracking
-    await supabase.from("request_history").insert({
+    // Use service role client to bypass RLS
+    await supabaseServiceRole.from("request_history").insert({
       request_id: requestId,
       action: "admin_approved",
       actor_id: userId,

@@ -7,6 +7,7 @@ import { Bus, Car, MapPin, Clock, Phone, FileText } from "lucide-react";
 interface TransportationFormProps {
   value: {
     transportation_type?: "pickup" | "self";
+    pickup_preference?: "pickup" | "self" | "gymnasium";
     pickup_location?: string;
     pickup_time?: string;
     pickup_contact_number?: string;
@@ -157,25 +158,97 @@ export default function TransportationForm({
               Pickup Details
             </h4>
 
-            {/* Pickup Location */}
+            {/* Pickup Preference */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <MapPin className="w-4 h-4 inline mr-1" />
-                Pickup Location *
+              <label className="block text-sm font-medium text-gray-700 mb-3">
+                Pickup Preference *
               </label>
-              <input
-                type="text"
-                value={value.pickup_location || ""}
-                onChange={(e) => handleChange("pickup_location", e.target.value)}
-                placeholder="Enter your pickup address"
-                className="
-                  w-full px-4 py-2 rounded-lg border-2 border-gray-200
-                  focus:border-[#7a0019] focus:ring-2 focus:ring-[#7a0019]/20
-                  transition-all outline-none
-                "
-                required
-              />
+              <div className="grid grid-cols-3 gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleChange("pickup_preference", "pickup");
+                    handleChange("pickup_location", "");
+                  }}
+                  className={`
+                    p-3 border-2 rounded-lg transition-all text-sm font-medium
+                    ${
+                      value.pickup_preference === "pickup"
+                        ? "border-[#7a0019] bg-red-50 text-[#7a0019]"
+                        : "border-gray-200 text-gray-700 hover:border-gray-300"
+                    }
+                  `}
+                >
+                  Pickup at Location
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleChange("pickup_preference", "gymnasium");
+                    handleChange("pickup_location", "Gymnasium");
+                  }}
+                  className={`
+                    p-3 border-2 rounded-lg transition-all text-sm font-medium
+                    ${
+                      value.pickup_preference === "gymnasium"
+                        ? "border-[#7a0019] bg-red-50 text-[#7a0019]"
+                        : "border-gray-200 text-gray-700 hover:border-gray-300"
+                    }
+                  `}
+                >
+                  Gymnasium
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleChange("pickup_preference", "self");
+                    handleChange("transportation_type", "self");
+                  }}
+                  className={`
+                    p-3 border-2 rounded-lg transition-all text-sm font-medium
+                    ${
+                      value.pickup_preference === "self"
+                        ? "border-[#7a0019] bg-red-50 text-[#7a0019]"
+                        : "border-gray-200 text-gray-700 hover:border-gray-300"
+                    }
+                  `}
+                >
+                  Self-Transport
+                </button>
+              </div>
             </div>
+
+            {/* Pickup Location - Only show if pickup_preference is "pickup" */}
+            {value.pickup_preference === "pickup" && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <MapPin className="w-4 h-4 inline mr-1" />
+                  Pickup Location *
+                </label>
+                <input
+                  type="text"
+                  value={value.pickup_location || ""}
+                  onChange={(e) => handleChange("pickup_location", e.target.value)}
+                  placeholder="Enter your pickup address"
+                  className="
+                    w-full px-4 py-2 rounded-lg border-2 border-gray-200
+                    focus:border-[#7a0019] focus:ring-2 focus:ring-[#7a0019]/20
+                    transition-all outline-none
+                  "
+                  required
+                />
+              </div>
+            )}
+
+            {/* Show gymnasium message if selected */}
+            {value.pickup_preference === "gymnasium" && (
+              <div className="rounded-lg border-2 border-[#7a0019]/20 bg-red-50/50 p-3">
+                <p className="text-sm text-gray-700">
+                  <MapPin className="w-4 h-4 inline mr-1 text-[#7a0019]" />
+                  Pickup location: <strong>Gymnasium</strong>
+                </p>
+              </div>
+            )}
 
             {/* Pickup Time */}
             <div>

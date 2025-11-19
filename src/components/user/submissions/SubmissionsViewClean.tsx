@@ -449,6 +449,9 @@ export default function SubmissionsView() {
               preferred_driver_note: fullRequestData?.preferred_driver_note || null,
               status: selectedRequest.status,
               
+              // Workflow metadata for routing information
+              workflow_metadata: fullRequestData?.workflow_metadata || selectedRequest.workflow_metadata || {},
+              
               // Seminar data
               request_type: fullRequestData?.request_type || selectedRequest.request_type || 'travel_order',
               seminar_data: (() => {
@@ -512,36 +515,50 @@ export default function SubmissionsView() {
               // Only add head signature stage if requester is NOT a head
               // (Head requests use dual-signature - requester signature appears in both places)
               if (!requesterIsHead) {
+                // Get head approver data from API response
+                const headApprover = fullRequestData?.head_approver || fullRequestData?.parent_head_approver;
+                const hasHeadApproval = !!(fullRequestData?.head_signature || fullRequestData?.parent_head_signature || fullRequestData?.head_approved_at || fullRequestData?.parent_head_approved_at);
+                
                 signatures.push({
                   id: 'head',
-                  label: 'Department Head',
+                  label: fullRequestData?.parent_head_approved_at ? 'Parent Department Head' : 'Department Head',
                   role: 'Head',
-                  status: fullRequestData?.head_signature ? 'approved' : 'pending',
-                  approver: fullRequestData?.head_signature ? {
-                    id: 'dept-head',
-                    name: fullRequestData?.head_approved_by || 'Department Head',
-                    position: 'Department Head',
-                    department: selectedRequest.department?.name || 'No Department'
+                  status: hasHeadApproval ? 'approved' : 'pending',
+                  approver: hasHeadApproval && headApprover ? {
+                    id: headApprover.id || 'dept-head',
+                    name: headApprover.name || 'Department Head',
+                    position: headApprover.position_title || 'Department Head',
+                    department: headApprover.department?.name || selectedRequest.department?.name || 'No Department',
+                    profile_picture: headApprover.profile_picture
                   } : undefined,
-                  signature: fullRequestData?.head_signature || null,
-                  approved_at: fullRequestData?.head_approved_at || null
+                  signature: fullRequestData?.parent_head_signature || fullRequestData?.head_signature || null,
+                  approved_at: fullRequestData?.parent_head_approved_at || fullRequestData?.head_approved_at || null
                 });
               } else {
-                // For head requests, show head signature as approved (dual-signature with requester)
+                // For head requests: only show as approved if head has actually signed
+                // Check if head_signature exists OR status is past pending_head
+                const headHasSigned = !!(fullRequestData?.head_signature || 
+                                        fullRequestData?.head_approved_at ||
+                                        (selectedRequest.status !== 'pending_head' && selectedRequest.status !== 'pending_parent_head'));
+                
                 signatures.push({
                   id: 'head',
                   label: 'Department Head',
                   role: 'Head',
-                  status: 'approved',
-                  approver: {
+                  status: headHasSigned ? 'approved' : 'pending',
+                  approver: headHasSigned ? {
                     id: 'current-user',
                     name: selectedRequest.requester_name || 'Unknown User',
                     position: 'Department Head',
                     department: selectedRequest.department?.name || 'No Department'
-                  },
-                  signature: fullRequestData?.requester_signature || null, // Use requester signature (dual-signature)
-                  approved_at: selectedRequest.created_at,
-                  skip_reason: 'Dual-signature: Same as requesting person'
+                  } : undefined,
+                  signature: headHasSigned 
+                    ? (fullRequestData?.head_signature || fullRequestData?.requester_signature) 
+                    : null, // Use head signature if exists, otherwise requester signature (dual-signature)
+                  approved_at: headHasSigned 
+                    ? (fullRequestData?.head_approved_at || selectedRequest.created_at)
+                    : null,
+                  skip_reason: headHasSigned ? 'Dual-signature: Same as requesting person' : undefined
                 });
               }
               

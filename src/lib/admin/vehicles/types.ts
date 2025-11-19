@@ -16,6 +16,7 @@ lastServiceISO: string;
 notes?: string;
 createdAt: string;
 updatedAt: string;
+photoUrl?: string; // Vehicle image URL
 }
 
 

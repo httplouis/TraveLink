@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════
  * SMART SIGNATURE WORKFLOW ENGINE v2.1
- * Revolutionary Auto-Skip Logic for TraviLink
+ * Revolutionary Auto-Skip Logic for Travelink
  * ═══════════════════════════════════════════════════════════════════════
  */
 

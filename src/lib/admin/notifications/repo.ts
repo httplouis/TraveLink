@@ -33,7 +33,7 @@ export function pushMock(input: {
     body:  input.body  ?? "Department: CCMS · Travel date: Oct 25, 9:00 AM",
     createdAt: now,
     read: false,
-    actorName: "TraviLink System",
+    actorName: "Travelink System",
     actorAvatarUrl: null,
     href: input.href ?? "/admin/requests/REQ-2025-014",
   };
@@ -50,7 +50,7 @@ function seed(): Notification[] {
     title: "System update",
     createdAt: new Date(now - minsAgo * 60 * 1000).toISOString(),
     read: false,
-    actorName: "TraviLink System",
+    actorName: "Travelink System",
     actorAvatarUrl: null,
     ...p,
   });

@@ -127,6 +127,13 @@ export async function POST(request: Request) {
       }
     }
 
+    // Get request details before update (to check if approved and if SMS already sent)
+    const { data: requestBeforeUpdate } = await supabase
+      .from("requests")
+      .select("status, assigned_driver_id, sms_notification_sent, requester_id, requester_name, requester_contact_number, travel_start_date, destination, pickup_location, pickup_time, pickup_preference, request_number")
+      .eq("id", requestId)
+      .single();
+
     // Update request
     const updateData: any = {};
     if (vehicleId) updateData.assigned_vehicle_id = vehicleId;
@@ -142,6 +149,65 @@ export async function POST(request: Request) {
     if (updateError) {
       console.error("[/api/schedule/assign] Update error:", updateError);
       return NextResponse.json({ ok: false, error: updateError.message }, { status: 500 });
+    }
+
+    // Send SMS to driver if:
+    // 1. Request is approved
+    // 2. Driver was just assigned (driverId is new)
+    // 3. SMS not already sent
+    if (driverId && requestBeforeUpdate?.status === "approved" && !requestBeforeUpdate?.sms_notification_sent) {
+      try {
+        // Fetch driver details
+        const { data: driver } = await supabase
+          .from("users")
+          .select("id, name, phone_number")
+          .eq("id", driverId)
+          .single();
+
+        // Fetch requester details
+        const { data: requester } = await supabase
+          .from("users")
+          .select("id, name")
+          .eq("id", requestBeforeUpdate.requester_id)
+          .single();
+
+        if (driver && driver.phone_number && requester) {
+          const { sendDriverTravelNotification } = await import("@/lib/sms/sms-service");
+          
+          const smsResult = await sendDriverTravelNotification({
+            driverPhone: driver.phone_number,
+            requesterName: requester.name || requestBeforeUpdate.requester_name || "Unknown",
+            requesterPhone: requestBeforeUpdate.requester_contact_number || "",
+            travelDate: requestBeforeUpdate.travel_start_date,
+            destination: requestBeforeUpdate.destination || "",
+            pickupLocation: requestBeforeUpdate.pickup_location || undefined,
+            pickupTime: requestBeforeUpdate.pickup_time || undefined,
+            pickupPreference: requestBeforeUpdate.pickup_preference as 'pickup' | 'self' | 'gymnasium' | undefined,
+            requestNumber: requestBeforeUpdate.request_number || "",
+          });
+
+          if (smsResult.success) {
+            // Update SMS tracking fields
+            await supabase
+              .from("requests")
+              .update({
+                sms_notification_sent: true,
+                sms_sent_at: new Date().toISOString(),
+                driver_contact_number: driver.phone_number,
+              })
+              .eq("id", requestId);
+
+            console.log(`[/api/schedule/assign] ✅ SMS sent to driver ${driver.name} (${driver.phone_number})`);
+          } else {
+            console.error(`[/api/schedule/assign] ❌ Failed to send SMS to driver:`, smsResult.error);
+          }
+        } else if (!driver?.phone_number) {
+          console.warn(`[/api/schedule/assign] ⚠️ Driver ${driver?.name || driverId} has no phone number - SMS not sent`);
+        }
+      } catch (smsError: any) {
+        console.error("[/api/schedule/assign] Error sending SMS to driver:", smsError);
+        // Don't fail the assignment if SMS fails
+      }
     }
 
     return NextResponse.json({ ok: true, message: "Assignment successful" });

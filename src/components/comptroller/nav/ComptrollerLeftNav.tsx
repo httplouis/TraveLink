@@ -13,6 +13,7 @@ import {
   HelpCircle
 } from "lucide-react";
 import { motion } from "framer-motion";
+import ProfilePicture from "@/components/common/ProfilePicture";
 
 type NavLink = {
   href: string;
@@ -34,6 +35,7 @@ export default function ComptrollerLeftNav() {
   const pathname = usePathname() ?? "";
   const [pendingCount, setPendingCount] = React.useState(0);
   const [hoveredItem, setHoveredItem] = React.useState<string | null>(null);
+  const [userProfile, setUserProfile] = React.useState<{ name: string; avatarUrl?: string | null } | null>(null);
   const navRefs = React.useRef<Record<string, HTMLAnchorElement | null>>({});
   const containerRef = React.useRef<HTMLElement | null>(null);
 
@@ -61,13 +63,68 @@ export default function ComptrollerLeftNav() {
     return () => clearInterval(interval);
   }, []);
 
+  // Fetch user profile for avatar
+  React.useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const res = await fetch("/api/profile");
+        const data = await res.json();
+        if (data.ok && data.data) {
+          setUserProfile({
+            name: data.data.name || data.data.email?.split("@")[0] || "Comptroller",
+            avatarUrl: data.data.avatarUrl || data.data.profile_picture || null,
+          });
+        }
+      } catch (err) {
+        console.error("Failed to fetch profile:", err);
+      }
+    };
+    fetchProfile();
+  }, []);
+
+  const isProfileActive = pathname === "/comptroller/profile" || pathname.startsWith("/comptroller/profile/");
+
   return (
     <nav 
       ref={containerRef}
       aria-label="Comptroller menu" 
-      className="space-y-1.5 relative"
+      className="space-y-1.5 relative flex flex-col min-h-full"
       onMouseLeave={() => setHoveredItem(null)}
     >
+      {/* Profile Section at Top */}
+      <Link
+        href="/comptroller/profile"
+        className={[
+          "group relative flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200 mb-2 z-10",
+          isProfileActive
+            ? "text-white"
+            : "text-neutral-700 hover:text-white active:scale-[0.98]",
+        ].join(" ")}
+        onMouseEnter={() => setHoveredItem("profile")}
+      >
+        {isProfileActive && (
+          <motion.div
+            className="absolute inset-0 rounded-xl pointer-events-none z-0"
+            initial={false}
+            style={{ background: '#7a0019' }}
+            layoutId="activeNav"
+          />
+        )}
+        <ProfilePicture
+          src={userProfile?.avatarUrl || undefined}
+          name={userProfile?.name || "Comptroller"}
+          size="sm"
+          className="flex-shrink-0 relative z-10"
+        />
+        <span className="flex-1 group-hover:text-white relative z-10 break-words line-clamp-2">
+          {userProfile?.name || "Profile"}
+        </span>
+        {isProfileActive && (
+          <div className="h-2 w-2 rounded-full bg-white/80 relative z-10"></div>
+        )}
+      </Link>
+
+      <div className="h-px bg-gray-200 mb-2"></div>
       {/* Sliding active background */}
       {(() => {
         const activeHref = NAV.find(item => isActive(item.href, item.exact))?.href;

@@ -16,13 +16,19 @@ interface PersonDisplayProps {
 }
 
 // Generate avatar from initials
-function generateAvatar(name: string): string {
+function generateAvatar(name: string | undefined | null): string {
+  // Handle undefined/null/empty name
+  if (!name || typeof name !== 'string' || name.trim() === '') {
+    name = 'Unknown';
+  }
+  
   const initials = name
     .split(" ")
     .map((n) => n[0])
+    .filter(Boolean) // Filter out empty strings
     .join("")
     .toUpperCase()
-    .slice(0, 2);
+    .slice(0, 2) || 'U'; // Fallback to 'U' if no initials
   
   // Generate color from name hash
   const hash = name.split("").reduce((acc, char) => char.charCodeAt(0) + acc, 0);
@@ -92,7 +98,9 @@ export default function PersonDisplay({
   }, [profilePicture, name]);
 
   // Use profile picture if available, otherwise generate avatar
-  const imageSrc = profilePicture || generateAvatar(name);
+  // Ensure name is defined before generating avatar
+  const safeName = name || 'Unknown';
+  const imageSrc = profilePicture || generateAvatar(safeName);
 
   return (
     <motion.div
@@ -109,9 +117,9 @@ export default function PersonDisplay({
           onError={(e) => {
             // Fallback to generated avatar if image fails to load
             const target = e.target as HTMLImageElement;
-            const fallbackSrc = generateAvatar(name);
+            const fallbackSrc = generateAvatar(safeName);
             if (target.src !== fallbackSrc) {
-              console.warn(`[PersonDisplay] Image failed to load for ${name}, falling back to generated avatar. Original src:`, target.src);
+              console.warn(`[PersonDisplay] Image failed to load for ${safeName}, falling back to generated avatar. Original src:`, target.src);
               target.src = fallbackSrc;
             }
           }}
@@ -145,7 +153,7 @@ export default function PersonDisplay({
       {/* Person Info */}
       <div className="flex-1 min-w-0">
         <p className={`font-semibold text-gray-900 truncate ${sizeClasses.name}`}>
-          {name}
+          {safeName}
         </p>
         
         {(position || department) && (
@@ -171,14 +179,15 @@ export function PersonDisplayCompact({
   profilePicture,
   className = "",
 }: Pick<PersonDisplayProps, "name" | "position" | "profilePicture" | "className">) {
+  const safeName = name || 'Unknown';
   return (
     <div className={`inline-flex items-center gap-2 ${className}`}>
       <img
-        src={profilePicture || generateAvatar(name)}
-        alt={name}
+        src={profilePicture || generateAvatar(safeName)}
+        alt={safeName}
         className="w-6 h-6 rounded-full object-cover border border-gray-200"
       />
-      <span className="text-sm text-gray-900 font-medium">{name}</span>
+      <span className="text-sm text-gray-900 font-medium">{safeName}</span>
       {position && (
         <span className="text-xs text-gray-500">• {position}</span>
       )}

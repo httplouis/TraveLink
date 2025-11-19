@@ -15,31 +15,58 @@ import {
   DriverRepo,
   loadMaintenance,
   pushStatus,
-  buildDemoRecords,
-
-
-
-
-
-  
 } from "@/lib/admin/maintenance";
 import type {
   Attachment,
   MaintFilters,
   MaintRecord,
   MaintStatus,
+  Vehicle,
+  Driver,
 } from "@/lib/admin/maintenance";
 
 export default function MaintenancePage() {
-  const vehicles = React.useMemo(() => VehiclesRepo.list(), []);
-  const drivers = React.useMemo(() => DriverRepo.list(), []);
+  const [vehicles, setVehicles] = React.useState<Vehicle[]>([]);
+  const [drivers, setDrivers] = React.useState<Driver[]>([]);
+  const [loading, setLoading] = React.useState(true);
 
   const [filters, setFilters] = React.useState<MaintFilters>(() =>
     MaintRepo.loadFilters()
   );
-  const [rows, setRows] = React.useState<MaintRecord[]>(() =>
-    loadMaintenance(filters)
-  );
+  const [rows, setRows] = React.useState<MaintRecord[]>([]);
+
+  // Fetch data on mount
+  React.useEffect(() => {
+    async function fetchData() {
+      try {
+        setLoading(true);
+        // Fetch vehicles, drivers, and maintenance records from Supabase
+        const [vehiclesData, driversData, maintenanceData] = await Promise.all([
+          VehiclesRepo.list(),
+          DriverRepo.list(),
+          MaintRepo.list(),
+        ]);
+        
+        setVehicles(vehiclesData);
+        setDrivers(driversData);
+        
+        // Update local cache with fetched data
+        if (maintenanceData.length > 0) {
+          MaintRepo.save(maintenanceData);
+        }
+        
+        // Apply filters
+        setRows(loadMaintenance(filters));
+      } catch (error) {
+        console.error('[MaintenancePage] Error fetching data:', error);
+        setRows([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+    
+    fetchData();
+  }, []);
 
   React.useEffect(() => {
     MaintRepo.saveFilters(filters);
@@ -60,54 +87,60 @@ export default function MaintenancePage() {
 
   const current = rows.find((r) => r.id === drawer.id) || null;
 
-  function handleStatus(id: string, next: MaintStatus) {
+  async function handleStatus(id: string, next: MaintStatus) {
     try {
-      pushStatus(id, next);
+      await pushStatus(id, next);
+      // Refresh from API
+      const updated = await MaintRepo.list();
+      MaintRepo.save(updated);
       setRows(loadMaintenance(filters));
     } catch (e) {
-      alert(String(e));
+      console.error('[handleStatus] Error:', e);
+      alert(`Failed to update status: ${String(e)}`);
     }
-  }
-
-  function seed() {
-    const has = MaintRepo.listLocal().length > 0;
-    if (has && !confirm("Replace existing local data with demo records?")) return;
-    const demo = buildDemoRecords(vehicles, drivers);
-    MaintRepo.save(demo);
-    setRows(loadMaintenance(filters));
   }
 
   function clearFilters() {
     setFilters({ q: "", types: [], statuses: [], density: filters.density });
   }
 
-  function createRecord(rec: MaintRecord) {
-    // Persist to local repo and refresh
-    const all = MaintRepo.listLocal();
-    MaintRepo.save([rec, ...all]);
-    setRows(loadMaintenance(filters));
+  async function createRecord(rec: MaintRecord) {
+    try {
+      // Sync with API
+      await MaintRepo.upsert(rec);
+      // Refresh from API
+      const updated = await MaintRepo.list();
+      MaintRepo.save(updated);
+      setRows(loadMaintenance(filters));
+    } catch (error) {
+      console.error('[createRecord] Error:', error);
+      alert(`Failed to save maintenance record: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="p-4 md:p-6 space-y-4 bg-neutral-50 min-h-[calc(100vh-64px)] flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-[#7a1f2a]"></div>
+          <p className="mt-2 text-neutral-600">Loading maintenance data...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="p-4 md:p-6 space-y-4 bg-neutral-50 min-h-[calc(100vh-64px)]">
+    <div className="p-4 md:p-6 space-y-6 bg-gradient-to-br from-neutral-50 to-neutral-100 min-h-[calc(100vh-64px)]">
       <Toolbar
         title="Maintenance"
         subtitle="Admin • Maintenance"
         right={
-          <div className="flex gap-2">
-            <button
-              onClick={() => setNewOpen(true)}
-              className="px-3 py-1 rounded-lg bg-[#7a1f2a] text-white"
-            >
-              + New
-            </button>
-            <button
-              onClick={seed}
-              className="px-3 py-1 rounded-lg ring-1 ring-black/10 hover:bg-neutral-100"
-            >
-              Fill Mock Data
-            </button>
-          </div>
+          <button
+            onClick={() => setNewOpen(true)}
+            className="px-4 py-2 rounded-lg bg-gradient-to-r from-[#7a1f2a] to-[#9a2f3a] text-white hover:from-[#6a1a24] hover:to-[#8a1f2a] transition-all shadow-md hover:shadow-lg font-medium"
+          >
+            + New Maintenance
+          </button>
         }
       />
 
@@ -118,7 +151,6 @@ export default function MaintenancePage() {
         onChange={setFilters}
         onClear={clearFilters}
         onApply={() => setRows(loadMaintenance(filters))}
-        onFillMock={seed}
       />
 
       <MaintenanceTable

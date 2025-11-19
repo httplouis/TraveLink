@@ -414,7 +414,7 @@ export async function GET(request: NextRequest) {
     // Get user profile for redirect
     const { data: profile } = await supabaseAdmin
       .from("users")
-      .select("id, role, is_head, is_hr, is_vp, is_president, is_admin")
+      .select("id, role, is_head, is_hr, is_vp, is_president, is_admin, is_comptroller")
       .eq("auth_user_id", authUser.id)
       .single();
 
@@ -431,16 +431,19 @@ export async function GET(request: NextRequest) {
       else if (userRole === "admin") {
         redirectPath = "/admin";
       } 
-      else if (userRole === "comptroller") {
+      // Comptroller: check role, is_comptroller flag, or email
+      else if (userRole === "comptroller" || profile.is_comptroller) {
         redirectPath = "/comptroller/inbox";
-      } else if (profile.is_head || userRole === "head") {
-        redirectPath = "/head/dashboard";
-      } else if (profile.is_hr || userRole === "hr") {
-        redirectPath = "/hr/dashboard";
-      } else if (profile.is_vp || userRole === "vp") {
-        redirectPath = "/vp/dashboard";
       } else if (profile.is_president || userRole === "president") {
         redirectPath = "/president/dashboard";
+    } else if (profile.is_vp || userRole === "vp") {
+      // VP takes priority over head (VP is higher role)
+      redirectPath = "/vp/dashboard";
+    } else if (profile.is_hr || userRole === "hr") {
+      // HR takes priority over head (HR is a specialized role)
+      redirectPath = "/hr/dashboard";
+    } else if (profile.is_head || userRole === "head") {
+      redirectPath = "/head/dashboard";
       } else {
         redirectPath = "/user";
       }
@@ -511,7 +514,7 @@ export async function GET(request: NextRequest) {
 
     // Get the correct base URL for redirect
     // Use environment variable if available, otherwise use request origin
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || requestUrl.origin;
+    // baseUrl is already declared at the top of the function
     const redirectUrl = new URL(redirectPath, baseUrl);
     
     console.log(`[auth/callback] 🚀 Redirecting to: ${redirectUrl.toString()}`);

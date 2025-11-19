@@ -15,11 +15,11 @@ export function ReportFilterBar({
   onClear: () => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg border p-3 bg-white">
-      <div className="flex items-center gap-2 px-3 py-2 rounded-md border">
-        <Search size={16} className="opacity-60" />
+    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-neutral-200 p-4 bg-white shadow-md">
+      <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-neutral-300 bg-white focus-within:ring-2 focus-within:ring-[#7a1f2a]/30 focus-within:border-[#7a1f2a] transition-all">
+        <Search size={16} className="text-neutral-400" />
         <input
-          className="outline-none text-sm"
+          className="outline-none text-sm flex-1 min-w-[200px]"
           placeholder="Search id, purpose, vehicle, driver, department…"
           value={value.search ?? ""}
           onChange={(e) => onChange({ ...value, search: e.target.value })}
@@ -27,7 +27,7 @@ export function ReportFilterBar({
       </div>
 
       <select
-        className="rounded-md border px-3 py-2 text-sm bg-white max-w-[360px]"
+        className="rounded-lg border border-neutral-300 px-3 py-2 text-sm bg-white max-w-[360px] hover:border-[#7a1f2a] focus:outline-none focus:ring-2 focus:ring-[#7a1f2a]/30 transition-colors"
         value={value.department ?? ""}
         onChange={(e) => onChange({ ...value, department: e.target.value as any })}
       >
@@ -38,7 +38,7 @@ export function ReportFilterBar({
       </select>
 
       <select
-        className="rounded-md border px-3 py-2 text-sm bg-white"
+        className="rounded-lg border border-neutral-300 px-3 py-2 text-sm bg-white hover:border-[#7a1f2a] focus:outline-none focus:ring-2 focus:ring-[#7a1f2a]/30 transition-colors"
         value={value.status ?? ""}
         onChange={(e) => onChange({ ...value, status: e.target.value as any })}
       >
@@ -47,22 +47,24 @@ export function ReportFilterBar({
         <option>Completed</option><option>Rejected</option>
       </select>
 
-      <input
-        type="date"
-        className="rounded-md border px-3 py-2 text-sm bg-white"
-        value={value.from ?? ""}
-        onChange={(e) => onChange({ ...value, from: e.target.value })}
-      />
-      <span className="text-sm opacity-70">to</span>
-      <input
-        type="date"
-        className="rounded-md border px-3 py-2 text-sm bg-white"
-        value={value.to ?? ""}
-        onChange={(e) => onChange({ ...value, to: e.target.value })}
-      />
+      <div className="flex items-center gap-2 rounded-lg border border-neutral-300 bg-white px-2 py-1">
+        <input
+          type="date"
+          className="outline-none text-sm bg-transparent"
+          value={value.from ?? ""}
+          onChange={(e) => onChange({ ...value, from: e.target.value })}
+        />
+        <span className="text-sm text-neutral-500">to</span>
+        <input
+          type="date"
+          className="outline-none text-sm bg-transparent"
+          value={value.to ?? ""}
+          onChange={(e) => onChange({ ...value, to: e.target.value })}
+        />
+      </div>
 
       <button
-        className="ml-auto rounded-md border px-3 py-2 text-sm hover:bg-gray-50"
+        className="ml-auto rounded-lg border border-neutral-300 px-4 py-2 text-sm hover:bg-neutral-50 hover:border-[#7a1f2a] transition-colors font-medium"
         onClick={onClear}
       >
         Clear

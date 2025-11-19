@@ -14,6 +14,7 @@ import LocationField from "@/components/user/request/ui/LocationField.ui";
 import DepartmentSelect from "@/components/common/inputs/DepartmentSelect.ui";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import ParticipantInvitationEditor from "./ParticipantInvitationEditor";
+import FileAttachmentSection from "./parts/FileAttachmentSection.view";
 
 const MODALITY_OPTIONS = ["Onsite", "Online", "Hybrid"] as const;
 const TRAINING_TYPES = ["Compliance", "Professional Development"] as const;
@@ -401,6 +402,15 @@ export default function SeminarApplicationForm({
           value={data?.fundReleaseLine ?? ""}
           onChange={(e) => onChange({ fundReleaseLine: asNum(e.target.value) })}
           helper="Budget line item for fund release"
+        />
+      </div>
+
+      {/* File Attachments Section */}
+      <div className="mt-8 pt-8 border-t border-gray-200">
+        <FileAttachmentSection
+          attachments={data?.attachments || []}
+          onChange={(attachments) => onChange({ attachments })}
+          errors={errors}
         />
       </div>
 

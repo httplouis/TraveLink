@@ -34,14 +34,29 @@ export default function AdminInboxPage() {
   const [isLoading, setIsLoading] = React.useState(true);
   const [viewedIds, setViewedIds] = React.useState<Set<string>>(new Set());
 
-  // Load pending requests
+  // Load pending requests - Admin can see ALL pending requests
   const loadPending = React.useCallback(async () => {
     try {
       const response = await fetch("/api/admin/inbox");
       const result = await response.json();
       
       if (result.ok && result.data) {
-        setItems(result.data || []);
+        // Filter for pending: all requests that are not in final state
+        const pendingRequests = result.data.filter((r: any) => {
+          const isPending = [
+            "pending_head",
+            "pending_admin",
+            "pending_comptroller",
+            "pending_hr",
+            "pending_exec",
+            "pending_hr_ack"
+          ].includes(r.status);
+          
+          // Also include requests that haven't been fully processed
+          return isPending || (!r.admin_approved_at && r.status !== "approved" && r.status !== "rejected" && r.status !== "completed");
+        });
+        
+        setItems(pendingRequests || []);
       }
     } catch (error) {
       console.error("[Admin Inbox] Error loading pending:", error);
@@ -50,37 +65,27 @@ export default function AdminInboxPage() {
     }
   }, []);
 
-  // Load history
+  // Load history - Admin can see ALL requests
   const loadHistory = React.useCallback(async () => {
     try {
-      const supabase = createSupabaseClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data: profile } = await supabase
-        .from("users")
-        .select("id")
-        .eq("auth_user_id", user.id)
-        .single();
-
-      if (!profile) return;
-
-      // Get requests that admin has processed
-      const { data: requests } = await supabase
-        .from("requests")
-        .select(`
-          *,
-          requester:users!requests_requester_id_fkey(id, email, name),
-          department:departments!requests_department_id_fkey(id, name, code),
-          head_approver:users!requests_head_approved_by_fkey(id, email, name),
-          admin_approver:users!requests_admin_processed_by_fkey(id, email, name)
-        `)
-        .or(`admin_processed_by.eq.${profile.id},admin_approved_by.eq.${profile.id}`)
-        .order("created_at", { ascending: false })
-        .limit(50);
-
-      if (requests) {
-        setHistoryItems(requests || []);
+      // Use the same API endpoint to get all requests
+      const response = await fetch("/api/admin/inbox");
+      const result = await response.json();
+      
+      if (result.ok && result.data) {
+        // Filter for history: requests that are approved, rejected, completed, or admin already acted
+        const historyRequests = result.data.filter((r: any) => {
+          const adminActed = r.admin_approved_at || r.admin_approved_by || r.admin_processed_by;
+          const isFinalState = ["approved", "rejected", "completed"].includes(r.status);
+          const adminProcessed = adminActed && (
+            r.status === "pending_comptroller" ||
+            r.status === "pending_hr" ||
+            r.status === "pending_exec"
+          );
+          return isFinalState || adminProcessed;
+        });
+        
+        setHistoryItems(historyRequests || []);
       }
     } catch (error) {
       console.error("[Admin Inbox] Error loading history:", error);

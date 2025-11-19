@@ -1,11 +1,24 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
 
 export async function GET(request: NextRequest) {
   try {
-    // Use service role to bypass RLS for admin queries
-    const supabase = await createSupabaseServerClient(true);
+    // Create a direct Supabase client with service role key to bypass RLS
+    // This ensures we can fetch ALL requests regardless of RLS policies
+    const supabaseServiceRole = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    );
+
+    const supabase = await createSupabaseServerClient(true); // Use service role for auth checks
     const { searchParams } = new URL(request.url);
     
     // Get filter params
@@ -13,28 +26,19 @@ export async function GET(request: NextRequest) {
     const role = searchParams.get("role"); // Filter by current approver role
     const departmentId = searchParams.get("department_id");
     const userId = searchParams.get("user_id"); // Get user's own requests
+    const comptrollerId = searchParams.get("comptroller_id"); // For filtering by next_comptroller_id
     
-    // Fetch requests with related data
-    // Use proper foreign key relationship syntax
-    let query = supabase
+    // Fetch requests WITHOUT foreign key relationships first to avoid RLS filtering issues
+    // Use service role client directly to bypass RLS
+    console.log("[API /requests/list] Fetching requests with service role client...");
+    let query = supabaseServiceRole
       .from("requests")
-      .select(`
-        *,
-        head_signature,
-        admin_signature,
-        requester:users!requester_id(id, name, email),
-        department:departments!department_id(id, name, code),
-        head_approver:users!head_approved_by(id, name, email),
-        admin_approver:users!admin_approved_by(id, name, email),
-        preferred_driver:users!preferred_driver_id(id, name, email),
-        preferred_vehicle:vehicles!preferred_vehicle_id(id, vehicle_name, plate_number, type)
-      `)
+      .select("*")
       .order("created_at", { ascending: false });
 
     // Apply filters
     if (status && status !== "All") {
       query = query.eq("status", status);
-      // Note: both_vps_approved is just an acknowledgment - requests still go through normal workflow
     }
 
     if (role) {
@@ -49,7 +53,73 @@ export async function GET(request: NextRequest) {
       query = query.eq("requester_id", userId);
     }
 
-    const { data, error } = await query;
+    const { data: allRequests, error } = await query;
+    
+    console.log("[API /requests/list] Fetched requests:", {
+      count: allRequests?.length || 0,
+      status,
+      hasError: !!error,
+      errorMessage: error?.message
+    });
+    
+    // If status is pending_comptroller, show ALL requests to ALL comptrollers
+    // Only filter by specific comptroller if explicitly assigned (rare case)
+    let data = allRequests;
+    if (status === "pending_comptroller" && allRequests) {
+      console.log("[API /requests/list] Filtering pending_comptroller requests:", {
+        totalRequests: allRequests.length,
+        comptrollerId: comptrollerId || "none (showing all)"
+      });
+      
+      // IMPORTANT: Show ALL pending_comptroller requests to ALL comptrollers
+      // Only filter if a specific comptroller is assigned (which should be rare)
+      if (comptrollerId) {
+        data = allRequests.filter((req: any) => {
+          const workflowMetadata = req.workflow_metadata || {};
+          let nextComptrollerId = null;
+          let nextApproverId = null;
+          let nextApproverRole = null;
+          
+          if (typeof workflowMetadata === 'string') {
+            try {
+              const parsed = JSON.parse(workflowMetadata);
+              nextComptrollerId = parsed?.next_comptroller_id;
+              nextApproverId = parsed?.next_approver_id;
+              nextApproverRole = parsed?.next_approver_role;
+            } catch (e) {
+              // Ignore parse errors
+            }
+          } else if (workflowMetadata && typeof workflowMetadata === 'object') {
+            nextComptrollerId = workflowMetadata?.next_comptroller_id;
+            nextApproverId = workflowMetadata?.next_approver_id;
+            nextApproverRole = workflowMetadata?.next_approver_role;
+          }
+
+          const nextComptrollerIdStr = nextComptrollerId ? String(nextComptrollerId).trim() : null;
+          const nextApproverIdStr = nextApproverId ? String(nextApproverId).trim() : null;
+          const comptrollerIdStr = String(comptrollerId).trim();
+          
+          // If request is explicitly assigned to a specific comptroller, only show to that comptroller
+          if (nextComptrollerIdStr) {
+            return nextComptrollerIdStr === comptrollerIdStr;
+          }
+          
+          // If next_approver_id is set and role is comptroller, check if it matches
+          if (nextApproverIdStr && nextApproverRole === "comptroller") {
+            return nextApproverIdStr === comptrollerIdStr;
+          }
+
+          // No specific assignment - show to ALL comptrollers (default behavior)
+          return true;
+        });
+      }
+      // If no comptrollerId provided, show all pending_comptroller requests (data = allRequests)
+      
+      console.log("[API /requests/list] Filtered pending_comptroller requests:", {
+        filteredCount: data.length,
+        totalCount: allRequests.length
+      });
+    }
 
     if (error) {
       console.error("[/api/requests/list] Supabase error:", error);
@@ -65,44 +135,82 @@ export async function GET(request: NextRequest) {
       console.log("[/api/requests/list] Head approver:", data[0].head_approver);
     }
 
-    // If relations are null, manually fetch user data
-    if (data && data.length > 0 && !data[0].requester) {
-      console.log("[/api/requests/list] Relations are null, checking requester_id:", data[0].requester_id);
-      
-      // Try direct user fetch
-      const { data: userData } = await supabase
-        .from("users")
-        .select("id, name, email")
-        .eq("id", data[0].requester_id)
-        .single();
-      
-      console.log("[/api/requests/list] Direct user fetch result:", userData);
+    // Now fetch related data separately to avoid RLS filtering issues
+    if (data && data.length > 0) {
+      const requesterIds = [...new Set(data.map((r: any) => r.requester_id).filter(Boolean))];
+      const departmentIds = [...new Set(data.map((r: any) => r.department_id).filter(Boolean))];
+      const approverIds = [
+        ...new Set([
+          ...data.map((r: any) => r.head_approved_by).filter(Boolean),
+          ...data.map((r: any) => r.admin_approved_by).filter(Boolean),
+        ])
+      ];
+      const preferredDriverIds = [...new Set(data.map((r: any) => r.preferred_driver_id).filter(Boolean))];
+      const preferredVehicleIds = [...new Set(data.map((r: any) => r.preferred_vehicle_id).filter(Boolean))];
+
+      // Fetch all related data in parallel using service role client
+      const [requesters, departments, approvers, preferredDrivers, preferredVehicles] = await Promise.all([
+        requesterIds.length > 0
+          ? supabaseServiceRole.from("users").select("id, email, name").in("id", requesterIds)
+          : Promise.resolve({ data: [], error: null }),
+        departmentIds.length > 0
+          ? supabaseServiceRole.from("departments").select("id, name, code").in("id", departmentIds)
+          : Promise.resolve({ data: [], error: null }),
+        approverIds.length > 0
+          ? supabaseServiceRole.from("users").select("id, email, name").in("id", approverIds)
+          : Promise.resolve({ data: [], error: null }),
+        preferredDriverIds.length > 0
+          ? supabaseServiceRole.from("users").select("id, email, name").in("id", preferredDriverIds)
+          : Promise.resolve({ data: [], error: null }),
+        preferredVehicleIds.length > 0
+          ? supabaseServiceRole.from("vehicles").select("id, vehicle_name, plate_number, type").in("id", preferredVehicleIds)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+
+      // Create lookup maps
+      const requesterMap = new Map((requesters.data || []).map((u: any) => [u.id, u]));
+      const departmentMap = new Map((departments.data || []).map((d: any) => [d.id, d]));
+      const approverMap = new Map((approvers.data || []).map((u: any) => [u.id, u]));
+      const preferredDriverMap = new Map((preferredDrivers.data || []).map((u: any) => [u.id, u]));
+      const preferredVehicleMap = new Map((preferredVehicles.data || []).map((v: any) => [v.id, v]));
+
+      // Attach related data to requests
+      data.forEach((req: any) => {
+        req.requester = req.requester_id ? requesterMap.get(req.requester_id) : null;
+        req.department = req.department_id ? departmentMap.get(req.department_id) : null;
+        req.head_approver = req.head_approved_by ? approverMap.get(req.head_approved_by) : null;
+        req.admin_approver = req.admin_approved_by ? approverMap.get(req.admin_approved_by) : null;
+        req.preferred_driver = req.preferred_driver_id ? preferredDriverMap.get(req.preferred_driver_id) : null;
+        req.preferred_vehicle = req.preferred_vehicle_id ? preferredVehicleMap.get(req.preferred_vehicle_id) : null;
+        
+        // Parse expense_breakdown if it's a string (JSONB from database)
+        if (req.expense_breakdown && typeof req.expense_breakdown === 'string') {
+          try {
+            req.expense_breakdown = JSON.parse(req.expense_breakdown);
+          } catch (e) {
+            console.warn(`[API /requests/list] Failed to parse expense_breakdown for request ${req.id}:`, e);
+          }
+        }
+        
+        // Add preferred names as flat fields for easier access
+        if (req.preferred_driver) {
+          req.preferred_driver_name = req.preferred_driver.name;
+        }
+        if (req.preferred_vehicle) {
+          req.preferred_vehicle_name = `${req.preferred_vehicle.vehicle_name} • ${req.preferred_vehicle.plate_number}`;
+        }
+      });
     }
 
     // Log sample data for debugging
     if (data && data.length > 0) {
       console.log("📊 Sample request data from DB:");
       console.log("  - ID:", data[0].id);
+      console.log("  - Status:", data[0].status);
       console.log("  - Requester:", data[0].requester?.name || data[0].requester?.email);
       console.log("  - Head:", data[0].head_approver?.name || data[0].head_approver?.email);
       console.log("  - Total budget:", data[0].total_budget);
       console.log("  - Expense breakdown items:", data[0].expense_breakdown?.length || 0);
-      console.log("  - Preferred driver:", data[0].preferred_driver);
-      console.log("  - Preferred vehicle:", data[0].preferred_vehicle);
-    }
-
-    // Add preferred names as flat fields for easier access
-    if (data) {
-      data.forEach((request: any) => {
-        // Add driver name as flat field
-        if (request.preferred_driver) {
-          request.preferred_driver_name = request.preferred_driver.name;
-        }
-        // Add vehicle name as flat field
-        if (request.preferred_vehicle) {
-          request.preferred_vehicle_name = `${request.preferred_vehicle.vehicle_name} • ${request.preferred_vehicle.plate_number}`;
-        }
-      });
     }
 
     // Return just the data array

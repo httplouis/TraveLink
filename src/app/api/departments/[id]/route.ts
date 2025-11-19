@@ -84,6 +84,13 @@ export async function PATCH(
       updateData.parent_department_id = body.parent_department_id || null;
     }
 
+    // Get current department data before update
+    const { data: currentDept } = await supabase
+      .from("departments")
+      .select("id, code, name, type, parent_department_id")
+      .eq("id", deptId)
+      .single();
+
     // Update department
     const { data: updatedDept, error } = await supabase
       .from("departments")
@@ -95,6 +102,32 @@ export async function PATCH(
     if (error) {
       console.error("[PATCH /api/departments/[id]] Error:", error);
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    }
+
+    // Log to audit_logs
+    try {
+      const ipAddress = req.headers.get("x-forwarded-for")?.split(",")[0].trim() || 
+                       req.headers.get("x-real-ip") || null;
+      const userAgent = req.headers.get("user-agent") || null;
+
+      const auditData: any = {
+        user_id: profile.id,
+        action: "update",
+        entity_type: "department",
+        entity_id: deptId,
+        old_value: currentDept,
+        new_value: updatedDept,
+        user_agent: userAgent,
+      };
+
+      if (ipAddress && ipAddress.match(/^(\d{1,3}\.){3}\d{1,3}$/)) {
+        auditData.ip_address = ipAddress;
+      }
+
+      await supabase.from("audit_logs").insert(auditData);
+    } catch (auditErr: any) {
+      console.error("[PATCH /api/departments/[id]] Failed to log to audit_logs:", auditErr);
+      // Don't fail the operation if audit logging fails
     }
 
     return NextResponse.json({
@@ -153,6 +186,13 @@ export async function DELETE(
       );
     }
 
+    // Get department data before deletion for audit log
+    const { data: deptToDelete } = await supabase
+      .from("departments")
+      .select("id, code, name, type, parent_department_id")
+      .eq("id", deptId)
+      .single();
+
     // Check if department has users
     const { data: users } = await supabase
       .from("users")
@@ -176,6 +216,31 @@ export async function DELETE(
     if (error) {
       console.error("[DELETE /api/departments/[id]] Error:", error);
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    }
+
+    // Log to audit_logs
+    try {
+      const ipAddress = req.headers.get("x-forwarded-for")?.split(",")[0].trim() || 
+                       req.headers.get("x-real-ip") || null;
+      const userAgent = req.headers.get("user-agent") || null;
+
+      const auditData: any = {
+        user_id: profile.id,
+        action: "delete",
+        entity_type: "department",
+        entity_id: deptId,
+        old_value: deptToDelete,
+        user_agent: userAgent,
+      };
+
+      if (ipAddress && ipAddress.match(/^(\d{1,3}\.){3}\d{1,3}$/)) {
+        auditData.ip_address = ipAddress;
+      }
+
+      await supabase.from("audit_logs").insert(auditData);
+    } catch (auditErr: any) {
+      console.error("[DELETE /api/departments/[id]] Failed to log to audit_logs:", auditErr);
+      // Don't fail the operation if audit logging fails
     }
 
     return NextResponse.json({

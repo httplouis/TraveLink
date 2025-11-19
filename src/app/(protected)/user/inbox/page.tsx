@@ -37,7 +37,7 @@ function UserInboxPageContent() {
   const searchParams = useSearchParams();
 
   React.useEffect(() => {
-    document.title = "My Inbox - TraviLink";
+    document.title = "My Inbox - Travelink";
   }, []);
 
   // Fetch history count on mount

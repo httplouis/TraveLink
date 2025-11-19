@@ -16,7 +16,7 @@ export default function PresidentHistoryPage() {
 
   // Set page title
   React.useEffect(() => {
-    document.title = "President History - TraviLink";
+    document.title = "President History - Travelink";
   }, []);
 
   React.useEffect(() => {

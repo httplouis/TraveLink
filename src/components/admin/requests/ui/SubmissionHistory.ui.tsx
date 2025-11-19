@@ -73,11 +73,14 @@ export default function SubmissionHistoryUI({ entries }: Props) {
                     year: "numeric",
                     month: "long",
                     day: "numeric",
+                    timeZone: "Asia/Manila",
                   })}
                   {" • "}
-                  {new Date(entry.timestamp).toLocaleTimeString([], {
+                  {new Date(entry.timestamp).toLocaleTimeString("en-US", {
                     hour: "2-digit",
                     minute: "2-digit",
+                    hour12: true,
+                    timeZone: "Asia/Manila",
                   })}
                 </div>
                 {entry.signature && (

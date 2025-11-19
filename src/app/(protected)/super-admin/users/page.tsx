@@ -112,7 +112,9 @@ export default function SuperAdminUsersPage() {
   // Close dropdown when clicking outside
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (activeFilterDropdown && !(event.target as Element).closest('th.relative')) {
+      const target = event.target as Element;
+      // Close if clicking outside any filter dropdown
+      if (activeFilterDropdown && !target.closest('.filter-dropdown-container')) {
         setActiveFilterDropdown(null);
       }
     };
@@ -381,6 +383,14 @@ export default function SuperAdminUsersPage() {
         return "bg-amber-100 text-amber-800 border-amber-200";
       case "president":
         return "bg-red-100 text-red-800 border-red-200";
+      case "exec":
+        // Handle exec role (should be mapped to vp or president, but just in case)
+        return "bg-amber-100 text-amber-800 border-amber-200";
+      case "faculty":
+      case "staff":
+        return "bg-teal-100 text-teal-800 border-teal-200";
+      case "driver":
+        return "bg-orange-100 text-orange-800 border-orange-200";
       default:
         return "bg-gray-100 text-gray-800 border-gray-200";
     }
@@ -486,11 +496,14 @@ export default function SuperAdminUsersPage() {
             <thead className="bg-gradient-to-r from-purple-600 to-purple-700 text-white sticky top-0 z-10">
               <tr>
                 <th className="px-6 py-4 text-left text-sm font-bold min-w-[280px]">User</th>
-                <th className="px-6 py-4 text-left text-sm font-bold min-w-[220px] relative z-20">
+                <th className="px-6 py-4 text-left text-sm font-bold min-w-[220px] relative z-20 filter-dropdown-container">
                   <div className="flex items-center gap-2">
                     <span>Department</span>
                     <button
-                      onClick={() => setActiveFilterDropdown(activeFilterDropdown === "department" ? null : "department")}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveFilterDropdown(activeFilterDropdown === "department" ? null : "department");
+                      }}
                       className="relative p-1 hover:bg-purple-500 rounded transition-colors"
                       title="Filter by department"
                     >
@@ -501,7 +514,7 @@ export default function SuperAdminUsersPage() {
                     </button>
                   </div>
                   {activeFilterDropdown === "department" && (
-                    <div className="absolute top-full left-0 mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-2xl z-[9999] min-w-[250px] max-h-[300px] overflow-y-auto">
+                    <div className="absolute top-full left-0 mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-2xl z-[10000] min-w-[250px] max-h-[300px] overflow-y-auto filter-dropdown-container">
                       <div className="p-2 border-b border-gray-200 flex items-center justify-between">
                         <span className="text-sm font-semibold text-gray-700">Filter by Department</span>
                         {filters.department && (
@@ -537,11 +550,14 @@ export default function SuperAdminUsersPage() {
                     </div>
                   )}
                 </th>
-                <th className="px-6 py-4 text-left text-sm font-bold min-w-[160px] relative z-20">
+                <th className="px-6 py-4 text-left text-sm font-bold min-w-[160px] relative z-20 filter-dropdown-container">
                   <div className="flex items-center gap-2">
                     <span>Role</span>
                     <button
-                      onClick={() => setActiveFilterDropdown(activeFilterDropdown === "role" ? null : "role")}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveFilterDropdown(activeFilterDropdown === "role" ? null : "role");
+                      }}
                       className="relative p-1 hover:bg-purple-500 rounded transition-colors"
                       title="Filter by role"
                     >
@@ -552,7 +568,7 @@ export default function SuperAdminUsersPage() {
                     </button>
                   </div>
                   {activeFilterDropdown === "role" && (
-                    <div className="absolute top-full left-0 mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-2xl z-[9999] min-w-[200px]">
+                    <div className="absolute top-full left-0 mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-2xl z-[10000] min-w-[200px] filter-dropdown-container">
                       <div className="p-2 border-b border-gray-200 flex items-center justify-between">
                         <span className="text-sm font-semibold text-gray-700">Filter by Role</span>
                         {filters.role && (
@@ -588,11 +604,14 @@ export default function SuperAdminUsersPage() {
                     </div>
                   )}
                 </th>
-                <th className="px-6 py-4 text-left text-sm font-bold min-w-[240px] relative z-20">
+                <th className="px-6 py-4 text-left text-sm font-bold min-w-[240px] relative z-20 filter-dropdown-container">
                   <div className="flex items-center gap-2">
                     <span>Permissions</span>
                     <button
-                      onClick={() => setActiveFilterDropdown(activeFilterDropdown === "permission" ? null : "permission")}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveFilterDropdown(activeFilterDropdown === "permission" ? null : "permission");
+                      }}
                       className="relative p-1 hover:bg-purple-500 rounded transition-colors"
                       title="Filter by permissions"
                     >
@@ -603,7 +622,7 @@ export default function SuperAdminUsersPage() {
                     </button>
                   </div>
                   {activeFilterDropdown === "permission" && (
-                    <div className="absolute top-full left-0 mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-2xl z-[9999] min-w-[200px]">
+                    <div className="absolute top-full left-0 mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-2xl z-[10000] min-w-[200px] filter-dropdown-container">
                       <div className="p-2 border-b border-gray-200 flex items-center justify-between">
                         <span className="text-sm font-semibold text-gray-700">Filter by Permission</span>
                         {filters.permission && (
@@ -684,11 +703,14 @@ export default function SuperAdminUsersPage() {
                     </div>
                   )}
                 </th>
-                <th className="px-6 py-4 text-left text-sm font-bold min-w-[120px] relative z-20">
+                <th className="px-6 py-4 text-left text-sm font-bold min-w-[120px] relative z-20 filter-dropdown-container">
                   <div className="flex items-center gap-2">
                     <span>Status</span>
                     <button
-                      onClick={() => setActiveFilterDropdown(activeFilterDropdown === "status" ? null : "status")}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveFilterDropdown(activeFilterDropdown === "status" ? null : "status");
+                      }}
                       className="relative p-1 hover:bg-purple-500 rounded transition-colors"
                       title="Filter by status"
                     >
@@ -699,7 +721,7 @@ export default function SuperAdminUsersPage() {
                     </button>
                   </div>
                   {activeFilterDropdown === "status" && (
-                    <div className="absolute top-full left-0 mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-2xl z-[9999] min-w-[150px]">
+                    <div className="absolute top-full left-0 mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-2xl z-[10000] min-w-[150px] filter-dropdown-container">
                       <div className="p-2 border-b border-gray-200 flex items-center justify-between">
                         <span className="text-sm font-semibold text-gray-700">Filter by Status</span>
                         {filters.status && (
@@ -803,7 +825,7 @@ export default function SuperAdminUsersPage() {
                     </td>
                     <td className="px-6 py-4">
                       {editingId === user.id ? (
-                        <div className="relative" style={{ zIndex: 9999 }}>
+                        <div className="relative" style={{ zIndex: 10001 }}>
                           <SearchableSelect
                             options={[
                               { value: "", label: "No department" },
@@ -845,8 +867,10 @@ export default function SuperAdminUsersPage() {
                             // Automatically sync checkboxes based on selected role
                             const newEditData: any = { ...editData, role: selectedRole };
                             
-                            // Clear all permission flags first
-                            newEditData.is_head = false;
+                            // Preserve is_head if user was already a head (users can be both Head and VP/President)
+                            const wasHead = user.is_head || editData.is_head;
+                            
+                            // Clear permission flags (except is_head which we'll preserve for VP/President)
                             newEditData.is_admin = false;
                             newEditData.is_hr = false;
                             newEditData.is_vp = false;
@@ -857,12 +881,19 @@ export default function SuperAdminUsersPage() {
                               newEditData.is_head = true;
                             } else if (selectedRole === "admin") {
                               newEditData.is_admin = true;
+                              newEditData.is_head = false; // Admin and Head are mutually exclusive
                             } else if (selectedRole === "hr") {
                               newEditData.is_hr = true;
+                              newEditData.is_head = false; // HR and Head are mutually exclusive
                             } else if (selectedRole === "vp") {
                               newEditData.is_vp = true;
+                              newEditData.is_head = wasHead; // Preserve is_head for VP (can be both)
                             } else if (selectedRole === "president") {
                               newEditData.is_president = true;
+                              newEditData.is_head = wasHead; // Preserve is_head for President (can be both)
+                            } else {
+                              // For other roles (faculty, staff, driver, comptroller), clear is_head
+                              newEditData.is_head = false;
                             }
                             
                             setEditData(newEditData);

@@ -13,7 +13,7 @@ export default function VPLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <ToastProvider>
-      <PageTitle title="TraviLink | VP" />
+      <PageTitle title="Travelink | VP" />
       <div
         className="bg-[var(--background)] text-[var(--foreground)]"
         style={{ ["--topbar-h" as any]: topbarH }}

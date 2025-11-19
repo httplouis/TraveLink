@@ -52,7 +52,7 @@ export default function ParticipantConfirmationPage() {
       
       // Auto-populate from user profile if user exists in system
       if (data.data.userProfile && data.data.userProfile.isUser) {
-        // User exists in TraviLink - auto-populate their info
+        // User exists in Travelink - auto-populate their info
         if (data.data.userProfile.name && !name) {
           setName(data.data.userProfile.name);
         }
@@ -295,14 +295,14 @@ export default function ParticipantConfirmationPage() {
                 {invitation?.userProfile?.isUser ? (
                   <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 mb-4">
                     <p className="text-sm text-blue-800">
-                      <strong>✓ Account Found:</strong> We found your TraviLink account. Your name and department have been pre-filled. 
+                      <strong>✓ Account Found:</strong> We found your Travelink account. Your name and department have been pre-filled. 
                       {invitation.userProfile.hasSignature && " Your signature will be automatically added when you confirm."}
                     </p>
                   </div>
                 ) : (
                   <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 mb-4">
                     <p className="text-sm text-amber-800">
-                      <strong>ℹ️ New User:</strong> You're not yet registered in TraviLink. Please fill in your information below. 
+                      <strong>ℹ️ New User:</strong> You're not yet registered in Travelink. Please fill in your information below. 
                       Once you confirm, you'll be automatically added to the applicants list.
                     </p>
                   </div>

@@ -1,13 +1,11 @@
 "use server";
 
 import type { DashboardData, RequestRow } from "./types";
-import * as mock from "./adapters/mock";
 import * as real from "./adapters/real";
 
-// Flip to REAL by setting NEXT_PUBLIC_TRAVILINK_USE_MOCK=false in .env.local
-const USE_MOCK = process.env.NEXT_PUBLIC_TRAVILINK_USE_MOCK !== "false";
-const dash = USE_MOCK ? mock : real;
-const reqs = USE_MOCK ? mock : real;
+// Always use real adapter - no mock data
+const dash = real;
+const reqs = real;
 
 /* ---------------- Types ---------------- */
 export type ListRequestsQuery = {

@@ -330,7 +330,7 @@ export function generateParticipantInvitationEmail({
           <tr>
             <td style="background-color: #f9f9f9; padding: 20px 30px; text-align: center; border-radius: 0 0 8px 8px; border-top: 1px solid #e0e0e0;">
               <p style="margin: 0; color: #666666; font-size: 12px;">
-                TraviLink - Travel Request Management System<br>
+                Travelink - Travel Request Management System<br>
                 Manuel S. Enverga University Foundation
               </p>
             </td>

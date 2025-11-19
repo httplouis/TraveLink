@@ -29,7 +29,7 @@ export default function AdminTopBar() {
             <span className="grid h-8 w-8 place-items-center rounded-md bg-white text-[#7a0010] text-sm font-semibold">
               TL
             </span>
-            <span className="font-medium">TraviLink</span>
+            <span className="font-medium">Travelink</span>
           </Link>
           <span className="opacity-70">|</span>
           <span className="opacity-90">Admin</span>

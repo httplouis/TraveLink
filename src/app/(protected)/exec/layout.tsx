@@ -14,7 +14,7 @@ export default function ExecLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <ToastProvider>
-      <PageTitle title="TraviLink | Executive" />
+      <PageTitle title="Travelink | Executive" />
       <div
         className="bg-[var(--background)] text-[var(--foreground)]"
         style={{ ["--topbar-h" as any]: topbarH }}

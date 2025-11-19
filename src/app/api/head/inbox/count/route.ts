@@ -26,11 +26,42 @@ export async function GET() {
     }
 
     // Count pending requests for this department
-    const { count, error } = await supabase
+    // IMPORTANT: Exclude requests where requester is the current head (they shouldn't see their own requests)
+    // Also count requests from child departments (for parent heads like SVP)
+    
+    // Count 1: Direct department requests
+    const { count: directCount, error: directError } = await supabase
       .from("requests")
       .select("*", { count: "exact", head: true })
       .in("status", ["pending_head", "pending_parent_head"])
-      .eq("department_id", profile.department_id);
+      .eq("department_id", profile.department_id)
+      .neq("requester_id", profile.id);
+    
+    // Count 2: Child department requests (for parent heads)
+    let childCount = 0;
+    try {
+      const { data: childDepartments } = await supabase
+        .from("departments")
+        .select("id")
+        .eq("parent_department_id", profile.department_id);
+      
+      if (childDepartments && childDepartments.length > 0) {
+        const childDeptIds = childDepartments.map((d: any) => d.id);
+        const { count: childDeptCount } = await supabase
+          .from("requests")
+          .select("*", { count: "exact", head: true })
+          .in("status", ["pending_parent_head"])
+          .in("department_id", childDeptIds)
+          .neq("requester_id", profile.id);
+        
+        childCount = childDeptCount || 0;
+      }
+    } catch (err) {
+      console.error("[Head Inbox Count] Error counting child department requests:", err);
+    }
+    
+    const count = (directCount || 0) + childCount;
+    const error = directError;
 
     if (error) {
       console.error("Head inbox count error:", error);

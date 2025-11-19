@@ -76,7 +76,7 @@ export async function PATCH(
     // Get current user data before update
     const { data: currentUser } = await supabase
       .from("users")
-      .select("role, is_head, is_hr, is_vp, is_president, is_admin")
+      .select("role, exec_type, is_head, is_hr, is_vp, is_president, is_admin")
       .eq("id", userId)
       .single();
 
@@ -104,14 +104,17 @@ export async function PATCH(
     // If department_id is NOT in body, it will NOT be in updateData, so existing value is preserved
 
     // Update permission flags
+    // Note: is_head can be set independently for VP/President (users can be both Head and VP/President)
     if (typeof body.is_head === "boolean") {
+      // Always respect explicit is_head setting from body
       updateData.is_head = body.is_head;
-      // If setting is_head=true, also set role='head' if not already set
-      if (body.is_head === true && !updateData.role) {
+      
+      // If setting is_head=true and role is not VP/President, also set role='head' if not already set
+      if (body.is_head === true && !updateData.role && originalRole !== "vp" && originalRole !== "president" && !body.role) {
         updateData.role = "head";
       }
-      // If setting is_head=false and current role is 'head', clear role
-      if (body.is_head === false && currentUser?.role === "head" && !body.role) {
+      // If setting is_head=false and current role is 'head', clear role (unless role is being changed)
+      if (body.is_head === false && currentUser?.role === "head" && !body.role && !updateData.role) {
         updateData.role = "faculty"; // Default to faculty
       }
     }
@@ -152,9 +155,30 @@ export async function PATCH(
     const dbRole = updateData.role || originalRole; // Use mapped role if available
     
     // If role is changing, clear ALL flags first, then set the appropriate ones
-    if (originalRole && currentUser?.role !== dbRole) {
-      // Clear all flags when role changes
-      updateData.is_head = false;
+    // Compare database roles (both current and new should be in DB format)
+    const currentDbRole = currentUser?.role; // This is already in DB format (could be "exec")
+    const isRoleChanging = originalRole && currentDbRole !== dbRole;
+    
+    // Also check if we're changing between exec subtypes (vp <-> president)
+    const isChangingExecSubtype = originalRole && 
+      currentDbRole === "exec" && 
+      dbRole === "exec" && 
+      ((originalRole === "vp" && (currentUser?.exec_type === "president" || currentUser?.is_president)) ||
+       (originalRole === "president" && (currentUser?.exec_type === "vp" || currentUser?.is_vp)));
+    
+    if (isRoleChanging || isChangingExecSubtype) {
+      // Determine is_head value: prioritize explicit body.is_head, then preserve if user was already a head and changing to VP/President
+      // Users can be both Head and VP/President at the same time
+      let finalIsHead: boolean | undefined = undefined;
+      if (typeof body.is_head === "boolean") {
+        // Explicitly set in body - use that value
+        finalIsHead = body.is_head;
+      } else if (currentUser?.is_head === true && (originalRole === "vp" || originalRole === "president")) {
+        // Preserve is_head if user was already a head and changing to VP/President
+        finalIsHead = true;
+      }
+      
+      // Clear permission flags when role changes (but preserve is_head for VP/President if needed)
       updateData.is_admin = false;
       updateData.is_vp = false;
       updateData.is_president = false;
@@ -167,44 +191,67 @@ export async function PATCH(
         updateData.exec_type = null; // Clear exec_type when not exec
       } else if (originalRole === "admin") {
         updateData.is_admin = true;
+        updateData.is_head = false; // Admin and Head are mutually exclusive
         updateData.exec_type = null; // Clear exec_type when not exec
       } else if (originalRole === "vp") {
         updateData.is_vp = true;
+        // Use finalIsHead if determined, otherwise default to false
+        updateData.is_head = finalIsHead !== undefined ? finalIsHead : false;
         updateData.exec_type = "vp"; // Set exec_type for VP
         // Role is already mapped to 'exec' above
       } else if (originalRole === "president") {
         updateData.is_president = true;
+        // Use finalIsHead if determined, otherwise default to false
+        updateData.is_head = finalIsHead !== undefined ? finalIsHead : false;
         updateData.exec_type = "president"; // Set exec_type for President
         // Role is already mapped to 'exec' above
       } else if (originalRole === "hr") {
         updateData.is_hr = true;
+        updateData.is_head = false; // HR and Head are mutually exclusive
         updateData.exec_type = null; // Clear exec_type when not exec
       } else if (originalRole === "comptroller") {
         // Comptroller role - no flag needed, just set role
+        updateData.is_head = false;
         updateData.exec_type = null; // Clear exec_type when not exec
         // Note: is_comptroller column does not exist
       } else {
         // For faculty, staff, driver - flags remain false (already cleared above)
+        updateData.is_head = false;
         updateData.exec_type = null; // Clear exec_type when not exec
       }
     } else if (originalRole) {
       // Role is not changing, but ensure flags match the role
+      // Preserve is_head for VP/President if user was already a head
+      const shouldPreserveHeadForSameRole = currentUser?.is_head === true && 
+        (originalRole === "vp" || originalRole === "president");
+      
       if (originalRole === "head") {
         updateData.is_head = true;
         updateData.exec_type = null;
       } else if (originalRole === "admin") {
         updateData.is_admin = true;
+        updateData.is_head = false; // Admin and Head are mutually exclusive
         updateData.exec_type = null;
       } else if (originalRole === "vp") {
         updateData.is_vp = true;
+        // Preserve is_head if user was already a head (can be both Head and VP)
+        if (shouldPreserveHeadForSameRole && body.is_head !== false) {
+          updateData.is_head = true;
+        }
         updateData.exec_type = "vp";
       } else if (originalRole === "president") {
         updateData.is_president = true;
+        // Preserve is_head if user was already a head (can be both Head and President)
+        if (shouldPreserveHeadForSameRole && body.is_head !== false) {
+          updateData.is_head = true;
+        }
         updateData.exec_type = "president";
       } else if (originalRole === "hr") {
         updateData.is_hr = true;
+        updateData.is_head = false; // HR and Head are mutually exclusive
         updateData.exec_type = null;
       } else {
+        updateData.is_head = false; // Clear is_head for other roles
         updateData.exec_type = null;
       }
     }
@@ -558,6 +605,7 @@ export async function PATCH(
         name,
         email,
         role,
+        exec_type,
         is_head,
         is_admin,
         is_vp,
@@ -611,9 +659,23 @@ export async function PATCH(
       }
     }
 
+    // Map "exec" role to "vp" or "president" for frontend display
+    let displayRole = updatedUser.role;
+    if (updatedUser.role === "exec") {
+      if (updatedUser.is_president || updatedUser.exec_type === "president") {
+        displayRole = "president";
+      } else if (updatedUser.is_vp || updatedUser.exec_type === "vp") {
+        displayRole = "vp";
+      } else {
+        // Default to vp if unclear
+        displayRole = "vp";
+      }
+    }
+
     // Add department and super_admin to response
     const responseData = {
       ...updatedUser,
+      role: displayRole, // Use mapped role for frontend
       department,
       is_super_admin,
     };

@@ -14,7 +14,7 @@ export default function HeadLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <ToastProvider>
-      <PageTitle title="TraviLink | Head" />
+      <PageTitle title="Travelink | Head" />
       <div
         className="bg-[var(--background)] text-[var(--foreground)]"
         style={{ ["--topbar-h" as any]: topbarH }}

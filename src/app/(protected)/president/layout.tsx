@@ -13,7 +13,7 @@ export default function PresidentLayout({ children }: { children: React.ReactNod
 
   return (
     <ToastProvider>
-      <PageTitle title="TraviLink | President" />
+      <PageTitle title="Travelink | President" />
       <div
         className="bg-[var(--background)] text-[var(--foreground)]"
         style={{ ["--topbar-h" as any]: topbarH }}

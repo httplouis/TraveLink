@@ -39,6 +39,7 @@ export async function GET(req: NextRequest) {
         phone_number,
         position_title,
         role,
+        exec_type,
         is_head,
         is_admin,
         is_vp,
@@ -72,6 +73,7 @@ export async function GET(req: NextRequest) {
           phone_number,
           position_title,
           role,
+          exec_type,
           is_head,
           is_admin,
           is_vp,
@@ -129,10 +131,26 @@ export async function GET(req: NextRequest) {
       }
 
       // Map users with departments and super_admin flag
+      // Also map "exec" role to "vp" or "president" for frontend display
       const usersWithDepts = users.map(user => {
         const adminInfo = adminsMap[user.id];
+        let displayRole = user.role;
+        
+        // Map "exec" role to "vp" or "president" based on flags or exec_type
+        if (user.role === "exec") {
+          if (user.is_president || (user as any).exec_type === "president") {
+            displayRole = "president";
+          } else if (user.is_vp || (user as any).exec_type === "vp") {
+            displayRole = "vp";
+          } else {
+            // Default to vp if unclear
+            displayRole = "vp";
+          }
+        }
+        
         return {
           ...user,
+          role: displayRole, // Use mapped role for frontend
           department: user.department_id ? departmentsMap[user.department_id] || null : null,
           is_super_admin: adminInfo?.super_admin || false, // Add super_admin flag
         };
@@ -163,8 +181,22 @@ export async function GET(req: NextRequest) {
       // Remove the departments and admins properties from user object and add department object
       const { departments, admins, ...userWithoutDept } = user as any;
       
+      // Map "exec" role to "vp" or "president" for frontend display
+      let displayRole = userWithoutDept.role;
+      if (userWithoutDept.role === "exec") {
+        if (userWithoutDept.is_president || userWithoutDept.exec_type === "president") {
+          displayRole = "president";
+        } else if (userWithoutDept.is_vp || userWithoutDept.exec_type === "vp") {
+          displayRole = "vp";
+        } else {
+          // Default to vp if unclear
+          displayRole = "vp";
+        }
+      }
+      
       return {
         ...userWithoutDept,
+        role: displayRole, // Use mapped role for frontend
         department: department,
         is_super_admin: isSuperAdmin, // Add super_admin flag
       };

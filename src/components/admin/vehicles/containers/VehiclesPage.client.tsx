@@ -24,11 +24,9 @@ export default function VehiclesPageClient() {
 
   const [openDetails, setOpenDetails] = React.useState<string | null>(null);
 
-  // hydrate from localStorage after mount so SSR/CSR match
+  // Fetch from Supabase on mount
   React.useEffect(() => {
-    if (VehiclesRepo.hydrateFromStorage?.()) {
-      refresh();
-    }
+    refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -89,13 +87,7 @@ export default function VehiclesPageClient() {
 
   const current = openDetails ? (VehiclesRepo.get(openDetails) as any) : null;
 
-  // Reset sample handler (DEV only)
-  const handleResetSample = () => {
-    VehiclesRepo.resetToSample();
-    setSelection([]);
-    setFilters({});
-    refresh();
-  };
+  // Reset handler removed - no sample data, everything from database
 
   return (
     <div className="space-y-4 p-4">
@@ -111,7 +103,6 @@ export default function VehiclesPageClient() {
         view={view}
         onView={setView}
         onCreate={() => setForm({ mode: "create" })}
-        onReset={handleResetSample}
       />
 
       <VehiclesFilterBar value={filters} onChange={setFilters} onClear={onClear} />

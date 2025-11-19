@@ -42,11 +42,9 @@ export default function DriversPageClient() {
   const [openDetails, setOpenDetails] = React.useState<string | null>(null);
   const current = openDetails ? DriversRepo.get(openDetails) : null;
 
-  // hydrate localStorage data after mount to avoid SSR mismatch
+  // Fetch from Supabase on mount
   React.useEffect(() => {
-    if (DriversRepo.hydrateFromStorage?.()) {
-      refresh();
-    }
+    refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -105,13 +103,7 @@ export default function DriversPageClient() {
     return { all, available, on_trip, off_duty, suspended, expired_license };
   }, [rows]);
 
-  // (DEV only) reset to sample
-  const handleResetSample = () => {
-    DriversRepo.resetToSample();
-    setSelection([]);
-    setFilters({});
-    refresh();
-  };
+  // Reset handler removed - no sample data, everything from database
 
   return (
     <div className="space-y-4 p-4">
@@ -125,7 +117,6 @@ export default function DriversPageClient() {
         view={view}
         onView={setView}
         onCreate={() => setForm({ mode: "create" })}
-        onReset={handleResetSample}
       />
 
       {/* Filters UI */}

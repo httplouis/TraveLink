@@ -58,6 +58,7 @@ export async function GET() {
     }
 
     // Query 2: Requests where user is requester AND has signed (representative submissions)
+    // IMPORTANT: Exclude drafts from submissions view
     let signedRequests: any[] = [];
     let signedError: any = null;
     
@@ -70,6 +71,7 @@ export async function GET() {
         `)
         .eq("requester_id", profile.id)
         .not("requester_signature", "is", null)
+        .neq("status", "draft") // Exclude drafts from submissions view
         .order("created_at", { ascending: false })
         .limit(100);
       

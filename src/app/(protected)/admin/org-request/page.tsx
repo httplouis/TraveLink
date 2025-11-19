@@ -287,10 +287,10 @@ export default function OrgRequestPage() {
                   onChange={(e) => setDepartment(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-transparent"
                 >
-                  <option key="dept-empty" value="">Select Department</option>
-                  {DEPARTMENTS.map((dept) => (
-                    <option key={dept.code} value={dept.name}>
-                      {dept.name} ({dept.code})
+                  <option value="">Select Department</option>
+                  {DEPARTMENTS.map((dept, index) => (
+                    <option key={`dept-${index}-${dept}`} value={dept}>
+                      {dept}
                     </option>
                   ))}
                 </select>

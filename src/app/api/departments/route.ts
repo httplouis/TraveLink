@@ -176,5 +176,35 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   }
 
+  // Log to audit_logs
+  try {
+    const ipAddress = req.headers.get("x-forwarded-for")?.split(",")[0].trim() || 
+                     req.headers.get("x-real-ip") || null;
+    const userAgent = req.headers.get("user-agent") || null;
+
+    const auditData: any = {
+      user_id: profile.id,
+      action: "create",
+      entity_type: "department",
+      entity_id: data.id,
+      new_value: {
+        code: data.code,
+        name: data.name,
+        type: data.type,
+        parent_department_id: data.parent_department_id,
+      },
+      user_agent: userAgent,
+    };
+
+    if (ipAddress && ipAddress.match(/^(\d{1,3}\.){3}\d{1,3}$/)) {
+      auditData.ip_address = ipAddress;
+    }
+
+    await supabase.from("audit_logs").insert(auditData);
+  } catch (auditErr: any) {
+    console.error("[POST /api/departments] Failed to log to audit_logs:", auditErr);
+    // Don't fail the operation if audit logging fails
+  }
+
   return NextResponse.json({ ok: true, department: data });
 }

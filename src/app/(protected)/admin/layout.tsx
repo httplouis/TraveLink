@@ -25,7 +25,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <>
-      <PageTitle title="TraviLink | Admin" />
+      <PageTitle title="Travelink | Admin" />
       <div className="relative min-h-dvh w-full bg-[#F7F7F8] text-neutral-900">
       {/* ===== Floating Sidebar (follows CSS vars set by AdminLeftNav) ===== */}
       <aside
@@ -61,7 +61,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             rounded-2xl
             text-white
             px-4 sm:px-6
-            overflow-hidden
           "
           style={{
             backgroundColor: '#7a0010'
@@ -75,7 +74,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               TL
             </div>
             <div>
-              <div className="text-sm font-bold tracking-wide">TraviLink</div>
+              <div className="text-sm font-bold tracking-wide">Travelink</div>
               <div className="text-[10px] text-white font-medium opacity-80">Admin Portal</div>
             </div>
           </div>
@@ -102,7 +101,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
           {/* Right actions */}
           <div className="absolute right-6 flex items-center gap-3 z-10" suppressHydrationWarning>
-            <NotificationBell />
+            <NotificationBell variant="onMaroon" />
             <ProfileMenu />
             <button
               onClick={handleLogout}

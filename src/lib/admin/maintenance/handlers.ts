@@ -16,7 +16,7 @@ export function canTransition(from: MaintStatus, to: MaintStatus) {
   return map[from].includes(to);
 }
 
-export function pushStatus(id: string, next: MaintStatus, note?: string) {
+export async function pushStatus(id: string, next: MaintStatus, note?: string) {
   const all = MaintRepo.listLocal();
   const i = all.findIndex((x) => x.id === id);
   if (i < 0) throw "Record not found";
@@ -37,6 +37,18 @@ export function pushStatus(id: string, next: MaintStatus, note?: string) {
     note,
   });
 
+  // Sync with API
+  try {
+    await MaintRepo.upsert(rec);
+  } catch (error) {
+    console.error('[pushStatus] API sync failed:', error);
+    // Still update local cache
+    all[i] = rec;
+    MaintRepo.save(all);
+    throw error;
+  }
+
+  // Update local cache
   all[i] = rec;
   MaintRepo.save(all);
 }

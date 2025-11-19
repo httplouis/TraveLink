@@ -1,6 +1,6 @@
 /**
  * Workflow Helper Functions for Dual-Signature and Multi-Role Logic
- * TraviLink Design System v2.0
+ * Travelink Design System v2.0
  */
 
 export type WorkflowStage =

@@ -1,5 +1,4 @@
 import type { DriverProfile } from "@/app/types/driverProfile";
-import { DRIVER as DRIVER_SEED } from "@/lib/mock";
 
 const LS_KEY = "travilink_driver_profile";
 
@@ -10,36 +9,96 @@ function splitName(full?: string) {
   return { firstName: parts.slice(0, -1).join(" "), lastName: parts.slice(-1)[0] };
 }
 
-export function seedFromMock(): DriverProfile {
-  const { firstName, lastName } = splitName(DRIVER_SEED?.name);
+function getDefaultProfile(): DriverProfile {
   return {
-    firstName,
-    lastName,
-    email: (DRIVER_SEED as any)?.email ?? "",
-    campus: DRIVER_SEED?.campus ?? "",
-    dept: DRIVER_SEED?.dept ?? "",
-    phone: DRIVER_SEED?.phone ?? "",
-    license: DRIVER_SEED?.license ?? "",
-    canDrive: Array.isArray(DRIVER_SEED?.canDrive) ? DRIVER_SEED.canDrive : [],
-    badges: Array.isArray(DRIVER_SEED?.badges) ? DRIVER_SEED.badges : [],
+    firstName: "",
+    lastName: "",
+    email: "",
+    campus: "",
+    dept: "",
+    phone: "",
+    license: "",
+    canDrive: [],
+    badges: [],
     avatar: undefined,
     notifyEmail: true,
     notifyPush: true,
   };
 }
 
-export function loadProfile(): DriverProfile {
-  if (typeof window === "undefined") return seedFromMock();
+export async function loadProfile(): Promise<DriverProfile> {
+  if (typeof window === "undefined") return getDefaultProfile();
+  
+  try {
+    // Fetch from API first
+    const response = await fetch('/api/profile');
+    const result = await response.json();
+    
+    if (result.ok && result.data) {
+      const data = result.data;
+      const { firstName, lastName } = splitName(data.name);
+      
+      const profile: DriverProfile = {
+        firstName,
+        lastName,
+        email: data.email || "",
+        campus: data.campus || "",
+        dept: data.department || "",
+        phone: data.phone || "",
+        license: data.license || "",
+        canDrive: data.canDrive || [],
+        badges: data.badges || [],
+        avatar: data.avatarUrl,
+        notifyEmail: data.prefs?.emailNotifications !== false,
+        notifyPush: data.prefs?.pushNotifications !== false,
+      };
+      
+      // Cache in localStorage for offline access
+      localStorage.setItem(LS_KEY, JSON.stringify(profile));
+      return profile;
+    }
+  } catch (error) {
+    console.error('[loadProfile] API fetch failed:', error);
+  }
+  
+  // Fallback to cached localStorage if API fails
   try {
     const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return seedFromMock();
-    return { ...seedFromMock(), ...(JSON.parse(raw) as DriverProfile) };
+    if (raw) {
+      return { ...getDefaultProfile(), ...(JSON.parse(raw) as DriverProfile) };
+    }
   } catch {
-    return seedFromMock();
+    // Ignore parse errors
   }
+  
+  return getDefaultProfile();
 }
 
-export function saveProfile(p: DriverProfile) {
+export async function saveProfile(p: DriverProfile): Promise<void> {
   if (typeof window === "undefined") return;
-  localStorage.setItem(LS_KEY, JSON.stringify(p));
+  
+  try {
+    // Save to API
+    const response = await fetch('/api/profile', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: `${p.firstName} ${p.lastName}`.trim(),
+        phone: p.phone,
+        preferences: {
+          emailNotifications: p.notifyEmail,
+          pushNotifications: p.notifyPush,
+        },
+      }),
+    });
+    
+    if (response.ok) {
+      // Cache in localStorage
+      localStorage.setItem(LS_KEY, JSON.stringify(p));
+    }
+  } catch (error) {
+    console.error('[saveProfile] API save failed:', error);
+    // Fallback to localStorage only
+    localStorage.setItem(LS_KEY, JSON.stringify(p));
+  }
 }

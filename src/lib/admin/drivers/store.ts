@@ -1,33 +1,12 @@
 import type { Driver, DriverFilters, DriverStatus, LicenseClass } from "./types";
-import { sampleDrivers } from "./data";
 
 /**
- * SSR-safe store:
- * - Initialize with sampleDrivers for both server & client (to prevent hydration mismatch)
- * - After mount, call DriversRepo.hydrateFromStorage() to replace with persisted client data.
+ * SUPABASE-ONLY STORE:
+ * - All data comes from Supabase database via API
+ * - No localStorage usage - everything is in database
  */
 
-let db: Driver[] = sampleDrivers.map(d => ({ ...d }));
-
-const LS_KEY = "travilink_drivers";
-const canStorage = () => typeof window !== "undefined" && !!window.localStorage;
-
-function saveToStorage(rows: Driver[]) {
-  if (!canStorage()) return;
-  try { localStorage.setItem(LS_KEY, JSON.stringify(rows)); } catch {}
-}
-
-function hydrateFromStorage(): boolean {
-  if (!canStorage()) return false;
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return false;
-    db = JSON.parse(raw) as Driver[];
-    return true;
-  } catch {
-    return false;
-  }
-}
+let db: Driver[] = [];
 
 function matches(d: Driver, f: DriverFilters) {
   const s = (f.search ?? "").toLowerCase();
@@ -50,20 +29,18 @@ function matches(d: Driver, f: DriverFilters) {
 }
 
 export const DriversRepo = {
-  hydrateFromStorage,
-
   constants: {
     statuses: ["active", "on_trip", "off_duty", "suspended"] as readonly DriverStatus[],
     licenseClasses: ["A", "B", "C", "D", "E"] as readonly LicenseClass[],
   },
 
-  // Synchronous method to get local db (for SSR/build time)
+  // Synchronous method to get cached data (from last API fetch)
   listLocal(filters: DriverFilters = {}) {
     return db.filter(d => matches(d, filters));
   },
 
   async list(filters: DriverFilters = {}) {
-    // NOW USES API! Fetch from database
+    // FETCH FROM SUPABASE ONLY - No localStorage
     try {
       const params = new URLSearchParams();
       if (filters.status) params.set('status', filters.status);
@@ -84,16 +61,18 @@ export const DriversRepo = {
           licenseNo: d.licenseNumber || d.license_no,
           licenseClass: 'B' as LicenseClass,
           licenseExpiry: d.licenseExpiry || d.license_expiry || new Date().toISOString(),
-          status: (d.status === 'active' ? 'active' : 'off_duty') as DriverStatus,
+          status: (d.isAvailable ? 'active' : 'off_duty') as DriverStatus,
           rating: d.rating || 5.0,
           createdAt: d.createdAt || new Date().toISOString(),
           updatedAt: d.updatedAt || new Date().toISOString(),
         }));
-        saveToStorage(db); // Cache locally
+      } else {
+        console.error('[DriversRepo] API returned error:', result);
+        db = [];
       }
     } catch (error) {
       console.error('[DriversRepo] API fetch failed:', error);
-      // Fall back to localStorage
+      db = [];
     }
     
     return db.filter(d => matches(d, filters));
@@ -120,32 +99,16 @@ export const DriversRepo = {
       
       const result = await response.json();
       if (result.ok && result.data) {
-        // Add to local cache
-        const d: Driver = {
-          ...data,
-          id: result.data.user_id || result.data.id,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        db.push(d);
-        saveToStorage(db);
-        return d.id;
+        // Refresh from API to get latest data
+        await this.list();
+        return result.data.user_id || result.data.id;
+      } else {
+        throw new Error(result.error || 'Failed to create driver');
       }
     } catch (error) {
       console.error('[DriversRepo] API create failed:', error);
+      throw error;
     }
-    
-    // Fallback to local
-    const now = new Date().toISOString();
-    const d: Driver = {
-      ...data,
-      id: crypto.randomUUID(),
-      createdAt: now,
-      updatedAt: now,
-    };
-    db.push(d);
-    saveToStorage(db);
-    return d.id;
   },
   async update(id: string, patch: Partial<Driver>) {
     // NOW USES API! Update in database
@@ -167,23 +130,15 @@ export const DriversRepo = {
       
       const result = await response.json();
       if (result.ok) {
-        // Update local cache
-        const i = db.findIndex(d => d.id === id);
-        if (i >= 0) {
-          db[i] = { ...db[i], ...patch, updatedAt: new Date().toISOString() };
-          saveToStorage(db);
-        }
+        // Refresh from API to get latest data
+        await this.list();
         return;
+      } else {
+        throw new Error(result.error || 'Failed to update driver');
       }
     } catch (error) {
       console.error('[DriversRepo] API update failed:', error);
-    }
-    
-    // Fallback to local
-    const i = db.findIndex(d => d.id === id);
-    if (i >= 0) {
-      db[i] = { ...db[i], ...patch, updatedAt: new Date().toISOString() };
-      saveToStorage(db);
+      throw error;
     }
   },
   async remove(id: string) {
@@ -195,27 +150,15 @@ export const DriversRepo = {
       
       const result = await response.json();
       if (result.ok) {
-        // Remove from local cache
-        const i = db.findIndex(d => d.id === id);
-        if (i >= 0) {
-          db.splice(i, 1);
-          saveToStorage(db);
-        }
+        // Refresh from API to get latest data
+        await this.list();
         return;
+      } else {
+        throw new Error(result.error || 'Failed to delete driver');
       }
     } catch (error) {
       console.error('[DriversRepo] API remove failed:', error);
+      throw error;
     }
-    
-    // Fallback to local
-    const i = db.findIndex(d => d.id === id);
-    if (i >= 0) {
-      db.splice(i, 1);
-      saveToStorage(db);
-    }
-  },
-  resetToSample() {
-    db = sampleDrivers.map(d => ({ ...d }));
-    saveToStorage(db);
   },
 };

@@ -92,7 +92,7 @@ export default function RegisterView(props: Props) {
                       Enverga University
                     </h1>
                     <p className="text-[11px] text-gray-600">
-                      TraviLink · Scheduling & Reservations
+                      Travelink · Scheduling & Reservations
                     </p>
                   </div>
                 </div>
@@ -195,7 +195,7 @@ export default function RegisterView(props: Props) {
           </div>
 
           <p className="mt-2 text-center text-[11px] text-white/85 drop-shadow">
-            © {new Date().getFullYear()} TraviLink · Enverga University
+            © {new Date().getFullYear()} Travelink · Enverga University
           </p>
         </div>
       </div>

@@ -293,14 +293,14 @@ export default function RequesterConfirmationPage() {
                 {invitation?.userProfile?.isUser ? (
                   <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 mb-4">
                     <p className="text-sm text-blue-800">
-                      <strong>✓ Account Found:</strong> We found your TraviLink account. Your name and department have been pre-filled.
+                      <strong>✓ Account Found:</strong> We found your Travelink account. Your name and department have been pre-filled.
                       {invitation.userProfile.hasSignature && " Your signature will be automatically added when you confirm."}
                     </p>
                   </div>
                 ) : (
                   <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 mb-4">
                     <p className="text-sm text-amber-800">
-                      <strong>ℹ️ New User:</strong> You're not yet registered in TraviLink. Please fill in your information below.
+                      <strong>ℹ️ New User:</strong> You're not yet registered in Travelink. Please fill in your information below.
                     </p>
                   </div>
                 )}

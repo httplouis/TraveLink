@@ -392,6 +392,7 @@ function RequestWizardContent() {
                 department: currentUserData.data.department,
                 ...(currentUserData.data.department_id && { department_id: currentUserData.data.department_id }),
                 ...(currentUserData.data.is_head !== undefined && { is_head: currentUserData.data.is_head }),
+                ...(currentUserData.data.isHead !== undefined && { isHead: currentUserData.data.isHead }),
               } as any;
               console.log('[RequestWizard] Fetched current user from API:', actualCurrentUser);
             }
@@ -493,9 +494,90 @@ function RequestWizardContent() {
           });
           
           // Check if current user is a head
-          const isHead = actualCurrentUser.role === "head" || (actualCurrentUser as any).is_head === true;
+          // Check both role and is_head flag to be thorough
+          const isHead = actualCurrentUser.role === "head" || 
+                        (actualCurrentUser as any).is_head === true ||
+                        (actualCurrentUser as any).isHead === true;
+          console.log('[RequestWizard] 🔍 Checking if current user is head:', {
+            role: actualCurrentUser.role,
+            is_head: (actualCurrentUser as any).is_head,
+            isHead: (actualCurrentUser as any).isHead,
+            finalIsHead: isHead
+          });
           setRequestingPersonIsHead(isHead);
           setIsRepresentativeSubmission(false); // Not representative if it's the current user
+          
+          // If current user IS a head, check for parent head (SVP)
+          // Head should see their parent head (e.g., CCMS head → SVP Academics)
+          if (isHead) {
+            console.log('[RequestWizard] 🔍 Current user is a head - checking for parent head');
+            
+            // Check if department has a parent
+            if (finalDepartmentId) {
+              try {
+                // Fetch department info to check for parent_department_id
+                const deptResponse = await fetch(`/api/departments?id=${finalDepartmentId}`);
+                const deptData = await deptResponse.json();
+                
+                if (deptData.ok && deptData.departments?.[0]) {
+                  const dept = deptData.departments[0];
+                  console.log('[RequestWizard] 📋 Department info:', {
+                    name: dept.name,
+                    code: dept.code,
+                    parent_department_id: dept.parent_department_id
+                  });
+                  
+                  // If department has a parent, fetch parent head (SVP)
+                  if (dept.parent_department_id) {
+                    console.log('[RequestWizard] 🔍 Department has parent - fetching parent head (SVP)');
+                    const parentHeadResponse = await fetch(`/api/approvers?role=head&department_id=${dept.parent_department_id}`);
+                    const parentHeadData = await parentHeadResponse.json();
+                    
+                    if (parentHeadData.ok && parentHeadData.data && parentHeadData.data.length > 0) {
+                      const parentHead = parentHeadData.data[0];
+                      const parentHeadName = parentHead.name || "Parent Department Head";
+                      console.log('[RequestWizard] ✅ Found parent head (SVP):', parentHeadName);
+                      
+                      setRequestingPersonHeadInfo({
+                        name: parentHeadName,
+                        department: parentHead.department?.name || dept.name || requesterDepartment || "",
+                      });
+                      
+                      // Auto-populate parent head name in the form
+                      if (parentHeadName && parentHeadName !== "Parent Department Head") {
+                        console.log('[RequestWizard] 🔄 Auto-populating parent head name (SVP):', parentHeadName);
+                        patchTravelOrder({ endorsedByHeadName: parentHeadName });
+                      } else {
+                        patchTravelOrder({ endorsedByHeadName: "" });
+                      }
+                    } else {
+                      console.warn('[RequestWizard] ⚠️ No parent head found for parent_department_id:', dept.parent_department_id);
+                      patchTravelOrder({ endorsedByHeadName: "" });
+                      setRequestingPersonHeadInfo(null);
+                    }
+                  } else {
+                    // No parent department - head is top-level, they choose who to send to
+                    console.log('[RequestWizard] ℹ️ No parent department - head is top-level, will choose approver');
+                    patchTravelOrder({ endorsedByHeadName: "" });
+                    setRequestingPersonHeadInfo(null);
+                  }
+                } else {
+                  console.warn('[RequestWizard] ⚠️ Could not fetch department info');
+                  patchTravelOrder({ endorsedByHeadName: "" });
+                  setRequestingPersonHeadInfo(null);
+                }
+              } catch (error) {
+                console.error('[RequestWizard] ❌ Error fetching parent head:', error);
+                patchTravelOrder({ endorsedByHeadName: "" });
+                setRequestingPersonHeadInfo(null);
+              }
+            } else {
+              // No department_id - can't determine parent
+              console.warn('[RequestWizard] ⚠️ No department_id - cannot determine parent head');
+              patchTravelOrder({ endorsedByHeadName: "" });
+              setRequestingPersonHeadInfo(null);
+            }
+          }
           
           // Auto-populate department to current user's department
           // Force update even if department is already set to ensure it's correct
@@ -575,11 +657,16 @@ function RequestWizardContent() {
             }
           } else {
             if (isHead) {
-              console.log('[RequestWizard] ℹ️ Current user is a head, no need to fetch department head');
+              // If current user IS a head, clear head endorsement field
+              // Head should choose who to send to (parent head, admin, VP, etc.)
+              console.log('[RequestWizard] 🧹 Current user is a head - clearing head endorsement field');
+              console.log('[RequestWizard]   - Current head in form:', data.travelOrder?.endorsedByHeadName);
+              patchTravelOrder({ endorsedByHeadName: "" });
+              setRequestingPersonHeadInfo(null);
             } else {
               console.warn('[RequestWizard] ⚠️ Cannot fetch department head - no department_id available');
+              setRequestingPersonHeadInfo(null);
             }
-            setRequestingPersonHeadInfo(null);
           }
           
           return; // Exit early - we're done
@@ -673,6 +760,9 @@ function RequestWizardContent() {
                   name: currentUserData.data.name,
                   role: currentUserData.data.role,
                   department: currentUserData.data.department,
+                  ...(currentUserData.data.department_id && { department_id: currentUserData.data.department_id }),
+                  ...(currentUserData.data.is_head !== undefined && { is_head: currentUserData.data.is_head }),
+                  ...(currentUserData.data.isHead !== undefined && { isHead: currentUserData.data.isHead }),
                 };
                 console.log('[RequestWizard] Fetched current user from API:', actualCurrentUser);
               }
@@ -751,6 +841,75 @@ function RequestWizardContent() {
                 department: requesterDepartment || "",
               });
             }
+          } else if (result.isHead) {
+            // If requesting person IS a head, fetch their parent head (SVP) if exists
+            // Head should see their parent head (e.g., CCMS head → SVP Academics)
+            console.log('[RequestWizard] 🔍 Requester is a head - checking for parent head');
+            
+            if (result.user?.department_id) {
+              try {
+                // Fetch department info to check for parent_department_id
+                const deptResponse = await fetch(`/api/departments?id=${result.user.department_id}`);
+                const deptData = await deptResponse.json();
+                
+                if (deptData.ok && deptData.departments?.[0]) {
+                  const dept = deptData.departments[0];
+                  console.log('[RequestWizard] 📋 Requester department info:', {
+                    name: dept.name,
+                    code: dept.code,
+                    parent_department_id: dept.parent_department_id
+                  });
+                  
+                  // If department has a parent, fetch parent head (SVP)
+                  if (dept.parent_department_id) {
+                    console.log('[RequestWizard] 🔍 Requester department has parent - fetching parent head (SVP)');
+                    const parentHeadResponse = await fetch(`/api/approvers?role=head&department_id=${dept.parent_department_id}`);
+                    const parentHeadData = await parentHeadResponse.json();
+                    
+                    if (parentHeadData.ok && parentHeadData.data && parentHeadData.data.length > 0) {
+                      const parentHead = parentHeadData.data[0];
+                      const parentHeadName = parentHead.name || "Parent Department Head";
+                      console.log('[RequestWizard] ✅ Found parent head (SVP) for requester:', parentHeadName);
+                      
+                      setRequestingPersonHeadInfo({
+                        name: parentHeadName,
+                        department: parentHead.department?.name || dept.name || requesterDepartment || "",
+                      });
+                      
+                      // Auto-populate parent head name in the form
+                      if (parentHeadName && parentHeadName !== "Parent Department Head") {
+                        console.log('[RequestWizard] 🔄 Auto-populating parent head name (SVP) for requester:', parentHeadName);
+                        patchTravelOrder({ endorsedByHeadName: parentHeadName });
+                      } else {
+                        patchTravelOrder({ endorsedByHeadName: "" });
+                      }
+                    } else {
+                      console.warn('[RequestWizard] ⚠️ No parent head found for requester parent_department_id:', dept.parent_department_id);
+                      patchTravelOrder({ endorsedByHeadName: "" });
+                      setRequestingPersonHeadInfo(null);
+                    }
+                  } else {
+                    // No parent department - head is top-level, they choose who to send to
+                    console.log('[RequestWizard] ℹ️ Requester has no parent department - head is top-level, will choose approver');
+                    patchTravelOrder({ endorsedByHeadName: "" });
+                    setRequestingPersonHeadInfo(null);
+                  }
+                } else {
+                  console.warn('[RequestWizard] ⚠️ Could not fetch requester department info');
+                  patchTravelOrder({ endorsedByHeadName: "" });
+                  setRequestingPersonHeadInfo(null);
+                }
+              } catch (error) {
+                console.error('[RequestWizard] ❌ Error fetching requester parent head:', error);
+                patchTravelOrder({ endorsedByHeadName: "" });
+                setRequestingPersonHeadInfo(null);
+              }
+            } else {
+              // No department_id - can't determine parent
+              console.warn('[RequestWizard] ⚠️ Requester has no department_id - cannot determine parent head');
+              patchTravelOrder({ endorsedByHeadName: "" });
+              setRequestingPersonHeadInfo(null);
+            }
           } else {
             setRequestingPersonHeadInfo(null);
           }
@@ -769,6 +928,9 @@ function RequestWizardContent() {
                   name: currentUserData.data.name,
                   role: currentUserData.data.role,
                   department: currentUserData.data.department,
+                  ...(currentUserData.data.department_id && { department_id: currentUserData.data.department_id }),
+                  ...(currentUserData.data.is_head !== undefined && { is_head: currentUserData.data.is_head }),
+                  ...(currentUserData.data.isHead !== undefined && { isHead: currentUserData.data.isHead }),
                 };
               }
             } catch (error) {
@@ -803,6 +965,9 @@ function RequestWizardContent() {
                 name: currentUserData.data.name,
                 role: currentUserData.data.role,
                 department: currentUserData.data.department,
+                ...(currentUserData.data.department_id && { department_id: currentUserData.data.department_id }),
+                ...(currentUserData.data.is_head !== undefined && { is_head: currentUserData.data.is_head }),
+                ...(currentUserData.data.isHead !== undefined && { isHead: currentUserData.data.isHead }),
               };
             }
           } catch (fetchError) {
@@ -1093,8 +1258,10 @@ function RequestWizardContent() {
             roleLabel: 'Administrator'
           })));
           
-          // Find Ma'am TM as default
+          // Find Ma'am TM as default (prefer trizzia.casino@mseuf.edu.ph)
           const maamTM = adminData.data.find((a: any) => 
+            a.email === 'trizzia.casino@mseuf.edu.ph'
+          ) || adminData.data.find((a: any) => 
             a.name?.toLowerCase().includes('trizzia') || 
             a.email?.toLowerCase().includes('trizzia')
           );

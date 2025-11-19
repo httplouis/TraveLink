@@ -3,51 +3,141 @@
 
 import * as React from "react";
 import type { Notification } from "@/lib/admin/notifications/types";
-import {
-  list,
-  listUnread,
-  markAllAsRead,
-  markAsRead,
-  pushMock,
-} from "@/lib/admin/notifications/repo";
 
 export type TabKey = "all" | "unread";
+
+// Map database notification to UI notification type
+function mapDbNotificationToUI(dbNotif: any): Notification {
+  // Determine kind based on notification_type
+  let kind: Notification["kind"] = "update";
+  if (dbNotif.notification_type?.includes("comment")) {
+    kind = "comment";
+  } else if (dbNotif.notification_type?.includes("mention")) {
+    kind = "mention";
+  } else if (dbNotif.notification_type?.includes("tag")) {
+    kind = "tag";
+  }
+
+  // Build href from action_url or related_id
+  let href: string | undefined = undefined;
+  if (dbNotif.action_url) {
+    href = dbNotif.action_url;
+  } else if (dbNotif.related_id && dbNotif.related_type === "request") {
+    // For request-related notifications, link to admin requests view
+    href = `/admin/requests?view=${dbNotif.related_id}`;
+  }
+
+  return {
+    id: dbNotif.id,
+    kind,
+    title: dbNotif.title || "Notification",
+    body: dbNotif.message || undefined,
+    createdAt: dbNotif.created_at || new Date().toISOString(),
+    read: dbNotif.is_read || false,
+    actorName: undefined, // Database doesn't have actor_name column
+    actorAvatarUrl: null, // Database doesn't have actor_avatar_url column
+    href,
+    meta: {
+      notification_type: dbNotif.notification_type,
+      related_type: dbNotif.related_type,
+      related_id: dbNotif.related_id,
+      priority: dbNotif.priority,
+    },
+  };
+}
 
 export function useNotifications() {
   const [tab, setTab] = React.useState<TabKey>("all");
   const [items, setItems] = React.useState<Notification[]>([]);
   const [unreadCount, setUnread] = React.useState<number>(0);
+  const [loading, setLoading] = React.useState(true);
 
-  const refresh = React.useCallback(() => {
-    setItems(tab === "all" ? list(50) : listUnread());
-    setUnread(listUnread().length);
+  const refresh = React.useCallback(async () => {
+    try {
+      setLoading(true);
+      const unreadParam = tab === "unread" ? "?unread=true" : "";
+      const limitParam = unreadParam ? "&limit=50" : "?limit=50";
+      const res = await fetch(`/api/notifications${unreadParam}${limitParam}`, {
+        cache: "no-store",
+      });
+      const json = await res.json();
+      
+      if (json.ok && json.data) {
+        const mapped = json.data.map(mapDbNotificationToUI);
+        setItems(mapped);
+        
+        // Count unread
+        const unread = mapped.filter((n: Notification) => !n.read).length;
+        setUnread(unread);
+      } else {
+        console.error("[useNotifications] Failed to fetch:", json.error);
+        setItems([]);
+        setUnread(0);
+      }
+    } catch (error) {
+      console.error("[useNotifications] Error fetching notifications:", error);
+      setItems([]);
+      setUnread(0);
+    } finally {
+      setLoading(false);
+    }
   }, [tab]);
 
   React.useEffect(() => {
     refresh();
+    
+    // Poll for updates every 10 seconds
+    const interval = setInterval(refresh, 10000);
+    return () => clearInterval(interval);
   }, [refresh]);
 
-  const actions = {
-    setTab,
-    markOne: (id: string) => {
-      markAsRead(id);
-      refresh();
-    },
-    markAll: () => {
-      markAllAsRead();
-      refresh();
-    },
-    // demo/test injection (no actorName to match repo.ts signature)
-    pushDemo: () => {
-      pushMock({
-        kind: "update",
-        title: "New Travel Request submitted — REQ-2025-014",
-        body: "Department: CCMS · Travel date: Oct 25, 9:00 AM",
-        href: "/admin/requests/REQ-2025-014",
+  const markOne = React.useCallback(async (id: string) => {
+    try {
+      const res = await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, is_read: true }),
       });
-      refresh();
-    },
-  };
+      
+      if (res.ok) {
+        // Update local state immediately
+        setItems(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+        setUnread(prev => Math.max(0, prev - 1));
+      }
+    } catch (error) {
+      console.error("[useNotifications] Failed to mark as read:", error);
+    }
+  }, []);
 
-  return { tab, items, unreadCount, ...actions };
+  const markAll = React.useCallback(async () => {
+    try {
+      // Get all unread IDs
+      const unreadIds = items.filter(n => !n.read).map(n => n.id);
+      if (unreadIds.length === 0) return;
+      
+      const res = await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: unreadIds, is_read: true }),
+      });
+      
+      if (res.ok) {
+        // Update local state immediately
+        setItems(prev => prev.map(n => ({ ...n, read: true })));
+        setUnread(0);
+      }
+    } catch (error) {
+      console.error("[useNotifications] Failed to mark all as read:", error);
+    }
+  }, [items]);
+
+  return { 
+    tab, 
+    items, 
+    unreadCount, 
+    loading,
+    setTab, 
+    markOne, 
+    markAll,
+  };
 }

@@ -131,24 +131,33 @@ export default function RequestDetailsPage({ requestId }: RequestDetailsPageProp
           },
           {
             id: 'head',
-            label: 'Department Head',
+            label: data.parent_head_approved_at ? 'Parent Department Head' : 'Department Head',
             role: 'Head',
-            status: data.head_signature ? 'approved' : 
+            status: (data.head_signature || data.parent_head_signature) ? 'approved' : 
                    data.head_skipped ? 'skipped' : 
-                   data.status === 'pending_head' ? 'next' : 'pending',
-            approver: data.head_approved_by && headApprover.id ? {
-              id: headApprover.id,
-              name: headApprover.name || 'Department Head',
-              profile_picture: headApprover.profile_picture,
-              department: headApprover.department?.name || department.name,
-              position: headApprover.position_title || 'Department Head',
-              email: headApprover.email,
-              phone: headApprover.phone_number
-            } : undefined,
-            signature: data.head_signature,
-            approved_at: data.head_approved_at || data.head_signed_at,
+                   (data.status === 'pending_head' || data.status === 'pending_parent_head') ? 'next' : 'pending',
+            approver: (() => {
+              // Priority: parent_head_approver > head_approver
+              const approver = data.parent_head_approved_by ? parentHeadApprover : headApprover;
+              const hasApproval = !!(data.head_approved_by || data.parent_head_approved_by);
+              
+              if (hasApproval && approver && approver.id) {
+                return {
+                  id: approver.id,
+                  name: approver.name || 'Department Head',
+                  profile_picture: approver.profile_picture,
+                  department: approver.department?.name || department.name,
+                  position: approver.position_title || 'Department Head',
+                  email: approver.email,
+                  phone: approver.phone_number
+                };
+              }
+              return undefined;
+            })(),
+            signature: data.parent_head_signature || data.head_signature,
+            approved_at: data.parent_head_approved_at || data.head_approved_at || data.head_signed_at,
             skip_reason: data.head_skip_reason,
-            comments: data.head_comments
+            comments: data.parent_head_comments || data.head_comments
           },
           // Parent Head (if exists - for office hierarchy)
           ...(data.parent_head_approved_by ? [{

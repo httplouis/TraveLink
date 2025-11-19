@@ -1,4 +1,4 @@
-// TraviLink Workflow Types
+// Travelink Workflow Types
 
 export type RequestType = 'travel_order' | 'seminar';
 

@@ -7,7 +7,7 @@ import NotificationItem from "./NotificationItem.ui";
 import { useNotifications } from "../hooks/useNotifications";
 
 export default function NotificationsPanel() {
-  const { tab, setTab, items, unreadCount, markAll, markOne, pushDemo } =
+  const { tab, setTab, items, unreadCount, markAll, markOne, loading } =
     useNotifications();
 
   return (
@@ -64,22 +64,18 @@ export default function NotificationsPanel() {
             >
               Mark all read
             </button>
-            {/* demo inject button (remove in prod) */}
-            <button
-              onClick={pushDemo}
-              className="rounded-md px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-100"
-              title="Push demo notification"
-            >
-              + Demo
-            </button>
           </div>
         </div>
 
         {/* List */}
         <div className="max-h-[70vh] overflow-auto p-2">
-          {items.length === 0 ? (
+          {loading ? (
             <div className="py-10 text-center text-sm text-neutral-500">
-              No notifications.
+              Loading notifications...
+            </div>
+          ) : items.length === 0 ? (
+            <div className="py-10 text-center text-sm text-neutral-500">
+              {tab === "unread" ? "No unread notifications" : "No notifications"}
             </div>
           ) : (
             <ul className="space-y-1">

@@ -42,10 +42,10 @@ export async function GET() {
         status,
         assigned_vehicle_id,
         assigned_driver_id,
+        requester_id,
+        department_id,
         requester:users!requester_id(id, name, email, department),
         department:departments!requests_department_id_fkey(id, name, code),
-        vehicle:vehicles!assigned_vehicle_id(id, vehicle_name, plate_number, type, capacity, status),
-        driver:users!assigned_driver_id(id, name, email),
         participants
       `)
       .in("status", ["approved", "pending_admin", "pending_hr", "pending_exec"])
@@ -56,8 +56,31 @@ export async function GET() {
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
 
+    // Fetch vehicle and driver data separately
+    const vehicleIds = [...new Set((requests || []).map((r: any) => r.assigned_vehicle_id).filter(Boolean))];
+    const driverIds = [...new Set((requests || []).map((r: any) => r.assigned_driver_id).filter(Boolean))];
+
+    const [vehiclesResult, driversResult] = await Promise.all([
+      vehicleIds.length > 0 
+        ? supabase.from("vehicles").select("id, vehicle_name, plate_number, type, capacity, status").in("id", vehicleIds)
+        : Promise.resolve({ data: [], error: null }),
+      driverIds.length > 0
+        ? supabase.from("users").select("id, name, email").in("id", driverIds)
+        : Promise.resolve({ data: [], error: null })
+    ]);
+
+    const vehiclesMap = new Map((vehiclesResult.data || []).map((v: any) => [v.id, v]));
+    const driversMap = new Map((driversResult.data || []).map((d: any) => [d.id, d]));
+
+    // Attach vehicle and driver data to requests
+    const requestsWithDetails = (requests || []).map((req: any) => ({
+      ...req,
+      vehicle: vehiclesMap.get(req.assigned_vehicle_id) || null,
+      driver: driversMap.get(req.assigned_driver_id) || null
+    }));
+
     // Transform to schedule format
-    const schedules = (requests || []).map((req: any) => {
+    const schedules = requestsWithDetails.map((req: any) => {
       const startDate = new Date(req.travel_start_date);
       const endDate = new Date(req.travel_end_date);
       

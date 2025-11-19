@@ -1,4 +1,4 @@
-// TraviLink Workflow Engine
+// Travelink Workflow Engine
 // Implements complete approval flow logic
 
 import type { RequestStatus, ApproverRole, RequestType } from './types';

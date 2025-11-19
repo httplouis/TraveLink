@@ -65,6 +65,21 @@ export default function RequestsReceiverViewUI({
   unreadIds = new Set(),
   onMarkRead,
 }: Props) {
+  // Debug logging
+  React.useEffect(() => {
+    console.log("[RequestsReceiverViewUI] Received rows:", {
+      rowsCount: rows.length,
+      rows: rows.map(r => ({
+        id: r.id,
+        dept: r.dept,
+        purpose: r.purpose,
+        requester: r.requester,
+        status: r.status
+      })),
+      pagination
+    });
+  }, [rows, pagination]);
+  
   const allOnPageSelected = rows.length > 0 && rows.every((r) => selectedIds.has(r.id));
   const idsOnPage = React.useMemo(() => rows.map((r) => r.id), [rows]);
 

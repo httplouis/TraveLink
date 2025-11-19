@@ -57,11 +57,18 @@ export default function NotificationItem({ data, onRead }: Props) {
 
       <div className="min-w-0 flex-1">
         <div className="text-sm">
-          <span className="font-medium">{data.title}</span>
+          <span className="font-medium text-gray-900">{data.title}</span>
           {data.body && <span className="text-neutral-600"> — {data.body}</span>}
         </div>
         <div className="mt-0.5 text-xs text-neutral-500">
-          {new Date(data.createdAt).toLocaleString()}
+          {new Date(data.createdAt).toLocaleString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+          })}
         </div>
       </div>
 

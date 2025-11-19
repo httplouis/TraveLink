@@ -55,6 +55,7 @@ export default function HeadRequestModal({
   const [loadingRequesters, setLoadingRequesters] = React.useState(false);
   const [defaultApproverId, setDefaultApproverId] = React.useState<string | undefined>(undefined);
   const [defaultApproverName, setDefaultApproverName] = React.useState<string | undefined>(undefined);
+  const [suggestionReason, setSuggestionReason] = React.useState<string | undefined>(undefined);
 
   // Auto-load saved signature and head info
   React.useEffect(() => {
@@ -226,7 +227,7 @@ export default function HeadRequestModal({
           
           options.push(...adminOptions);
           console.log("[HeadRequestModal] ✅ Admin options count:", adminOptions.length);
-          console.log("[HeadRequestModal] Admin options:", adminOptions.map(o => ({ name: o.name, email: o.email })));
+          console.log("[HeadRequestModal] Admin options:", adminOptions.map((o: any) => ({ name: o.name, email: o.email })));
         } else {
           console.warn("[HeadRequestModal] ⚠️ No admins found or API error:", {
             ok: approversData.ok,
@@ -238,32 +239,6 @@ export default function HeadRequestModal({
             toast.warning("Warning", `Could not fetch admin list: ${approversData.error}. You can still return the request to the requester.`);
           } else {
             toast.warning("Warning", "No administrators found in the system. You can still return the request to the requester.");
-          }
-        }
-        
-        // Add VP options if this is a head request
-        if (isHeadRequest && vpRes) {
-          try {
-            const vpData = await vpRes.json();
-            if (vpData.ok && vpData.data && vpData.data.length > 0) {
-              const vpOptions = vpData.data.map((v: any) => ({
-                id: v.id,
-                name: v.name,
-                email: v.email,
-                profile_picture: v.profile_picture,
-                phone: v.phone,
-                position: v.position || "Vice President",
-                department: v.department,
-                role: "vp",
-                roleLabel: "Vice President"
-              }));
-              
-              options.push(...vpOptions);
-              console.log("[HeadRequestModal] ✅ VP options count:", vpOptions.length);
-              console.log("[HeadRequestModal] VP options:", vpOptions.map(v => ({ name: v.name, email: v.email })));
-            }
-          } catch (vpErr) {
-            console.error("[HeadRequestModal] Error fetching VP options:", vpErr);
           }
         }
         
@@ -310,21 +285,83 @@ export default function HeadRequestModal({
           }
         }
         
-        // Find Ma'am TM (Trizzia Maree Casino) as default approver for admin selection
-        const maamTM = options.find((opt: any) => 
-          (opt.role === 'admin' || opt.roleLabel === 'Administrator') &&
-          (opt.name?.toLowerCase().includes('trizzia') || 
-           opt.email?.toLowerCase().includes('trizzia') ||
-           opt.name?.toLowerCase().includes('casino'))
-        );
+        // Smart suggestion: Use workflow logic to suggest next approver
+        const { suggestNextApprover, findSuggestedApprover } = await import('@/lib/workflow/suggest-next-approver');
+        const suggestion = suggestNextApprover({
+          status: request.status,
+          requester_is_head: request.requester_is_head || false,
+          requester_role: request.requester?.role || request.requester_role,
+          has_budget: (request.total_budget || 0) > 0,
+          head_included: request.head_included || false,
+          parent_head_approved_at: request.parent_head_approved_at,
+          parent_head_approver: request.parent_head_approver,
+          requester_signature: request.requester_signature,
+          head_approved_at: request.head_approved_at,
+          admin_approved_at: request.admin_approved_at,
+          comptroller_approved_at: request.comptroller_approved_at,
+          hr_approved_at: request.hr_approved_at,
+          vp_approved_at: request.vp_approved_at,
+          vp2_approved_at: request.vp2_approved_at,
+          both_vps_approved: request.both_vps_approved
+        });
+
+        // Store suggestion reason for display
+        let suggestionReasonText = '';
         
-        if (maamTM) {
-          setDefaultApproverId(maamTM.id);
-          setDefaultApproverName(maamTM.name);
-          console.log("[HeadRequestModal] ✅ Found Ma'am TM as default approver:", maamTM.name);
+        if (suggestion) {
+          const suggested = findSuggestedApprover(suggestion, options);
+          if (suggested) {
+            setDefaultApproverId(suggested.id);
+            setDefaultApproverName(suggested.name);
+            suggestionReasonText = suggestion.reason;
+            setSuggestionReason(suggestion.reason);
+            console.log("[HeadRequestModal] ✅ Smart suggestion:", suggestion.roleLabel, "-", suggestion.reason);
+          } else {
+            setSuggestionReason(undefined);
+            // Fallback to Ma'am TM if suggestion not found in options
+            const maamTM = options.find((opt: any) => 
+              (opt.role === 'admin' || opt.roleLabel === 'Administrator') &&
+              opt.email === 'trizzia.casino@mseuf.edu.ph'
+            ) || options.find((opt: any) => 
+              (opt.role === 'admin' || opt.roleLabel === 'Administrator') &&
+              (opt.name?.toLowerCase().includes('trizzia') || 
+               opt.email?.toLowerCase().includes('trizzia') ||
+               opt.name?.toLowerCase().includes('casino'))
+            );
+            
+            if (maamTM) {
+              setDefaultApproverId(maamTM.id);
+              setDefaultApproverName(maamTM.name);
+              setSuggestionReason('Default admin for request processing');
+              console.log("[HeadRequestModal] ✅ Found Ma'am TM as fallback:", maamTM.name);
+            } else {
+              setDefaultApproverId(undefined);
+              setDefaultApproverName(undefined);
+              setSuggestionReason(undefined);
+            }
+          }
         } else {
-          setDefaultApproverId(undefined);
-          setDefaultApproverName(undefined);
+          // No suggestion - try to find Ma'am TM as default
+          const maamTM = options.find((opt: any) => 
+            (opt.role === 'admin' || opt.roleLabel === 'Administrator') &&
+            opt.email === 'trizzia.casino@mseuf.edu.ph'
+          ) || options.find((opt: any) => 
+            (opt.role === 'admin' || opt.roleLabel === 'Administrator') &&
+            (opt.name?.toLowerCase().includes('trizzia') || 
+             opt.email?.toLowerCase().includes('trizzia') ||
+             opt.name?.toLowerCase().includes('casino'))
+          );
+          
+          if (maamTM) {
+            setDefaultApproverId(maamTM.id);
+            setDefaultApproverName(maamTM.name);
+            setSuggestionReason('Default admin for request processing');
+            console.log("[HeadRequestModal] ✅ Found Ma'am TM as default:", maamTM.name);
+          } else {
+            setDefaultApproverId(undefined);
+            setDefaultApproverName(undefined);
+            setSuggestionReason(undefined);
+          }
         }
         
         // Set options (even if empty, so modal can show "no approvers" message)
@@ -1093,23 +1130,43 @@ export default function HeadRequestModal({
             {/* Comments field for approval */}
             {!viewOnly && (
               <div>
-                <div className="flex items-center justify-between mb-3">
-                  <label className="block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
-                    Comments <span className="text-red-500">*</span>
-                    <span className="text-xs font-normal text-gray-500 ml-2">(Required, minimum 10 characters)</span>
-                  </label>
+                <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
+                  Comments <span className="text-red-500">*</span>
+                  <span className="text-xs font-normal text-gray-500 ml-2">(Required, minimum 10 characters)</span>
+                </label>
+                
+                {/* Quick Fill Buttons */}
+                <div className="mb-2 flex flex-wrap gap-2">
                   <button
                     type="button"
-                    onClick={() => setComments("Request approved.")}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#7A0010] bg-white border border-[#7A0010]/30 rounded-lg hover:bg-[#7A0010]/5 hover:border-[#7A0010]/50 transition-colors"
-                    title="Quick fill: Request approved"
+                    onClick={() => setComments("Okay, approved.")}
+                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
                   >
-                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                    Quick Fill
+                    ✓ Okay, approved
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setComments("Request approved. Proceed to admin.")}
+                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+                  >
+                    ✓ Approved
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setComments("Request approved. All requirements are in order.")}
+                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+                  >
+                    ✓ Fully Approved
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setComments("Request rejected. Please review and resubmit with corrections.")}
+                    className="px-3 py-1.5 text-xs font-medium bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
+                  >
+                    ✗ Rejected
                   </button>
                 </div>
+                
                 <textarea
                   value={comments}
                   onChange={(e) => setComments(e.target.value)}
@@ -1197,6 +1254,31 @@ export default function HeadRequestModal({
           loading={loadingApprovers}
           defaultApproverId={defaultApproverId}
           defaultApproverName={defaultApproverName}
+          suggestionReason={suggestionReason}
+          allowAllUsers={true}
+          fetchAllUsers={async () => {
+            try {
+              const allUsersRes = await fetch("/api/users/all");
+              const allUsersData = await allUsersRes.json();
+              if (allUsersData.ok && allUsersData.data) {
+                return allUsersData.data.map((u: any) => ({
+                  id: u.id,
+                  name: u.name,
+                  email: u.email,
+                  profile_picture: u.profile_picture,
+                  phone: u.phone,
+                  position: u.position,
+                  department: u.department,
+                  role: u.role,
+                  roleLabel: u.roleLabel
+                }));
+              }
+              return [];
+            } catch (err) {
+              console.error("[HeadRequestModal] Error fetching all users:", err);
+              return [];
+            }
+          }}
         />
       )}
 

@@ -181,12 +181,11 @@ function BookingCard({ b }: { b: Booking }) {
         <div className="mt-1 inline-flex items-center gap-1 text-xs text-neutral-600">
           <IconMapPin /><span className="truncate">{b.destination || "No destination specified"}</span>
         </div>
-        <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 text-[13px] text-neutral-800">
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[13px] text-neutral-800">
           <Meta icon={<IconDriver />} label="Driver" value={b.driver || "—"} />
           <Meta icon={<IconVehicle />} label="Vehicle" value={b.vehicle} />
-          <Meta icon={<IconClock />} label="Time" value={b.departAt && b.returnAt ? `${b.departAt} → ${b.returnAt}` : "TBD"} />
         </div>
-        <div className="mt-3 text-[11px] text-neutral-500">ID: {b.id}</div>
+        {/* Limited details for user view - no request ID, no full details */}
       </div>
     </article>
   );

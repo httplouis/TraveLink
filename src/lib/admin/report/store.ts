@@ -1,38 +1,38 @@
-"use server";
+"use client";
 
-import { MOCK_TRIPS } from "./mock";
 import type { Paged, ReportFilters, TripRow } from "./types";
-
-const within = (d: string, from?: string, to?: string) => {
-  if (from && d < from) return false;
-  if (to && d > to) return false;
-  return true;
-};
 
 export async function queryReport(
   filters: ReportFilters,
   page = 1,
   pageSize = 10
 ): Promise<Paged<TripRow>> {
-  const q = (filters.search ?? "").toLowerCase().trim();
-
-  const filtered = MOCK_TRIPS.filter((r) => {
-    const matchQ =
-      !q ||
-      r.id.toLowerCase().includes(q) ||
-      r.purpose.toLowerCase().includes(q) ||
-      r.vehicleCode.toLowerCase().includes(q) ||
-      r.driver.toLowerCase().includes(q) ||
-      r.department.toLowerCase().includes(q);
-    const matchDept = !filters.department || r.department === filters.department;
-    const matchStatus = !filters.status || r.status === filters.status;
-    const matchDate = within(r.date, filters.from, filters.to);
-    return matchQ && matchDept && matchStatus && matchDate;
-  });
-
-  const total = filtered.length;
-  const start = (page - 1) * pageSize;
-  const rows = filtered.slice(start, start + pageSize);
-
-  return { rows, total, page, pageSize };
+  try {
+    // Build query params
+    const params = new URLSearchParams();
+    if (filters.search) params.set("search", filters.search);
+    if (filters.department) params.set("department", filters.department);
+    if (filters.status) params.set("status", filters.status);
+    if (filters.from) params.set("from", filters.from);
+    if (filters.to) params.set("to", filters.to);
+    params.set("page", String(page));
+    params.set("pageSize", String(pageSize));
+    
+    const response = await fetch(`/api/admin/reports?${params.toString()}`);
+    const result = await response.json();
+    
+    if (result.ok) {
+      return {
+        rows: result.rows || [],
+        total: result.total || 0,
+        page: result.page || page,
+        pageSize: result.pageSize || pageSize,
+      };
+    }
+    
+    throw new Error(result.error || "Failed to fetch reports");
+  } catch (error) {
+    console.error("[queryReport] Error:", error);
+    return { rows: [], total: 0, page, pageSize };
+  }
 }

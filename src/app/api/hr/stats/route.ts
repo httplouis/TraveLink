@@ -9,25 +9,83 @@ export async function GET() {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
-  const { count: pendingCount } = await supabase
-    .from("requests")
-    .select("*", { count: "exact", head: true })
-    .eq("current_status", "hr_pending");
+  // Get user profile
+  const { data: profile } = await supabase
+    .from("users")
+    .select("id, is_hr")
+    .eq("auth_user_id", user.id)
+    .single();
 
+  if (!profile || !profile.is_hr) {
+    return NextResponse.json({
+      ok: true,
+      pending_count: 0,
+      active_count: 0,
+      processed_today: 0,
+    });
+  }
+
+  const userId = profile.id;
+
+  // 1. Pending Count: Requests awaiting HR approval
+  // Count both pending_hr requests, with workflow_metadata filtering
+  const { data: allPendingRequests } = await supabase
+    .from("requests")
+    .select("id, status, workflow_metadata")
+    .eq("status", "pending_hr")
+    .limit(100);
+
+  // Apply same filtering logic as inbox
+  const pendingCount = (allPendingRequests || []).filter((req: any) => {
+    const workflowMetadata = req.workflow_metadata || {};
+    let nextHrId = null;
+    let nextApproverId = null;
+    let nextApproverRole = null;
+    
+    if (typeof workflowMetadata === 'string') {
+      try {
+        const parsed = JSON.parse(workflowMetadata);
+        nextHrId = parsed?.next_hr_id;
+        nextApproverId = parsed?.next_approver_id;
+        nextApproverRole = parsed?.next_approver_role;
+      } catch (e) {
+        // Ignore parse errors
+      }
+    } else if (workflowMetadata && typeof workflowMetadata === 'object') {
+      nextHrId = workflowMetadata?.next_hr_id;
+      nextApproverId = workflowMetadata?.next_approver_id;
+      nextApproverRole = workflowMetadata?.next_approver_role;
+    }
+
+    const nextHrIdStr = nextHrId ? String(nextHrId).trim() : null;
+    const nextApproverIdStr = nextApproverId ? String(nextApproverId).trim() : null;
+    const profileIdStr = String(userId).trim();
+    
+    const isAssignedViaUniversalId = nextApproverIdStr === profileIdStr && nextApproverRole === "hr";
+
+    if (nextHrIdStr || isAssignedViaUniversalId) {
+      return (nextHrIdStr === profileIdStr) || isAssignedViaUniversalId;
+    }
+
+    return true; // No specific HR assigned - show to all HRs
+  }).length;
+
+  // 2. Active Count: Requests submitted by or requested by this HR, not in final states
   const { count: activeCount } = await supabase
     .from("requests")
     .select("*", { count: "exact", head: true })
-    .eq("created_by", user.id)
-    .in("current_status", ["pending_head", "head_approved", "admin_review", "comptroller_pending", "hr_pending", "executive_pending"]);
+    .or(`submitted_by_user_id.eq.${userId},requester_id.eq.${userId}`)
+    .not("status", "in", "(approved,rejected,cancelled)");
 
+  // 3. Processed Today: Requests approved by this HR today
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   const { count: processedToday } = await supabase
-    .from("approvals")
+    .from("requests")
     .select("*", { count: "exact", head: true })
-    .eq("approver_id", user.id)
-    .gte("approved_at", today.toISOString());
+    .eq("hr_approved_by", userId)
+    .gte("hr_approved_at", today.toISOString());
 
   return NextResponse.json({
     ok: true,
