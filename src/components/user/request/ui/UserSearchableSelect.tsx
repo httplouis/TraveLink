@@ -40,47 +40,71 @@ export default function UserSearchableSelect({
   const [activeIndex, setActiveIndex] = React.useState(0);
   const [users, setUsers] = React.useState<User[]>([]);
   const [loading, setLoading] = React.useState(false);
+  const [fetchError, setFetchError] = React.useState<string | null>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const isClickingRef = React.useRef(false);
+  const hasFetchedRef = React.useRef(false);
 
   // Fetch users from API when dropdown opens or search query changes
   React.useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      hasFetchedRef.current = false;
+      return;
+    }
 
     const fetchUsers = async () => {
+      console.log('[UserSearchableSelect] 🔍 Fetching users, isOpen:', isOpen, 'searchQuery:', searchQuery);
       setLoading(true);
+      setFetchError(null);
       try {
         const queryParam = searchQuery.trim() ? `q=${encodeURIComponent(searchQuery)}` : '';
         const url = `/api/users/search${queryParam ? `?${queryParam}` : ''}`;
+        console.log('[UserSearchableSelect] 📡 Fetching from:', url);
+        
+        const startTime = Date.now();
         const response = await fetch(url);
+        const fetchTime = Date.now() - startTime;
+        console.log('[UserSearchableSelect] ⏱️ Fetch took:', fetchTime, 'ms');
         
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
         
         const data = await response.json();
+        console.log('[UserSearchableSelect] 📦 Response data:', data);
+        
         if (data.ok && Array.isArray(data.users)) {
           console.log('[UserSearchableSelect] ✅ Fetched users:', data.users.length);
           setUsers(data.users);
+          hasFetchedRef.current = true;
         } else {
           console.error('[UserSearchableSelect] ❌ Invalid response format:', data);
           setUsers([]);
+          setFetchError('Invalid response from server');
         }
-      } catch (error) {
-        console.error('[UserSearchableSelect] Failed to fetch users:', error);
+      } catch (error: any) {
+        console.error('[UserSearchableSelect] ❌ Failed to fetch users:', error);
         setUsers([]);
+        setFetchError(error?.message || 'Failed to load users');
       } finally {
         setLoading(false);
       }
     };
 
-    // Debounce search queries, but fetch immediately when dropdown opens
-    const timeoutId = setTimeout(() => {
-      fetchUsers();
-    }, searchQuery.trim() ? 300 : 0); // No delay for initial load
-
-    return () => clearTimeout(timeoutId);
+    // Fetch immediately when dropdown opens (no debounce for initial load)
+    if (!hasFetchedRef.current || searchQuery.trim()) {
+      if (searchQuery.trim()) {
+        // Debounce search queries
+        const timeoutId = setTimeout(() => {
+          fetchUsers();
+        }, 300);
+        return () => clearTimeout(timeoutId);
+      } else {
+        // Fetch immediately on open
+        fetchUsers();
+      }
+    }
   }, [searchQuery, isOpen]);
 
   // Use API-filtered results directly (no client-side filtering needed)
@@ -162,8 +186,10 @@ export default function UserSearchableSelect({
               setActiveIndex(0);
             }}
             onFocus={() => {
+              console.log('[UserSearchableSelect] 🎯 Input focused, opening dropdown');
               setIsOpen(true);
               setSearchQuery("");
+              hasFetchedRef.current = false; // Reset to allow fresh fetch
             }}
             onBlur={(e) => {
               // Don't close if clicking inside the dropdown
@@ -190,9 +216,11 @@ export default function UserSearchableSelect({
           <button
             type="button"
             onClick={() => {
+              console.log('[UserSearchableSelect] 🔘 Chevron clicked, isOpen:', isOpen);
               setIsOpen(!isOpen);
               if (!isOpen) {
                 inputRef.current?.focus();
+                hasFetchedRef.current = false; // Reset to allow fresh fetch
               }
             }}
             className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-gray-500 hover:bg-gray-100 transition-colors"
@@ -205,9 +233,19 @@ export default function UserSearchableSelect({
         {isOpen && (
           <div className="absolute z-50 mt-1 w-full max-h-80 overflow-auto rounded-xl border border-gray-200 bg-white shadow-lg">
             {loading ? (
-              <div className="px-4 py-3 text-sm text-gray-500">Loading users...</div>
+              <div className="px-4 py-3 text-sm text-gray-500 flex items-center gap-2">
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-[#7A0010]"></div>
+                <span>Loading users...</span>
+              </div>
+            ) : fetchError ? (
+              <div className="px-4 py-3 text-sm text-red-600">
+                <div className="font-medium">Error loading users</div>
+                <div className="text-xs text-red-500 mt-1">{fetchError}</div>
+              </div>
             ) : filteredUsers.length === 0 ? (
-              <div className="px-4 py-3 text-sm text-gray-500">No users found</div>
+              <div className="px-4 py-3 text-sm text-gray-500">
+                {searchQuery.trim() ? 'No users found matching your search' : 'No users available'}
+              </div>
             ) : (
               filteredUsers.map((user, idx) => (
                 <button
