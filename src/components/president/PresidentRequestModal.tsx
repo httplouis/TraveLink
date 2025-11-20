@@ -1,11 +1,10 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { X, CheckCircle2, XCircle, Users, Car, UserCog, MapPin, Calendar, DollarSign, FileText, Edit2, Check } from "lucide-react";
+import { X, CheckCircle2, XCircle, Users, Car, UserCog, MapPin, Calendar, DollarSign, FileText, Edit2, Check, Clock } from "lucide-react";
 import { useToast } from "@/components/common/ui/Toast";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import { NameWithProfile } from "@/components/common/ProfileHoverCard";
-import ApproverSelectionModal from "@/components/common/ApproverSelectionModal";
 
 interface PresidentRequestModalProps {
   request: any;
@@ -34,53 +33,174 @@ export default function PresidentRequestModal({
   const [presidentProfile, setPresidentProfile] = useState<any>(null);
   const [expenseBreakdown, setExpenseBreakdown] = useState<any[]>([]);
   const [editedExpenses, setEditedExpenses] = useState<any[]>([]);
+  const [originalExpenses, setOriginalExpenses] = useState<any[]>([]);
   const [editingBudget, setEditingBudget] = useState(false);
   const [totalCost, setTotalCost] = useState(0);
+  const [fullRequest, setFullRequest] = useState<any>(null);
   const [preferredDriverName, setPreferredDriverName] = useState<string>("");
   const [preferredVehicleName, setPreferredVehicleName] = useState<string>("");
-  const [showApproverSelection, setShowApproverSelection] = useState(false);
-  const [approverOptions, setApproverOptions] = useState<any[]>([]);
-  const [loadingApprovers, setLoadingApprovers] = useState(false);
-  const [defaultApproverId, setDefaultApproverId] = useState<string | undefined>(undefined);
-  const [defaultApproverName, setDefaultApproverName] = useState<string | undefined>(undefined);
-  const [suggestionReason, setSuggestionReason] = useState<string | undefined>(undefined);
 
-  const t = request;
+  const t = fullRequest || request;
 
-  // Load President profile and expense breakdown
-  useEffect(() => {
-    async function loadData() {
-      try {
-        // Load current President info
-        const meRes = await fetch("/api/profile");
-        const meData = await meRes.json();
-        if (meData.ok && meData.data) {
-          setPresidentProfile(meData.data);
-        } else {
-          console.error("[PresidentRequestModal] Failed to load profile:", meData);
+  // Load full request details and President profile
+  const loadFullRequest = async () => {
+    try {
+      const res = await fetch(`/api/requests/${request.id}`);
+      if (!res.ok) {
+        console.error("[PresidentRequestModal] API response not OK:", res.status, res.statusText);
+        return;
+      }
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        console.error("[PresidentRequestModal] API returned non-JSON response. Content-Type:", contentType);
+        return;
+      }
+      const json = await res.json();
+      
+      if (json.ok && json.data) {
+        setFullRequest(json.data);
+        const req = json.data;
+        
+        // Parse expense_breakdown if it's a string (JSONB from database)
+        let expenseBreakdown = req.expense_breakdown;
+        if (typeof expenseBreakdown === 'string') {
+          try {
+            expenseBreakdown = JSON.parse(expenseBreakdown);
+          } catch (e) {
+            console.error("[PresidentRequestModal] Failed to parse expense_breakdown:", e);
+            expenseBreakdown = null;
+          }
         }
-
-        // Load expense breakdown
-        if (t.expense_breakdown && Array.isArray(t.expense_breakdown)) {
-          setExpenseBreakdown(t.expense_breakdown);
-          setEditedExpenses(t.expense_breakdown.map((exp: any) => ({
-            item: exp.item,
-            amount: exp.amount
+        
+        // Check if comptroller edited the budget
+        const hasComptrollerEdit = req.comptroller_edited_budget && req.comptroller_edited_budget !== req.total_budget;
+        
+        if (expenseBreakdown && Array.isArray(expenseBreakdown) && expenseBreakdown.length > 0) {
+          setExpenseBreakdown(expenseBreakdown);
+          
+          setEditedExpenses(expenseBreakdown.map((exp: any) => ({
+            item: exp.item || exp.description || "Unknown",
+            amount: exp.amount || 0,
+            description: exp.description || null,
+            justification: exp.justification || null
           })));
-          const total = t.expense_breakdown.reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0);
-          setTotalCost(total || t.total_budget || 0);
+          
+          // Fetch original expense breakdown from request_history if comptroller edited
+          let originalExpenseBreakdown: any[] = [];
+          if (hasComptrollerEdit) {
+            try {
+              const historyRes = await fetch(`/api/requests/${request.id}/history`);
+              if (historyRes.ok) {
+                const contentType = historyRes.headers.get("content-type");
+                if (contentType && contentType.includes("application/json")) {
+                  const historyData = await historyRes.json();
+                  if (historyData && historyData.ok && historyData.data && historyData.data.history) {
+                    const budgetModification = historyData.data.history.find((entry: any) => 
+                      entry.action === "budget_modified" && entry.metadata?.original_expense_breakdown
+                    );
+                    if (budgetModification && budgetModification.metadata?.original_expense_breakdown) {
+                      originalExpenseBreakdown = budgetModification.metadata.original_expense_breakdown;
+                    } else {
+                      // Reconstruct original amounts
+                      const originalTotal = req.total_budget || 0;
+                      const newTotal = req.comptroller_edited_budget || 0;
+                      
+                      if (originalTotal > 0 && newTotal > 0) {
+                        const itemsWithExtractedAmounts: Record<string, number> = {};
+                        expenseBreakdown.forEach((exp: any) => {
+                          if (exp.justification) {
+                            const justification = exp.justification.toLowerCase();
+                            const numberMatch = justification.match(/(?:from|original|was|₱|peso|php|mahal\s+ng|mandating)?\s*(\d+(?:\.\d+)?)/i);
+                            if (numberMatch && numberMatch[1]) {
+                              const extractedAmount = parseFloat(numberMatch[1]);
+                              if (extractedAmount > 0 && extractedAmount !== exp.amount) {
+                                const itemKey = exp.item || exp.description || "Unknown";
+                                itemsWithExtractedAmounts[itemKey] = extractedAmount;
+                              }
+                            }
+                          }
+                        });
+                        
+                        const extractedSum = Object.values(itemsWithExtractedAmounts).reduce((sum, amt) => sum + amt, 0);
+                        const itemsWithoutExtracted = expenseBreakdown.filter((exp: any) => {
+                          const itemKey = exp.item || exp.description || "Unknown";
+                          return !itemsWithExtractedAmounts[itemKey];
+                        });
+                        
+                        const remainingOriginalTotal = Math.max(0, originalTotal - extractedSum);
+                        const remainingNewTotal = itemsWithoutExtracted.reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0);
+                        const ratio = remainingOriginalTotal > 0 && remainingNewTotal > 0 
+                          ? remainingOriginalTotal / remainingNewTotal 
+                          : (originalTotal / newTotal);
+                        
+                        originalExpenseBreakdown = expenseBreakdown.map((exp: any) => {
+                          const itemKey = exp.item || exp.description || "Unknown";
+                          if (itemsWithExtractedAmounts[itemKey] !== undefined) {
+                            return {
+                              item: itemKey,
+                              amount: itemsWithExtractedAmounts[itemKey],
+                              description: exp.description || null
+                            };
+                          }
+                          const proportionalAmount = Math.round((exp.amount || 0) * ratio * 100) / 100;
+                          return {
+                            item: itemKey,
+                            amount: proportionalAmount > 0 ? proportionalAmount : exp.amount,
+                            description: exp.description || null
+                          };
+                        });
+                      }
+                    }
+                  }
+                }
+              }
+            } catch (err) {
+              console.error("[PresidentRequestModal] Failed to fetch original expense breakdown:", err);
+            }
+          }
+          
+          if (hasComptrollerEdit && originalExpenseBreakdown.length > 0) {
+            setOriginalExpenses(originalExpenseBreakdown.map((exp: any) => ({
+              item: exp.item || exp.description || "Unknown",
+              amount: exp.amount || 0,
+              description: exp.description || null
+            })));
+          } else {
+            setOriginalExpenses([]);
+          }
+          
+          const total = expenseBreakdown.reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0);
+          setTotalCost(total || req.total_budget || 0);
         } else {
-          setTotalCost(t.total_budget || 0);
-          setEditedExpenses([]);
+          if (req.total_budget && req.total_budget > 0) {
+            const singleExpense = {
+              item: "Total Budget",
+              amount: req.total_budget
+            };
+            setExpenseBreakdown([singleExpense]);
+            setEditedExpenses([singleExpense]);
+            setOriginalExpenses([]);
+            setTotalCost(req.total_budget);
+          } else {
+            setExpenseBreakdown([]);
+            setEditedExpenses([]);
+            setOriginalExpenses([]);
+            setTotalCost(0);
+          }
         }
 
         // Load preferred driver
-        if (t.preferred_driver_id) {
+        if (req.preferred_driver_id) {
           try {
-            const driverRes = await fetch(`/api/users/${t.preferred_driver_id}`);
-            const driverData = await driverRes.json();
-            if (driverData.ok && driverData.data) {
-              setPreferredDriverName(driverData.data.name || "Unknown Driver");
+            const driverRes = await fetch(`/api/users/${req.preferred_driver_id}`);
+            if (driverRes.ok) {
+              const contentType = driverRes.headers.get("content-type");
+              if (contentType && contentType.includes("application/json")) {
+                const driverData = await driverRes.json();
+                if (driverData.ok && driverData.data) {
+                  setPreferredDriverName(driverData.data.name || "Unknown Driver");
+                }
+              }
             }
           } catch (err) {
             console.error("[PresidentRequestModal] Failed to load driver:", err);
@@ -88,23 +208,46 @@ export default function PresidentRequestModal({
         }
 
         // Load preferred vehicle
-        if (t.preferred_vehicle_id) {
+        if (req.preferred_vehicle_id) {
           try {
-            const vehicleRes = await fetch(`/api/vehicles/${t.preferred_vehicle_id}`);
-            const vehicleData = await vehicleRes.json();
-            if (vehicleData.ok && vehicleData.data) {
-              setPreferredVehicleName(vehicleData.data.name || vehicleData.data.plate_number || "Unknown Vehicle");
+            const vehicleRes = await fetch(`/api/vehicles/${req.preferred_vehicle_id}`);
+            if (vehicleRes.ok) {
+              const contentType = vehicleRes.headers.get("content-type");
+              if (contentType && contentType.includes("application/json")) {
+                const vehicleData = await vehicleRes.json();
+                if (vehicleData.ok && vehicleData.data) {
+                  setPreferredVehicleName(vehicleData.data.name || vehicleData.data.plate_number || "Unknown Vehicle");
+                }
+              }
             }
           } catch (err) {
             console.error("[PresidentRequestModal] Failed to load vehicle:", err);
           }
         }
-      } catch (err) {
-        console.error("[PresidentRequestModal] Error loading data:", err);
       }
+    } catch (err) {
+      console.error("[PresidentRequestModal] Error loading full request:", err);
+    }
+  };
+
+  useEffect(() => {
+    async function loadData() {
+      // Load current President info
+      const meRes = await fetch("/api/profile");
+      if (meRes.ok) {
+        const contentType = meRes.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const meData = await meRes.json();
+          if (meData.ok && meData.data) {
+            setPresidentProfile(meData.data);
+          }
+        }
+      }
+      
+      await loadFullRequest();
     }
     loadData();
-  }, [t]);
+  }, [request.id]);
 
   const handleApprove = async () => {
     if (!presidentSignature) {
@@ -112,106 +255,7 @@ export default function PresidentRequestModal({
       return;
     }
 
-    // Show approver selection
-    setLoadingApprovers(true);
-    try {
-      const options: any[] = [];
-
-      // Fetch Comptrollers
-      const comptrollerRes = await fetch(`/api/approvers/list?role=comptroller`);
-      if (comptrollerRes.ok) {
-        const comptrollerData = await comptrollerRes.json();
-        if (comptrollerData.ok && comptrollerData.data && comptrollerData.data.length > 0) {
-          const comptrollerOptions = comptrollerData.data.map((c: any) => ({
-            id: c.id,
-            name: c.name,
-            email: c.email,
-            profile_picture: c.profile_picture,
-            phone: c.phone,
-            position: c.position || "Comptroller",
-            department: c.department,
-            role: "comptroller",
-            roleLabel: "Comptroller"
-          }));
-          options.push(...comptrollerOptions);
-        }
-      }
-
-      // Fetch HRs
-      const hrRes = await fetch(`/api/approvers/list?role=hr`);
-      if (hrRes.ok) {
-        const hrData = await hrRes.json();
-        if (hrData.ok && hrData.data && hrData.data.length > 0) {
-          const hrOptions = hrData.data.map((h: any) => ({
-            id: h.id,
-            name: h.name,
-            email: h.email,
-            profile_picture: h.profile_picture,
-            phone: h.phone,
-            position: h.position || "HR",
-            department: h.department,
-            role: "hr",
-            roleLabel: "HR"
-          }));
-          options.push(...hrOptions);
-        }
-      }
-
-      // Smart suggestion logic
-      if (options.length > 0) {
-        try {
-          const { suggestNextApprover, findSuggestedApprover } = await import('@/lib/workflow/suggest-next-approver');
-          const suggestion = suggestNextApprover({
-            status: request.status,
-            requester_is_head: request.requester_is_head || false,
-            requester_role: request.requester?.role || request.requester_role,
-            has_budget: (request.total_budget || 0) > 0,
-            head_included: request.head_included || false,
-            parent_head_approved_at: request.parent_head_approved_at,
-            parent_head_approver: request.parent_head_approver,
-            requester_signature: request.requester_signature,
-            head_approved_at: request.head_approved_at,
-            admin_approved_at: request.admin_approved_at,
-            comptroller_approved_at: request.comptroller_approved_at,
-            hr_approved_at: request.hr_approved_at,
-            vp_approved_at: request.vp_approved_at,
-            vp2_approved_at: request.vp2_approved_at,
-            both_vps_approved: request.both_vps_approved || false
-          });
-          
-          let suggestionReasonText = '';
-          
-          if (suggestion) {
-            const suggested = findSuggestedApprover(suggestion, options);
-            if (suggested) {
-              setDefaultApproverId(suggested.id);
-              setDefaultApproverName(suggested.name);
-              suggestionReasonText = suggestion.reason;
-              console.log("[PresidentRequestModal] ✅ Smart suggestion:", suggestion.roleLabel, "-", suggestion.reason);
-            } else {
-              console.log("[PresidentRequestModal] ⚠️ Suggestion not found in options:", suggestion.roleLabel);
-            }
-          }
-          
-          setSuggestionReason(suggestionReasonText);
-        } catch (err) {
-          console.error("[PresidentRequestModal] Error in smart suggestion:", err);
-        }
-      }
-
-      setApproverOptions(options);
-      setLoadingApprovers(false);
-      setShowApproverSelection(true);
-    } catch (err) {
-      console.error("[PresidentRequestModal] Error fetching approvers:", err);
-      setLoadingApprovers(false);
-      setApproverOptions([]);
-      setShowApproverSelection(true);
-      toast.warning("Warning", "Could not fetch approvers. You can still return the request to the requester.");
-    }
-  };
-
-  const proceedWithApproval = async (selectedApproverId: string | null, selectedRole: string, returnReason?: string) => {
+    // Direct approval - no need to send anywhere, process is complete
     setSubmitting(true);
     try {
       const res = await fetch("/api/president/action", {
@@ -221,21 +265,28 @@ export default function PresidentRequestModal({
           requestId: request.id,
           action: "approve",
           signature: presidentSignature,
-          notes: notes.trim(),
-          nextApproverId: selectedApproverId,
-          nextApproverRole: selectedRole,
-          returnReason: returnReason || null,
+          notes: notes.trim() || null,
+          // No nextApproverId or nextApproverRole - this is final approval
         }),
       });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error("[PresidentRequestModal] Approve API error:", res.status, errorText.substring(0, 200));
+        throw new Error(`Failed to approve: ${res.status}`);
+      }
+
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const errorText = await res.text();
+        console.error("[PresidentRequestModal] Approve API returned non-JSON. Response:", errorText.substring(0, 200));
+        throw new Error("API returned non-JSON response");
+      }
 
       const data = await res.json();
 
       if (data.ok) {
-        const roleLabel = selectedRole === "requester" ? "Requester" : 
-                         selectedRole === "comptroller" ? "Comptroller" : 
-                         selectedRole === "hr" ? "HR" : "Next Approver";
-        toast.success("Request Approved", `Request has been sent to ${roleLabel}`);
-        setShowApproverSelection(false);
+        toast.success("Request Approved", "Request has been fully approved. The process is complete.");
         setTimeout(() => {
           onApproved(request.id);
           onClose();
@@ -244,11 +295,12 @@ export default function PresidentRequestModal({
         toast.error("Approval Failed", data.error || "Failed to approve request");
       }
     } catch (error) {
-      toast.error("Error", "An error occurred");
+      toast.error("Error", "An error occurred while approving the request");
     } finally {
       setSubmitting(false);
     }
   };
+
 
   const handleReject = async () => {
     if (!notes.trim()) {
@@ -267,6 +319,19 @@ export default function PresidentRequestModal({
           notes,
         }),
       });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error("[PresidentRequestModal] Reject API error:", res.status, errorText.substring(0, 200));
+        throw new Error(`Failed to reject: ${res.status}`);
+      }
+
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const errorText = await res.text();
+        console.error("[PresidentRequestModal] Reject API returned non-JSON. Response:", errorText.substring(0, 200));
+        throw new Error("API returned non-JSON response");
+      }
 
       const data = await res.json();
 
@@ -528,6 +593,64 @@ export default function PresidentRequestModal({
               </div>
             </section>
 
+            {/* Pickup Details - Show if transportation_type is pickup */}
+            {t?.transportation_type === 'pickup' && (t?.pickup_location || t?.pickup_time || t?.pickup_contact_number) && (
+              <section className="rounded-lg bg-gradient-to-br from-cyan-50 to-teal-50 border-2 border-cyan-200 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Car className="h-5 w-5 text-cyan-600" />
+                  <p className="text-xs font-bold uppercase tracking-wide text-cyan-700">
+                    Pickup Details
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {t?.pickup_location && (
+                    <div className="flex items-start gap-2">
+                      <MapPin className="h-4 w-4 text-cyan-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-xs text-cyan-700 font-medium mb-0.5">Pickup Location</p>
+                        <p className="text-sm font-semibold text-slate-900">{t.pickup_location}</p>
+                      </div>
+                    </div>
+                  )}
+                  {t?.pickup_time && (
+                    <div className="flex items-start gap-2">
+                      <Clock className="h-4 w-4 text-cyan-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-xs text-cyan-700 font-medium mb-0.5">Pickup Time</p>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {t.pickup_time.includes(':') 
+                            ? new Date(`2000-01-01T${t.pickup_time}`).toLocaleTimeString('en-US', { 
+                                hour: '2-digit', 
+                                minute: '2-digit', 
+                                hour12: true 
+                              })
+                            : t.pickup_time}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {t?.pickup_contact_number && (
+                    <div className="flex items-start gap-2">
+                      <Users className="h-4 w-4 text-cyan-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-xs text-cyan-700 font-medium mb-0.5">Contact Number</p>
+                        <p className="text-sm font-semibold text-slate-900">{t.pickup_contact_number}</p>
+                      </div>
+                    </div>
+                  )}
+                  {t?.pickup_special_instructions && (
+                    <div className="flex items-start gap-2">
+                      <FileText className="h-4 w-4 text-cyan-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-xs text-cyan-700 font-medium mb-0.5">Special Instructions</p>
+                        <p className="text-sm text-slate-700 whitespace-pre-wrap">{t.pickup_special_instructions}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
+
             {/* Participants */}
             {t.participants && Array.isArray(t.participants) && t.participants.length > 0 && (
               <section className="rounded-lg bg-gradient-to-br from-purple-50 to-pink-50 border-2 border-purple-200 p-4">
@@ -620,7 +743,7 @@ export default function PresidentRequestModal({
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-sm font-medium text-slate-900">Head Approved</p>
                       <span className="text-xs text-green-600 font-medium">
-                        {new Date(t.head_approved_at).toLocaleDateString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                        {new Date(t.head_approved_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
                       </span>
                     </div>
                     {t.head_approved_by && (
@@ -651,7 +774,7 @@ export default function PresidentRequestModal({
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-sm font-medium text-slate-900">HR Approved</p>
                       <span className="text-xs text-green-600 font-medium">
-                        {new Date(t.hr_approved_at).toLocaleDateString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                        {new Date(t.hr_approved_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
                       </span>
                     </div>
                     {t.hr_approved_by && (
@@ -682,7 +805,7 @@ export default function PresidentRequestModal({
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-sm font-medium text-slate-900">First VP Approved</p>
                       <span className="text-xs text-green-600 font-medium">
-                        {new Date(t.vp_approved_at).toLocaleDateString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                        {new Date(t.vp_approved_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
                       </span>
                     </div>
                     {t.vp_approved_by && (
@@ -713,7 +836,7 @@ export default function PresidentRequestModal({
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-sm font-medium text-slate-900">Second VP Approved</p>
                       <span className="text-xs text-green-600 font-medium">
-                        {new Date(t.vp2_approved_at).toLocaleDateString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                        {new Date(t.vp2_approved_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
                       </span>
                     </div>
                     {t.vp2_approved_by && (
@@ -744,7 +867,7 @@ export default function PresidentRequestModal({
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-sm font-medium text-slate-900">Comptroller Approved</p>
                       <span className="text-xs text-green-600 font-medium">
-                        {new Date(t.comptroller_approved_at).toLocaleDateString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                        {new Date(t.comptroller_approved_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
                       </span>
                     </div>
                     {t.comptroller_comments && (
@@ -764,23 +887,22 @@ export default function PresidentRequestModal({
               </div>
             </section>
 
-            {/* Budget Breakdown - With Editing Capability */}
+            {/* Budget Breakdown - Read Only with Comptroller Edit History */}
             <section className="rounded-lg bg-slate-50 border-2 border-[#7A0010] p-4 shadow-lg">
               <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-200">
                 <div className="flex items-center gap-2">
                   <DollarSign className="h-5 w-5 text-slate-700" />
                   <h3 className="text-sm font-semibold text-slate-900">Budget Breakdown</h3>
                 </div>
-                {!editingBudget && !viewOnly && (
-                  <button
-                    onClick={() => setEditingBudget(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-[#7A0010] text-white hover:bg-[#5e000d] rounded-lg transition-colors text-xs font-semibold shadow-sm"
-                  >
-                    <Edit2 className="h-4 w-4" />
-                    Edit Budget
-                  </button>
-                )}
               </div>
+
+              {/* Comptroller Comments */}
+              {t.comptroller_comments && (
+                <div className="mb-4 p-3 bg-blue-50 border-l-4 border-blue-500 rounded-r">
+                  <p className="text-xs font-semibold text-blue-900 mb-1">Comptroller Comments:</p>
+                  <p className="text-xs text-blue-800 whitespace-pre-wrap">{t.comptroller_comments}</p>
+                </div>
+              )}
 
               {editedExpenses.length > 0 ? (
                 <>
@@ -790,25 +912,42 @@ export default function PresidentRequestModal({
                         ? expense.description 
                         : expense.item || expense.description;
                       
+                      // Find original expense for this item
+                      const originalExpense = originalExpenses.find((orig: any) => 
+                        (orig.item === expense.item || orig.description === expense.description) ||
+                        (orig.item === expense.description || orig.description === expense.item) ||
+                        (orig.item === label || orig.description === label)
+                      );
+                      const originalAmount = originalExpense?.amount;
+                      // Check if comptroller edited the budget
+                      const hasComptrollerEdit = t.comptroller_edited_budget && t.comptroller_edited_budget !== t.total_budget;
+                      const wasEdited = hasComptrollerEdit && originalAmount !== undefined && originalAmount !== expense.amount;
+                      
                       return expense.amount > 0 && (
-                        <div key={index} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
-                          <span className="text-sm text-slate-600">{label}</span>
-                          {editingBudget ? (
-                            <input
-                              type="number"
-                              value={expense.amount}
-                              onChange={(e) => {
-                                const amount = parseFloat(e.target.value) || 0;
-                                setEditedExpenses(prev => {
-                                  const updated = [...prev];
-                                  updated[index] = { ...updated[index], amount };
-                                  return updated;
-                                });
-                              }}
-                              className="w-32 px-3 py-1.5 border-2 border-[#7A0010]/20 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] text-sm"
-                            />
-                          ) : (
-                            <span className="text-sm font-semibold text-slate-900">{peso(expense.amount)}</span>
+                        <div key={index} className="py-2 border-b border-slate-100 last:border-0">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm text-slate-600">{label}</span>
+                            <div className="text-right">
+                              {wasEdited && originalAmount !== undefined ? (
+                                <div className="flex flex-col items-end gap-1">
+                                  <span className="text-xs text-slate-500 line-through">
+                                    {peso(originalAmount)}
+                                  </span>
+                                  <span className="text-sm font-semibold text-[#7A0010]">
+                                    {peso(expense.amount)}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-sm font-semibold text-slate-900">{peso(expense.amount)}</span>
+                              )}
+                            </div>
+                          </div>
+                          {expense.justification && (
+                            <div className="mt-1.5 pl-2 border-l-2 border-blue-300">
+                              <p className="text-xs text-blue-700 italic">
+                                <span className="font-semibold">Justification:</span> {expense.justification}
+                              </p>
+                            </div>
                           )}
                         </div>
                       );
@@ -819,88 +958,23 @@ export default function PresidentRequestModal({
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-bold text-slate-900">TOTAL BUDGET</span>
                       <div className="text-right">
-                        {(() => {
-                          const calculatedTotal = editedExpenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
-                          const originalTotal = expenseBreakdown.reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0) || totalCost;
-                          return calculatedTotal !== originalTotal ? (
-                            <>
-                              <div className="text-sm text-slate-500 line-through mb-1">
-                                {peso(originalTotal)}
-                              </div>
-                              <div className="text-lg font-bold text-[#7A0010]">
-                                {peso(calculatedTotal)}
-                              </div>
-                            </>
-                          ) : (
+                        {t.comptroller_edited_budget && t.comptroller_edited_budget !== t.total_budget ? (
+                          <div className="flex flex-col items-end gap-1">
+                            <span className="text-sm text-slate-500 line-through">
+                              {peso(t.total_budget || 0)}
+                            </span>
                             <div className="text-lg font-bold text-[#7A0010]">
-                              {peso(calculatedTotal)}
+                              {peso(t.comptroller_edited_budget)}
                             </div>
-                          );
-                        })()}
+                          </div>
+                        ) : (
+                          <div className="text-lg font-bold text-[#7A0010]">
+                            {peso(editedExpenses.reduce((sum, exp) => sum + (exp.amount || 0), 0))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
-
-                  {editingBudget && !viewOnly && (
-                    <div className="flex gap-2 mt-4">
-                      <button
-                        onClick={async () => {
-                          // Save budget edits without approving
-                          try {
-                            setSubmitting(true);
-                            const calculatedTotal = editedExpenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
-                            const res = await fetch("/api/president/action", {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({
-                                requestId: request.id,
-                                action: "edit_budget",
-                                editedBudget: calculatedTotal,
-                                notes: notes || "Budget edited by President",
-                              }),
-                            });
-
-                            const json = await res.json();
-                            
-                            if (json.ok) {
-                              toast.success("Budget Updated", "Budget updated successfully");
-                              setEditingBudget(false);
-                              // Update expense breakdown to reflect changes
-                              setExpenseBreakdown(editedExpenses);
-                              setTotalCost(calculatedTotal);
-                            } else {
-                              toast.error("Update Failed", json.error || "Failed to update budget");
-                            }
-                          } catch (err) {
-                            console.error("Save budget error:", err);
-                            toast.error("Save Failed", "Failed to save budget. Please try again.");
-                          } finally {
-                            setSubmitting(false);
-                          }
-                        }}
-                        disabled={submitting}
-                        className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <Check className="h-4 w-4" />
-                        {submitting ? "Saving..." : "Save Budget Changes"}
-                      </button>
-                      <button
-                        onClick={() => {
-                          // Cancel editing - revert to original
-                          setEditedExpenses(expenseBreakdown.map((exp: any) => ({
-                            item: exp.item,
-                            amount: exp.amount
-                          })));
-                          setEditingBudget(false);
-                        }}
-                        disabled={submitting}
-                        className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors flex items-center justify-center gap-2 text-sm font-medium disabled:opacity-50"
-                      >
-                        <XCircle className="h-4 w-4" />
-                        Cancel
-                      </button>
-                    </div>
-                  )}
                 </>
               ) : (
                 <div className="py-4 text-center">
@@ -1121,51 +1195,6 @@ export default function PresidentRequestModal({
         )}
       </div>
 
-      {/* Approver Selection Modal */}
-      {showApproverSelection && (
-        <ApproverSelectionModal
-          isOpen={showApproverSelection}
-          onClose={() => setShowApproverSelection(false)}
-          onSelect={(approverId, approverRole, returnReason) => {
-            proceedWithApproval(approverId, approverRole, returnReason);
-          }}
-          title="Select Next Approver"
-          description="Choose who should review this request next, or return it to the requester for revision."
-          options={approverOptions}
-          currentRole="president"
-          allowReturnToRequester={true}
-          requesterId={request.requester_id}
-          requesterName={request.requester?.name || "Requester"}
-          loading={loadingApprovers}
-          defaultApproverId={defaultApproverId}
-          defaultApproverName={defaultApproverName}
-          suggestionReason={suggestionReason}
-          allowAllUsers={true}
-          fetchAllUsers={async () => {
-            try {
-              const allUsersRes = await fetch("/api/users/all");
-              const allUsersData = await allUsersRes.json();
-              if (allUsersData.ok && allUsersData.data) {
-                return allUsersData.data.map((u: any) => ({
-                  id: u.id,
-                  name: u.name,
-                  email: u.email,
-                  profile_picture: u.profile_picture,
-                  phone: u.phone,
-                  position: u.position,
-                  department: u.department,
-                  role: u.role,
-                  roleLabel: u.roleLabel
-                }));
-              }
-              return [];
-            } catch (err) {
-              console.error("[PresidentRequestModal] Error fetching all users:", err);
-              return [];
-            }
-          }}
-        />
-      )}
     </div>
   );
 }

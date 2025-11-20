@@ -19,6 +19,17 @@ export default function HRHistoryContainer() {
     try {
       // Fetch approved and rejected requests
       const res = await fetch("/api/hr/history", { cache: "no-store" });
+      if (!res.ok) {
+        console.warn("History API not OK:", res.status);
+        setItems([]);
+        return;
+      }
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        console.warn("History API returned non-JSON response");
+        setItems([]);
+        return;
+      }
       const json = await res.json();
       if (json.ok) {
         setItems(json.data ?? []);

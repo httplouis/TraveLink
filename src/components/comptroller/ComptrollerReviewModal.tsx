@@ -2,7 +2,7 @@
 "use client";
 
 import React from "react";
-import { X, DollarSign, Edit2, Check, XCircle, FileText, Calendar, User, MapPin, Building2, Users, Car, UserCog, CheckCircle2 } from "lucide-react";
+import { X, DollarSign, Edit2, Check, XCircle, FileText, Calendar, User, MapPin, Building2, Users, Car, UserCog, CheckCircle2, Clock } from "lucide-react";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import { useToast } from "@/components/common/ui/Toast";
 import ApproverSelectionModal from "@/components/common/ApproverSelectionModal";
@@ -125,6 +125,15 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
   const loadComptrollerProfile = async () => {
     try {
       const meRes = await fetch("/api/profile");
+      if (!meRes.ok) {
+        console.warn("[ComptrollerReviewModal] Profile API not OK:", meRes.status);
+        return;
+      }
+      const contentType = meRes.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        console.warn("[ComptrollerReviewModal] Profile API returned non-JSON response");
+        return;
+      }
       const meData = await meRes.json();
       if (meData) {
         setComptrollerProfile(meData);
@@ -149,6 +158,14 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
       if (!res.ok) {
         console.error("[ComptrollerReviewModal] API response not OK:", res.status, res.statusText);
         throw new Error(`Failed to load request: ${res.status} ${res.statusText}`);
+      }
+      
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        console.error("[ComptrollerReviewModal] API returned non-JSON response. Content-Type:", contentType);
+        const text = await res.text();
+        console.error("[ComptrollerReviewModal] Response text (first 200 chars):", text.substring(0, 200));
+        throw new Error("API returned non-JSON response");
       }
       
       const json = await res.json();
@@ -284,6 +301,15 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
       if (req.preferred_driver_id) {
         try {
           const driverRes = await fetch(`/api/users/${req.preferred_driver_id}`);
+          if (!driverRes.ok) {
+            console.warn("[ComptrollerReviewModal] Driver API not OK:", driverRes.status);
+            return;
+          }
+          const contentType = driverRes.headers.get("content-type");
+          if (!contentType || !contentType.includes("application/json")) {
+            console.warn("[ComptrollerReviewModal] Driver API returned non-JSON response");
+            return;
+          }
           const driverData = await driverRes.json();
           if (driverData.ok && driverData.data) {
             setPreferredDriverName(driverData.data.name || "Unknown Driver");
@@ -297,6 +323,15 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
       if (req.preferred_vehicle_id) {
         try {
           const vehicleRes = await fetch(`/api/vehicles/${req.preferred_vehicle_id}`);
+          if (!vehicleRes.ok) {
+            console.warn("[ComptrollerReviewModal] Vehicle API not OK:", vehicleRes.status);
+            return;
+          }
+          const contentType = vehicleRes.headers.get("content-type");
+          if (!contentType || !contentType.includes("application/json")) {
+            console.warn("[ComptrollerReviewModal] Vehicle API returned non-JSON response");
+            return;
+          }
           const vehicleData = await vehicleRes.json();
           if (vehicleData.ok && vehicleData.data) {
             setPreferredVehicleName(vehicleData.data.name || vehicleData.data.plate_number || "Unknown Vehicle");
@@ -412,6 +447,15 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
     // Fetch available approvers (HR)
     try {
       const approversRes = await fetch("/api/approvers/list?role=hr");
+      if (!approversRes.ok) {
+        console.warn("[Comptroller] Approvers API not OK:", approversRes.status);
+        return;
+      }
+      const contentType = approversRes.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        console.warn("[Comptroller] Approvers API returned non-JSON response");
+        return;
+      }
       const approversData = await approversRes.json();
       
       console.log("[Comptroller] Approvers response:", approversData);
@@ -501,6 +545,19 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
         }),
       });
 
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error("[ComptrollerReviewModal] Approve API error:", res.status, errorText.substring(0, 200));
+        throw new Error(`Failed to approve: ${res.status}`);
+      }
+
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const errorText = await res.text();
+        console.error("[ComptrollerReviewModal] Approve API returned non-JSON. Response:", errorText.substring(0, 200));
+        throw new Error("API returned non-JSON response");
+      }
+
       const json = await res.json();
       
       console.log("[Comptroller Approve] API Response:", json);
@@ -549,6 +606,19 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
           notes: comptrollerNotes,
         }),
       });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error("[ComptrollerReviewModal] Reject API error:", res.status, errorText.substring(0, 200));
+        throw new Error(`Failed to reject: ${res.status}`);
+      }
+
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const errorText = await res.text();
+        console.error("[ComptrollerReviewModal] Reject API returned non-JSON. Response:", errorText.substring(0, 200));
+        throw new Error("API returned non-JSON response");
+      }
 
       const json = await res.json();
       
@@ -809,18 +879,18 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
             )}
 
             {/* Destination */}
-            {t?.destination && (
-              <section className="rounded-lg bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <MapPin className="h-5 w-5 text-blue-600" />
-                  <p className="text-xs font-bold uppercase tracking-wide text-blue-700">
-                    Destination
-                  </p>
-                </div>
-                <div className="flex items-start justify-between gap-3">
-                  <p className="text-sm font-semibold text-slate-900 flex-1">
-                    {t.destination}
-                  </p>
+            <section className="rounded-lg bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <MapPin className="h-5 w-5 text-blue-600" />
+                <p className="text-xs font-bold uppercase tracking-wide text-blue-700">
+                  Destination
+                </p>
+              </div>
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-sm font-semibold text-slate-900 flex-1">
+                  {t?.destination || "No destination provided."}
+                </p>
+                {t?.destination && (
                   <button
                     onClick={() => {
                       const encodedDest = encodeURIComponent(t.destination);
@@ -832,6 +902,64 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                     <MapPin className="h-4 w-4" />
                     View Map
                   </button>
+                )}
+              </div>
+            </section>
+
+            {/* Pickup Details - Show if transportation_type is pickup */}
+            {t?.transportation_type === 'pickup' && (t?.pickup_location || t?.pickup_time || t?.pickup_contact_number) && (
+              <section className="rounded-lg bg-gradient-to-br from-cyan-50 to-teal-50 border-2 border-cyan-200 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Car className="h-5 w-5 text-cyan-600" />
+                  <p className="text-xs font-bold uppercase tracking-wide text-cyan-700">
+                    Pickup Details
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {t?.pickup_location && (
+                    <div className="flex items-start gap-2">
+                      <MapPin className="h-4 w-4 text-cyan-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-xs text-cyan-700 font-medium mb-0.5">Pickup Location</p>
+                        <p className="text-sm font-semibold text-slate-900">{t.pickup_location}</p>
+                      </div>
+                    </div>
+                  )}
+                  {t?.pickup_time && (
+                    <div className="flex items-start gap-2">
+                      <Calendar className="h-4 w-4 text-cyan-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-xs text-cyan-700 font-medium mb-0.5">Pickup Time</p>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {t.pickup_time.includes(':') 
+                            ? new Date(`2000-01-01T${t.pickup_time}`).toLocaleTimeString('en-US', { 
+                                hour: '2-digit', 
+                                minute: '2-digit', 
+                                hour12: true 
+                              })
+                            : t.pickup_time}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {t?.pickup_contact_number && (
+                    <div className="flex items-start gap-2">
+                      <Users className="h-4 w-4 text-cyan-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-xs text-cyan-700 font-medium mb-0.5">Contact Number</p>
+                        <p className="text-sm font-semibold text-slate-900">{t.pickup_contact_number}</p>
+                      </div>
+                    </div>
+                  )}
+                  {t?.pickup_special_instructions && (
+                    <div className="flex items-start gap-2">
+                      <FileText className="h-4 w-4 text-cyan-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-xs text-cyan-700 font-medium mb-0.5">Special Instructions</p>
+                        <p className="text-sm text-slate-700 whitespace-pre-wrap">{t.pickup_special_instructions}</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </section>
             )}
@@ -1209,6 +1337,19 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                                 }),
                               });
 
+                            if (!res.ok) {
+                              const errorText = await res.text();
+                              console.error("[ComptrollerReviewModal] Edit budget API error:", res.status, errorText.substring(0, 200));
+                              throw new Error(`Failed to edit budget: ${res.status}`);
+                            }
+
+                            const contentType = res.headers.get("content-type");
+                            if (!contentType || !contentType.includes("application/json")) {
+                              const errorText = await res.text();
+                              console.error("[ComptrollerReviewModal] Edit budget API returned non-JSON. Response:", errorText.substring(0, 200));
+                              throw new Error("API returned non-JSON response");
+                            }
+
                             const json = await res.json();
                             
                             if (json.ok) {
@@ -1447,6 +1588,15 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
           fetchAllUsers={async () => {
             try {
               const allUsersRes = await fetch("/api/users/all");
+              if (!allUsersRes.ok) {
+                console.warn("[ComptrollerReviewModal] All users API not OK:", allUsersRes.status);
+                return [];
+              }
+              const contentType = allUsersRes.headers.get("content-type");
+              if (!contentType || !contentType.includes("application/json")) {
+                console.warn("[ComptrollerReviewModal] All users API returned non-JSON response");
+                return [];
+              }
               const allUsersData = await allUsersRes.json();
               if (allUsersData.ok && allUsersData.data) {
                 return allUsersData.data.map((u: any) => ({

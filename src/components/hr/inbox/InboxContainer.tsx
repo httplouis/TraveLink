@@ -3,8 +3,6 @@
 import React from "react";
 import { SkeletonRequestCard } from "@/components/common/SkeletonLoader";
 import HRRequestModal from "@/components/hr/HRRequestModal";
-import RequestStatusTracker from "@/components/common/RequestStatusTracker";
-import TrackingModal from "@/components/common/TrackingModal";
 import StatusBadge from "@/components/common/StatusBadge";
 import PersonDisplay from "@/components/common/PersonDisplay";
 import RequestCardEnhanced from "@/components/common/RequestCardEnhanced";
@@ -16,8 +14,6 @@ export default function HRInboxContainer() {
   const [items, setItems] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [selected, setSelected] = React.useState<any | null>(null);
-  const [trackingRequest, setTrackingRequest] = React.useState<any | null>(null);
-  const [showTrackingModal, setShowTrackingModal] = React.useState(false);
   const [lastUpdate, setLastUpdate] = React.useState<Date>(new Date());
 
   const logger = createLogger("HRInbox");
@@ -27,6 +23,17 @@ export default function HRInboxContainer() {
     try {
       logger.info("Loading HR requests...");
       const res = await fetch("/api/hr/inbox", { cache: "no-store" });
+      if (!res.ok) {
+        logger.error("API response not OK:", res.status, res.statusText);
+        setItems([]);
+        return;
+      }
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        logger.error("API returned non-JSON response. Content-Type:", contentType);
+        setItems([]);
+        return;
+      }
       const json = await res.json();
       if (json.ok) {
         logger.debug("HR Inbox - Full Response:", { count: json.data?.length || 0 });
@@ -173,10 +180,6 @@ export default function HRInboxContainer() {
                 }}
                 showActions={true}
                 onView={() => setSelected(item)}
-                onTrack={() => {
-                  setTrackingRequest(item);
-                  setShowTrackingModal(true);
-                }}
               />
             );
           })}
@@ -189,17 +192,6 @@ export default function HRInboxContainer() {
           onClose={() => setSelected(null)}
           onApproved={handleApproved}
           onRejected={handleRejected}
-        />
-      )}
-
-      {trackingRequest && (
-        <TrackingModal
-          isOpen={showTrackingModal}
-          onClose={() => {
-            setShowTrackingModal(false);
-            setTrackingRequest(null);
-          }}
-          requestId={trackingRequest.id}
         />
       )}
     </div>

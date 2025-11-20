@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 
 /**
  * GET /api/vp/inbox/count
@@ -8,19 +9,43 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
  */
 export async function GET() {
   try {
-    const supabase = await createSupabaseServerClient(true);
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    // Get authenticated user first (for authorization) - use anon key to read cookies
+    const authSupabase = await createSupabaseServerClient(false);
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser();
+    
     if (authError || !user) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    // Get user profile to check VP status and get profile ID
+    // Use service role client for queries (bypasses RLS)
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return NextResponse.json({ 
+        ok: false, 
+        error: "Missing Supabase configuration" 
+      }, { status: 500 });
+    }
+    
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+
+    // Get user profile to check VP/President status and get profile ID
     const { data: profile } = await supabase
       .from("users")
-      .select("id, is_vp")
+      .select("id, is_vp, is_president")
       .eq("auth_user_id", user.id)
       .single();
+
+    // Allow both VP and President to access VP inbox
+    if (!profile || (!profile.is_vp && !profile.is_president)) {
+      return NextResponse.json({ ok: true, pending_count: 0 });
+    }
 
     if (!profile || !profile.is_vp) {
       return NextResponse.json({ ok: true, pending_count: 0 });

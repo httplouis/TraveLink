@@ -284,7 +284,7 @@ export async function GET(
       fullRequest = request;
     }
 
-    // Fetch driver and vehicle names if IDs are present
+    // Fetch preferred driver and vehicle names if IDs are present
     console.log(`[GET /api/requests/${requestId}] Preferred driver ID:`, fullRequest.preferred_driver_id);
     console.log(`[GET /api/requests/${requestId}] Preferred vehicle ID:`, fullRequest.preferred_vehicle_id);
     
@@ -332,6 +332,78 @@ export async function GET(
       }
     } else {
       console.log(`[GET /api/requests/${requestId}] No driver or vehicle preferences set`);
+    }
+
+    // Fetch ASSIGNED driver and vehicle names if IDs are present (admin-assigned)
+    console.log(`[GET /api/requests/${requestId}] Assigned driver ID:`, fullRequest.assigned_driver_id);
+    console.log(`[GET /api/requests/${requestId}] Assigned vehicle ID:`, fullRequest.assigned_vehicle_id);
+    
+    if (fullRequest.assigned_driver_id || fullRequest.assigned_vehicle_id) {
+      // Fetch assigned driver name (from drivers table -> users table)
+      if (fullRequest.assigned_driver_id) {
+        console.log(`[GET /api/requests/${requestId}] Fetching assigned driver for ID:`, fullRequest.assigned_driver_id);
+        try {
+          // First get the user_id from drivers table
+          const { data: driverRecord, error: driverRecordError } = await supabaseServiceRole
+            .from("drivers")
+            .select("user_id")
+            .eq("id", fullRequest.assigned_driver_id)
+            .single();
+          
+          if (driverRecordError) {
+            console.error(`[GET /api/requests/${requestId}] Error fetching driver record:`, driverRecordError);
+          } else if (driverRecord && driverRecord.user_id) {
+            // Then get the user's name
+            const { data: driverUser, error: driverUserError } = await supabaseServiceRole
+              .from("users")
+              .select("id, name, email, phone_number, profile_picture")
+              .eq("id", driverRecord.user_id)
+              .single();
+            
+            if (driverUserError) {
+              console.error(`[GET /api/requests/${requestId}] Error fetching driver user:`, driverUserError);
+            } else if (driverUser) {
+              fullRequest.assigned_driver = {
+                id: driverUser.id,
+                name: driverUser.name,
+                email: driverUser.email,
+                phone: driverUser.phone_number,
+                profile_picture: driverUser.profile_picture
+              };
+              fullRequest.assigned_driver_name = driverUser.name;
+              console.log(`[GET /api/requests/${requestId}] Assigned driver found:`, driverUser.name);
+            }
+          }
+        } catch (e: any) {
+          console.error(`[GET /api/requests/${requestId}] Exception fetching assigned driver:`, e);
+        }
+      }
+
+      // Fetch assigned vehicle name
+      if (fullRequest.assigned_vehicle_id) {
+        console.log(`[GET /api/requests/${requestId}] Fetching assigned vehicle for ID:`, fullRequest.assigned_vehicle_id);
+        const { data: vehicle, error: vehicleError } = await supabaseServiceRole
+          .from("vehicles")
+          .select("id, vehicle_name, plate_number, vehicle_type, capacity")
+          .eq("id", fullRequest.assigned_vehicle_id)
+          .single();
+        
+        if (vehicleError) {
+          console.error(`[GET /api/requests/${requestId}] Error fetching assigned vehicle:`, vehicleError);
+        } else if (vehicle) {
+          fullRequest.assigned_vehicle = {
+            id: vehicle.id,
+            name: vehicle.vehicle_name,
+            plate_number: vehicle.plate_number,
+            type: vehicle.vehicle_type,
+            capacity: vehicle.capacity
+          };
+          fullRequest.assigned_vehicle_name = `${vehicle.vehicle_name} • ${vehicle.plate_number}`;
+          console.log(`[GET /api/requests/${requestId}] Assigned vehicle found:`, fullRequest.assigned_vehicle_name);
+        }
+      }
+    } else {
+      console.log(`[GET /api/requests/${requestId}] No assigned driver or vehicle set`);
     }
 
     // Parse seminar_data if it's a string

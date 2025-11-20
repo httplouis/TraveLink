@@ -209,6 +209,25 @@ function UserInboxPageContent() {
     try {
       setLoading(true);
       const res = await fetch("/api/user/inbox", { cache: "no-store" });
+      if (!res.ok) {
+        console.error("API response not OK:", res.status, res.statusText);
+        toast({
+          kind: "error",
+          title: "Load failed",
+          message: `HTTP ${res.status}: ${res.statusText}`,
+        });
+        return;
+      }
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        console.error("API returned non-JSON response. Content-Type:", contentType);
+        toast({
+          kind: "error",
+          title: "Load failed",
+          message: "Invalid response format",
+        });
+        return;
+      }
       const data = await res.json();
       
       if (data.ok && Array.isArray(data.data)) {

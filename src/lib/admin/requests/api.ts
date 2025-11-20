@@ -27,6 +27,12 @@ export async function fetchRequests(filters?: {
       throw new Error(`HTTP ${response.status}`);
     }
 
+    const contentType = response.headers.get("content-type");
+    if (!contentType || !contentType.includes("application/json")) {
+      console.error("[Admin Requests API] API returned non-JSON response. Content-Type:", contentType);
+      return [];
+    }
+
     const data = await response.json();
     
     // Transform database format to AdminRequest format

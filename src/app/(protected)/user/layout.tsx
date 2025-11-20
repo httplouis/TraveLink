@@ -22,6 +22,45 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
     message?: string;
   }>({ locked: false });
 
+  // Global error handler for uncaught errors (Turbopack HMR chunk errors)
+  React.useEffect(() => {
+    const handleError = (event: ErrorEvent) => {
+      // Check if it's a SyntaxError with '<' token in a chunk file (Turbopack HMR issue)
+      if (
+        event.error instanceof SyntaxError && 
+        event.message.includes("Unexpected token '<'") &&
+        event.filename && 
+        event.filename.includes('_next/static/chunks/')
+      ) {
+        // This is a known Turbopack Fast Refresh issue - silently suppress it
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation?.();
+        return false;
+      }
+    };
+
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      // Check if it's a chunk loading error (Turbopack HMR issue)
+      if (event.reason && typeof event.reason === 'object' && 'message' in event.reason) {
+        const reason = event.reason as any;
+        if (reason.message && reason.message.includes("Unexpected token '<'")) {
+          // Silently suppress Turbopack HMR chunk errors
+          event.preventDefault();
+          return;
+        }
+      }
+    };
+
+    window.addEventListener("error", handleError, true); // Use capture phase
+    window.addEventListener("unhandledrejection", handleUnhandledRejection);
+
+    return () => {
+      window.removeEventListener("error", handleError, true);
+      window.removeEventListener("unhandledrejection", handleUnhandledRejection);
+    };
+  }, []);
+
   // Check for feedback lock on mount and periodically
   React.useEffect(() => {
     const checkLock = async () => {

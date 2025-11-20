@@ -19,6 +19,17 @@ export default function ProfilePage() {
       
       // First, try to force update if name is missing
       const currentResponse = await fetch('/api/profile');
+      if (!currentResponse.ok) {
+        console.warn('[ProfilePage] Profile API not OK:', currentResponse.status);
+        toast.error('Failed to load profile');
+        return;
+      }
+      const currentContentType = currentResponse.headers.get("content-type");
+      if (!currentContentType || !currentContentType.includes("application/json")) {
+        console.error('[ProfilePage] Profile API returned non-JSON response. Content-Type:', currentContentType);
+        toast.error('Invalid response format');
+        return;
+      }
       const currentData = await currentResponse.json();
       
       if (currentData.ok && (!currentData.data.name || currentData.data.name === currentData.data.email?.split("@")[0])) {
@@ -35,6 +46,17 @@ export default function ProfilePage() {
       
       // Fetch profile again after potential update
       const response = await fetch('/api/profile');
+      if (!response.ok) {
+        console.error('[ProfilePage] Profile API not OK:', response.status);
+        toast.error('Failed to load profile');
+        return;
+      }
+      const responseContentType = response.headers.get("content-type");
+      if (!responseContentType || !responseContentType.includes("application/json")) {
+        console.error('[ProfilePage] Profile API returned non-JSON response. Content-Type:', responseContentType);
+        toast.error('Invalid response format');
+        return;
+      }
       const data = await response.json();
       
       if (data.ok) {
@@ -91,6 +113,17 @@ export default function ProfilePage() {
         })
       });
 
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[ProfilePage] Save API error:', response.status, errorText.substring(0, 200));
+        throw new Error(`Failed to save: ${response.status}`);
+      }
+      const saveContentType = response.headers.get("content-type");
+      if (!saveContentType || !saveContentType.includes("application/json")) {
+        const errorText = await response.text();
+        console.error('[ProfilePage] Save API returned non-JSON. Response:', errorText.substring(0, 200));
+        throw new Error("API returned non-JSON response");
+      }
       const result = await response.json();
       if (!result.ok) {
         console.error('[ProfilePage] Save error:', result.error);
@@ -118,6 +151,17 @@ export default function ProfilePage() {
       body: formData
     });
 
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[ProfilePage] Upload API error:', response.status, errorText.substring(0, 200));
+      throw new Error(`Failed to upload: ${response.status}`);
+    }
+    const uploadContentType = response.headers.get("content-type");
+    if (!uploadContentType || !uploadContentType.includes("application/json")) {
+      const errorText = await response.text();
+      console.error('[ProfilePage] Upload API returned non-JSON. Response:', errorText.substring(0, 200));
+      throw new Error("API returned non-JSON response");
+    }
     const result = await response.json();
     if (!result.ok) {
       throw new Error(result.error || 'Failed to upload image');

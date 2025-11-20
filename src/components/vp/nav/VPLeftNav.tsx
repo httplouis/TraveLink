@@ -81,8 +81,29 @@ export default function VPLeftNav() {
 
     const fetchCount = async () => {
       try {
+        console.log("[VPLeftNav] 🔍 Starting fetch to /api/requests/my-submissions/count");
         const res = await fetch("/api/requests/my-submissions/count", { cache: "no-store" });
+        console.log("[VPLeftNav] 📡 Submissions count response:", {
+          ok: res.ok,
+          status: res.status,
+          contentType: res.headers.get("content-type")
+        });
+        if (!res.ok) {
+          console.warn("[VPLeftNav] ❌ Submissions count API not OK:", res.status);
+          const errorText = await res.text();
+          console.error("[VPLeftNav] ❌ Error response body:", errorText.substring(0, 500));
+          return;
+        }
+        const contentType = res.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          console.warn("[VPLeftNav] ❌ Submissions count API returned non-JSON response");
+          const errorText = await res.text();
+          console.error("[VPLeftNav] ❌ Non-JSON response body:", errorText.substring(0, 500));
+          return;
+        }
+        console.log("[VPLeftNav] ✅ Parsing submissions count JSON...");
         const json = await res.json();
+        console.log("[VPLeftNav] ✅ Submissions count JSON parsed:", { ok: json.ok, count: json.pending_count });
         if (mounted && json.ok) {
           setSubmissionsCount(json.pending_count || 0);
         }
@@ -105,8 +126,29 @@ export default function VPLeftNav() {
 
     const fetchInboxCount = async () => {
       try {
+        console.log("[VPLeftNav] 🔍 Starting fetch to /api/vp/inbox/count");
         const res = await fetch("/api/vp/inbox/count", { cache: "no-store" });
+        console.log("[VPLeftNav] 📡 Inbox count response:", {
+          ok: res.ok,
+          status: res.status,
+          contentType: res.headers.get("content-type")
+        });
+        if (!res.ok) {
+          console.warn("[VPLeftNav] ❌ Inbox count API not OK:", res.status);
+          const errorText = await res.text();
+          console.error("[VPLeftNav] ❌ Error response body:", errorText.substring(0, 500));
+          return;
+        }
+        const contentType = res.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          console.warn("[VPLeftNav] ❌ Inbox count API returned non-JSON response");
+          const errorText = await res.text();
+          console.error("[VPLeftNav] ❌ Non-JSON response body:", errorText.substring(0, 500));
+          return;
+        }
+        console.log("[VPLeftNav] ✅ Parsing inbox count JSON...");
         const json = await res.json();
+        console.log("[VPLeftNav] ✅ Inbox count JSON parsed:", { ok: json.ok, count: json.pending_count });
         if (mounted && json.ok) {
           setInboxCount(json.pending_count || 0);
         }
@@ -127,8 +169,29 @@ export default function VPLeftNav() {
   React.useEffect(() => {
     const fetchProfile = async () => {
       try {
+        console.log("[VPLeftNav] 🔍 Starting fetch to /api/profile");
         const res = await fetch("/api/profile");
+        console.log("[VPLeftNav] 📡 Profile response:", {
+          ok: res.ok,
+          status: res.status,
+          contentType: res.headers.get("content-type")
+        });
+        if (!res.ok) {
+          console.warn("[VPLeftNav] ❌ Profile API not OK:", res.status);
+          const errorText = await res.text();
+          console.error("[VPLeftNav] ❌ Error response body:", errorText.substring(0, 500));
+          return;
+        }
+        const contentType = res.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          console.warn("[VPLeftNav] ❌ Profile API returned non-JSON response");
+          const errorText = await res.text();
+          console.error("[VPLeftNav] ❌ Non-JSON response body:", errorText.substring(0, 500));
+          return;
+        }
+        console.log("[VPLeftNav] ✅ Parsing profile JSON...");
         const data = await res.json();
+        console.log("[VPLeftNav] ✅ Profile JSON parsed:", { ok: data.ok, hasData: !!data.data });
         if (data.ok && data.data) {
           setUserProfile({
             name: data.data.name || data.data.email?.split("@")[0] || "VP",
@@ -244,7 +307,7 @@ export default function VPLeftNav() {
               damping: 25,
               mass: 0.8
             }}
-            style={{ background: '#7a0019' }}
+            style={{ background: '#7a0019', zIndex: 0 }}
           />
         );
       })()}
@@ -352,6 +415,26 @@ export default function VPLeftNav() {
               key={`${idx}-${item.href}`}
               ref={(el) => { navRefs.current[item.href] = el; }}
               href={item.href}
+              onClick={(e) => {
+                console.log("[VPLeftNav] 🔗 Link clicked, href:", item.href);
+                // Force navigation if Link doesn't work
+                if (item.href === "/vp/inbox") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  console.log("[VPLeftNav] 🚀 Forcing navigation to /vp/inbox");
+                  // Use window.location as fallback if router.push doesn't work
+                  setTimeout(() => {
+                    router.push("/vp/inbox");
+                    // Fallback to window.location if router.push doesn't navigate after 100ms
+                    setTimeout(() => {
+                      if (window.location.pathname !== "/vp/inbox") {
+                        console.log("[VPLeftNav] ⚠️ Router.push didn't work, using window.location");
+                        window.location.href = "/vp/inbox";
+                      }
+                    }, 100);
+                  }, 0);
+                }
+              }}
               onMouseEnter={() => {
                 setHoveredItem(item.href);
                 if (!active) {
@@ -359,11 +442,12 @@ export default function VPLeftNav() {
                 }
               }}
               className={[
-                "group relative flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200",
+                "group relative flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200 cursor-pointer",
                 active
                   ? "text-white"
                   : "text-neutral-700 hover:text-white active:scale-[0.98]",
               ].join(" ")}
+              style={{ position: 'relative', zIndex: 20 }}
             >
               <item.Icon className={`h-5 w-5 transition-transform ${active ? "" : "group-hover:scale-110 group-hover:text-white"}`} />
               <span className="flex-1 group-hover:text-white">{item.label}</span>

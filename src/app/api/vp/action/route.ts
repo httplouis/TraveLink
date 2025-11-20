@@ -240,18 +240,17 @@ export async function POST(request: Request) {
                 if (approverUser.is_president || approverUser.exec_type === "president") {
                   newStatus = "pending_exec";
                   finalNextApproverRole = "president";
-                  updateData.next_president_id = nextApproverId;
+                  // Store in workflow_metadata, not directly on updateData (column doesn't exist)
                   message = "VP approved. Request sent to President.";
                 } else if (approverUser.is_admin || approverUser.role === "admin") {
                   newStatus = "pending_admin";
                   finalNextApproverRole = "admin";
                   // Don't set next_admin_id - allow all admins to see it (both Ma'am Cleofe and Ma'am TM)
-                  // updateData.next_admin_id = nextApproverId;
                   message = "VP approved. Request sent to Administrators.";
                 } else if (approverUser.is_vp || approverUser.role === "exec") {
                   newStatus = "pending_exec";
                   finalNextApproverRole = "vp";
-                  updateData.next_vp_id = nextApproverId;
+                  // Store in workflow_metadata, not directly on updateData (column doesn't exist)
                   message = "VP approved. Request sent to another VP.";
                 } else if (approverUser.is_hr || approverUser.role === "hr") {
                   newStatus = "pending_hr";
@@ -270,19 +269,18 @@ export async function POST(request: Request) {
                   if (nextApproverRole === "president") {
                     newStatus = "pending_exec";
                     finalNextApproverRole = "president";
-                    updateData.next_president_id = nextApproverId;
+                    // Store in workflow_metadata, not directly on updateData (column doesn't exist)
                     message = "VP approved. Request sent to President.";
                   } else if (nextApproverRole === "admin") {
                     newStatus = "pending_admin";
                     finalNextApproverRole = "admin";
                     // Don't set next_admin_id - allow all admins to see it (both Ma'am Cleofe and Ma'am TM)
-                    // updateData.next_admin_id = nextApproverId;
                     message = "VP approved. Request sent to Administrators.";
                   } else {
                     // Default to president
                     newStatus = "pending_exec";
                     finalNextApproverRole = "president";
-                    updateData.next_president_id = nextApproverId;
+                    // Store in workflow_metadata, not directly on updateData (column doesn't exist)
                     message = "VP approved. Request sent to President.";
                   }
                 }
@@ -291,18 +289,17 @@ export async function POST(request: Request) {
                 if (nextApproverRole === "president") {
                   newStatus = "pending_exec";
                   finalNextApproverRole = "president";
-                  updateData.next_president_id = nextApproverId;
+                  // Store in workflow_metadata, not directly on updateData (column doesn't exist)
                   message = "VP approved. Request sent to President.";
                 } else if (nextApproverRole === "admin") {
                   newStatus = "pending_admin";
                   finalNextApproverRole = "admin";
                   // Don't set next_admin_id - allow all admins to see it (both Ma'am Cleofe and Ma'am TM)
-                  // updateData.next_admin_id = nextApproverId;
                   message = "VP approved. Request sent to Administrators.";
                 } else {
                   newStatus = "pending_exec";
                   finalNextApproverRole = "president";
-                  updateData.next_president_id = nextApproverId;
+                  // Store in workflow_metadata, not directly on updateData (column doesn't exist)
                   message = "VP approved. Request sent to President.";
                 }
               }
@@ -312,18 +309,17 @@ export async function POST(request: Request) {
               if (nextApproverRole === "president") {
                 newStatus = "pending_exec";
                 finalNextApproverRole = "president";
-                updateData.next_president_id = nextApproverId;
+                // Store in workflow_metadata, not directly on updateData (column doesn't exist)
                 message = "VP approved. Request sent to President.";
               } else if (nextApproverRole === "admin") {
                 newStatus = "pending_admin";
                 finalNextApproverRole = "admin";
                 // Don't set next_admin_id - allow all admins to see it (both Ma'am Cleofe and Ma'am TM)
-                // updateData.next_admin_id = nextApproverId;
                 message = "VP approved. Request sent to Administrators.";
               } else {
                 newStatus = "pending_exec";
                 finalNextApproverRole = "president";
-                updateData.next_president_id = nextApproverId;
+                // Store in workflow_metadata, not directly on updateData (column doesn't exist)
                 message = "VP approved. Request sent to President.";
               }
             }
@@ -446,18 +442,17 @@ export async function POST(request: Request) {
               if (approverUser.is_president || approverUser.exec_type === "president") {
                 newStatus = "pending_exec";
                 finalNextApproverRole = "president";
-                updateData.next_president_id = nextApproverId;
+                // Store in workflow_metadata, not directly on updateData (column doesn't exist)
                 message = "Both VPs have approved. Request sent to President.";
               } else if (approverUser.is_admin || approverUser.role === "admin") {
                 newStatus = "pending_admin";
                 finalNextApproverRole = "admin";
                 // Don't set next_admin_id - allow all admins to see it (both Ma'am Cleofe and Ma'am TM)
-                // updateData.next_admin_id = nextApproverId;
                 message = "Both VPs have approved. Request sent to Administrators.";
               } else if (approverUser.is_vp || approverUser.role === "exec") {
                 newStatus = "pending_exec";
                 finalNextApproverRole = "vp";
-                updateData.next_vp_id = nextApproverId;
+                // Store in workflow_metadata, not directly on updateData (column doesn't exist)
                 message = "Both VPs have approved. Request sent to another VP.";
               } else if (approverUser.is_hr || approverUser.role === "hr") {
                 newStatus = "pending_hr";
@@ -476,17 +471,17 @@ export async function POST(request: Request) {
                 if (nextApproverRole === "president") {
                   newStatus = "pending_exec";
                   finalNextApproverRole = "president";
-                  updateData.next_president_id = nextApproverId;
+                  // Store in workflow_metadata, not directly on updateData (column doesn't exist)
                   message = "Both VPs have approved. Request sent to President.";
                 } else if (nextApproverRole === "admin") {
                   newStatus = "pending_admin";
                   finalNextApproverRole = "admin";
-                  updateData.next_admin_id = nextApproverId;
+                  // Store in workflow_metadata, not directly on updateData (column doesn't exist)
                   message = "Both VPs have approved. Request sent to Administrator.";
                 } else {
                   newStatus = "pending_exec";
                   finalNextApproverRole = "president";
-                  updateData.next_president_id = nextApproverId;
+                  // Store in workflow_metadata, not directly on updateData (column doesn't exist)
                   message = "Both VPs have approved. Request sent to President.";
                 }
               }
@@ -495,18 +490,17 @@ export async function POST(request: Request) {
               if (nextApproverRole === "president") {
                 newStatus = "pending_exec";
                 finalNextApproverRole = "president";
-                updateData.next_president_id = nextApproverId;
+                // Store in workflow_metadata, not directly on updateData (column doesn't exist)
                 message = "Both VPs have approved. Request sent to President.";
               } else if (nextApproverRole === "admin") {
                 newStatus = "pending_admin";
                 finalNextApproverRole = "admin";
                 // Don't set next_admin_id - allow all admins to see it (both Ma'am Cleofe and Ma'am TM)
-                // updateData.next_admin_id = nextApproverId;
                 message = "Both VPs have approved. Request sent to Administrators.";
               } else {
                 newStatus = "pending_exec";
                 finalNextApproverRole = "president";
-                updateData.next_president_id = nextApproverId;
+                // Store in workflow_metadata, not directly on updateData (column doesn't exist)
                 message = "Both VPs have approved. Request sent to President.";
               }
             }
@@ -516,18 +510,17 @@ export async function POST(request: Request) {
             if (nextApproverRole === "president") {
               newStatus = "pending_exec";
               finalNextApproverRole = "president";
-              updateData.next_president_id = nextApproverId;
+              // Store in workflow_metadata, not directly on updateData (column doesn't exist)
               message = "Both VPs have approved. Request sent to President.";
             } else if (nextApproverRole === "admin") {
               newStatus = "pending_admin";
               finalNextApproverRole = "admin";
               // Don't set next_admin_id - allow all admins to see it (both Ma'am Cleofe and Ma'am TM)
-              // updateData.next_admin_id = nextApproverId;
               message = "Both VPs have approved. Request sent to Administrators.";
             } else {
               newStatus = "pending_exec";
               finalNextApproverRole = "president";
-              updateData.next_president_id = nextApproverId;
+              // Store in workflow_metadata, not directly on updateData (column doesn't exist)
               message = "Both VPs have approved. Request sent to President.";
             }
           }

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { X, CheckCircle2, XCircle, Users, Car, UserCog, MapPin, Calendar, DollarSign, FileText } from "lucide-react";
+import { X, CheckCircle2, XCircle, Users, Car, UserCog, MapPin, Calendar, DollarSign, FileText, Clock } from "lucide-react";
 import { useToast } from "@/components/common/ui/Toast";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import { NameWithProfile } from "@/components/common/ProfileHoverCard";
@@ -48,8 +48,38 @@ export default function VPRequestModal({
   // Load full request details and VP profile
   const loadFullRequest = async () => {
     try {
+      console.log(`[VPRequestModal] 🔍 Starting fetch to /api/requests/${request.id}`);
       const res = await fetch(`/api/requests/${request.id}`);
+      console.log(`[VPRequestModal] 📡 Response received:`, {
+        ok: res.ok,
+        status: res.status,
+        statusText: res.statusText,
+        contentType: res.headers.get("content-type"),
+        url: res.url
+      });
+      if (!res.ok) {
+        console.error("[VPRequestModal] ❌ API response not OK:", res.status, res.statusText);
+        const errorText = await res.text();
+        // Don't log HTML error pages as errors - they're server errors
+        if (!errorText.startsWith('<!DOCTYPE')) {
+          console.error("[VPRequestModal] ❌ Error response body:", errorText.substring(0, 500));
+        }
+        return;
+      }
+      const contentType = res.headers.get("content-type");
+      console.log(`[VPRequestModal] 📄 Content-Type:`, contentType);
+      if (!contentType || !contentType.includes("application/json")) {
+        console.error("[VPRequestModal] ❌ API returned non-JSON response. Content-Type:", contentType);
+        const errorText = await res.text();
+        // Don't log HTML error pages as errors - they're server errors
+        if (!errorText.startsWith('<!DOCTYPE')) {
+          console.error("[VPRequestModal] ❌ Non-JSON response body:", errorText.substring(0, 500));
+        }
+        return;
+      }
+      console.log(`[VPRequestModal] ✅ Parsing JSON...`);
       const json = await res.json();
+      console.log(`[VPRequestModal] ✅ JSON parsed successfully:`, { ok: json.ok, hasData: !!json.data });
       
       if (json.ok && json.data) {
         setFullRequest(json.data);
@@ -83,8 +113,35 @@ export default function VPRequestModal({
           let originalExpenseBreakdown: any[] = [];
           if (hasComptrollerEdit) {
             try {
+              console.log(`[VPRequestModal] 🔍 Starting fetch to /api/requests/${request.id}/history`);
               const historyRes = await fetch(`/api/requests/${request.id}/history`);
+              console.log(`[VPRequestModal] 📡 History response received:`, {
+                ok: historyRes.ok,
+                status: historyRes.status,
+                contentType: historyRes.headers.get("content-type")
+              });
+              if (!historyRes.ok) {
+                console.warn("[VPRequestModal] ❌ History API not OK:", historyRes.status);
+                const errorText = await historyRes.text();
+                // Don't log HTML error pages as errors - they're server errors
+                if (!errorText.startsWith('<!DOCTYPE')) {
+                  console.error("[VPRequestModal] ❌ Error response body:", errorText.substring(0, 500));
+                }
+                return;
+              }
+              const contentType = historyRes.headers.get("content-type");
+              if (!contentType || !contentType.includes("application/json")) {
+                console.warn("[VPRequestModal] ❌ History API returned non-JSON response");
+                const errorText = await historyRes.text();
+                // Don't log HTML error pages as errors - they're server errors
+                if (!errorText.startsWith('<!DOCTYPE')) {
+                  console.error("[VPRequestModal] ❌ Non-JSON response body:", errorText.substring(0, 500));
+                }
+                return;
+              }
+              console.log(`[VPRequestModal] ✅ Parsing history JSON...`);
               const historyData = await historyRes.json();
+              console.log(`[VPRequestModal] ✅ History JSON parsed successfully:`, { ok: historyData?.ok, hasData: !!historyData?.data });
               if (historyData && historyData.ok && historyData.data && historyData.data.history) {
                 const budgetModification = historyData.data.history.find((entry: any) => 
                   entry.action === "budget_modified" && entry.metadata?.original_expense_breakdown
@@ -181,8 +238,29 @@ export default function VPRequestModal({
         // Load preferred driver
         if (req.preferred_driver_id) {
           try {
+            console.log(`[VPRequestModal] 🔍 Starting fetch to /api/users/${req.preferred_driver_id}`);
             const driverRes = await fetch(`/api/users/${req.preferred_driver_id}`);
+            console.log(`[VPRequestModal] 📡 Driver response received:`, {
+              ok: driverRes.ok,
+              status: driverRes.status,
+              contentType: driverRes.headers.get("content-type")
+            });
+            if (!driverRes.ok) {
+              console.warn("[VPRequestModal] ❌ Driver API not OK:", driverRes.status);
+              const errorText = await driverRes.text();
+              console.error("[VPRequestModal] ❌ Error response body:", errorText.substring(0, 500));
+              return;
+            }
+            const contentType = driverRes.headers.get("content-type");
+            if (!contentType || !contentType.includes("application/json")) {
+              console.warn("[VPRequestModal] ❌ Driver API returned non-JSON response");
+              const errorText = await driverRes.text();
+              console.error("[VPRequestModal] ❌ Non-JSON response body:", errorText.substring(0, 500));
+              return;
+            }
+            console.log(`[VPRequestModal] ✅ Parsing driver JSON...`);
             const driverData = await driverRes.json();
+            console.log(`[VPRequestModal] ✅ Driver JSON parsed successfully:`, { ok: driverData?.ok, hasData: !!driverData?.data });
             if (driverData.ok && driverData.data) {
               setPreferredDriverName(driverData.data.name || "Unknown Driver");
             }
@@ -194,8 +272,29 @@ export default function VPRequestModal({
         // Load preferred vehicle
         if (req.preferred_vehicle_id) {
           try {
+            console.log(`[VPRequestModal] 🔍 Starting fetch to /api/vehicles/${req.preferred_vehicle_id}`);
             const vehicleRes = await fetch(`/api/vehicles/${req.preferred_vehicle_id}`);
+            console.log(`[VPRequestModal] 📡 Vehicle response received:`, {
+              ok: vehicleRes.ok,
+              status: vehicleRes.status,
+              contentType: vehicleRes.headers.get("content-type")
+            });
+            if (!vehicleRes.ok) {
+              console.warn("[VPRequestModal] ❌ Vehicle API not OK:", vehicleRes.status);
+              const errorText = await vehicleRes.text();
+              console.error("[VPRequestModal] ❌ Error response body:", errorText.substring(0, 500));
+              return;
+            }
+            const contentType = vehicleRes.headers.get("content-type");
+            if (!contentType || !contentType.includes("application/json")) {
+              console.warn("[VPRequestModal] ❌ Vehicle API returned non-JSON response");
+              const errorText = await vehicleRes.text();
+              console.error("[VPRequestModal] ❌ Non-JSON response body:", errorText.substring(0, 500));
+              return;
+            }
+            console.log(`[VPRequestModal] ✅ Parsing vehicle JSON...`);
             const vehicleData = await vehicleRes.json();
+            console.log(`[VPRequestModal] ✅ Vehicle JSON parsed successfully:`, { ok: vehicleData?.ok, hasData: !!vehicleData?.data });
             if (vehicleData.ok && vehicleData.data) {
               setPreferredVehicleName(vehicleData.data.name || vehicleData.data.plate_number || "Unknown Vehicle");
             }
@@ -213,8 +312,34 @@ export default function VPRequestModal({
     async function loadData() {
       try {
         // Load current VP info
+        console.log("[VPRequestModal] 🔍 Starting fetch to /api/profile");
         const meRes = await fetch("/api/profile");
+        console.log("[VPRequestModal] 📡 Profile response received:", {
+          ok: meRes.ok,
+          status: meRes.status,
+          statusText: meRes.statusText,
+          contentType: meRes.headers.get("content-type"),
+          url: meRes.url
+        });
+        if (!meRes.ok) {
+          console.warn("[VPRequestModal] ❌ Profile API not OK:", meRes.status);
+          const errorText = await meRes.text();
+          console.error("[VPRequestModal] ❌ Error response body:", errorText.substring(0, 500));
+          setVpProfile({ name: "VP User", email: "vp@example.com" });
+          return;
+        }
+        const contentType = meRes.headers.get("content-type");
+        console.log("[VPRequestModal] 📄 Profile Content-Type:", contentType);
+        if (!contentType || !contentType.includes("application/json")) {
+          console.warn("[VPRequestModal] ❌ Profile API returned non-JSON response");
+          const errorText = await meRes.text();
+          console.error("[VPRequestModal] ❌ Non-JSON response body:", errorText.substring(0, 500));
+          setVpProfile({ name: "VP User", email: "vp@example.com" });
+          return;
+        }
+        console.log("[VPRequestModal] ✅ Parsing profile JSON...");
         const meData = await meRes.json();
+        console.log("[VPRequestModal] ✅ Profile JSON parsed successfully:", { ok: meData.ok, hasData: !!meData.data });
         if (meData.ok && meData.data) {
           setVpProfile(meData.data);
           // Only set signature if VP has already signed (viewOnly mode)
@@ -269,40 +394,50 @@ export default function VPRequestModal({
         // Fetch Presidents
         const presidentRes = await fetch(`/api/approvers/list?role=president`);
         if (presidentRes.ok) {
-          const presidentData = await presidentRes.json();
-          if (presidentData.ok && presidentData.data && presidentData.data.length > 0) {
-            const presidentOptions = presidentData.data.map((p: any) => ({
-              id: p.id,
-              name: p.name,
-              email: p.email,
-              profile_picture: p.profile_picture,
-              phone: p.phone,
-              position: p.position || "President",
-              department: p.department,
-              role: "president",
-              roleLabel: "President"
-            }));
-            options.push(...presidentOptions);
+          const contentType = presidentRes.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            const presidentData = await presidentRes.json();
+            if (presidentData.ok && presidentData.data && presidentData.data.length > 0) {
+              const presidentOptions = presidentData.data.map((p: any) => ({
+                id: p.id,
+                name: p.name,
+                email: p.email,
+                profile_picture: p.profile_picture,
+                phone: p.phone,
+                position: p.position || "President",
+                department: p.department,
+                role: "president",
+                roleLabel: "President"
+              }));
+              options.push(...presidentOptions);
+            }
+          } else {
+            console.warn("[VPRequestModal] President approvers API returned non-JSON response");
           }
         }
 
         // Fetch Admins
         const adminRes = await fetch(`/api/approvers/list?role=admin`);
         if (adminRes.ok) {
-          const adminData = await adminRes.json();
-          if (adminData.ok && adminData.data && adminData.data.length > 0) {
-            const adminOptions = adminData.data.map((a: any) => ({
-              id: a.id,
-              name: a.name,
-              email: a.email,
-              profile_picture: a.profile_picture,
-              phone: a.phone,
-              position: a.position || "Administrator",
-              department: a.department,
-              role: "admin",
-              roleLabel: "Administrator"
-            }));
-            options.push(...adminOptions);
+          const contentType = adminRes.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            const adminData = await adminRes.json();
+            if (adminData.ok && adminData.data && adminData.data.length > 0) {
+              const adminOptions = adminData.data.map((a: any) => ({
+                id: a.id,
+                name: a.name,
+                email: a.email,
+                profile_picture: a.profile_picture,
+                phone: a.phone,
+                position: a.position || "Administrator",
+                department: a.department,
+                role: "admin",
+                roleLabel: "Administrator"
+              }));
+              options.push(...adminOptions);
+            }
+          } else {
+            console.warn("[VPRequestModal] Admin approvers API returned non-JSON response");
           }
         }
 
@@ -366,6 +501,14 @@ export default function VPRequestModal({
         return;
       }
 
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const errorText = await res.text();
+        console.error("[VPRequestModal] Approval API returned non-JSON response. Response:", errorText.substring(0, 200));
+        toast.error("Approval Failed", "Invalid response format from server");
+        return;
+      }
+
       const data = await res.json();
 
       if (data.ok) {
@@ -406,6 +549,19 @@ export default function VPRequestModal({
         }),
       });
 
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error("[VPRequestModal] Reject API error:", res.status, errorText.substring(0, 200));
+        throw new Error(`Failed to reject: ${res.status}`);
+      }
+
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const errorText = await res.text();
+        console.error("[VPRequestModal] Reject API returned non-JSON. Response:", errorText.substring(0, 200));
+        throw new Error("API returned non-JSON response");
+      }
+
       const data = await res.json();
 
       if (data.ok) {
@@ -415,7 +571,7 @@ export default function VPRequestModal({
           onClose();
         }, 1500);
       } else {
-        toast({ message: data.error || "Failed to reject request", kind: "error" });
+        toast.error("Rejection Failed", data.error || "Failed to reject request");
       }
     } catch (error) {
       toast.error("Error", "An error occurred");
@@ -447,16 +603,16 @@ export default function VPRequestModal({
             )}
           </div>
           <div className="flex items-center gap-3">
-            <span className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 ${
-              t.status === 'pending_exec' || t.status === 'pending_head' ? 'bg-amber-100 text-amber-700' :
-              t.status === 'approved' ? 'bg-green-100 text-green-700' :
-              t.status === 'rejected' ? 'bg-red-100 text-red-700' :
-              'bg-slate-100 text-slate-700'
+            <span className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 backdrop-blur-sm ${
+              t.status === 'pending_exec' || t.status === 'pending_head' ? 'bg-amber-300/90 text-amber-900 border border-amber-400' :
+              t.status === 'approved' ? 'bg-green-300/90 text-green-900 border border-green-400' :
+              t.status === 'rejected' ? 'bg-red-300/90 text-red-900 border border-red-400' :
+              'bg-white/20 text-white border border-white/30'
             }`}>
               {t.status === 'pending_exec' || t.status === 'pending_head' ? 'Pending Review' :
                t.status === 'approved' ? 'Approved' :
                t.status === 'rejected' ? 'Rejected' :
-               t.status || 'Pending'}
+               t.status?.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || 'Pending'}
             </span>
             <button
               onClick={onClose}
@@ -680,6 +836,64 @@ export default function VPRequestModal({
                 )}
               </div>
             </section>
+
+            {/* Pickup Details - Show if transportation_type is pickup */}
+            {t?.transportation_type === 'pickup' && (t?.pickup_location || t?.pickup_time || t?.pickup_contact_number) && (
+              <section className="rounded-lg bg-gradient-to-br from-cyan-50 to-teal-50 border-2 border-cyan-200 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Car className="h-5 w-5 text-cyan-600" />
+                  <p className="text-xs font-bold uppercase tracking-wide text-cyan-700">
+                    Pickup Details
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {t?.pickup_location && (
+                    <div className="flex items-start gap-2">
+                      <MapPin className="h-4 w-4 text-cyan-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-xs text-cyan-700 font-medium mb-0.5">Pickup Location</p>
+                        <p className="text-sm font-semibold text-slate-900">{t.pickup_location}</p>
+                      </div>
+                    </div>
+                  )}
+                  {t?.pickup_time && (
+                    <div className="flex items-start gap-2">
+                      <Clock className="h-4 w-4 text-cyan-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-xs text-cyan-700 font-medium mb-0.5">Pickup Time</p>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {t.pickup_time.includes(':') 
+                            ? new Date(`2000-01-01T${t.pickup_time}`).toLocaleTimeString('en-US', { 
+                                hour: '2-digit', 
+                                minute: '2-digit', 
+                                hour12: true 
+                              })
+                            : t.pickup_time}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {t?.pickup_contact_number && (
+                    <div className="flex items-start gap-2">
+                      <Users className="h-4 w-4 text-cyan-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-xs text-cyan-700 font-medium mb-0.5">Contact Number</p>
+                        <p className="text-sm font-semibold text-slate-900">{t.pickup_contact_number}</p>
+                      </div>
+                    </div>
+                  )}
+                  {t?.pickup_special_instructions && (
+                    <div className="flex items-start gap-2">
+                      <FileText className="h-4 w-4 text-cyan-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-xs text-cyan-700 font-medium mb-0.5">Special Instructions</p>
+                        <p className="text-sm text-slate-700 whitespace-pre-wrap">{t.pickup_special_instructions}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
 
             {/* Participants */}
             {t.participants && Array.isArray(t.participants) && t.participants.length > 0 && (
@@ -1163,118 +1377,145 @@ export default function VPRequestModal({
               </div>
             </div>
 
-            {viewOnly ? (
-              // View-only: Show saved signature
-              <div>
-                <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
-                  VP Signature
-                </label>
-                <div className="rounded-xl bg-slate-50 p-4 border-2 border-slate-200">
-                  {(t.vp_signature || t.vp2_signature) ? (
-                    <>
-                      <img 
-                        src={t.vp_signature || t.vp2_signature} 
-                        alt="VP Signature" 
-                        className="max-h-40 mx-auto"
-                      />
-                      {(t.vp_approved_at || t.vp2_approved_at) && (
-                        <p className="text-xs text-slate-500 text-center mt-2">
-                          Signed on {new Date(t.vp_approved_at || t.vp2_approved_at).toLocaleString('en-PH', { 
-                            year: 'numeric', 
-                            month: 'short', 
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            hour12: true,
-                            timeZone: 'Asia/Manila'
-                          })}
-                        </p>
-                      )}
-                    </>
-                  ) : (
-                    <p className="text-sm text-slate-500 text-center py-8">
-                      No signature available
-                    </p>
-                  )}
+            {(() => {
+              // Check if current VP has already signed
+              const currentVPId = vpProfile?.id;
+              
+              // Check if this VP has signed (either as first or second VP)
+              const hasCurrentVPSigned = currentVPId && (
+                (String(t.vp_approved_by) === String(currentVPId) && t.vp_signature) ||
+                (String(t.vp2_approved_by) === String(currentVPId) && t.vp2_signature)
+              );
+              
+              // If there's already a signature and we're viewing (not editing), show read-only
+              const hasAnySignature = !!(t.vp_signature || t.vp2_signature);
+              
+              // Show read-only if: current VP has signed, OR viewOnly mode with any signature
+              const shouldShowReadOnly = hasCurrentVPSigned || (viewOnly && hasAnySignature);
+              
+              const currentVPSignature = String(currentVPId) === String(t.vp_approved_by) ? t.vp_signature 
+                : String(currentVPId) === String(t.vp2_approved_by) ? t.vp2_signature 
+                : null;
+              const currentVPApprovedAt = String(currentVPId) === String(t.vp_approved_by) ? t.vp_approved_at 
+                : String(currentVPId) === String(t.vp2_approved_by) ? t.vp2_approved_at 
+                : null;
+
+              // Show read-only signature if: current VP has signed, OR viewOnly mode with any signature
+              return shouldShowReadOnly ? (
+                // View-only: Show saved signature
+                <div>
+                  <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
+                    VP Signature
+                  </label>
+                  <div className="rounded-xl bg-slate-50 p-4 border-2 border-slate-200">
+                    {currentVPSignature || t.vp_signature || t.vp2_signature ? (
+                      <>
+                        <img 
+                          src={currentVPSignature || t.vp_signature || t.vp2_signature} 
+                          alt="VP Signature" 
+                          className="max-h-40 mx-auto"
+                        />
+                        {(currentVPApprovedAt || t.vp_approved_at || t.vp2_approved_at) && (
+                          <p className="text-xs text-slate-500 text-center mt-2">
+                            Signed on {new Date(currentVPApprovedAt || t.vp_approved_at || t.vp2_approved_at).toLocaleString('en-US', { 
+                              year: 'numeric', 
+                              month: 'short', 
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              hour12: true,
+                              timeZone: 'Asia/Manila'
+                            })}
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-sm text-slate-500 text-center py-8">
+                        No signature available
+                      </p>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ) : (
-              // Edit mode: Signature pad
-              <div>
-                <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
-                  Your Signature <span className="text-red-500">*</span>
-                </label>
-                <div className="rounded-xl bg-white p-3 border-2 border-[#7A0010]/20 shadow-sm">
-                  <SignaturePad
-                    height={160}
-                    value={vpSignature || null}
-                    onSave={(dataUrl) => {
-                      setVpSignature(dataUrl);
-                    }}
-                    onClear={() => {
-                      setVpSignature("");
-                    }}
-                    onUseSaved={(dataUrl) => {
-                      setVpSignature(dataUrl);
-                    }}
-                    showUseSavedButton={true}
-                    hideSaveButton
+              ) : (
+                // Edit mode: Signature pad (only if VP hasn't signed yet)
+                <div>
+                  <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
+                    Your Signature <span className="text-red-500">*</span>
+                  </label>
+                  <div className="rounded-xl bg-white p-3 border-2 border-[#7A0010]/20 shadow-sm">
+                    <SignaturePad
+                      height={160}
+                      value={vpSignature || null}
+                      onSave={(dataUrl) => {
+                        setVpSignature(dataUrl);
+                      }}
+                      onClear={() => {
+                        setVpSignature("");
+                      }}
+                      onUseSaved={(dataUrl) => {
+                        setVpSignature(dataUrl);
+                      }}
+                      showUseSavedButton={true}
+                      hideSaveButton
+                    />
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* VP Notes/Comments - Only show if VP hasn't signed yet */}
+            {(() => {
+              const currentVPId = vpProfile?.id;
+              const hasCurrentVPSigned = currentVPId && (
+                (String(t.vp_approved_by) === String(currentVPId) && t.vp_signature) ||
+                (String(t.vp2_approved_by) === String(currentVPId) && t.vp2_signature)
+              );
+              
+              const hasAnySignature = !!(t.vp_signature || t.vp2_signature);
+              const shouldHideInputs = hasCurrentVPSigned || (viewOnly && hasAnySignature);
+              
+              return !viewOnly && !shouldHideInputs ? (
+                <div className="mt-6">
+                  <label htmlFor="vp-notes" className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
+                    VP Notes/Comments
+                  </label>
+                  
+                  {/* Quick Fill Buttons */}
+                  <div className="mb-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setNotes("Okay, approved.")}
+                      className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+                    >
+                      ✓ Budget Approved
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNotes("Request approved. Proceed with the travel order.")}
+                      className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+                      >
+                      ✓ Approved
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNotes("Request requires revision. Please review and resubmit with corrected amounts.")}
+                      className="px-3 py-1.5 text-xs font-medium bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
+                    >
+                      ✗ Needs Revision
+                    </button>
+                  </div>
+                  
+                  <textarea
+                    id="vp-notes"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows={4}
+                    className="w-full px-4 py-2 border-2 border-slate-200 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] text-sm resize-y"
+                    placeholder="Add any notes or comments for this request..."
                   />
                 </div>
-              </div>
-            )}
-
-            {/* VP Notes/Comments */}
-            {!viewOnly && (
-              <div>
-                <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
-                  VP Notes/Comments <span className="text-red-500">*</span>
-                </label>
-                
-                {/* Quick Fill Buttons */}
-                <div className="mb-2 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setNotes("Okay, approved.")}
-                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-                  >
-                    ✓ Okay, approved
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNotes("Request approved. Proceed with the travel order.")}
-                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-                  >
-                    ✓ Approved
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNotes("Request approved. All requirements are in order.")}
-                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-                  >
-                    ✓ Fully Approved
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNotes("Request rejected. Please review and resubmit with corrections.")}
-                    className="px-3 py-1.5 text-xs font-medium bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
-                  >
-                    ✗ Rejected
-                  </button>
-                </div>
-                
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={4}
-                  className="w-full px-4 py-3 border-2 border-[#7A0010]/20 rounded-xl focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] resize-none text-sm"
-                  placeholder="Add your comments here (minimum 10 characters)..."
-                />
-                <p className="text-xs text-slate-500 mt-1">
-                  Minimum 10 characters required
-                </p>
-              </div>
-            )}
+              ) : null;
+            })()}
 
             {viewOnly && t.vp_comments && (
               <div>
@@ -1289,33 +1530,46 @@ export default function VPRequestModal({
           </div>
         </div>
 
-        {/* Actions */}
-        {!viewOnly && (
-          <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex gap-3 flex-shrink-0">
-            <button
-              onClick={handleApprove}
-              disabled={submitting || !vpSignature || !notes.trim() || notes.trim().length < 10}
-              className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <CheckCircle2 className="h-5 w-5" />
-              {submitting ? "Approving..." : "Approve Request"}
-            </button>
-            <button
-              onClick={handleReject}
-              disabled={submitting || !notes.trim()}
-              className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white font-medium py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <XCircle className="h-5 w-5" />
-              {submitting ? "Rejecting..." : "Reject Request"}
-            </button>
-            <button
-              onClick={onClose}
-              className="px-6 py-3 border border-gray-300 hover:bg-gray-100 text-gray-700 font-medium rounded-lg transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        )}
+        {/* Footer Buttons */}
+        {(() => {
+          const currentVPId = vpProfile?.id;
+          const hasCurrentVPSigned = currentVPId && (
+            (String(t.vp_approved_by) === String(currentVPId) && t.vp_signature) ||
+            (String(t.vp2_approved_by) === String(currentVPId) && t.vp2_signature)
+          );
+          
+          const hasAnySignature = !!(t.vp_signature || t.vp2_signature);
+          const shouldHideButtons = hasCurrentVPSigned || (viewOnly && hasAnySignature);
+          
+          return !viewOnly && !shouldHideButtons ? (
+            <div className="flex justify-between gap-2 p-4 border-t border-slate-200 bg-white rounded-b-lg shadow-md">
+              <button
+                onClick={handleReject}
+                disabled={submitting || !notes.trim()}
+                className="flex items-center justify-center gap-2 px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+              >
+                <XCircle className="h-4 w-4" />
+                Reject
+              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={onClose}
+                  className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 font-medium rounded-lg transition-colors text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleApprove}
+                  disabled={submitting || !vpSignature || !notes.trim() || notes.trim().length < 10}
+                  className="flex items-center justify-center gap-2 px-6 py-2.5 bg-[#7A0010] hover:bg-[#5e000d] text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm shadow-md"
+                >
+                  <CheckCircle2 className="h-5 w-5" />
+                  {submitting ? "Approving..." : "Approve Request"}
+                </button>
+              </div>
+            </div>
+          ) : null;
+        })()}
 
         {viewOnly && (
           <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex justify-end flex-shrink-0">
@@ -1349,6 +1603,15 @@ export default function VPRequestModal({
           fetchAllUsers={async () => {
             try {
               const allUsersRes = await fetch("/api/users/all");
+              if (!allUsersRes.ok) {
+                console.warn("[VPRequestModal] All users API not OK:", allUsersRes.status);
+                return [];
+              }
+              const contentType = allUsersRes.headers.get("content-type");
+              if (!contentType || !contentType.includes("application/json")) {
+                console.warn("[VPRequestModal] All users API returned non-JSON response");
+                return [];
+              }
               const allUsersData = await allUsersRes.json();
               if (allUsersData.ok && allUsersData.data) {
                 return allUsersData.data.map((u: any) => ({

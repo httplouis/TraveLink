@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { Check, Clock, Circle } from "lucide-react";
 import { useToast } from "@/components/common/ui/ToastProvider.ui";
 
 import ConfirmUI from "@/components/admin/requests/ui/Confirm.ui";
@@ -118,8 +119,10 @@ export default function PageInner() {
 
   const [mounted, setMounted] = useState(false);
   
-  // Tab system for Pending vs History
-  const [activeTab, setActiveTab] = useState<'pending' | 'history'>('pending');
+  // Tab system for Pending, Tracking, and History
+  const [activeTab, setActiveTab] = useState<'pending' | 'tracking' | 'history'>('pending');
+  const [trackedRows, setTrackedRows] = useState<RequestRow[]>([]);
+  const [filteredTrackedRows, setFilteredTrackedRows] = useState<RequestRow[]>([]);
 
   const [allRows, setAllRows] = useState<RequestRow[]>([]);
   const [filteredRows, setFilteredRows] = useState<RequestRow[]>([]);
@@ -334,11 +337,32 @@ export default function PageInner() {
       return isWaitingForAdmin || (isNotFinalState && !adminActed);
     });
     
-    // History: All requests where admin already acted OR final states
-    // Only include requests that have been approved by heads (use headApprovedRequests)
+    // Tracking: All requests that have passed through admin (admin_approved_at is not null)
+    // This includes requests that admin processed and sent to next stage
+    const trackingRequests = headApprovedRequests.filter((r: any) => {
+      // Include requests where admin already acted (admin_approved_at or admin_processed_at)
+      const adminActed = !!(r.admin_approved_at || r.admin_approved_by || r.admin_processed_at || r.admin_processed_by);
+      
+      // Include requests that admin processed and sent to next stage
+      // (pending_comptroller, pending_hr, pending_exec, pending_hr_ack)
+      const adminProcessed = adminActed && [
+        "pending_comptroller",
+        "pending_hr",
+        "pending_exec",
+        "pending_hr_ack",
+        "pending_vp",
+        "pending_president"
+      ].includes(r.status);
+      
+      return adminActed || adminProcessed;
+    });
+
+    // History: All requests where admin has acted OR are in final states
+    // Include requests that admin approved/processed (even if still in intermediate states)
+    // Also include all final states (approved, rejected, completed)
     const historyRequests = headApprovedRequests.filter((r: any) => {
-      // Include requests where admin already acted (regardless of current status)
-      const adminActed = !!(r.admin_approved_at || r.admin_approved_by);
+      // Include requests where admin has acted (admin_approved_at or admin_processed_at)
+      const adminActed = !!(r.admin_approved_at || r.admin_approved_by || r.admin_processed_at || r.admin_processed_by);
       
       // Include all final states
       const isFinalState = [
@@ -347,19 +371,14 @@ export default function PageInner() {
         "completed"
       ].includes(r.status);
       
-      // Include requests that admin processed and sent to next stage
-      // (pending_comptroller, pending_hr, pending_exec, pending_hr_ack)
-      const adminProcessed = adminActed && [
-        "pending_comptroller",
-        "pending_hr",
-        "pending_exec",
-        "pending_hr_ack"
-      ].includes(r.status);
-      
-      return isFinalState || adminActed || adminProcessed;
+      // Show in history if admin acted OR if it's in final state
+      return adminActed || isFinalState;
     });
 
     const pendingList = pendingRequests
+      .map((r: any) => toRequestRowRemote(r))
+      .filter((row): row is RequestRow => row !== null); // Filter out null values
+    const trackingList = trackingRequests
       .map((r: any) => toRequestRowRemote(r))
       .filter((row): row is RequestRow => row !== null); // Filter out null values
     const historyList = historyRequests
@@ -368,6 +387,7 @@ export default function PageInner() {
 
     logger.debug("Real-time update:", {
       pending: pendingList.length,
+      tracking: trackingList.length,
       history: historyList.length,
       total: remoteRequests.length
     });
@@ -417,14 +437,41 @@ export default function PageInner() {
       previousAllRowsCount: allRows.length
     });
     
-    // Sort history by most recent first (admin_approved_at or created_at)
+    // Sort history by most recent first
+    // Priority: admin_approved_at/admin_processed_at (admin action) > updated_at > created_at
     const sortedHistory = historyList.sort((a, b) => {
       const aReq = remoteRequests.find((r: any) => r.id === a.id);
       const bReq = remoteRequests.find((r: any) => r.id === b.id);
-      const aDate = new Date(aReq?.admin_approved_at || a.date).getTime();
-      const bDate = new Date(bReq?.admin_approved_at || b.date).getTime();
+      
+      // Prioritize admin action timestamp for better sorting of recent admin approvals
+      const aDate = new Date(
+        aReq?.admin_approved_at || 
+        aReq?.admin_processed_at || 
+        aReq?.updated_at || 
+        aReq?.created_at || 
+        a.date
+      ).getTime();
+      const bDate = new Date(
+        bReq?.admin_approved_at || 
+        bReq?.admin_processed_at || 
+        bReq?.updated_at || 
+        bReq?.created_at || 
+        b.date
+      ).getTime();
       return bDate - aDate; // Descending (most recent first)
     });
+    
+    // Sort tracking by most recent first (admin_approved_at or created_at)
+    const sortedTracking = trackingList.sort((a, b) => {
+      const aReq = remoteRequests.find((r: any) => r.id === a.id);
+      const bReq = remoteRequests.find((r: any) => r.id === b.id);
+      const aDate = new Date(aReq?.admin_approved_at || aReq?.admin_processed_at || a.date).getTime();
+      const bDate = new Date(bReq?.admin_approved_at || bReq?.admin_processed_at || b.date).getTime();
+      return bDate - aDate; // Descending (most recent first)
+    });
+    
+    setTrackedRows(sortedTracking);
+    setFilteredTrackedRows(sortedTracking);
     
     setHistoryRows(sortedHistory);
     setFilteredHistoryRows(sortedHistory);
@@ -445,6 +492,8 @@ export default function PageInner() {
       console.error("[PageInner] Failed to load requests from Supabase:", remoteError);
       setAllRows([]);
       setFilteredRows([]);
+      setTrackedRows([]);
+      setFilteredTrackedRows([]);
       setHistoryRows([]);
       setFilteredHistoryRows([]);
     }
@@ -554,6 +603,33 @@ export default function PageInner() {
     
     setFilteredHistoryRows(filtered);
   }, [historyRows, historySearch, historyStatusFilter, historyDeptFilter, historyDateFrom, historyDateTo]);
+
+  // Filter tracked rows
+  useEffect(() => {
+    const searchLower = historySearch.toLowerCase();
+    const filtered = trackedRows.filter((r) => {
+      // Status filter
+      const statusMatch = historyStatusFilter === "All" || r.status === historyStatusFilter;
+      
+      // Search filter
+      const searchMatch = !searchLower || 
+        r.requester?.toLowerCase().includes(searchLower) ||
+        r.dept?.toLowerCase().includes(searchLower) ||
+        r.purpose?.toLowerCase().includes(searchLower);
+      
+      // Department filter
+      const deptMatch = historyDeptFilter === "All" || r.dept === historyDeptFilter;
+      
+      // Date range filter
+      const requestDate = new Date(r.date);
+      const fromMatch = !historyDateFrom || requestDate >= new Date(historyDateFrom);
+      const toMatch = !historyDateTo || requestDate <= new Date(historyDateTo + "T23:59:59");
+      
+      return statusMatch && searchMatch && deptMatch && fromMatch && toMatch;
+    });
+    
+    setFilteredTrackedRows(filtered);
+  }, [trackedRows, historySearch, historyStatusFilter, historyDeptFilter, historyDateFrom, historyDateTo]);
 
   // ✅ ito yung kailangan ng toolbar
   const handleDraftChange = (patch: Partial<FilterState>) => {
@@ -879,6 +955,8 @@ export default function PageInner() {
     // Update local state to remove deleted items
     setAllRows((prev) => prev.filter((r) => !ids.includes(r.id)));
     setFilteredRows((prev) => prev.filter((r) => !ids.includes(r.id)));
+    setTrackedRows((prev) => prev.filter((r) => !ids.includes(r.id)));
+    setFilteredTrackedRows((prev) => prev.filter((r) => !ids.includes(r.id)));
     setHistoryRows((prev) => prev.filter((r) => !ids.includes(r.id)));
     setFilteredHistoryRows((prev) => prev.filter((r) => !ids.includes(r.id)));
     setSelected(new Set());
@@ -913,22 +991,22 @@ export default function PageInner() {
 
   return (
     <div className="space-y-6">
-      {/* Enhanced Tab Navigation with spacing and sliding indicator */}
+      {/* Enhanced Tab Navigation with spacing and sliding indicator - 3 Tabs */}
       <div className="mx-6 relative rounded-full p-1.5 flex gap-1 shadow-md" style={{ backgroundColor: '#7A0010' }}>
         {/* Sliding background indicator */}
         <motion.div
           className="absolute top-1.5 bottom-1.5 rounded-full bg-white shadow-lg"
           initial={false}
           animate={{
-            left: activeTab === 'pending' ? '6px' : 'calc(50% + 2px)',
-            width: 'calc(50% - 8px)',
+            left: activeTab === 'pending' ? '6px' : activeTab === 'tracking' ? 'calc(33.333% + 2px)' : 'calc(66.666% + 2px)',
+            width: 'calc(33.333% - 8px)',
           }}
           transition={{ type: 'spring', stiffness: 300, damping: 30 }}
         />
         
         <button
           onClick={() => setActiveTab('pending')}
-          className={`relative z-10 flex-1 px-6 py-3 text-sm font-bold rounded-full transition-all duration-300 ${
+          className={`relative z-10 flex-1 px-4 py-3 text-sm font-bold rounded-full transition-all duration-300 ${
             activeTab === 'pending'
               ? 'text-[#7A0010]'
               : 'text-white/70 hover:text-white'
@@ -938,7 +1016,7 @@ export default function PageInner() {
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            Pending Requests
+            <span className="hidden sm:inline">Pending</span>
             {allRows.length > 0 && (
               <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
                 activeTab === 'pending' ? 'bg-[#7A0010] text-white' : 'bg-white/20 text-white'
@@ -950,8 +1028,31 @@ export default function PageInner() {
         </button>
         
         <button
+          onClick={() => setActiveTab('tracking')}
+          className={`relative z-10 flex-1 px-4 py-3 text-sm font-bold rounded-full transition-all duration-300 ${
+            activeTab === 'tracking'
+              ? 'text-[#7A0010]'
+              : 'text-white/70 hover:text-white'
+          }`}
+        >
+          <div className="flex items-center justify-center gap-2">
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            <span className="hidden sm:inline">Tracking</span>
+            {trackedRows.length > 0 && (
+              <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                activeTab === 'tracking' ? 'bg-[#7A0010] text-white' : 'bg-white/20 text-white'
+              }`}>
+                {trackedRows.length}
+              </span>
+            )}
+          </div>
+        </button>
+        
+        <button
           onClick={() => setActiveTab('history')}
-          className={`relative z-10 flex-1 px-6 py-3 text-sm font-bold rounded-full transition-all duration-300 ${
+          className={`relative z-10 flex-1 px-4 py-3 text-sm font-bold rounded-full transition-all duration-300 ${
             activeTab === 'history'
               ? 'text-[#7A0010]'
               : 'text-white/70 hover:text-white'
@@ -961,7 +1062,7 @@ export default function PageInner() {
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            History
+            <span className="hidden sm:inline">History</span>
           </div>
         </button>
       </div>
@@ -1082,6 +1183,314 @@ export default function PageInner() {
                 onMarkRead={markOneRead}
               />
             </>
+          )}
+          </motion.div>
+        ) : activeTab === 'tracking' ? (
+          <motion.div
+            key="tracking"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+            className="mx-6 space-y-6"
+          >
+          {/* Tracking KPI Cards */}
+          <KPICards
+            summary={{
+              pending: filteredTrackedRows.filter((r) => r.status === "Pending").length,
+              approved: filteredTrackedRows.filter((r) => r.status === "Approved").length,
+              completed: filteredTrackedRows.filter((r) => r.status === "Completed").length,
+              rejected: filteredTrackedRows.filter((r) => r.status === "Rejected").length,
+            }}
+          />
+
+          {/* Tracking Unified Filter Bar */}
+          <UnifiedFilterBar
+            search={historySearch}
+            onSearchChange={setHistorySearch}
+            status={historyStatusFilter}
+            onStatusChange={setHistoryStatusFilter}
+            dept={historyDeptFilter}
+            onDeptChange={setHistoryDeptFilter}
+            departments={uniqueHistoryDepts}
+            dateFrom={historyDateFrom}
+            onDateFromChange={setHistoryDateFrom}
+            dateTo={historyDateTo}
+            onDateToChange={setHistoryDateTo}
+            onClear={() => {
+              setHistorySearch("");
+              setHistoryStatusFilter("All");
+              setHistoryDeptFilter("All");
+              setHistoryDateFrom("");
+              setHistoryDateTo("");
+            }}
+            hasActiveFilters={
+              historySearch !== "" ||
+              historyStatusFilter !== "All" ||
+              historyDeptFilter !== "All" ||
+              historyDateFrom !== "" ||
+              historyDateTo !== ""
+            }
+            resultsCount={filteredTrackedRows.length}
+            totalCount={trackedRows.length}
+          />
+          
+          {filteredTrackedRows.length === 0 ? (
+            <div className="text-center py-12 text-neutral-500">
+              <svg className="mx-auto h-12 w-12 text-neutral-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              <p className="text-lg font-medium text-neutral-600 mb-2">No Tracked Requests</p>
+              <p className="text-sm text-neutral-500">Requests that pass through admin will appear here.</p>
+            </div>
+          ) : (
+            filteredTrackedRows.map((item) => {
+              // Get the original request to check admin action and workflow status
+              const originalReq = remoteRequests?.find((r: any) => r.id === item.id);
+              const adminApproved = originalReq?.admin_approved_at || originalReq?.admin_processed_at;
+              const adminRejected = (originalReq as any)?.admin_rejected_at;
+              
+              // Get all approval timestamps and approver info
+              const headApproved = originalReq?.head_approved_at;
+              const headApprover = originalReq?.head_approver || originalReq?.parent_head_approver;
+              const headSignature = originalReq?.head_signature || originalReq?.parent_head_signature;
+              
+              const comptrollerApproved = originalReq?.comptroller_approved_at;
+              const comptrollerApprover = originalReq?.comptroller_approver;
+              const comptrollerSignature = originalReq?.comptroller_signature;
+              
+              const hrApproved = originalReq?.hr_approved_at;
+              const hrApprover = originalReq?.hr_approver;
+              const hrSignature = originalReq?.hr_signature;
+              
+              const vpApproved = originalReq?.vp_approved_at || originalReq?.exec_approved_at;
+              const vpApprover = originalReq?.vp_approver || originalReq?.exec_approver;
+              const vpSignature = originalReq?.vp_signature || originalReq?.exec_signature;
+              
+              const presidentApproved = originalReq?.president_approved_at;
+              const presidentApprover = originalReq?.president_approver;
+              const presidentSignature = originalReq?.president_signature;
+              
+              const adminApprover = originalReq?.admin_approver;
+              const adminSignature = originalReq?.admin_signature;
+              
+              // Check if requester is a head (important for skipping Head stage)
+              const requesterIsHead = originalReq?.requester_is_head === true;
+              
+              // Determine current workflow stage
+              const currentStatus = originalReq?.status || item.status;
+              
+              // Define workflow stages with approval history data
+              // IMPORTANT: Skip Head stage if requester is a head (they don't approve their own requests)
+              const stages = [
+                { 
+                  key: 'head', 
+                  label: 'Head', 
+                  approved: !!headApproved, 
+                  current: currentStatus?.includes('head') && !headApproved, 
+                  show: !requesterIsHead,
+                  approver: headApprover,
+                  signature: headSignature,
+                  approvedAt: headApproved || originalReq?.parent_head_approved_at
+                },
+                { 
+                  key: 'admin', 
+                  label: 'Admin', 
+                  approved: !!adminApproved, 
+                  current: currentStatus === 'pending_admin' && !adminApproved,
+                  approver: adminApprover,
+                  signature: adminSignature,
+                  approvedAt: adminApproved
+                },
+                { 
+                  key: 'comptroller', 
+                  label: 'Comptroller', 
+                  approved: !!comptrollerApproved, 
+                  current: currentStatus?.includes('comptroller') && !comptrollerApproved, 
+                  show: originalReq?.has_budget,
+                  approver: comptrollerApprover,
+                  signature: comptrollerSignature,
+                  approvedAt: comptrollerApproved
+                },
+                { 
+                  key: 'hr', 
+                  label: 'HR', 
+                  approved: !!hrApproved, 
+                  current: currentStatus?.includes('hr') && !hrApproved,
+                  approver: hrApprover,
+                  signature: hrSignature,
+                  approvedAt: hrApproved
+                },
+                { 
+                  key: 'vp', 
+                  label: 'VP', 
+                  approved: !!vpApproved, 
+                  current: (currentStatus?.includes('vp') || currentStatus?.includes('exec')) && !vpApproved,
+                  approver: vpApprover,
+                  signature: vpSignature,
+                  approvedAt: vpApproved
+                },
+                { 
+                  key: 'president', 
+                  label: 'President', 
+                  approved: !!presidentApproved, 
+                  current: currentStatus?.includes('president') && !presidentApproved,
+                  approver: presidentApprover,
+                  signature: presidentSignature,
+                  approvedAt: presidentApproved
+                },
+                { 
+                  key: 'approved', 
+                  label: 'Approved', 
+                  approved: currentStatus === 'approved' || currentStatus === 'completed', 
+                  current: false,
+                  approvedAt: originalReq?.final_approved_at || originalReq?.updated_at
+                },
+              ].filter(s => s.show !== false); // Filter out stages that don't apply
+
+              return (
+                <div
+                  key={item.id}
+                  onClick={() => {
+                    // When clicking tracking card, switch to history tab and open request details
+                    setActiveTab('history');
+                    fetchRequest(item.id).then((req) => {
+                      if (req) {
+                        setActiveRow(req);
+                        setOpenDetails(true);
+                        markReqRead(item.id);
+                        setUnreadIds((prev) => {
+                          const next = new Set(prev);
+                          next.delete(item.id);
+                          return next;
+                        });
+                      }
+                    });
+                  }}
+                  className="cursor-pointer rounded-lg border border-neutral-200 bg-white p-4 shadow-sm hover:border-[#7A0010] hover:shadow-md transition-all"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      {/* Request Info */}
+                      <div className="mb-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-sm font-semibold text-neutral-900 truncate">{item.dept}</span>
+                        </div>
+                        <p className="text-sm font-medium text-neutral-700 mb-2 line-clamp-2">{item.purpose}</p>
+                        <div className="flex items-center gap-4 text-xs text-neutral-500 flex-wrap">
+                          <span className="flex items-center gap-1">
+                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                            </svg>
+                            {item.requester}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                            {new Date(item.date).toLocaleDateString()}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      {/* Workflow Chain - Circular nodes with lines (clickable for history) */}
+                      <div className="flex items-center gap-1 py-2 overflow-x-auto">
+                        {stages.map((stage, index) => {
+                          const isCompleted = stage.approved;
+                          const isCurrent = stage.current;
+                          const isPending = !isCompleted && !isCurrent;
+                          const isLast = index === stages.length - 1;
+                          const hasHistory = isCompleted && (stage.approver || stage.signature || stage.approvedAt);
+                          
+                          // Determine node style
+                          let nodeClass = 'w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold border-2 transition-all ';
+                          let lineClass = 'h-0.5 flex-1 min-w-[24px] transition-all ';
+                          
+                          if (isCompleted) {
+                            nodeClass += 'bg-green-500 border-green-600 text-white shadow-md';
+                            lineClass += 'bg-green-500';
+                          } else if (isCurrent) {
+                            nodeClass += 'bg-blue-500 border-blue-600 text-white shadow-md animate-pulse';
+                            lineClass += 'bg-gray-300';
+                          } else {
+                            nodeClass += 'bg-gray-200 border-gray-300 text-gray-500';
+                            lineClass += 'bg-gray-200';
+                          }
+                          
+                          // Add hover effect if has history
+                          if (hasHistory) {
+                            nodeClass += ' cursor-pointer hover:scale-110 hover:shadow-lg';
+                          }
+                          
+                          return (
+                            <React.Fragment key={stage.key}>
+                              <div className="flex flex-col items-center relative group">
+                                <div 
+                                  className={nodeClass}
+                                  onClick={(e) => {
+                                    e.stopPropagation(); // Prevent card click
+                                    // When clicking workflow chain, switch to history tab (don't open modal)
+                                    setActiveTab('history');
+                                    // Mark as read
+                                    markReqRead(item.id);
+                                    setUnreadIds((prev) => {
+                                      const next = new Set(prev);
+                                      next.delete(item.id);
+                                      return next;
+                                    });
+                                  }}
+                                  title={`Click to view ${item.purpose || 'request'} in history`}
+                                >
+                                  {isCompleted ? (
+                                    <Check className="w-4 h-4" />
+                                  ) : isCurrent ? (
+                                    <Clock className="w-4 h-4" />
+                                  ) : (
+                                    <Clock className="w-3.5 h-3.5" />
+                                  )}
+                                </div>
+                                
+                                {/* Tooltip on hover for completed stages */}
+                                {hasHistory && (
+                                  <div className="absolute bottom-full mb-2 hidden group-hover:block z-10 w-48 p-2 bg-gray-900 text-white text-xs rounded-lg shadow-lg">
+                                    <div className="font-semibold mb-1">{stage.label} Approval</div>
+                                    {stage.approver?.name && (
+                                      <div className="text-gray-300">By: {stage.approver.name}</div>
+                                    )}
+                                    {stage.approvedAt && (
+                                      <div className="text-gray-300">
+                                        {new Date(stage.approvedAt).toLocaleDateString('en-US', { 
+                                          month: 'short', 
+                                          day: 'numeric', 
+                                          year: 'numeric',
+                                          timeZone: 'Asia/Manila'
+                                        })}
+                                      </div>
+                                    )}
+                                    {stage.signature && (
+                                      <div className="text-green-400 mt-1">✓ Signed</div>
+                                    )}
+                                  </div>
+                                )}
+                                
+                                <span className={`text-[10px] mt-1 font-medium whitespace-nowrap ${
+                                  isCompleted ? 'text-green-600' : 
+                                  isCurrent ? 'text-blue-600' : 
+                                  'text-gray-400'
+                                }`}>
+                                  {stage.label}
+                                </span>
+                              </div>
+                              {!isLast && <div className={lineClass} />}
+                            </React.Fragment>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
           )}
           </motion.div>
         ) : (

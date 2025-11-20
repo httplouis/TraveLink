@@ -49,8 +49,11 @@ export default function ComptrollerLeftNav() {
       try {
         const res = await fetch("/api/comptroller/inbox/count");
         if (res.ok) {
-          const data = await res.json();
-          setPendingCount(data.count || 0);
+          const contentType = res.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            const data = await res.json();
+            setPendingCount(data.count || 0);
+          }
         }
       } catch (error) {
         console.error("Failed to fetch pending count:", error);
@@ -68,6 +71,13 @@ export default function ComptrollerLeftNav() {
     const fetchProfile = async () => {
       try {
         const res = await fetch("/api/profile");
+        if (!res.ok) {
+          return;
+        }
+        const contentType = res.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          return;
+        }
         const data = await res.json();
         if (data.ok && data.data) {
           setUserProfile({

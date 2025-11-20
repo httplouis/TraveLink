@@ -134,7 +134,7 @@ export async function GET(
       // Driver data is in users table, not drivers table
       const { data, error } = await supabase
         .from("users")
-          .select("name, id, full_name")
+          .select("name, id, full_name, email, phone_number, profile_picture")
         .eq("id", driverId)
         .single();
       
@@ -143,7 +143,15 @@ export async function GET(
           return null;
         }
         
-        return data ? { full_name: data.name || data.full_name || 'Unknown Driver' } : null;
+        return data ? {
+          id: data.id,
+          name: data.name || data.full_name || 'Unknown Driver',
+          full_name: data.name || data.full_name || 'Unknown Driver',
+          email: data.email || null,
+          phone: data.phone_number || null,
+          phone_number: data.phone_number || null,
+          profile_picture: data.profile_picture || null
+        } : null;
       } catch (err) {
         console.error('[fetchDriver] Exception:', err);
         return null;
@@ -180,8 +188,8 @@ export async function GET(
 
     // Fetch all related data in parallel with error handling
     let requesterData, department, headApproverName, parentHeadApproverName, adminProcessorName;
-    let comptrollerApproverName, hrApproverName, vpApproverName, presidentApproverName, execApproverName;
-    let rejectedByName, assignedVehicle, assignedDriverName, preferredVehicle, preferredDriver;
+    let comptrollerApproverName, hrApproverName, vpApproverName, vp2ApproverName, presidentApproverName, execApproverName;
+    let rejectedByName, assignedVehicle, assignedDriver, preferredVehicle, preferredDriver;
     
     try {
       [
@@ -193,11 +201,12 @@ export async function GET(
       comptrollerApproverName,
       hrApproverName,
       vpApproverName,
+      vp2ApproverName,
       presidentApproverName,
       execApproverName,
       rejectedByName,
       assignedVehicle,
-      assignedDriverName,
+      assignedDriver, // Now returns full driver object, not just name
       preferredVehicle,
       preferredDriver,
       ] = await Promise.allSettled([
@@ -209,11 +218,12 @@ export async function GET(
       fetchUserName(request.comptroller_approved_by),
       fetchUserName(request.hr_approved_by),
       fetchUserName(request.vp_approved_by),
+      fetchUserName(request.vp2_approved_by),
       fetchUserName(request.president_approved_by),
       fetchUserName(request.exec_approved_by),
       fetchUserName(request.rejected_by),
       fetchVehicle(request.assigned_vehicle_id),
-      fetchUserName(request.assigned_driver_id),
+      fetchDriver(request.assigned_driver_id), // Use fetchDriver to get full driver object
       fetchVehicle(request.preferred_vehicle_id),
       fetchDriver(request.preferred_driver_id),
       ]).then(results => results.map(r => r.status === 'fulfilled' ? r.value : null));
@@ -350,6 +360,7 @@ export async function GET(
       preferred_vehicle_note: request.preferred_vehicle_note,
       preferred_driver_note: request.preferred_driver_note,
       has_parent_head: request.has_parent_head || false,
+      requires_president_approval: request.requester_is_head || (request.total_budget && parseFloat(request.total_budget) > 50000) || false,
       
       // Approval chain tracking
       head_approved_at: request.head_approved_at,
@@ -366,8 +377,19 @@ export async function GET(
       admin_processed_by: adminProcessorName,
       admin_signature: request.admin_signature,
       admin_comments: request.admin_comments,
-      assigned_vehicle: assignedVehicle,
-      assigned_driver: assignedDriverName ? { full_name: assignedDriverName } : null,
+      assigned_vehicle: assignedVehicle ? {
+        id: request.assigned_vehicle_id,
+        name: assignedVehicle.vehicle_name || assignedVehicle.model || 'Vehicle',
+        vehicle_name: assignedVehicle.vehicle_name || assignedVehicle.model || 'Vehicle',
+        plate_number: assignedVehicle.plate_number || null,
+        type: assignedVehicle.type || null,
+        capacity: assignedVehicle.capacity || null
+      } : null,
+      assigned_vehicle_id: request.assigned_vehicle_id,
+      assigned_vehicle_name: assignedVehicle ? (assignedVehicle.vehicle_name || assignedVehicle.model || `${assignedVehicle.model || 'Vehicle'} (${assignedVehicle.plate_number || 'N/A'})`) : null,
+      assigned_driver: assignedDriver || null,
+      assigned_driver_id: request.assigned_driver_id,
+      assigned_driver_name: assignedDriver ? (assignedDriver.name || assignedDriver.full_name) : null,
       
       comptroller_approved_at: request.comptroller_approved_at,
       comptroller_approved_by: comptrollerApproverName,
@@ -384,6 +406,12 @@ export async function GET(
       vp_approved_by: vpApproverName,
       vp_signature: request.vp_signature,
       vp_comments: request.vp_comments,
+      
+      vp2_approved_at: request.vp2_approved_at,
+      vp2_approved_by: vp2ApproverName,
+      vp2_signature: request.vp2_signature,
+      vp2_comments: request.vp2_comments,
+      both_vps_approved: request.both_vps_approved || false,
       
       president_approved_at: request.president_approved_at,
       president_approved_by: presidentApproverName,

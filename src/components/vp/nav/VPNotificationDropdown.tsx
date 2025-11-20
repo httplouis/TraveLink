@@ -27,6 +27,7 @@ export default function VPNotificationDropdown() {
 
   const loadNotifications = async () => {
     try {
+      console.log("[VPNotificationDropdown] 🔍 Starting parallel fetches to /api/notifications and /api/vp/inbox");
       const [notificationsRes, inboxRes] = await Promise.all([
         fetch("/api/notifications?limit=10", { 
           cache: "no-store",
@@ -35,10 +36,53 @@ export default function VPNotificationDropdown() {
         fetch("/api/vp/inbox?limit=5", { cache: "no-store" })
       ]);
       
-      const [notificationsData, inboxData] = await Promise.all([
-        notificationsRes.json(),
-        inboxRes.json()
-      ]);
+      console.log("[VPNotificationDropdown] 📡 Notifications response:", {
+        ok: notificationsRes.ok,
+        status: notificationsRes.status,
+        contentType: notificationsRes.headers.get("content-type")
+      });
+      console.log("[VPNotificationDropdown] 📡 Inbox response:", {
+        ok: inboxRes.ok,
+        status: inboxRes.status,
+        contentType: inboxRes.headers.get("content-type")
+      });
+      
+      let notificationsData: any = { ok: false, data: [] };
+      let inboxData: any = { ok: false, data: [] };
+      
+      if (notificationsRes.ok) {
+        const contentType = notificationsRes.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          console.log("[VPNotificationDropdown] ✅ Parsing notifications JSON...");
+          notificationsData = await notificationsRes.json();
+          console.log("[VPNotificationDropdown] ✅ Notifications JSON parsed:", { ok: notificationsData.ok, dataLength: notificationsData.data?.length });
+        } else {
+          console.warn("[VPNotificationDropdown] ❌ Notifications API returned non-JSON response");
+          const errorText = await notificationsRes.text();
+          console.error("[VPNotificationDropdown] ❌ Non-JSON response body:", errorText.substring(0, 500));
+        }
+      } else {
+        console.warn("[VPNotificationDropdown] ❌ Notifications API not OK:", notificationsRes.status);
+        const errorText = await notificationsRes.text();
+        console.error("[VPNotificationDropdown] ❌ Error response body:", errorText.substring(0, 500));
+      }
+      
+      if (inboxRes.ok) {
+        const contentType = inboxRes.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          console.log("[VPNotificationDropdown] ✅ Parsing inbox JSON...");
+          inboxData = await inboxRes.json();
+          console.log("[VPNotificationDropdown] ✅ Inbox JSON parsed:", { ok: inboxData.ok, dataLength: inboxData.data?.length });
+        } else {
+          console.warn("[VPNotificationDropdown] ❌ VP inbox API returned non-JSON response");
+          const errorText = await inboxRes.text();
+          console.error("[VPNotificationDropdown] ❌ Non-JSON response body:", errorText.substring(0, 500));
+        }
+      } else {
+        console.warn("[VPNotificationDropdown] ❌ VP inbox API not OK:", inboxRes.status);
+        const errorText = await inboxRes.text();
+        console.error("[VPNotificationDropdown] ❌ Error response body:", errorText.substring(0, 500));
+      }
       
       let notificationsList: Notification[] = [];
       

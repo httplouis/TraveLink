@@ -88,6 +88,17 @@ export default function HeadInboxPage() {
     try {
       logger.info("Loading head requests...");
       const res = await fetch("/api/head", { cache: "no-store" });
+      if (!res.ok) {
+        logger.error("API response not OK:", res.status, res.statusText);
+        setItems([]);
+        return;
+      }
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        logger.error("API returned non-JSON response. Content-Type:", contentType);
+        setItems([]);
+        return;
+      }
       const json = await res.json();
       if (json.ok) {
         setItems(json.data ?? []);
@@ -106,6 +117,15 @@ export default function HeadInboxPage() {
   async function loadHistory() {
     try {
       const res = await fetch("/api/head/history", { cache: "no-store" });
+      if (!res.ok) {
+        console.warn("History API not OK:", res.status);
+        return;
+      }
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        console.warn("History API returned non-JSON response");
+        return;
+      }
       const json = await res.json();
       if (json.ok) {
         setHistoryItems(json.data ?? []);

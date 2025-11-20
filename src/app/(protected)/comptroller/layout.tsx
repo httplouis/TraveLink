@@ -1,7 +1,7 @@
 // src/app/(protected)/comptroller/layout.tsx
 "use client";
 
-import { DollarSign, LogOut } from "lucide-react";
+import { LogOut } from "lucide-react";
 import ChatbotWidget from "@/components/ai/ChatbotWidget";
 import ComptrollerLeftNav from "@/components/comptroller/nav/ComptrollerLeftNav";
 import ComptrollerTopBar from "@/components/comptroller/nav/ComptrollerTopBar";
@@ -29,17 +29,6 @@ export default function ComptrollerLayout({
       <div className="flex h-screen overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100">
         {/* Left Sidebar */}
         <aside className="hidden md:flex md:flex-col md:w-64 bg-white border-r border-gray-200 shadow-lg">
-          {/* Logo Section */}
-          <div className="flex-shrink-0 flex items-center gap-3 px-6 py-5 border-b border-gray-200">
-            <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-[#7A0010] to-[#5A0010] flex items-center justify-center">
-              <DollarSign className="h-6 w-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-base font-bold text-gray-900">Travelink</h1>
-              <p className="text-xs text-gray-600">Comptroller</p>
-            </div>
-          </div>
-
           {/* Navigation */}
           <div className="flex-1 overflow-y-auto px-4 py-4">
             <ComptrollerLeftNav />

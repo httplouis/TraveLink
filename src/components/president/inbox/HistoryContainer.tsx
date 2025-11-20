@@ -1,7 +1,8 @@
 "use client";
 
 import React from "react";
-import { FileText } from "lucide-react";
+import { FileText, CheckCircle2, XCircle } from "lucide-react";
+import PresidentRequestModal from "@/components/president/PresidentRequestModal";
 import FilterBar from "@/components/common/FilterBar";
 import StatusBadge from "@/components/common/StatusBadge";
 import { NoSearchResults } from "@/components/common/EmptyState";
@@ -10,12 +11,25 @@ export default function PresidentHistoryContainer() {
   const [items, setItems] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [searchQuery, setSearchQuery] = React.useState("");
+  const [selected, setSelected] = React.useState<any | null>(null);
   const [activeFilters, setActiveFilters] = React.useState<any>({});
 
   async function load() {
     setLoading(true);
     try {
+      // Fetch approved and rejected requests
       const res = await fetch("/api/president/history", { cache: "no-store" });
+      if (!res.ok) {
+        console.warn("History API not OK:", res.status);
+        setItems([]);
+        return;
+      }
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        console.warn("History API returned non-JSON response");
+        setItems([]);
+        return;
+      }
       const json = await res.json();
       if (json.ok) {
         setItems(json.data ?? []);
@@ -30,6 +44,10 @@ export default function PresidentHistoryContainer() {
   React.useEffect(() => {
     load();
   }, []);
+
+  const handleClose = () => {
+    setSelected(null);
+  };
 
   const filteredItems = items.filter((item) => {
     const query = searchQuery.toLowerCase();
@@ -59,6 +77,7 @@ export default function PresidentHistoryContainer() {
 
   return (
     <div className="space-y-4">
+      {/* FilterBar with Search and Filters */}
       <FilterBar
         onSearch={(query) => setSearchQuery(query)}
         onFilter={(filters) => setActiveFilters(filters)}
@@ -76,28 +95,97 @@ export default function PresidentHistoryContainer() {
         placeholder="Search history by request number, requester, or purpose..."
       />
 
+      {/* History List */}
       {filteredItems.length === 0 ? (
-        <NoSearchResults query={searchQuery} />
+        <div className="text-center py-16 bg-white rounded-xl border border-gray-200">
+          <FileText className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            {searchQuery ? "No results found" : "No history yet"}
+          </h3>
+          <p className="text-gray-500">
+            {searchQuery
+              ? "Try adjusting your search terms"
+              : "Approved and rejected requests will appear here"}
+          </p>
+        </div>
       ) : (
         <div className="space-y-3">
-          {filteredItems.map((item) => (
-            <div
-              key={item.id}
-              className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm"
-            >
-              <div className="flex-1">
-                <div className="flex items-center gap-3 mb-2">
-                  <StatusBadge status={item.status} />
-                  <span className="text-sm font-semibold text-gray-900">{item.request_number || "—"}</span>
+          {filteredItems.map((item) => {
+            const requester = item.requester_name || item.requester?.name || "Unknown";
+            const department = item.department?.name || item.department?.code || "—";
+            const requestNumber = item.request_number || "—";
+            const travelDate = item.travel_start_date
+              ? new Date(item.travel_start_date).toLocaleDateString()
+              : "—";
+            const isApproved = item.status === "approved" || item.status === "pending_exec";
+            const isRejected = item.status === "rejected";
+            const actionDate = item.president_approved_at || item.rejected_at;
+
+            return (
+              <button
+                key={item.id}
+                onClick={() => setSelected(item)}
+                className="group flex w-full items-center justify-between rounded-xl border border-gray-200 bg-white px-5 py-4 text-left shadow-sm transition-all hover:border-[#7A0010]/30 hover:shadow-lg hover:scale-[1.01]"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2.5 mb-2">
+                    <span className="rounded-md bg-[#7A0010] px-2.5 py-0.5 text-xs font-bold text-white">
+                      {requestNumber}
+                    </span>
+                    {isApproved && (
+                      <span className="flex items-center gap-1 rounded-md bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
+                        <CheckCircle2 className="h-3 w-3" />
+                        Approved
+                      </span>
+                    )}
+                    {isRejected && (
+                      <span className="flex items-center gap-1 rounded-md bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">
+                        <XCircle className="h-3 w-3" />
+                        Rejected
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-3 gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-500">Requester:</span>{" "}
+                      <span className="font-medium text-gray-900">{requester}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Department:</span>{" "}
+                      <span className="font-medium text-gray-900">{department}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Travel Date:</span>{" "}
+                      <span className="font-medium text-gray-900">{travelDate}</span>
+                    </div>
+                  </div>
+                  {actionDate && (
+                    <div className="mt-2 text-xs text-gray-500">
+                      Actioned on {new Date(actionDate).toLocaleString()}
+                    </div>
+                  )}
                 </div>
-                <p className="text-sm font-medium text-gray-900 mb-1">{item.purpose || "No purpose"}</p>
-                <p className="text-xs text-gray-500">
-                  {item.requester_name || item.requester?.name || "Unknown"} • {item.department?.name || "—"}
-                </p>
-              </div>
-            </div>
-          ))}
+              </button>
+            );
+          })}
         </div>
+      )}
+
+      {/* Modal */}
+      {selected && (
+        <PresidentRequestModal
+          request={selected}
+          onClose={handleClose}
+          onApproved={() => {
+            handleClose();
+            load();
+          }}
+          onRejected={() => {
+            handleClose();
+            load();
+          }}
+          viewOnly={true}
+        />
       )}
     </div>
   );

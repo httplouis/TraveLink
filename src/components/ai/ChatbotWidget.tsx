@@ -56,7 +56,18 @@ export default function ChatbotWidget() {
       clearTimeout(timeoutId);
       
       if (!response.ok) {
+        console.warn('[ChatbotWidget] Suggestions API not OK:', response.status);
+        const errorText = await response.text();
+        console.error('[ChatbotWidget] Error response body:', errorText.substring(0, 500));
         throw new Error(`HTTP ${response.status}`);
+      }
+      
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        console.warn('[ChatbotWidget] Suggestions API returned non-JSON response. Content-Type:', contentType);
+        const errorText = await response.text();
+        console.error('[ChatbotWidget] Non-JSON response body:', errorText.substring(0, 500));
+        throw new Error('Invalid response format');
       }
       
       const data = await response.json();
@@ -103,7 +114,18 @@ export default function ChatbotWidget() {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
+        console.warn('[ChatbotWidget] Chat API not OK:', response.status, response.statusText);
+        const errorText = await response.text();
+        console.error('[ChatbotWidget] Error response body:', errorText.substring(0, 500));
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        console.warn('[ChatbotWidget] Chat API returned non-JSON response. Content-Type:', contentType);
+        const errorText = await response.text();
+        console.error('[ChatbotWidget] Non-JSON response body:', errorText.substring(0, 500));
+        throw new Error('Invalid response format');
       }
 
       const data = await response.json();

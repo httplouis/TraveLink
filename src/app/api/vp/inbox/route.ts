@@ -40,10 +40,10 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    // Get user profile to check VP status and get profile ID for filtering
+    // Get user profile to check VP/President status and get profile ID for filtering
     const { data: profile, error: profileError } = await supabase
       .from("users")
-      .select("id, name, email, is_vp, exec_type, role")
+      .select("id, name, email, is_vp, is_president, exec_type, role")
       .eq("auth_user_id", user.id)
       .single();
 
@@ -55,16 +55,17 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    if (!profile?.is_vp) {
-      console.error("[VP Inbox] Access denied - not VP");
+    // Allow both VP and President to access VP inbox (President is higher role)
+    if (!profile?.is_vp && !profile?.is_president) {
+      console.error("[VP Inbox] Access denied - not VP or President");
       return NextResponse.json(
-        { ok: false, error: "Access denied. VP role required." },
+        { ok: false, error: "Access denied. VP or President role required." },
         { status: 403 }
       );
     }
 
-    console.log(`[VP Inbox] 🔍 VP verified: ${profile.name} (ID: ${profile.id}, Email: ${user.email})`);
-    console.log(`[VP Inbox] VP details: is_vp=${profile.is_vp}, exec_type=${profile.exec_type}, role=${profile.role}`);
+    console.log(`[VP Inbox] 🔍 VP/President verified: ${profile.name} (ID: ${profile.id}, Email: ${user.email})`);
+    console.log(`[VP Inbox] Details: is_vp=${profile.is_vp}, is_president=${profile.is_president}, exec_type=${profile.exec_type}, role=${profile.role}`);
 
     // Get requests requiring VP approval
     // VP reviews requests with:

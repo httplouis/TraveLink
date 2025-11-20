@@ -40,7 +40,7 @@ export default function ComptrollerInboxPage() {
 
   // Set page title
   React.useEffect(() => {
-    document.title = "Comptroller Inbox - Travelink";
+    document.title = "TraviLink | Comptroller";
   }, []);
 
   React.useEffect(() => {
@@ -56,8 +56,14 @@ export default function ComptrollerInboxPage() {
       
       // Get current user's ID for filtering
       const profileRes = await fetch("/api/profile", { cache: "no-store" });
-      const profileData = await profileRes.json();
-      const comptrollerId = profileData?.ok ? profileData.data?.id : null;
+      let comptrollerId = null;
+      if (profileRes.ok) {
+        const contentType = profileRes.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const profileData = await profileRes.json();
+          comptrollerId = profileData?.ok ? profileData.data?.id : null;
+        }
+      }
       
       // Fetch requests with comptroller_id filter if available
       // IMPORTANT: Show ALL requests with status="pending_comptroller" regardless of assignment
@@ -66,6 +72,17 @@ export default function ComptrollerInboxPage() {
       
       logger.debug("Fetching requests from:", url);
       const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) {
+        logger.error("API response not OK:", res.status, res.statusText);
+        setRequests([]);
+        return;
+      }
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        logger.error("API returned non-JSON response. Content-Type:", contentType);
+        setRequests([]);
+        return;
+      }
       const data = await res.json();
       
       logger.debug("Received data:", { isArray: Array.isArray(data), count: Array.isArray(data) ? data.length : 0 });

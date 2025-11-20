@@ -28,6 +28,17 @@ export default function PresidentInboxContainer() {
     try {
       logger.info("Loading President requests...");
       const res = await fetch("/api/president/inbox", { cache: "no-store" });
+      if (!res.ok) {
+        logger.error("API response not OK:", res.status, res.statusText);
+        setItems([]);
+        return;
+      }
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        logger.error("API returned non-JSON response. Content-Type:", contentType);
+        setItems([]);
+        return;
+      }
       const json = await res.json();
       if (json.ok) {
         setItems(json.data ?? []);

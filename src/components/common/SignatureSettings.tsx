@@ -18,6 +18,15 @@ export default function SignatureSettings() {
     try {
       setLoadingSignature(true);
       const res = await fetch("/api/settings/signature");
+      if (!res.ok) {
+        console.warn("[SignatureSettings] Signature API not OK:", res.status);
+        return;
+      }
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        console.warn("[SignatureSettings] Signature API returned non-JSON response");
+        return;
+      }
       const data = await res.json();
       if (data.ok && data.data?.signature) {
         setSignature(data.data.signature);
@@ -40,6 +49,15 @@ export default function SignatureSettings() {
         body: JSON.stringify({ signature: dataURL }),
       });
 
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Failed to save: ${res.status} - ${errorText.substring(0, 100)}`);
+      }
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const errorText = await res.text();
+        throw new Error(`API returned non-JSON response: ${errorText.substring(0, 100)}`);
+      }
       const data = await res.json();
       if (data.ok) {
         setSignature(dataURL);

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { X, CheckCircle2, XCircle, Users, Car, UserCog, MapPin, Calendar, DollarSign, FileText, Check } from "lucide-react";
+import { X, CheckCircle2, XCircle, Users, Car, UserCog, MapPin, Calendar, DollarSign, FileText, Check, Clock } from "lucide-react";
 import { useToast } from "@/components/common/ui/Toast";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import { NameWithProfile } from "@/components/common/ProfileHoverCard";
@@ -53,6 +53,15 @@ export default function HRRequestModal({
   const loadFullRequest = async () => {
     try {
       const res = await fetch(`/api/requests/${request.id}`);
+      if (!res.ok) {
+        console.error("[HRRequestModal] API response not OK:", res.status, res.statusText);
+        return;
+      }
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        console.error("[HRRequestModal] API returned non-JSON response. Content-Type:", contentType);
+        return;
+      }
       const json = await res.json();
       
       if (json.ok && json.data) {
@@ -91,6 +100,15 @@ export default function HRRequestModal({
           if (hasComptrollerEdit) {
             try {
               const historyRes = await fetch(`/api/requests/${request.id}/history`);
+              if (!historyRes.ok) {
+                console.warn("[HRRequestModal] History API not OK:", historyRes.status);
+                return;
+              }
+              const contentType = historyRes.headers.get("content-type");
+              if (!contentType || !contentType.includes("application/json")) {
+                console.warn("[HRRequestModal] History API returned non-JSON response");
+                return;
+              }
               const historyData = await historyRes.json();
               if (historyData && historyData.ok && historyData.data && historyData.data.history) {
                 // Find the most recent budget_modified entry
@@ -228,6 +246,15 @@ export default function HRRequestModal({
         if (req.preferred_driver_id) {
           try {
             const driverRes = await fetch(`/api/users/${req.preferred_driver_id}`);
+            if (!driverRes.ok) {
+              console.warn("[HRRequestModal] Driver API not OK:", driverRes.status);
+              return;
+            }
+            const contentType = driverRes.headers.get("content-type");
+            if (!contentType || !contentType.includes("application/json")) {
+              console.warn("[HRRequestModal] Driver API returned non-JSON response");
+              return;
+            }
             const driverData = await driverRes.json();
             if (driverData.ok && driverData.data) {
               setPreferredDriverName(driverData.data.name || "Unknown Driver");
@@ -241,6 +268,15 @@ export default function HRRequestModal({
         if (req.preferred_vehicle_id) {
           try {
             const vehicleRes = await fetch(`/api/vehicles/${req.preferred_vehicle_id}`);
+            if (!vehicleRes.ok) {
+              console.warn("[HRRequestModal] Vehicle API not OK:", vehicleRes.status);
+              return;
+            }
+            const contentType = vehicleRes.headers.get("content-type");
+            if (!contentType || !contentType.includes("application/json")) {
+              console.warn("[HRRequestModal] Vehicle API returned non-JSON response");
+              return;
+            }
             const vehicleData = await vehicleRes.json();
             if (vehicleData.ok && vehicleData.data) {
               setPreferredVehicleName(vehicleData.data.name || vehicleData.data.plate_number || "Unknown Vehicle");
@@ -261,6 +297,17 @@ export default function HRRequestModal({
       try {
         // Load current HR info
         const meRes = await fetch("/api/profile");
+        if (!meRes.ok) {
+          console.warn("[HRRequestModal] Profile API not OK:", meRes.status);
+          setHrProfile({ name: "HR User", email: "" });
+          return;
+        }
+        const contentType = meRes.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          console.warn("[HRRequestModal] Profile API returned non-JSON response");
+          setHrProfile({ name: "HR User", email: "" });
+          return;
+        }
         const meData = await meRes.json();
         if (meData && meData.ok && meData.data) {
           setHrProfile(meData.data);
@@ -299,8 +346,30 @@ export default function HRRequestModal({
         fetch("/api/approvers/list?role=president")
       ]);
       
-      const vpsData = await vpsRes.json();
-      const presidentsData = await presidentsRes.json();
+      let vpsData: any = { ok: false, data: [] };
+      let presidentsData: any = { ok: false, data: [] };
+      
+      if (vpsRes.ok) {
+        const contentType = vpsRes.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          vpsData = await vpsRes.json();
+        } else {
+          console.warn("[HRRequestModal] VPs API returned non-JSON response");
+        }
+      } else {
+        console.warn("[HRRequestModal] VPs API not OK:", vpsRes.status);
+      }
+      
+      if (presidentsRes.ok) {
+        const contentType = presidentsRes.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          presidentsData = await presidentsRes.json();
+        } else {
+          console.warn("[HRRequestModal] Presidents API returned non-JSON response");
+        }
+      } else {
+        console.warn("[HRRequestModal] Presidents API not OK:", presidentsRes.status);
+      }
       
       const options: any[] = [];
       
@@ -390,6 +459,19 @@ export default function HRRequestModal({
         }),
       });
 
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error("[HRRequestModal] Approve API error:", res.status, errorText.substring(0, 200));
+        throw new Error(`Failed to approve: ${res.status}`);
+      }
+
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const errorText = await res.text();
+        console.error("[HRRequestModal] Approve API returned non-JSON. Response:", errorText.substring(0, 200));
+        throw new Error("API returned non-JSON response");
+      }
+
       const data = await res.json();
       if (data.ok) {
         toast.success("Request Approved", data.message || "Request approved successfully");
@@ -425,6 +507,19 @@ export default function HRRequestModal({
           notes: notes.trim(),
         }),
       });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error("[HRRequestModal] Reject API error:", res.status, errorText.substring(0, 200));
+        throw new Error(`Failed to reject: ${res.status}`);
+      }
+
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const errorText = await res.text();
+        console.error("[HRRequestModal] Reject API returned non-JSON. Response:", errorText.substring(0, 200));
+        throw new Error("API returned non-JSON response");
+      }
 
       const data = await res.json();
       if (data.ok) {
@@ -737,6 +832,64 @@ export default function HRRequestModal({
                   )}
                 </div>
               </section>
+
+              {/* Pickup Details - Show if transportation_type is pickup */}
+              {t?.transportation_type === 'pickup' && (t?.pickup_location || t?.pickup_time || t?.pickup_contact_number) && (
+                <section className="rounded-lg bg-gradient-to-br from-cyan-50 to-teal-50 border-2 border-cyan-200 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Car className="h-5 w-5 text-cyan-600" />
+                    <p className="text-xs font-bold uppercase tracking-wide text-cyan-700">
+                      Pickup Details
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    {t?.pickup_location && (
+                      <div className="flex items-start gap-2">
+                        <MapPin className="h-4 w-4 text-cyan-600 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1">
+                          <p className="text-xs text-cyan-700 font-medium mb-0.5">Pickup Location</p>
+                          <p className="text-sm font-semibold text-slate-900">{t.pickup_location}</p>
+                        </div>
+                      </div>
+                    )}
+                    {t?.pickup_time && (
+                      <div className="flex items-start gap-2">
+                        <Clock className="h-4 w-4 text-cyan-600 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1">
+                          <p className="text-xs text-cyan-700 font-medium mb-0.5">Pickup Time</p>
+                          <p className="text-sm font-semibold text-slate-900">
+                            {t.pickup_time.includes(':') 
+                              ? new Date(`2000-01-01T${t.pickup_time}`).toLocaleTimeString('en-US', { 
+                                  hour: '2-digit', 
+                                  minute: '2-digit', 
+                                  hour12: true 
+                                })
+                              : t.pickup_time}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {t?.pickup_contact_number && (
+                      <div className="flex items-start gap-2">
+                        <Users className="h-4 w-4 text-cyan-600 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1">
+                          <p className="text-xs text-cyan-700 font-medium mb-0.5">Contact Number</p>
+                          <p className="text-sm font-semibold text-slate-900">{t.pickup_contact_number}</p>
+                        </div>
+                      </div>
+                    )}
+                    {t?.pickup_special_instructions && (
+                      <div className="flex items-start gap-2">
+                        <FileText className="h-4 w-4 text-cyan-600 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1">
+                          <p className="text-xs text-cyan-700 font-medium mb-0.5">Special Instructions</p>
+                          <p className="text-sm text-slate-700 whitespace-pre-wrap">{t.pickup_special_instructions}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              )}
 
               {/* Participants - Same as VPRequestModal */}
               {t.participants && Array.isArray(t.participants) && t.participants.length > 0 && (
@@ -1319,6 +1472,15 @@ export default function HRRequestModal({
           fetchAllUsers={async () => {
             try {
               const allUsersRes = await fetch("/api/users/all");
+              if (!allUsersRes.ok) {
+                console.warn("[HRRequestModal] All users API not OK:", allUsersRes.status);
+                return [];
+              }
+              const contentType = allUsersRes.headers.get("content-type");
+              if (!contentType || !contentType.includes("application/json")) {
+                console.warn("[HRRequestModal] All users API returned non-JSON response");
+                return [];
+              }
               const allUsersData = await allUsersRes.json();
               if (allUsersData.ok && allUsersData.data) {
                 return allUsersData.data.map((u: any) => ({

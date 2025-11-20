@@ -6,10 +6,12 @@ import path from "path";
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
-    const requestId = params.id;
+    // Handle both Promise and direct params (Next.js 15+ uses Promise)
+    const resolvedParams = params instanceof Promise ? await params : params;
+    const requestId = resolvedParams.id;
     const supabase = await createSupabaseServerClient(true);
 
     // Get full request details
