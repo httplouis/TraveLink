@@ -42,6 +42,7 @@ export default function UserSearchableSelect({
   const [loading, setLoading] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const isClickingRef = React.useRef(false);
 
   // Fetch users from API when dropdown opens or search query changes
   React.useEffect(() => {
@@ -60,9 +61,10 @@ export default function UserSearchableSelect({
         
         const data = await response.json();
         if (data.ok && Array.isArray(data.users)) {
+          console.log('[UserSearchableSelect] ✅ Fetched users:', data.users.length);
           setUsers(data.users);
         } else {
-          console.error('[UserSearchableSelect] Invalid response format:', data);
+          console.error('[UserSearchableSelect] ❌ Invalid response format:', data);
           setUsers([]);
         }
       } catch (error) {
@@ -92,10 +94,16 @@ export default function UserSearchableSelect({
   }, [users, value]);
 
   const handleSelect = (user: User) => {
+    console.log('[UserSearchableSelect] ✅ User selected:', user.name);
+    isClickingRef.current = true;
     onChange(user.name);
     setSearchQuery("");
     setIsOpen(false);
     setActiveIndex(0);
+    // Reset flag after a short delay
+    setTimeout(() => {
+      isClickingRef.current = false;
+    }, 100);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -126,8 +134,10 @@ export default function UserSearchableSelect({
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-        setSearchQuery("");
+        if (!isClickingRef.current) {
+          setIsOpen(false);
+          setSearchQuery("");
+        }
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -155,9 +165,17 @@ export default function UserSearchableSelect({
               setIsOpen(true);
               setSearchQuery("");
             }}
-            onBlur={() => {
+            onBlur={(e) => {
+              // Don't close if clicking inside the dropdown
+              if (isClickingRef.current) {
+                return;
+              }
               // Delay to allow click on option
-              setTimeout(() => setIsOpen(false), 200);
+              setTimeout(() => {
+                if (!isClickingRef.current) {
+                  setIsOpen(false);
+                }
+              }, 200);
             }}
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
@@ -195,7 +213,10 @@ export default function UserSearchableSelect({
                 <button
                   key={user.id}
                   type="button"
-                  onClick={() => handleSelect(user)}
+                  onMouseDown={(e) => {
+                    e.preventDefault(); // Prevent input blur
+                    handleSelect(user);
+                  }}
                   onMouseEnter={() => setActiveIndex(idx)}
                   className={`w-full px-4 py-3 text-left transition-colors ${
                     idx === activeIndex
