@@ -43,45 +43,48 @@ export default function UserSearchableSelect({
   const inputRef = React.useRef<HTMLInputElement>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
 
-  // Fetch users from API
+  // Fetch users from API when dropdown opens or search query changes
   React.useEffect(() => {
+    if (!isOpen) return;
+
     const fetchUsers = async () => {
       setLoading(true);
       try {
-        const response = await fetch(`/api/users/search?q=${encodeURIComponent(searchQuery)}`);
+        const queryParam = searchQuery.trim() ? `q=${encodeURIComponent(searchQuery)}` : '';
+        const url = `/api/users/search${queryParam ? `?${queryParam}` : ''}`;
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
         const data = await response.json();
-        if (data.ok && data.users) {
+        if (data.ok && Array.isArray(data.users)) {
           setUsers(data.users);
+        } else {
+          console.error('[UserSearchableSelect] Invalid response format:', data);
+          setUsers([]);
         }
       } catch (error) {
-        console.error('Failed to fetch users:', error);
+        console.error('[UserSearchableSelect] Failed to fetch users:', error);
+        setUsers([]);
       } finally {
         setLoading(false);
       }
     };
 
-    // Debounce search
+    // Debounce search queries, but fetch immediately when dropdown opens
     const timeoutId = setTimeout(() => {
-      if (isOpen) {
-        fetchUsers();
-      }
-    }, 300);
+      fetchUsers();
+    }, searchQuery.trim() ? 300 : 0); // No delay for initial load
 
     return () => clearTimeout(timeoutId);
   }, [searchQuery, isOpen]);
 
-  // Filter users based on search query (client-side for instant feedback)
+  // Use API-filtered results directly (no client-side filtering needed)
   const filteredUsers = React.useMemo(() => {
-    if (!searchQuery.trim()) return users;
-    
-    const query = searchQuery.toLowerCase();
-    return users.filter((user) => {
-      const nameMatch = user.name?.toLowerCase().includes(query);
-      const emailMatch = user.email?.toLowerCase().includes(query);
-      const deptMatch = user.department?.toLowerCase().includes(query);
-      return nameMatch || emailMatch || deptMatch;
-    });
-  }, [users, searchQuery]);
+    return users;
+  }, [users]);
 
   // Get selected user
   const selectedUser = React.useMemo(() => {
