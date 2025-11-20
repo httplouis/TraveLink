@@ -31,21 +31,22 @@ export default function FeedbackQRCode({
         // Use dynamic import for QR code library (only on client)
         if (typeof window === "undefined") return;
         
-        // Try to import qrcode, but handle gracefully if not available
-        // Use a function to prevent Next.js from trying to resolve at build time
-        const loadQRCode = async () => {
-          try {
-            // @ts-ignore - qrcode may not be installed
-            const qrcodeModule = await import("qrcode");
-            return qrcodeModule.default || qrcodeModule;
-          } catch {
-            return null;
-          }
-        };
+        // Use eval to prevent Next.js from trying to resolve at build time
+        // This makes the import truly optional
+        let QRCode;
+        try {
+          // Dynamic import with error handling
+          const qrcodeModule = await new Function('return import("qrcode")')();
+          QRCode = qrcodeModule.default || qrcodeModule;
+        } catch (importError: any) {
+          // Package not installed or import failed
+          console.warn("[Feedback QR] QR code library not available:", importError?.message || "Package not found");
+          // Component will show URL only without QR code
+          return;
+        }
         
-        const QRCode = await loadQRCode();
-        if (!QRCode) {
-          console.warn("[Feedback QR] QR code library not available, showing URL only");
+        if (!QRCode || typeof QRCode.toDataURL !== 'function') {
+          console.warn("[Feedback QR] QR code library not properly loaded");
           return;
         }
         
@@ -60,7 +61,7 @@ export default function FeedbackQRCode({
         setQrDataUrl(dataUrl);
       } catch (error) {
         console.error("[Feedback QR] Failed to generate QR code:", error);
-        // Don't set qrDataUrl on error - component will show loading state
+        // Don't set qrDataUrl on error - component will show URL only
       }
     };
 

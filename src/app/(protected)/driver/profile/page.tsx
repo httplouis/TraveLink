@@ -6,7 +6,10 @@ import ProfileView, { type PasswordState } from "@/components/driver/profile/Pro
 import { loadProfile, saveProfile, seedFromMock } from "@/lib/data/driverProfile";
 
 export default function DriverProfilePage() {
-  const [profile, setProfile] = useState<DriverProfile>(seedFromMock());
+  const [profile, setProfile] = useState<DriverProfile>(() => {
+    // Initialize with default profile, will be replaced by loadProfile in useEffect
+    return seedFromMock();
+  });
   const [password, setPassword] = useState<PasswordState>({ new: "", confirm: "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
