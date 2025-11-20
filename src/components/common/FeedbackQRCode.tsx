@@ -28,8 +28,27 @@ export default function FeedbackQRCode({
   React.useEffect(() => {
     const generateQR = async () => {
       try {
-        // Use dynamic import for QR code library
-        const QRCode = (await import("qrcode")).default;
+        // Use dynamic import for QR code library (only on client)
+        if (typeof window === "undefined") return;
+        
+        // Try to import qrcode, but handle gracefully if not available
+        // Use a function to prevent Next.js from trying to resolve at build time
+        const loadQRCode = async () => {
+          try {
+            // @ts-ignore - qrcode may not be installed
+            const qrcodeModule = await import("qrcode");
+            return qrcodeModule.default || qrcodeModule;
+          } catch {
+            return null;
+          }
+        };
+        
+        const QRCode = await loadQRCode();
+        if (!QRCode) {
+          console.warn("[Feedback QR] QR code library not available, showing URL only");
+          return;
+        }
+        
         const dataUrl = await QRCode.toDataURL(url, {
           width: 256,
           margin: 2,
@@ -41,6 +60,7 @@ export default function FeedbackQRCode({
         setQrDataUrl(dataUrl);
       } catch (error) {
         console.error("[Feedback QR] Failed to generate QR code:", error);
+        // Don't set qrDataUrl on error - component will show loading state
       }
     };
 

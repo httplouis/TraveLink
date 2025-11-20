@@ -111,3 +111,8 @@ export async function saveProfile(p: DriverProfile): Promise<void> {
     localStorage.setItem(LS_KEY, JSON.stringify(p));
   }
 }
+
+// Export seedFromMock function for initial state
+export function seedFromMock(): DriverProfile {
+  return getDefaultProfile();
+}
