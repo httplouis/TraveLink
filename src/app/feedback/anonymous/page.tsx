@@ -6,7 +6,7 @@
 
 "use client";
 
-import React from "react";
+import React, { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { CheckCircle, Star, MessageSquare, AlertCircle } from "lucide-react";
@@ -17,7 +17,7 @@ type FormData = {
   category: string;
 };
 
-export default function AnonymousFeedbackPage() {
+function AnonymousFeedbackPageContent() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
   const requestId = searchParams.get("request");
@@ -225,3 +225,17 @@ export default function AnonymousFeedbackPage() {
   );
 }
 
+export default function AnonymousFeedbackPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-br from-[#7A0010] to-[#9c2a3a] flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full text-center">
+          <div className="animate-spin h-12 w-12 border-4 border-[#7A0010] border-t-transparent rounded-full mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    }>
+      <AnonymousFeedbackPageContent />
+    </Suspense>
+  );
+}
