@@ -230,11 +230,11 @@ export async function POST(request: Request) {
             user_id: request.requester_id,
             notification_type: "request_approved",
             title: "Request Fully Approved",
-            message: `Your travel order request ${request.request_number || ''} has been fully approved by the President. You can now download the approval form.`,
+            message: `Your travel order request ${request.request_number || ''} has been fully approved! The approval process is complete. You can now download the Travel Order PDF from your dashboard or submissions page.`,
             related_type: "request",
             related_id: requestId,
             action_url: `/user/submissions?view=${requestId}`,
-            action_label: "View Details",
+            action_label: "View & Download PDF",
             priority: "high",
           });
         }

@@ -13,6 +13,15 @@ export default function PresidentInboxPage() {
     const fetchCount = async () => {
       try {
         const res = await fetch("/api/president/inbox", { cache: "no-store" });
+        if (!res.ok) {
+          console.warn("President inbox count API not OK:", res.status);
+          return;
+        }
+        const contentType = res.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          console.warn("President inbox count API returned non-JSON response");
+          return;
+        }
         const data = await res.json();
         if (data.ok) {
           setPendingCount(data.data?.length || 0);

@@ -20,6 +20,7 @@ export default function DashboardContainer() {
   const [analytics, setAnalytics] = React.useState<any>(null);
   const [aiInsights, setAiInsights] = React.useState<any>(null);
   const [recentActivity, setRecentActivity] = React.useState<any[]>([]);
+  const [approvedRequests, setApprovedRequests] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
 
   const logger = createLogger("UserDashboard");
@@ -33,11 +34,21 @@ export default function DashboardContainer() {
 
         // Fetch critical data first (profile, stats) - these are needed immediately
         const [profileRes, statsRes] = await Promise.all([
-          fetch('/api/profile', { cache: 'force-cache', next: { revalidate: 60 } }).catch(() => ({ ok: false })),
-          fetch('/api/user/dashboard/stats', { cache: 'no-store' }).catch(() => ({ ok: false })),
+          fetch('/api/profile', { cache: 'force-cache', next: { revalidate: 60 } }).catch(() => ({ ok: false, headers: new Headers() })),
+          fetch('/api/user/dashboard/stats', { cache: 'no-store' }).catch(() => ({ ok: false, headers: new Headers() })),
         ]);
 
-        const profileData = await profileRes.json().catch(() => ({ ok: false }));
+        let profileData: any = { ok: false };
+        if (profileRes.ok) {
+          const contentType = profileRes.headers?.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            try {
+              profileData = await profileRes.json();
+            } catch (e) {
+              logger.warn("Failed to parse profile JSON:", e);
+            }
+          }
+        }
         if (profileData.ok && profileData.data?.name) {
           // Import name formatting utility to skip titles like "Dr.", "Atty."
           const { getFirstName } = await import('@/lib/utils/name-formatting');
@@ -45,7 +56,17 @@ export default function DashboardContainer() {
           setUserName(firstName);
         }
 
-        const statsData = await statsRes.json().catch(() => ({ ok: false }));
+        let statsData: any = { ok: false };
+        if (statsRes.ok) {
+          const contentType = statsRes.headers?.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            try {
+              statsData = await statsRes.json();
+            } catch (e) {
+              logger.warn("Failed to parse stats JSON:", e);
+            }
+          }
+        }
         if (statsData.ok && statsData.data) {
           setKpis([
             { label: "Active Requests", value: statsData.data.activeRequests || 0 },
@@ -55,11 +76,12 @@ export default function DashboardContainer() {
         }
 
         // Fetch non-critical data in parallel (can load after initial render)
-        const [vehiclesRes, analyticsRes, aiInsightsRes, activityRes] = await Promise.all([
+        const [vehiclesRes, analyticsRes, aiInsightsRes, activityRes, approvedRes] = await Promise.all([
           fetch('/api/vehicles?status=available', { cache: 'force-cache', next: { revalidate: 300 } }).catch(() => ({ ok: false })),
           fetch('/api/user/dashboard/analytics', { cache: 'force-cache', next: { revalidate: 300 } }).catch(() => ({ ok: false })),
           fetch('/api/user/dashboard/ai-insights', { cache: 'force-cache', next: { revalidate: 300 } }).catch(() => ({ ok: false })),
           fetch('/api/user/dashboard/recent-activity', { cache: 'no-store' }).catch(() => ({ ok: false })),
+          fetch('/api/user/dashboard/approved-requests', { cache: 'no-store' }).catch(() => ({ ok: false })),
         ]);
 
         // Process vehicles
@@ -84,6 +106,12 @@ export default function DashboardContainer() {
         const activityData = await activityRes.json().catch(() => ({ ok: false }));
         if (activityData.ok) {
           setRecentActivity(activityData.data || []);
+        }
+
+        // Process approved requests
+        const approvedData = await approvedRes.json().catch(() => ({ ok: false }));
+        if (approvedData.ok) {
+          setApprovedRequests(approvedData.data || []);
         }
         
         logger.success("Dashboard data loaded successfully");
@@ -114,14 +142,8 @@ export default function DashboardContainer() {
       <DashboardView
         kpis={kpis}
         trips={[]}
-        vehicles={vehicles}
-        userName={userName}
-        analytics={analytics}
-        aiInsights={aiInsights}
-        recentActivity={recentActivity}
-        loading={false}
+        approvedRequests={approvedRequests}
         onOpenSchedule={() => router.push("/user/schedule")}
-        onNewRequest={() => router.push("/user/request")}
       />
     </>
   );

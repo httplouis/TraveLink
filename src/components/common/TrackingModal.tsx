@@ -294,6 +294,8 @@ export default function TrackingModal({ isOpen, onClose, requestId }: TrackingMo
                   requesterIsHead={data.requester_is_head}
                   hasBudget={data.has_budget}
                   hasParentHead={data.has_parent_head}
+                  requiresPresidentApproval={data.requires_president_approval}
+                  bothVpsApproved={data.both_vps_approved || false}
                   headApprovedAt={data.head_approved_at}
                   headApprovedBy={data.head_approved_by}
                   parentHeadApprovedAt={data.parent_head_approved_at}
@@ -306,6 +308,8 @@ export default function TrackingModal({ isOpen, onClose, requestId }: TrackingMo
                   hrApprovedBy={data.hr_approved_by}
                   vpApprovedAt={data.vp_approved_at}
                   vpApprovedBy={data.vp_approved_by}
+                  vp2ApprovedAt={data.vp2_approved_at}
+                  vp2ApprovedBy={data.vp2_approved_by}
                   presidentApprovedAt={data.president_approved_at}
                   presidentApprovedBy={data.president_approved_by}
                   execApprovedAt={data.exec_approved_at}
@@ -318,7 +322,7 @@ export default function TrackingModal({ isOpen, onClose, requestId }: TrackingMo
 
               {/* Comments Section */}
               {(data.head_comments || data.admin_comments || data.comptroller_comments || 
-                data.hr_comments || data.vp_comments || data.president_comments || data.exec_comments || data.rejection_reason) && (
+                data.hr_comments || data.vp_comments || data.vp2_comments || data.president_comments || data.exec_comments || data.rejection_reason) && (
                 <div className="border-t border-gray-200 pt-6">
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">
                     Comments & Notes
@@ -362,6 +366,14 @@ export default function TrackingModal({ isOpen, onClose, requestId }: TrackingMo
                           Vice President
                         </p>
                         <p className="text-sm text-indigo-900">{data.vp_comments}</p>
+                      </div>
+                    )}
+                    {data.vp2_comments && (
+                      <div className="bg-indigo-50 border-l-4 border-indigo-500 p-3 rounded">
+                        <p className="text-xs font-semibold text-indigo-900 uppercase mb-1">
+                          Second Vice President
+                        </p>
+                        <p className="text-sm text-indigo-900">{data.vp2_comments}</p>
                       </div>
                     )}
                     {data.president_comments && (

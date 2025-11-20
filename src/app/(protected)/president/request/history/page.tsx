@@ -26,8 +26,24 @@ export default function PresidentHistoryPage() {
   React.useEffect(() => {
     logger.info("Loading President history...");
     fetch("/api/president/history")
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) {
+          logger.warn("President history API not OK:", res.status);
+          return null;
+        }
+        const contentType = res.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          logger.warn("President history API returned non-JSON response");
+          return null;
+        }
+        return res.json();
+      })
       .then(data => {
+        if (!data) {
+          setItems([]);
+          setLoading(false);
+          return;
+        }
         if (data.ok) {
           setItems(data.data || []);
           logger.success(`Loaded ${data.data?.length || 0} history items`);

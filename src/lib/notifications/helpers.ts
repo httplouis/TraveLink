@@ -3,7 +3,7 @@
  * Helper functions for creating notifications consistently
  */
 
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 
 export interface NotificationData {
   user_id: string;
@@ -30,7 +30,22 @@ export async function createNotification(data: NotificationData): Promise<boolea
       related_id: data.related_id
     });
     
-    const supabase = await createSupabaseServerClient(true);
+    // Use createClient directly with service_role key to bypass RLS
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error("[createNotification] ❌ Missing Supabase configuration");
+      return false;
+    }
+    
+    // Service role client for database operations (bypasses RLS completely)
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
     
     const { data: insertedData, error } = await supabase
       .from("notifications")

@@ -224,6 +224,8 @@ export default function ComprehensiveRequestModal({ isOpen, onClose, requestId }
                   requesterIsHead={data.requester_is_head}
                   hasBudget={data.has_budget}
                   hasParentHead={data.has_parent_head}
+                  requiresPresidentApproval={data.requires_president_approval}
+                  bothVpsApproved={data.both_vps_approved || false}
                   headApprovedAt={data.head_approved_at}
                   headApprovedBy={data.head_approved_by}
                   parentHeadApprovedAt={data.parent_head_approved_at}
@@ -236,6 +238,8 @@ export default function ComprehensiveRequestModal({ isOpen, onClose, requestId }
                   hrApprovedBy={data.hr_approved_by}
                   vpApprovedAt={data.vp_approved_at}
                   vpApprovedBy={data.vp_approved_by}
+                  vp2ApprovedAt={data.vp2_approved_at}
+                  vp2ApprovedBy={data.vp2_approved_by}
                   presidentApprovedAt={data.president_approved_at}
                   presidentApprovedBy={data.president_approved_by}
                   execApprovedAt={data.exec_approved_at}

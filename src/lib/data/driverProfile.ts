@@ -32,6 +32,15 @@ export async function loadProfile(): Promise<DriverProfile> {
   try {
     // Fetch from API first
     const response = await fetch('/api/profile');
+    if (!response.ok) {
+      console.warn('[loadProfile] Profile API not OK:', response.status);
+      throw new Error(`Profile API returned ${response.status}`);
+    }
+    const contentType = response.headers.get("content-type");
+    if (!contentType || !contentType.includes("application/json")) {
+      console.warn('[loadProfile] Profile API returned non-JSON response');
+      throw new Error("Profile API returned non-JSON response");
+    }
     const result = await response.json();
     
     if (result.ok && result.data) {

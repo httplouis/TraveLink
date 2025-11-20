@@ -66,8 +66,29 @@ export interface RequestData {
   cost_justification?: string;
   preferred_vehicle?: string;
   preferred_driver?: string;
+  preferred_driver_id?: string | null;
+  preferred_vehicle_id?: string | null;
   preferred_vehicle_note?: string;
   preferred_driver_note?: string;
+  assigned_driver_id?: string | null;
+  assigned_vehicle_id?: string | null;
+  assigned_driver?: {
+    id: string;
+    name: string;
+    email?: string;
+    phone?: string;
+    profile_picture?: string;
+  } | null;
+  assigned_vehicle?: {
+    id: string;
+    name: string;
+    plate_number?: string;
+    type?: string;
+    capacity?: number;
+  } | null;
+  assigned_driver_name?: string;
+  assigned_vehicle_name?: string;
+  driver_contact_number?: string;
   status: string;
   
   requester: {
@@ -532,12 +553,16 @@ export default function RequestDetailsView({
   };
 
   // Debug vehicle/driver data
-  console.log('RequestDetailsView DEBUG:', {
-    transportation_type: request.transportation_type,
-    preferred_vehicle: request.preferred_vehicle,
+  console.log('[RequestDetailsView] 🔍 DEBUG - Driver/Vehicle Data:', {
+    preferred_driver_id: request.preferred_driver_id,
+    preferred_driver_name: request.preferred_driver_name,
     preferred_driver: request.preferred_driver,
-    preferred_vehicle_note: request.preferred_vehicle_note,
-    preferred_driver_note: request.preferred_driver_note
+    preferred_vehicle_id: request.preferred_vehicle_id,
+    preferred_vehicle_name: request.preferred_vehicle_name,
+    preferred_vehicle: request.preferred_vehicle,
+    cost_justification: request.cost_justification,
+    hasCostJustification: !!request.cost_justification,
+    costJustificationLength: request.cost_justification?.length || 0
   });
 
   const formatDate = (dateString: string) => {
@@ -876,11 +901,16 @@ export default function RequestDetailsView({
                   )}
 
                   {/* Budget Justification */}
-                  {request.cost_justification && (
-                    <div className="bg-white rounded-lg border border-gray-200 p-6">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Budget Justification</h3>
-                      <p className="text-gray-700 whitespace-pre-wrap">{request.cost_justification}</p>
-                    </div>
+                  {(request.cost_justification && request.cost_justification.trim() !== '') && (
+                    <WowCard className="p-6 bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200">
+                      <h3 className="text-lg font-bold text-amber-900 mb-3 flex items-center gap-2">
+                        <FileText className="w-5 h-5 text-amber-700" />
+                        Budget Justification
+                      </h3>
+                      <div className="bg-white rounded-md border border-amber-200 p-4 text-sm text-gray-800 leading-relaxed shadow-sm">
+                        <p className="whitespace-pre-wrap">{request.cost_justification}</p>
+                      </div>
+                    </WowCard>
                   )}
 
                   {/* Vehicle Mode */}
@@ -928,6 +958,81 @@ export default function RequestDetailsView({
                         )}
                       </div>
                     </div>
+                  )}
+
+                  {/* Assigned Driver and Vehicle (Admin Assignment) */}
+                  {(request.assigned_driver || request.assigned_vehicle) && (
+                    <WowCard className="p-6 bg-gradient-to-br from-green-50 to-white border-2 border-green-200">
+                      <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                        <div className="p-2 bg-green-600 rounded-lg">
+                          <User className="w-5 h-5 text-white" />
+                        </div>
+                        Assigned Driver & Vehicle
+                      </h3>
+                      <div className="space-y-4">
+                        {/* Assigned Driver */}
+                        {request.assigned_driver && (
+                          <div className="p-4 bg-white rounded-lg border border-green-200">
+                            <div className="flex items-start gap-3">
+                              {request.assigned_driver.profile_picture && (
+                                <ProfilePicture
+                                  src={request.assigned_driver.profile_picture}
+                                  name={request.assigned_driver.name}
+                                  size="md"
+                                />
+                              )}
+                              <div className="flex-1">
+                                <p className="text-xs font-medium text-gray-500 mb-1">Assigned Driver</p>
+                                <p className="text-base font-bold text-gray-900">{request.assigned_driver.name}</p>
+                                {request.assigned_driver.email && (
+                                  <p className="text-sm text-gray-600 mt-1">{request.assigned_driver.email}</p>
+                                )}
+                                {request.assigned_driver.phone && (
+                                  <p className="text-sm text-gray-600">{request.assigned_driver.phone}</p>
+                                )}
+                                {request.driver_contact_number && (
+                                  <p className="text-sm text-gray-600 mt-1">
+                                    <span className="font-medium">Contact:</span> {request.driver_contact_number}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Assigned Vehicle */}
+                        {request.assigned_vehicle && (
+                          <div className="p-4 bg-white rounded-lg border border-green-200">
+                            <div className="flex items-start gap-3">
+                              <div className="p-2 bg-gray-100 rounded-lg">
+                                <Car className="w-5 h-5 text-gray-700" />
+                              </div>
+                              <div className="flex-1">
+                                <p className="text-xs font-medium text-gray-500 mb-1">Assigned Vehicle</p>
+                                <p className="text-base font-bold text-gray-900">
+                                  {request.assigned_vehicle.name}
+                                  {request.assigned_vehicle.plate_number && (
+                                    <span className="text-sm font-normal text-gray-600 ml-2">
+                                      • {request.assigned_vehicle.plate_number}
+                                    </span>
+                                  )}
+                                </p>
+                                {request.assigned_vehicle.type && (
+                                  <p className="text-sm text-gray-600 mt-1 capitalize">
+                                    Type: {request.assigned_vehicle.type}
+                                  </p>
+                                )}
+                                {request.assigned_vehicle.capacity && (
+                                  <p className="text-sm text-gray-600">
+                                    Capacity: {request.assigned_vehicle.capacity} passengers
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </WowCard>
                   )}
 
                   {/* Transportation Details */}
@@ -1497,6 +1602,7 @@ export default function RequestDetailsView({
                       hasBudget={request.hasBudget}
                       hasParentHead={request.hasParentHead}
                       requiresPresidentApproval={request.requiresPresidentApproval}
+                      bothVpsApproved={request.bothVpsApproved || false}
                       headApprovedAt={request.headApprovedAt}
                       headApprovedBy={request.headApprovedBy}
                       parentHeadApprovedAt={request.parentHeadApprovedAt}
@@ -1509,6 +1615,8 @@ export default function RequestDetailsView({
                       hrApprovedBy={request.hrApprovedBy}
                       vpApprovedAt={request.vpApprovedAt}
                       vpApprovedBy={request.vpApprovedBy}
+                      vp2ApprovedAt={request.vp2ApprovedAt}
+                      vp2ApprovedBy={request.vp2ApprovedBy}
                       presidentApprovedAt={request.presidentApprovedAt}
                       presidentApprovedBy={request.presidentApprovedBy}
                       execApprovedAt={request.execApprovedAt}
@@ -1996,20 +2104,27 @@ export default function RequestDetailsView({
               <button
                 onClick={async () => {
                   try {
-                    // Use the same PDF generation as admin modal
-                    const { generateRequestPDF } = await import('@/lib/admin/requests/pdfWithTemplate');
-                    const { generateSeminarPDF } = await import('@/lib/admin/requests/pdfSeminar');
-                    
-                    // Check if it's a seminar request
-                    if (request.request_type === 'seminar' && request.seminar_data) {
-                      await generateSeminarPDF(request as any);
-                    } else {
-                      // Regular travel order
-                      await generateRequestPDF(request as any);
+                    // Use API route for PDF generation (more reliable)
+                    const res = await fetch(`/api/requests/${request.id}/pdf`);
+                    if (!res.ok) {
+                      const errorText = await res.text();
+                      console.error('PDF API error:', res.status, errorText);
+                      throw new Error(`Failed to generate PDF: ${res.status}`);
                     }
+                    
+                    // Get the PDF blob
+                    const blob = await res.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `travel-order-${request.request_number || request.id}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
                   } catch (err) {
                     console.error('Failed to generate PDF:', err);
-                    alert('Failed to generate PDF. Please try again.');
+                    alert(`Failed to generate PDF: ${err instanceof Error ? err.message : 'Unknown error'}. Please try again.`);
                   }
                 }}
                 className="flex items-center gap-2 w-full justify-center rounded-md bg-[#7A0010] hover:bg-[#5c000c] px-4 py-2.5 text-sm font-medium text-white transition"

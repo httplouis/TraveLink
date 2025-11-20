@@ -29,11 +29,37 @@ export default function PresidentDashboard() {
   const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
-    fetch("/api/president/analytics")
-      .then(res => res.json())
+    fetch("/api/president/stats")
+      .then(res => {
+        if (!res.ok) {
+          console.warn("President stats API not OK:", res.status);
+          return null;
+        }
+        const contentType = res.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          console.warn("President stats API returned non-JSON response");
+          return null;
+        }
+        return res.json();
+      })
       .then(data => {
-        if (data.ok) {
-          setStats(data.stats || mockStats);
+        if (!data) {
+          setStats(mockStats);
+          setLoading(false);
+          return;
+        }
+        if (data.ok && data.data) {
+          // Map stats data to the expected format
+          setStats({
+            pending: data.data.pendingApprovals || 0,
+            approved_this_week: data.data.thisMonth || 0,
+            total_budget_ytd: 0, // Not available in stats endpoint
+            active_departments: 0, // Not available in stats endpoint
+            high_priority: 0, // Not available in stats endpoint
+            override_count: 0, // Not available in stats endpoint
+          });
+        } else {
+          setStats(mockStats);
         }
         setLoading(false);
       })

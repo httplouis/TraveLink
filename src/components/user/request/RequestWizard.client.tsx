@@ -1110,7 +1110,7 @@ function RequestWizardContent() {
       // Store the request ID in the form data (for invitations)
       if (result.data?.id) {
         if (data.reason === "seminar") {
-          patchSeminar({ requestId: result.data.id });
+          patchSeminar({ requestId: result.data.id } as any);
         }
         setCurrentSubmissionId(result.data.id);
       }
@@ -1210,13 +1210,30 @@ function RequestWizardContent() {
           fetch('/api/approvers/list?role=vp').catch(() => ({ ok: false, data: [] })),
           fetch('/api/approvers/list?role=admin').catch(() => ({ ok: false, data: [] })),
           // Check if department has parent head
-          data.travelOrder?.department ? fetch(`/api/departments?name=${encodeURIComponent(data.travelOrder.department)}`).then(r => r.json()).catch(() => ({ ok: false, data: [] })) : Promise.resolve({ ok: false, data: [] })
+          data.travelOrder?.department ? fetch(`/api/departments?name=${encodeURIComponent(data.travelOrder.department)}`)
+            .then(async r => {
+              if (!r.ok) return { ok: false, data: [] };
+              const contentType = r.headers.get("content-type");
+              if (!contentType || !contentType.includes("application/json")) return { ok: false, data: [] };
+              return r.json();
+            })
+            .catch(() => ({ ok: false, data: [] })) : Promise.resolve({ ok: false, data: [] })
         ]);
         
         const options: any[] = [];
         
         // Add ALL VPs (not just parent head)
-        const vpData = await vpRes.json().catch(() => ({ ok: false, data: [] }));
+        let vpData: any = { ok: false, data: [] };
+        if (vpRes && typeof vpRes === 'object' && 'ok' in vpRes && vpRes.ok && 'headers' in vpRes) {
+          const contentType = (vpRes as Response).headers?.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            try {
+              vpData = await (vpRes as Response).json();
+            } catch (e) {
+              console.warn("[RequestWizard] Failed to parse VP data:", e);
+            }
+          }
+        }
         if (vpData.ok && vpData.data && vpData.data.length > 0) {
           options.push(...vpData.data.map((vp: any) => ({
             ...vp,
@@ -1229,7 +1246,14 @@ function RequestWizardContent() {
         // Add parent head if department has parent (as a separate option, labeled as parent head)
         if (parentHeadRes.ok && parentHeadRes.data?.[0]?.parent_department_id) {
           const dept = parentHeadRes.data[0];
-          const parentHeadListRes = await fetch(`/api/approvers/list?role=head`).then(r => r.json()).catch(() => ({ ok: false, data: [] }));
+          const parentHeadListRes = await fetch(`/api/approvers/list?role=head`)
+            .then(async r => {
+              if (!r.ok) return { ok: false, data: [] };
+              const contentType = r.headers.get("content-type");
+              if (!contentType || !contentType.includes("application/json")) return { ok: false, data: [] };
+              return r.json();
+            })
+            .catch(() => ({ ok: false, data: [] }));
           
           if (parentHeadListRes.ok && parentHeadListRes.data) {
             const parentHeads = parentHeadListRes.data
@@ -1250,7 +1274,14 @@ function RequestWizardContent() {
         }
         
         // Add admin options
-        const adminData = await adminRes.json().catch(() => ({ ok: false, data: [] }));
+        let adminData: any = { ok: false, data: [] };
+        if (adminRes && typeof adminRes === 'object' && 'ok' in adminRes && adminRes.ok && 'json' in adminRes) {
+          try {
+            adminData = await (adminRes as Response).json();
+          } catch (e) {
+            console.warn("[RequestWizard] Failed to parse admin data:", e);
+          }
+        }
         if (adminData.ok && adminData.data && adminData.data.length > 0) {
           options.push(...adminData.data.map((a: any) => ({
             ...a,
@@ -1319,7 +1350,7 @@ function RequestWizardContent() {
           schoolService: data.schoolService,
           seminar: data.seminar,
           transportation: data.transportation, // Include transportation data
-          attachments: data.travelOrder?.attachments || data.seminar?.attachments || [], // Include attachments
+          attachments: (data.travelOrder as any)?.attachments || (data.seminar as any)?.attachments || [], // Include attachments
           // Pass selected approver for head requesters (messenger-style routing)
           nextApproverId: selectedApproverId || undefined,
           nextApproverRole: selectedApproverRole || undefined,
@@ -1340,10 +1371,10 @@ function RequestWizardContent() {
       // This allows sending invitations even after submission
       if (data.reason === "seminar" && result.data?.id) {
         // Update seminar data with request ID so invitations can be sent
-        patchSeminar({ requestId: result.data.id, isSubmitted: true });
+        patchSeminar({ requestId: result.data.id, isSubmitted: true } as any);
         // Don't reset immediately if there are pending invitations
-        const hasPendingInvitations = Array.isArray(data.seminar?.participantInvitations) && 
-          data.seminar.participantInvitations.some((inv: any) => !inv.invitationId);
+        const hasPendingInvitations = Array.isArray((data.seminar as any)?.participantInvitations) && 
+          (data.seminar as any).participantInvitations.some((inv: any) => !inv.invitationId);
         
         if (!hasPendingInvitations) {
           afterSuccessfulSubmitReset();
@@ -1382,12 +1413,13 @@ function RequestWizardContent() {
     : true; // If no multiple requesters or no invitations sent, consider as confirmed
   
   // Check if all participants are confirmed (for seminars)
-  const hasParticipants = Array.isArray(data.seminar?.participantInvitations) && data.seminar.participantInvitations.length > 0;
-  const hasSentParticipantInvitations = hasParticipants && data.seminar?.participantInvitations?.some((inv: any) => inv.invitationId);
+  const seminarParticipantInvitations = (data.seminar as any)?.participantInvitations;
+  const hasParticipants = Array.isArray(seminarParticipantInvitations) && seminarParticipantInvitations.length > 0;
+  const hasSentParticipantInvitations = hasParticipants && seminarParticipantInvitations?.some((inv: any) => inv.invitationId);
   
   // Only require confirmation if invitations were sent
   const participantsAllConfirmed = hasParticipants && hasSentParticipantInvitations
-    ? (allParticipantsConfirmed ?? data.seminar?.participantInvitations?.every((inv: any) => inv.status === 'confirmed') ?? false)
+    ? (allParticipantsConfirmed ?? seminarParticipantInvitations?.every((inv: any) => inv.status === 'confirmed') ?? false)
     : true; // If no participants or no invitations sent, consider as confirmed
   
   const validation = canSubmit(data, { 
@@ -1623,7 +1655,7 @@ function RequestWizardContent() {
         onConfirm={handleConfirmedSubmit}
         requesterName={
           showSeminar 
-            ? (currentUser?.name || data.seminar?.requesterName || "")
+            ? (currentUser?.name || (data.seminar as any)?.requesterName || "")
             : (data.travelOrder?.requestingPerson || "")
         }
         department={

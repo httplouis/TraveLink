@@ -27,11 +27,46 @@ export default function VPDashboard() {
 
   React.useEffect(() => {
     // Fetch stats from API
-    fetch("/api/vp/analytics")
-      .then(res => res.json())
+    fetch("/api/vp/stats", { cache: "no-store" })
+      .then(res => {
+        if (!res.ok) {
+          console.warn("Stats API not OK:", res.status);
+          return null;
+        }
+        const contentType = res.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          console.warn("Stats API returned non-JSON response");
+          return null;
+        }
+        return res.json();
+      })
       .then(data => {
-        if (data.ok) {
-          setStats(data.stats || {
+        if (!data) {
+          // Use mock data if API fails
+          setStats({
+            pending: 12,
+            approved_today: 8,
+            total_budget: 150000,
+            avg_approval_time: "2.5h",
+            pending_change: -15,
+            approved_change: 25,
+          });
+          setLoading(false);
+          return;
+        }
+        if (data.ok && data.data) {
+          // Map the stats API response to the dashboard format
+          setStats({
+            pending: data.data.pendingApprovals || 0,
+            approved_today: data.data.thisMonth || 0,
+            total_budget: 0, // Not available in stats API
+            avg_approval_time: "0h", // Not available in stats API
+            pending_change: 0,
+            approved_change: 0,
+          });
+        } else {
+          // Use mock data if API response is not ok
+          setStats({
             pending: 12,
             approved_today: 8,
             total_budget: 150000,
@@ -42,7 +77,8 @@ export default function VPDashboard() {
         }
         setLoading(false);
       })
-      .catch(() => {
+      .catch((error) => {
+        console.error("Error fetching VP stats:", error);
         // Mock data for development
         setStats({
           pending: 12,

@@ -761,11 +761,17 @@ export default function RequestDetailsModalUI({
               <div className="flex items-center gap-3">
                 <span className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 ${
                   (row as any).status === 'pending_admin' ? 'bg-amber-100 text-amber-700' :
+                  (row as any).status === 'pending_comptroller' || (row as any).status === 'comptroller_pending' ? 'bg-yellow-100 text-yellow-700' :
+                  (row as any).status === 'pending_hr' || (row as any).status === 'hr_pending' ? 'bg-blue-100 text-blue-700' :
+                  (row as any).status === 'pending_exec' || (row as any).status === 'executive_pending' ? 'bg-purple-100 text-purple-700' :
                   (row as any).status === 'approved' ? 'bg-green-100 text-green-700' :
                   (row as any).status === 'rejected' ? 'bg-red-100 text-red-700' :
                   'bg-slate-100 text-slate-700'
                 }`}>
                   {(row as any).status === 'pending_admin' ? 'Pending Review' :
+                   (row as any).status === 'pending_comptroller' || (row as any).status === 'comptroller_pending' ? 'For Comptroller Review' :
+                   (row as any).status === 'pending_hr' || (row as any).status === 'hr_pending' ? 'For HR Review' :
+                   (row as any).status === 'pending_exec' || (row as any).status === 'executive_pending' ? 'For Executive Review' :
                    (row as any).status === 'approved' ? 'Approved' :
                    (row as any).status === 'rejected' ? 'Rejected' :
                    (row as any).status || 'Pending'}
@@ -807,27 +813,186 @@ export default function RequestDetailsModalUI({
                   </svg>
                   Travel Order Details
                 </h3>
-                <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-                  <dt className="font-semibold text-slate-600">Date Submitted</dt>
-                  <dd className="text-slate-900">{formatDate(row.travelOrder?.date || row.createdAt)}</dd>
+                {/* Basic Information Section */}
+                <div className="mb-6 bg-white rounded-lg border border-slate-200 p-4">
+                  <h4 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
+                    <svg className="h-4 w-4 text-[#7A0010]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Basic Information
+                  </h4>
+                  <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                    {(() => {
+                      const payload = (row as any)?.payload;
+                      const reasonOfTrip = payload?.reason_of_trip || (row as any)?.reason_of_trip || (row as any)?.workflow_metadata?.reason_of_trip;
+                      return reasonOfTrip ? (
+                        <>
+                          <dt className="font-semibold text-slate-600">Reason of Trip</dt>
+                          <dd className="text-slate-900 capitalize">{reasonOfTrip}</dd>
+                        </>
+                      ) : null;
+                    })()}
+                    
+                    <dt className="font-semibold text-slate-600">Purpose</dt>
+                    <dd className="text-slate-900">{row.travelOrder?.purposeOfTravel || (row as any)?.purpose || (row as any)?.title || "—"}</dd>
 
+                    <dt className="font-semibold text-slate-600">Destination</dt>
+                    <dd>
+                      <div className="flex items-center gap-2">
+                        <span>{row.travelOrder?.destination || (row as any)?.destination || "—"}</span>
+                        {(row.travelOrder?.destination || (row as any)?.destination) && (
+                          <button
+                            onClick={() => {
+                              const dest = row.travelOrder?.destination || (row as any)?.destination || "";
+                              const query = encodeURIComponent(dest);
+                              window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
+                            }}
+                            className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 hover:underline"
+                            title="View on Google Maps"
+                          >
+                            <MapPin className="h-3.5 w-3.5" />
+                            View on Map
+                          </button>
+                        )}
+                      </div>
+                    </dd>
+
+                    <dt className="font-semibold text-slate-600">Department</dt>
+                    <dd className="text-slate-900">{deptName || "—"}</dd>
+
+                    <dt className="font-semibold text-slate-600">Travel Dates</dt>
+                    <dd className="text-slate-900">
+                      {(() => {
+                        const startDate = row.travelOrder?.departureDate || (row as any)?.travel_start_date;
+                        const endDate = row.travelOrder?.returnDate || (row as any)?.travel_end_date;
+                        if (startDate && endDate) {
+                          const start = new Date(startDate);
+                          const end = new Date(endDate);
+                          const startFormatted = start.toLocaleDateString('en-US', { 
+                            weekday: 'long', 
+                            year: 'numeric', 
+                            month: 'long', 
+                            day: 'numeric',
+                            timeZone: 'Asia/Manila'
+                          });
+                          const endFormatted = end.toLocaleDateString('en-US', { 
+                            weekday: 'long', 
+                            year: 'numeric', 
+                            month: 'long', 
+                            day: 'numeric',
+                            timeZone: 'Asia/Manila'
+                          });
+                          return `${startFormatted} - ${endFormatted}`;
+                        }
+                        return formatDate(startDate) + (endDate ? ` - ${formatDate(endDate)}` : '');
+                      })()}
+                    </dd>
+
+                    <dt className="font-semibold text-slate-600">Date Requested</dt>
+                    <dd className="text-slate-900">
+                      {(() => {
+                        const date = row.travelOrder?.date || row.createdAt || (row as any)?.created_at;
+                        if (date) {
+                          const d = new Date(date);
+                          return d.toLocaleDateString('en-US', { 
+                            weekday: 'long', 
+                            year: 'numeric', 
+                            month: 'long', 
+                            day: 'numeric',
+                            timeZone: 'Asia/Manila'
+                          });
+                        }
+                        return "—";
+                      })()}
+                    </dd>
+
+                    {(() => {
+                      const payload = (row as any)?.payload;
+                      const totalBudget = payload?.total_budget || (row as any)?.total_budget;
+                      if (totalBudget && parseFloat(totalBudget) > 0) {
+                        return (
+                          <>
+                            <dt className="font-semibold text-slate-600">Budget</dt>
+                            <dd className="text-slate-900 font-semibold text-[#7A0010]">{peso(parseFloat(totalBudget))}</dd>
+                          </>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </dl>
+                </div>
+
+                <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
                   <dt className="font-semibold text-slate-600">Requesting Person</dt>
                   <dd>
                     <div className="space-y-3">
                       {/* Main Requester */}
-                      <div className="flex items-center gap-2">
-                        <User className="h-4 w-4 text-slate-400" />
-                        <NameWithProfile
-                          name={(row as any).requester_name || row.travelOrder?.requestingPerson || "—"}
-                          profile={{
-                            id: (row as any).requester?.id || '',
-                            name: (row as any).requester_name || (row as any).requester?.name || '',
-                            email: (row as any).requester?.email,
-                            department: (row as any).requester?.department || (row as any).department?.name,
-                            position: (row as any).requester?.position_title,
-                            profile_picture: (row as any).requester?.profile_picture,
-                          }}
-                        />
+                      <div className="p-4 bg-gradient-to-br from-blue-50 to-white border-2 border-blue-200 rounded-lg shadow-sm">
+                        <div className="flex items-start gap-3 mb-3">
+                          <div className="flex-shrink-0">
+                            {((row as any).requester?.profile_picture || (row as any).profile_picture) ? (
+                              <img
+                                src={(row as any).requester?.profile_picture || (row as any).profile_picture}
+                                alt={(row as any).requester_name || 'Requester'}
+                                className="w-16 h-16 rounded-full object-cover border-2 border-blue-300"
+                              />
+                            ) : (
+                              <div className="w-16 h-16 rounded-full bg-blue-200 flex items-center justify-center border-2 border-blue-300">
+                                <User className="h-8 w-8 text-blue-600" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h4 className="text-lg font-bold text-gray-900 mb-1">
+                              {(row as any).requester_name || row.travelOrder?.requestingPerson || (row as any).requester?.name || "—"}
+                            </h4>
+                            {((row as any).requester?.position_title || (row as any).position_title) && (
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-semibold rounded-full">
+                                  {(row as any).requester?.position_title || (row as any).position_title}
+                                </span>
+                                {((row as any).requester_is_head) && (
+                                  <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full">
+                                    Department Head
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            {((row as any).requester?.email || (row as any).requester_email) && (
+                              <p className="text-sm text-gray-600 mb-1 break-all">
+                                📧 {(row as any).requester?.email || (row as any).requester_email}
+                              </p>
+                            )}
+                            {((row as any).requester?.department || (row as any).department?.name || (row as any).department_name) && (
+                              <p className="text-sm text-gray-700 font-medium">
+                                🏢 {(row as any).requester?.department || (row as any).department?.name || (row as any).department_name}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        {(() => {
+                          const sig = getRequesterSig(row.travelOrder) || (row as any).requester_signature || (row as any).payload?.requester_signature;
+                          if (sig) {
+                            return (
+                              <div className="mt-3 pt-3 border-t border-blue-200">
+                                <p className="text-xs font-semibold text-blue-900 mb-2 flex items-center gap-1">
+                                  <PenTool className="h-3.5 w-3.5" />
+                                  Requester Signature
+                                </p>
+                                <div className="p-2 bg-white border border-blue-200 rounded-lg">
+                                  <img
+                                    src={sig}
+                                    alt="Requester signature"
+                                    className="h-12 w-auto max-w-[200px] object-contain mx-auto"
+                                    title="Requester e-signature"
+                                  />
+                                  <p className="text-center text-xs text-slate-500 mt-1">Digital Signature</p>
+                                </div>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
                       </div>
                       {(row as any).requester?.name && (row as any).requester.name !== ((row as any).requester_name || row.travelOrder?.requestingPerson) && (
                         <div className="mt-1.5 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700 flex items-center gap-1.5">
@@ -843,17 +1008,6 @@ export default function RequestDetailsModalUI({
                               profile_picture: (row as any).requester?.profile_picture,
                             }}
                           />
-                        </div>
-                      )}
-                      {getRequesterSig(row.travelOrder) && (
-                        <div className="mt-2 p-2 bg-white border border-slate-200 rounded-lg">
-                          <img
-                            src={getRequesterSig(row.travelOrder)!}
-                            alt="Requester signature"
-                            className="h-10 w-auto max-w-[180px] object-contain mx-auto"
-                            title="Requester e-signature"
-                          />
-                          <p className="text-center text-xs text-slate-500 mt-1">Digital Signature</p>
                         </div>
                       )}
 
@@ -946,37 +1100,6 @@ export default function RequestDetailsModalUI({
                     </div>
                   </dd>
 
-                  <dt className="font-semibold text-slate-600">Department</dt>
-                  <dd className="text-slate-900">{deptName || "—"}</dd>
-
-                  <dt className="font-semibold">Destination</dt>
-                  <dd>
-                    <div className="flex items-center gap-2">
-                      <span>{row.travelOrder?.destination || "—"}</span>
-                      {row.travelOrder?.destination && (
-                        <button
-                          onClick={() => {
-                            const query = encodeURIComponent(row.travelOrder?.destination || "");
-                            window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
-                          }}
-                          className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 hover:underline"
-                          title="View on Google Maps"
-                        >
-                          <MapPin className="h-3.5 w-3.5" />
-                          View on Map
-                        </button>
-                      )}
-                    </div>
-                  </dd>
-
-                  <dt className="font-semibold text-slate-600">Departure Date</dt>
-                  <dd className="text-slate-900">{formatDate(row.travelOrder?.departureDate)}</dd>
-
-                  <dt className="font-semibold text-slate-600">Return Date</dt>
-                  <dd className="text-slate-900">{formatDate(row.travelOrder?.returnDate)}</dd>
-
-                  <dt className="font-semibold text-slate-600">Purpose of Travel</dt>
-                  <dd className="col-span-1 text-slate-900">{row.travelOrder?.purposeOfTravel || "—"}</dd>
                 </dl>
 
                 {/* Budget Breakdown - Use expense_breakdown from API */}
@@ -1267,6 +1390,170 @@ export default function RequestDetailsModalUI({
                   </div>
                 </div>
               </section>
+
+              {/* Transportation Details */}
+              {(() => {
+                const payload = (row as any)?.payload;
+                const transportation = payload?.transportation || (row as any)?.transportation;
+                const pickupLocation = (row as any).pickup_location || transportation?.pickup_location || row.travelOrder?.pickupLocation;
+                const pickupTime = (row as any).pickup_time || transportation?.pickup_time || row.travelOrder?.pickupTime;
+                const pickupContact = (row as any).pickup_contact_number || transportation?.pickup_contact_number || row.travelOrder?.pickupContactNumber;
+                const pickupInstructions = (row as any).pickup_special_instructions || transportation?.pickup_special_instructions || row.travelOrder?.pickupSpecialInstructions;
+                const dropoffLocation = (row as any).dropoff_location || transportation?.dropoff_location || row.travelOrder?.dropoffLocation;
+                const dropoffTime = (row as any).dropoff_time || transportation?.dropoff_time || row.travelOrder?.dropoffTime;
+                const parkingRequired = (row as any).parking_required || transportation?.parking_required || row.travelOrder?.parkingRequired;
+                const ownVehicleDetails = (row as any).own_vehicle_details || transportation?.own_vehicle_details || row.travelOrder?.ownVehicleDetails;
+                const returnTransportationSame = (row as any).return_transportation_same !== undefined ? (row as any).return_transportation_same : (transportation?.return_transportation_same !== undefined ? transportation.return_transportation_same : row.travelOrder?.returnTransportationSame);
+                
+                if (pickupLocation || pickupTime || pickupContact || dropoffLocation || dropoffTime || ownVehicleDetails) {
+                  return (
+                    <section className="rounded-xl bg-gradient-to-br from-green-50 to-slate-100 border border-green-200 p-5">
+                      <h3 className="mb-4 text-base font-bold text-slate-800 flex items-center gap-2">
+                        <Car className="h-5 w-5 text-green-600" />
+                        Transportation Arrangement Details
+                      </h3>
+                      <div className="space-y-4">
+                        {/* Pickup Details */}
+                        {(pickupLocation || pickupTime || pickupContact) && (
+                          <div className="bg-white rounded-lg border border-green-200 p-4">
+                            <h4 className="text-sm font-bold text-green-900 mb-3 flex items-center gap-2">
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                              </svg>
+                              Pickup Details
+                            </h4>
+                            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                              {pickupLocation && (
+                                <>
+                                  <dt className="font-semibold text-slate-600">Location</dt>
+                                  <dd className="text-slate-900">{pickupLocation}</dd>
+                                </>
+                              )}
+                              {pickupTime && (
+                                <>
+                                  <dt className="font-semibold text-slate-600">Time</dt>
+                                  <dd className="text-slate-900">{pickupTime}</dd>
+                                </>
+                              )}
+                              {pickupContact && (
+                                <>
+                                  <dt className="font-semibold text-slate-600">Contact Number</dt>
+                                  <dd className="text-slate-900">{pickupContact}</dd>
+                                </>
+                              )}
+                              {pickupInstructions && (
+                                <>
+                                  <dt className="font-semibold text-slate-600 col-span-2">Special Instructions</dt>
+                                  <dd className="text-slate-900 col-span-2">{pickupInstructions}</dd>
+                                </>
+                              )}
+                            </dl>
+                          </div>
+                        )}
+
+                        {/* Return/Dropoff Details */}
+                        {(dropoffLocation || dropoffTime || (returnTransportationSame === false)) && (
+                          <div className="bg-white rounded-lg border border-green-200 p-4">
+                            <h4 className="text-sm font-bold text-green-900 mb-3 flex items-center gap-2">
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              Return Transportation
+                            </h4>
+                            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                              {returnTransportationSame === true && (
+                                <dd className="text-slate-900 col-span-2">Same as departure arrangement</dd>
+                              )}
+                              {dropoffLocation && (
+                                <>
+                                  <dt className="font-semibold text-slate-600">Drop-off Location</dt>
+                                  <dd className="text-slate-900">{dropoffLocation}</dd>
+                                </>
+                              )}
+                              {dropoffTime && (
+                                <>
+                                  <dt className="font-semibold text-slate-600">Drop-off Time</dt>
+                                  <dd className="text-slate-900">{dropoffTime}</dd>
+                                </>
+                              )}
+                              {parkingRequired && (
+                                <>
+                                  <dt className="font-semibold text-slate-600 col-span-2">Parking Required</dt>
+                                  <dd className="text-slate-900 col-span-2">Yes</dd>
+                                </>
+                              )}
+                            </dl>
+                          </div>
+                        )}
+
+                        {/* Own Vehicle Details */}
+                        {ownVehicleDetails && (
+                          <div className="bg-white rounded-lg border border-green-200 p-4">
+                            <h4 className="text-sm font-bold text-green-900 mb-2">Own Vehicle Details</h4>
+                            <p className="text-sm text-slate-900">{ownVehicleDetails}</p>
+                          </div>
+                        )}
+                      </div>
+                    </section>
+                  );
+                }
+                return null;
+              })()}
+
+              {/* Attachments */}
+              {(() => {
+                const payload = (row as any)?.payload;
+                let attachments = payload?.attachments || (row as any)?.attachments;
+                
+                // Parse if string (JSONB)
+                if (typeof attachments === 'string') {
+                  try {
+                    attachments = JSON.parse(attachments);
+                  } catch (e) {
+                    console.error("[RequestDetailsModal] Failed to parse attachments:", e);
+                    attachments = null;
+                  }
+                }
+                
+                if (attachments && Array.isArray(attachments) && attachments.length > 0) {
+                  return (
+                    <section className="rounded-xl bg-gradient-to-br from-purple-50 to-slate-100 border border-purple-200 p-5">
+                      <h3 className="mb-4 text-base font-bold text-slate-800 flex items-center gap-2">
+                        <svg className="h-5 w-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                        </svg>
+                        Supporting Documents ({attachments.length})
+                      </h3>
+                      <div className="space-y-2">
+                        {attachments.map((file: any, idx: number) => (
+                          <a
+                            key={idx}
+                            href={file.url || file.path}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-3 p-3 bg-white border border-purple-200 rounded-lg hover:bg-purple-50 transition-colors"
+                          >
+                            <svg className="h-5 w-5 text-purple-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-slate-900 truncate">{file.name || file.filename || `Document ${idx + 1}`}</p>
+                              {file.size && (
+                                <p className="text-xs text-slate-500">{(file.size / 1024).toFixed(1)} KB</p>
+                              )}
+                            </div>
+                            <svg className="h-4 w-4 text-purple-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                          </a>
+                        ))}
+                      </div>
+                    </section>
+                  );
+                }
+                return null;
+              })()}
 
               {/* Assignments + Admin Note */}
               <section className="rounded-xl bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200 p-5">

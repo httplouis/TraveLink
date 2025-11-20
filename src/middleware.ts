@@ -74,7 +74,8 @@ function isAllowed(me: Me, path: string): boolean {
   // Transport Admin: role = 'admin' but not super admin → /admin
   if (path.startsWith("/admin")) return isAdmin && !isSuperAdmin;
   if (path.startsWith("/president")) return !!me.is_president && !isAdmin && !isComptroller;
-  if (path.startsWith("/vp")) return !!me.is_vp && !isAdmin && !isComptroller;
+  // Allow both VP and President to access VP routes (President is higher role)
+  if (path.startsWith("/vp")) return (!!me.is_vp || !!me.is_president) && !isAdmin && !isComptroller;
   if (path.startsWith("/head")) return !!me.is_head && !isAdmin && !isComptroller;
   if (path.startsWith("/hr")) return !!me.is_hr && !isAdmin && !isComptroller;
   if (path.startsWith("/exec")) return !!me.is_exec && !isAdmin && !isComptroller;

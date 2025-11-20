@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 
 export async function GET(req: NextRequest) {
   try {
-    // Use service_role to bypass RLS for admin operations
-    const supabase = await createSupabaseServerClient(true);
-
-    // Get current user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    // Get authenticated user first (for authorization)
+    const authSupabase = await createSupabaseServerClient(false);
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser();
     
     if (authError || !user) {
       return NextResponse.json(
@@ -15,6 +14,25 @@ export async function GET(req: NextRequest) {
         { status: 401 }
       );
     }
+
+    // Use direct createClient for service role to truly bypass RLS for queries
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return NextResponse.json({ 
+        ok: false, 
+        error: "Missing Supabase configuration" 
+      }, { status: 500 });
+    }
+    
+    // Service role client for queries (bypasses RLS completely)
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
 
     // Get user profile to check President status and get profile ID
     const { data: profile } = await supabase
@@ -38,7 +56,8 @@ export async function GET(req: NextRequest) {
     // President reviews:
     // 1. Requests with status = pending_exec where both VPs have approved (both_vps_approved = true)
     // 2. Requests with status = pending_president (legacy)
-    // 3. Requests with workflow_metadata.next_president_id matching this President
+    // 3. Requests with status = pending_exec (VP routed directly to President, even if only one VP approved)
+    // Use .in() for better compatibility and clarity
     const { data: allRequests, error: requestsError } = await supabase
       .from("requests")
       .select(`
@@ -46,7 +65,7 @@ export async function GET(req: NextRequest) {
         vp_approver:users!vp_approved_by(id, name, email, position_title),
         vp2_approver:users!vp2_approved_by(id, name, email, position_title)
       `)
-      .or(`and(status.eq.pending_exec,both_vps_approved.eq.true),status.eq.pending_president`)
+      .in("status", ["pending_exec", "pending_president"])
       .is("president_approved_at", null)
       .order("created_at", { ascending: false })
       .limit(100);
@@ -59,14 +78,17 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Filter requests: If request has next_president_id in workflow_metadata, only show to that specific President
-    // Also check next_approver_id as universal fallback (for "all users" selection)
+    // Filter requests: 
+    // 1. If request has next_president_id in workflow_metadata, only show to that specific President
+    // 2. Also check next_approver_id as universal fallback (for "all users" selection)
+    // 3. Only show requests where next_approver_role is "president" OR both_vps_approved is true OR status is pending_president
     const requests = (allRequests || []).filter((req: any) => {
+      // Parse workflow_metadata
       const workflowMetadata = req.workflow_metadata || {};
-      // Handle both object and JSON string formats
       let nextPresidentId = null;
       let nextApproverId = null;
       let nextApproverRole = null;
+      
       if (typeof workflowMetadata === 'string') {
         try {
           const parsed = JSON.parse(workflowMetadata);
@@ -82,6 +104,31 @@ export async function GET(req: NextRequest) {
         nextApproverRole = workflowMetadata?.next_approver_role;
       }
 
+      // Check if this request should go to President
+      // Skip if next_approver_role is explicitly set to something other than "president" (e.g., "hr", "admin", "comptroller")
+      if (nextApproverRole && nextApproverRole !== "president") {
+        console.log(`[President Inbox] Skipping request ${req.id} - next_approver_role is "${nextApproverRole}", not "president"`);
+        return false;
+      }
+
+      // For pending_exec status, only show if:
+      // - both_vps_approved is true, OR
+      // - next_approver_role is "president", OR
+      // - next_president_id is set, OR
+      // - status is pending_president (legacy)
+      if (req.status === "pending_exec") {
+        const shouldShow = 
+          req.both_vps_approved === true ||
+          nextApproverRole === "president" ||
+          nextPresidentId !== null;
+        
+        if (!shouldShow) {
+          console.log(`[President Inbox] Skipping request ${req.id} - pending_exec but not ready for President (both_vps_approved=${req.both_vps_approved}, next_approver_role=${nextApproverRole}, next_president_id=${nextPresidentId})`);
+          return false;
+        }
+      }
+
+      // Check if assigned to specific President
       const nextPresidentIdStr = nextPresidentId ? String(nextPresidentId).trim() : null;
       const nextApproverIdStr = nextApproverId ? String(nextApproverId).trim() : null;
       const profileIdStr = String(profile.id).trim();

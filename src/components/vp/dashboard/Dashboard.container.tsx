@@ -31,17 +31,37 @@ export default function VPDashboardContainer() {
 
         // Fetch critical data first
         const [profileRes, statsRes] = await Promise.all([
-          fetch('/api/profile', { cache: 'force-cache', next: { revalidate: 60 } }).catch(() => ({ ok: false })),
-          fetch('/api/vp/stats', { cache: 'no-store' }).catch(() => ({ ok: false })),
+          fetch('/api/profile', { cache: 'force-cache', next: { revalidate: 60 } }).catch(() => ({ ok: false, headers: new Headers() })),
+          fetch('/api/vp/stats', { cache: 'no-store' }).catch(() => ({ ok: false, headers: new Headers() })),
         ]);
 
-        const profileData = await profileRes.json().catch(() => ({ ok: false }));
+        let profileData: any = { ok: false };
+        if (profileRes.ok) {
+          const contentType = profileRes.headers?.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            try {
+              profileData = await profileRes.json();
+            } catch (e) {
+              logger.warn("Failed to parse profile JSON:", e);
+            }
+          }
+        }
         if (profileData.ok && profileData.data?.name) {
           const firstName = profileData.data.name.split(' ')[0];
           setUserName(firstName);
         }
 
-        const statsData = await statsRes.json().catch(() => ({ ok: false }));
+        let statsData: any = { ok: false };
+        if (statsRes.ok) {
+          const contentType = statsRes.headers?.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            try {
+              statsData = await statsRes.json();
+            } catch (e) {
+              logger.warn("Failed to parse stats JSON:", e);
+            }
+          }
+        }
         if (statsData.ok && statsData.data) {
           setKpis([
             { label: "Pending Approvals", value: statsData.data.pendingApprovals || 0 },
@@ -52,28 +72,68 @@ export default function VPDashboardContainer() {
 
         // Fetch non-critical data in parallel
         const [vehiclesRes, analyticsRes, aiInsightsRes, activityRes] = await Promise.all([
-          fetch('/api/vehicles?status=available', { cache: 'force-cache', next: { revalidate: 300 } }).catch(() => ({ ok: false })),
-          fetch('/api/user/dashboard/analytics', { cache: 'force-cache', next: { revalidate: 300 } }).catch(() => ({ ok: false })),
-          fetch('/api/user/dashboard/ai-insights', { cache: 'force-cache', next: { revalidate: 300 } }).catch(() => ({ ok: false })),
-          fetch('/api/user/dashboard/recent-activity', { cache: 'no-store' }).catch(() => ({ ok: false })),
+          fetch('/api/vehicles?status=available', { cache: 'force-cache', next: { revalidate: 300 } }).catch(() => ({ ok: false, headers: new Headers() })),
+          fetch('/api/user/dashboard/analytics', { cache: 'force-cache', next: { revalidate: 300 } }).catch(() => ({ ok: false, headers: new Headers() })),
+          fetch('/api/user/dashboard/ai-insights', { cache: 'force-cache', next: { revalidate: 300 } }).catch(() => ({ ok: false, headers: new Headers() })),
+          fetch('/api/user/dashboard/recent-activity', { cache: 'no-store' }).catch(() => ({ ok: false, headers: new Headers() })),
         ]);
 
-        const vehiclesData = await vehiclesRes.json().catch(() => ({ ok: false }));
+        let vehiclesData: any = { ok: false };
+        if (vehiclesRes.ok) {
+          const contentType = vehiclesRes.headers?.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            try {
+              vehiclesData = await vehiclesRes.json();
+            } catch (e) {
+              logger.warn("Failed to parse vehicles JSON:", e);
+            }
+          }
+        }
         if (vehiclesData.ok) {
           setVehicles(vehiclesData.data || []);
         }
 
-        const analyticsData = await analyticsRes.json().catch(() => ({ ok: false }));
+        let analyticsData: any = { ok: false };
+        if (analyticsRes.ok) {
+          const contentType = analyticsRes.headers?.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            try {
+              analyticsData = await analyticsRes.json();
+            } catch (e) {
+              logger.warn("Failed to parse analytics JSON:", e);
+            }
+          }
+        }
         if (analyticsData.ok) {
           setAnalytics(analyticsData.data);
         }
 
-        const aiData = await aiInsightsRes.json().catch(() => ({ ok: false }));
+        let aiData: any = { ok: false };
+        if (aiInsightsRes.ok) {
+          const contentType = aiInsightsRes.headers?.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            try {
+              aiData = await aiInsightsRes.json();
+            } catch (e) {
+              logger.warn("Failed to parse AI insights JSON:", e);
+            }
+          }
+        }
         if (aiData.ok) {
           setAiInsights(aiData.data);
         }
 
-        const activityData = await activityRes.json().catch(() => ({ ok: false }));
+        let activityData: any = { ok: false };
+        if (activityRes.ok) {
+          const contentType = activityRes.headers?.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            try {
+              activityData = await activityRes.json();
+            } catch (e) {
+              logger.warn("Failed to parse activity JSON:", e);
+            }
+          }
+        }
         if (activityData.ok) {
           setRecentActivity(activityData.data || []);
         }

@@ -354,6 +354,25 @@ export default function SubmissionsView() {
                   hasBudget={req.has_budget}
                   hasParentHead={(req as any).has_parent_head || false}
                   requiresPresidentApproval={(req as any).requester_is_head || req.total_budget > 50000}
+                  bothVpsApproved={(req as any).both_vps_approved || false}
+                  headApprovedAt={(req as any).head_approved_at}
+                  headApprovedBy={(req as any).head_approved_by}
+                  parentHeadApprovedAt={(req as any).parent_head_approved_at}
+                  parentHeadApprovedBy={(req as any).parent_head_approved_by}
+                  adminProcessedAt={(req as any).admin_processed_at}
+                  adminProcessedBy={(req as any).admin_processed_by}
+                  comptrollerApprovedAt={(req as any).comptroller_approved_at}
+                  comptrollerApprovedBy={(req as any).comptroller_approved_by}
+                  hrApprovedAt={(req as any).hr_approved_at}
+                  hrApprovedBy={(req as any).hr_approved_by}
+                  vpApprovedAt={(req as any).vp_approved_at}
+                  vpApprovedBy={(req as any).vp_approved_by}
+                  vp2ApprovedAt={(req as any).vp2_approved_at}
+                  vp2ApprovedBy={(req as any).vp2_approved_by}
+                  presidentApprovedAt={(req as any).president_approved_at}
+                  presidentApprovedBy={(req as any).president_approved_by}
+                  execApprovedAt={(req as any).exec_approved_at}
+                  execApprovedBy={(req as any).exec_approved_by}
                   compact={true}
                 />
               </div>
@@ -459,6 +478,28 @@ export default function SubmissionsView() {
               preferred_driver: fullRequestData?.preferred_driver || null, // Now resolved to driver name from API
               preferred_vehicle_note: fullRequestData?.preferred_vehicle_note || null,
               preferred_driver_note: fullRequestData?.preferred_driver_note || null,
+              
+              // Assigned vehicle and driver (from admin)
+              assigned_vehicle_id: fullRequestData?.assigned_vehicle_id || null,
+              assigned_driver_id: fullRequestData?.assigned_driver_id || null,
+              assigned_vehicle: fullRequestData?.assigned_vehicle ? {
+                id: fullRequestData?.assigned_vehicle?.id || fullRequestData?.assigned_vehicle_id || '',
+                name: fullRequestData?.assigned_vehicle?.name || fullRequestData?.assigned_vehicle?.vehicle_name || fullRequestData?.assigned_vehicle_name || 'Unknown Vehicle',
+                plate_number: fullRequestData?.assigned_vehicle?.plate_number || fullRequestData?.assigned_vehicle?.plate_no || null,
+                type: fullRequestData?.assigned_vehicle?.type || fullRequestData?.assigned_vehicle?.vehicle_type || null,
+                capacity: fullRequestData?.assigned_vehicle?.capacity || null
+              } : null,
+              assigned_driver: fullRequestData?.assigned_driver ? {
+                id: fullRequestData?.assigned_driver?.id || fullRequestData?.assigned_driver_id || '',
+                name: fullRequestData?.assigned_driver?.name || fullRequestData?.assigned_driver?.full_name || fullRequestData?.assigned_driver_name || 'Unknown Driver',
+                email: fullRequestData?.assigned_driver?.email || null,
+                phone: fullRequestData?.assigned_driver?.phone || fullRequestData?.assigned_driver?.phone_number || null,
+                profile_picture: fullRequestData?.assigned_driver?.profile_picture || null
+              } : null,
+              assigned_vehicle_name: fullRequestData?.assigned_vehicle_name || fullRequestData?.assigned_vehicle?.name || fullRequestData?.assigned_vehicle?.vehicle_name || null,
+              assigned_driver_name: fullRequestData?.assigned_driver_name || fullRequestData?.assigned_driver?.name || fullRequestData?.assigned_driver?.full_name || null,
+              driver_contact_number: fullRequestData?.driver_contact_number || fullRequestData?.assigned_driver?.phone || fullRequestData?.assigned_driver?.phone_number || null,
+              
               status: selectedRequest.status,
               
               // Workflow metadata for routing information
@@ -706,6 +747,7 @@ export default function SubmissionsView() {
               hasBudget: fullRequestData?.has_budget || false,
               hasParentHead: fullRequestData?.has_parent_head || false,
               requiresPresidentApproval: (fullRequestData?.requester_is_head || false) || ((fullRequestData?.total_budget || 0) > 50000),
+              bothVpsApproved: fullRequestData?.both_vps_approved || false,
               headApprovedAt: fullRequestData?.head_approved_at || null,
               headApprovedBy: fullRequestData?.head_approved_by || null,
               parentHeadApprovedAt: fullRequestData?.parent_head_approved_at || null,
@@ -718,6 +760,8 @@ export default function SubmissionsView() {
               hrApprovedBy: fullRequestData?.hr_approved_by || null,
               vpApprovedAt: fullRequestData?.vp_approved_at || null,
               vpApprovedBy: fullRequestData?.vp_approved_by || null,
+              vp2ApprovedAt: fullRequestData?.vp2_approved_at || null,
+              vp2ApprovedBy: fullRequestData?.vp2_approved_by || null,
               presidentApprovedAt: fullRequestData?.president_approved_at || null,
               presidentApprovedBy: fullRequestData?.president_approved_by || null,
               execApprovedAt: fullRequestData?.exec_approved_at || null,

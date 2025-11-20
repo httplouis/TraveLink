@@ -233,6 +233,15 @@ export default function ProfilePage({
       setLoadingDepartments(true);
       try {
         const response = await fetch('/api/departments');
+        if (!response.ok) {
+          console.warn('Departments API not OK:', response.status);
+          return;
+        }
+        const contentType = response.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          console.warn('Departments API returned non-JSON response');
+          return;
+        }
         const data = await response.json();
         if (data.ok && data.departments) {
           setDepartments(data.departments);

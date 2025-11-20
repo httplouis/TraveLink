@@ -26,8 +26,20 @@ export default function VPHistoryPage() {
   React.useEffect(() => {
     logger.info("Loading VP history...");
     fetch("/api/vp/history")
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) {
+          logger.error("API response not OK:", res.status, res.statusText);
+          return null;
+        }
+        const contentType = res.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          logger.error("API returned non-JSON response. Content-Type:", contentType);
+          return null;
+        }
+        return res.json();
+      })
       .then(data => {
+        if (!data) return;
         if (data.ok) {
           logger.debug("VP History - Raw data:", { count: data.data?.length || 0 });
           if (data.data && data.data.length > 0) {

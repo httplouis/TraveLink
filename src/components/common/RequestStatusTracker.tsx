@@ -41,6 +41,7 @@ interface RequestStatusTrackerProps {
   hasBudget?: boolean;
   hasParentHead?: boolean;
   requiresPresidentApproval?: boolean;
+  bothVpsApproved?: boolean; // Whether both VPs need to approve
   
   // Approval timestamps and names
   headApprovedAt?: string | null | undefined;
@@ -55,6 +56,8 @@ interface RequestStatusTrackerProps {
   hrApprovedBy?: string | null | undefined;
   vpApprovedAt?: string | null | undefined;
   vpApprovedBy?: string | null | undefined;
+  vp2ApprovedAt?: string | null | undefined;
+  vp2ApprovedBy?: string | null | undefined;
   presidentApprovedAt?: string | null | undefined;
   presidentApprovedBy?: string | null | undefined;
   execApprovedAt?: string | null | undefined;
@@ -74,6 +77,7 @@ const STAGES: ApprovalStage[] = [
   { key: "comptroller", label: "Comptroller", icon: DollarSign, role: "Comptroller" },
   { key: "hr", label: "Human Resources", icon: Users, role: "HR" },
   { key: "vp", label: "Vice President", icon: Award, role: "VP" },
+  { key: "vp2", label: "Second Vice President", icon: Award, role: "VP2" },
   { key: "president", label: "President", icon: FileCheck, role: "President" },
 ];
 
@@ -83,6 +87,7 @@ export default function RequestStatusTracker({
   hasBudget = false,
   hasParentHead = false,
   requiresPresidentApproval = false,
+  bothVpsApproved = false,
   headApprovedAt,
   headApprovedBy,
   parentHeadApprovedAt,
@@ -95,6 +100,8 @@ export default function RequestStatusTracker({
   hrApprovedBy,
   vpApprovedAt,
   vpApprovedBy,
+  vp2ApprovedAt,
+  vp2ApprovedBy,
   presidentApprovedAt,
   presidentApprovedBy,
   execApprovedAt,
@@ -125,7 +132,9 @@ export default function RequestStatusTracker({
     if (stage.key === "head" && requesterIsHead) return false;
     if (stage.key === "parent_head" && !hasParentHead) return false;
     if (stage.key === "comptroller" && !hasBudget) return false;
-    if (stage.key === "president" && !requiresPresidentApproval) return false;
+    if (stage.key === "vp2" && !bothVpsApproved) return false; // Only show VP2 if both VPs need to approve
+    // Always show President if they've already approved, or if approval is required
+    if (stage.key === "president" && !requiresPresidentApproval && !presidentApprovedAt) return false;
     return true;
   });
 
@@ -133,31 +142,48 @@ export default function RequestStatusTracker({
     if (status === "rejected" && rejectionStage === stageKey) return "rejected";
     if (status === "cancelled") return "rejected";
     
+    // If request is fully approved, all stages that have been completed should show as completed
+    // Check if we have approval timestamps first
+    if (status === "approved") {
+      switch (stageKey) {
+        case "head": return headApprovedAt ? "completed" : "pending";
+        case "parent_head": return parentHeadApprovedAt ? "completed" : "pending";
+        case "admin": return adminProcessedAt ? "completed" : "pending";
+        case "comptroller": return comptrollerApprovedAt ? "completed" : "pending";
+        case "hr": return hrApprovedAt ? "completed" : "pending";
+        case "vp": return vpApprovedAt ? "completed" : "pending";
+        case "vp2": return vp2ApprovedAt ? "completed" : (bothVpsApproved ? "pending" : "pending");
+        case "president": return presidentApprovedAt ? "completed" : "pending";
+        case "exec": return execApprovedAt ? "completed" : "pending";
+        default: return "pending";
+      }
+    }
+    
     switch (stageKey) {
       case "head":
         if (headApprovedAt) return "completed";
         if (status === "pending_head") return "current";
         // If we're past this stage or request is approved, mark as completed
-        if (status === "pending_admin" || status === "pending_comptroller" || status === "pending_hr" || status === "pending_exec" || status === "approved") return "completed";
+        if (status === "pending_admin" || status === "pending_comptroller" || status === "pending_hr" || status === "pending_vp" || status === "pending_president" || status === "pending_exec" || status === "approved") return "completed";
         return "pending";
       
       case "parent_head":
         if (parentHeadApprovedAt) return "completed";
         if (status === "pending_parent_head") return "current";
-        if (status === "pending_admin" || status === "pending_comptroller" || status === "pending_hr" || status === "pending_exec" || status === "approved") return "completed";
+        if (status === "pending_admin" || status === "pending_comptroller" || status === "pending_hr" || status === "pending_vp" || status === "pending_president" || status === "pending_exec" || status === "approved") return "completed";
         return "pending";
       
       case "admin":
         if (adminProcessedAt) return "completed";
         if (status === "pending_admin") return "current";
         // If we're past admin stage or request is approved, mark as completed
-        if (status === "pending_comptroller" || status === "pending_hr" || status === "pending_exec" || status === "approved") return "completed";
+        if (status === "pending_comptroller" || status === "pending_hr" || status === "pending_vp" || status === "pending_president" || status === "pending_exec" || status === "approved") return "completed";
         return "pending";
       
       case "comptroller":
         if (comptrollerApprovedAt) return "completed";
         if (status === "pending_comptroller") return "current";
-        if (status === "pending_hr" || status === "pending_exec" || status === "approved") return "completed";
+        if (status === "pending_hr" || status === "pending_vp" || status === "pending_president" || status === "pending_exec" || status === "approved") return "completed";
         return "pending";
       
       case "hr":
@@ -169,19 +195,30 @@ export default function RequestStatusTracker({
       case "vp":
         if (vpApprovedAt) return "completed";
         if (status === "pending_vp") return "current";
+        // If VP2 is needed and first VP approved, mark as completed
+        if (bothVpsApproved && vpApprovedAt && !vp2ApprovedAt) return "completed";
+        if (status === "pending_president" || status === "approved") return "completed";
+        return "pending";
+      
+      case "vp2":
+        if (vp2ApprovedAt) return "completed";
+        // If first VP approved but second hasn't, this is current
+        if (vpApprovedAt && !vp2ApprovedAt && bothVpsApproved) return "current";
+        // If we're past VP2 or request is approved, mark as completed
         if (status === "pending_president" || status === "approved") return "completed";
         return "pending";
       
       case "president":
         if (presidentApprovedAt) return "completed";
         if (status === "pending_president") return "current";
-        // Only mark as completed if actually approved by president
-        if (status === "approved" && presidentApprovedAt) return "completed";
+        // If request is approved, check if president approved
+        if (status === "approved") return presidentApprovedAt ? "completed" : "pending";
         return "pending";
       
       case "exec":
         if (execApprovedAt) return "completed";
         if (status === "pending_exec") return "current";
+        if (status === "approved") return execApprovedAt ? "completed" : "pending";
         return "pending";
       
       default:
@@ -197,6 +234,7 @@ export default function RequestStatusTracker({
       case "comptroller": return comptrollerApprovedBy;
       case "hr": return hrApprovedBy;
       case "vp": return vpApprovedBy || execApprovedBy; // Fallback to exec for legacy
+      case "vp2": return vp2ApprovedBy;
       case "president": return presidentApprovedBy || execApprovedBy; // Fallback to exec for legacy
       case "exec": return execApprovedBy;
       default: return null;
@@ -211,6 +249,7 @@ export default function RequestStatusTracker({
       case "comptroller": return comptrollerApprovedAt;
       case "hr": return hrApprovedAt;
       case "vp": return vpApprovedAt || execApprovedAt; // Fallback to exec for legacy
+      case "vp2": return vp2ApprovedAt;
       case "president": return presidentApprovedAt || execApprovedAt; // Fallback to exec for legacy
       case "exec": return execApprovedAt;
       default: return null;

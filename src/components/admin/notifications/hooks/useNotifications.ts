@@ -60,6 +60,19 @@ export function useNotifications() {
       const res = await fetch(`/api/notifications${unreadParam}${limitParam}`, {
         cache: "no-store",
       });
+      if (!res.ok) {
+        console.error("[useNotifications] API response not OK:", res.status, res.statusText);
+        setItems([]);
+        setUnread(0);
+        return;
+      }
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        console.error("[useNotifications] API returned non-JSON response. Content-Type:", contentType);
+        setItems([]);
+        setUnread(0);
+        return;
+      }
       const json = await res.json();
       
       if (json.ok && json.data) {

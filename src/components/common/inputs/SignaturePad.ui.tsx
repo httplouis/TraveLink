@@ -100,6 +100,15 @@ export default function SignaturePad({
     try {
       setLoadingSaved(true);
       const res = await fetch("/api/settings/signature");
+      if (!res.ok) {
+        console.warn("[SignaturePad] Signature API not OK:", res.status);
+        return;
+      }
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        console.warn("[SignaturePad] Signature API returned non-JSON response");
+        return;
+      }
       const data = await res.json();
       if (data.ok && data.data?.signature) {
         setSavedSignature(data.data.signature);
