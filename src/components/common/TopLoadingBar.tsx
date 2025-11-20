@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 
 /**
  * Top Loading Bar - Thin progress bar at the top of the page
  * Similar to nprogress but custom implementation
  */
-export default function TopLoadingBar() {
+function TopLoadingBarContent() {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const pathname = usePathname();
@@ -94,4 +94,14 @@ export function useTopLoadingBar() {
   return { start, set, complete, reset, loading, progress };
 }
 
+/**
+ * Top Loading Bar wrapper with Suspense boundary
+ */
+export default function TopLoadingBar() {
+  return (
+    <Suspense fallback={null}>
+      <TopLoadingBarContent />
+    </Suspense>
+  );
+}
 
