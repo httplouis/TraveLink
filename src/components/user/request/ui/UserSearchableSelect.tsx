@@ -42,6 +42,8 @@ export default function UserSearchableSelect({
   const [loading, setLoading] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const dropdownRef = React.useRef<HTMLDivElement>(null);
+  const isSelectingRef = React.useRef(false);
 
   // Fetch users from API
   React.useEffect(() => {
@@ -89,10 +91,25 @@ export default function UserSearchableSelect({
   }, [users, value]);
 
   const handleSelect = (user: User) => {
+    // Mark that we're selecting to prevent blur from interfering
+    isSelectingRef.current = true;
+    
+    // Call onChange immediately and synchronously
     onChange(user.name);
+    
+    // Reset search state immediately
     setSearchQuery("");
-    setIsOpen(false);
     setActiveIndex(0);
+    
+    // Close dropdown after a delay to ensure onChange callback completes
+    // This is especially important in production where there might be network latency
+    setTimeout(() => {
+      setIsOpen(false);
+      // Reset the flag after a bit more time to ensure blur handler sees it
+      setTimeout(() => {
+        isSelectingRef.current = false;
+      }, 100);
+    }, 100);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -142,7 +159,7 @@ export default function UserSearchableSelect({
           <input
             ref={inputRef}
             type="text"
-            value={isOpen ? searchQuery : value}
+            value={isOpen ? searchQuery : (value || "")}
             onChange={(e) => {
               setSearchQuery(e.target.value);
               setIsOpen(true);
@@ -150,11 +167,31 @@ export default function UserSearchableSelect({
             }}
             onFocus={() => {
               setIsOpen(true);
-              setSearchQuery("");
+              // Only clear search query if we don't have a value yet
+              if (!value) {
+                setSearchQuery("");
+              } else {
+                setSearchQuery(value);
+              }
             }}
-            onBlur={() => {
+            onBlur={(e) => {
+              // Don't close if we're selecting or if focus is moving to dropdown
+              if (isSelectingRef.current) {
+                return;
+              }
+              
+              // Check if the related target (where focus is going) is inside the dropdown
+              const relatedTarget = e.relatedTarget as HTMLElement;
+              if (relatedTarget && dropdownRef.current?.contains(relatedTarget)) {
+                return;
+              }
+              
               // Delay to allow click on option
-              setTimeout(() => setIsOpen(false), 200);
+              setTimeout(() => {
+                if (!isSelectingRef.current) {
+                  setIsOpen(false);
+                }
+              }, 200);
             }}
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
@@ -182,7 +219,10 @@ export default function UserSearchableSelect({
 
         {/* Dropdown */}
         {isOpen && (
-          <div className="absolute z-50 mt-1 w-full max-h-80 overflow-auto rounded-xl border border-gray-200 bg-white shadow-lg">
+          <div 
+            ref={dropdownRef}
+            className="absolute z-50 mt-1 w-full max-h-80 overflow-auto rounded-xl border border-gray-200 bg-white shadow-lg"
+          >
             {loading ? (
               <div className="px-4 py-3 text-sm text-gray-500">Loading users...</div>
             ) : filteredUsers.length === 0 ? (
@@ -192,7 +232,11 @@ export default function UserSearchableSelect({
                 <button
                   key={user.id}
                   type="button"
-                  onClick={() => handleSelect(user)}
+                  onMouseDown={(e) => {
+                    // onMouseDown fires before onBlur, so handle selection here
+                    e.preventDefault(); // Prevent input blur
+                    handleSelect(user);
+                  }}
                   onMouseEnter={() => setActiveIndex(idx)}
                   className={`w-full px-4 py-3 text-left transition-colors ${
                     idx === activeIndex

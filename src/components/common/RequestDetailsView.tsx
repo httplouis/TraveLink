@@ -137,10 +137,15 @@ export interface RequestData {
   smart_skips_applied?: string[];
   efficiency_boost?: number;
   requires_budget?: boolean;
+  
+  // Workflow metadata
   workflow_metadata?: {
     next_vp_id?: string;
     next_admin_id?: string;
     next_approver_role?: string;
+    reason_of_trip?: string;
+    department_head_endorsed_by?: string;
+    department_head_endorsement_date?: string;
     [key: string]: any;
   };
   
@@ -170,6 +175,9 @@ export interface RequestData {
   hrApprovedBy?: string | null;
   vpApprovedAt?: string | null;
   vpApprovedBy?: string | null;
+  vp2ApprovedAt?: string | null;
+  vp2ApprovedBy?: string | null;
+  bothVpsApproved?: boolean;
   presidentApprovedAt?: string | null;
   presidentApprovedBy?: string | null;
   execApprovedAt?: string | null;
