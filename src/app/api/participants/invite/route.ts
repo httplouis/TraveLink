@@ -138,14 +138,10 @@ export async function POST(req: NextRequest) {
     // Send email notification
     console.log(`[POST /api/participants/invite] 📧 Preparing to send email to ${email}...`);
     
-    // Fix: Properly handle baseUrl with fallback
-    let baseUrl = process.env.NEXT_PUBLIC_APP_URL;
-    if (!baseUrl && process.env.VERCEL_URL) {
-      baseUrl = `https://${process.env.VERCEL_URL}`;
-    }
-    if (!baseUrl) {
-      baseUrl = "http://localhost:3000";
-    }
+    // Use shared utility function for consistent baseUrl resolution
+    // This ensures email links work on mobile devices
+    const { getBaseUrl } = await import("@/lib/utils/getBaseUrl");
+    const baseUrl = getBaseUrl(req);
     const confirmationLink = `${baseUrl}/participants/confirm/${token}`;
 
     console.log(`[POST /api/participants/invite] 🔗 Base URL:`, baseUrl);
@@ -163,7 +159,7 @@ export async function POST(req: NextRequest) {
       
       console.log(`[POST /api/participants/invite] 📅 Raw seminar_data:`, JSON.stringify(seminarData, null, 2));
       
-      seminarTitle = seminarData?.title || requestData.title || "Seminar/Training";
+      seminarTitle = seminarData?.title || requestData?.seminar_title || "Seminar/Training";
       dateFrom = seminarData?.dateFrom || seminarData?.date_from || "";
       dateTo = seminarData?.dateTo || seminarData?.date_to || "";
       
@@ -173,7 +169,7 @@ export async function POST(req: NextRequest) {
         dateTo 
       });
     } else {
-      seminarTitle = requestData?.title || "Seminar/Training";
+      seminarTitle = requestData?.seminar_title || "Seminar/Training";
     }
     
     // Fallback to travel_start_date and travel_end_date if seminar_data doesn't have dates

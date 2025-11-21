@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { WorkflowEngine } from "@/lib/workflow/engine";
+import type { RequestStatus } from "@/lib/workflow/types";
 import { sendEmail, generateParticipantInvitationEmail, generateSignatureRequestEmail } from "@/lib/email";
 import { createNotification } from "@/lib/notifications/helpers";
 import { getPhilippineTimestamp } from "@/lib/datetime";
@@ -29,13 +30,18 @@ export async function POST(req: Request) {
       console.log("[/api/requests/submit] Seminar keys:", Object.keys(body.seminar || {}));
     }
     console.log("[/api/requests/submit] ======================================");
-    const supabase = await createSupabaseServerClient(true);
-
-    // Get current user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    
+    // CRITICAL FIX: First authenticate with user's session (anon key + cookies)
+    // Service role doesn't have user context, so we can't use it for auth.getUser()
+    const authSupabase = await createSupabaseServerClient(false);
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser();
     if (authError || !user) {
+      console.error("[/api/requests/submit] ❌ Authentication failed:", authError?.message || "No user");
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
+
+    // Now use service role for database operations (bypasses RLS)
+    const supabase = await createSupabaseServerClient(true);
 
     // Get user profile - try with department join first
     let profile: any = null;
@@ -877,7 +883,7 @@ export async function POST(req: Request) {
           }
           
           // Try flexible match with first + last name
-          const nameParts = searchName.split(/\s+/).filter(p => p.length > 2);
+          const nameParts = searchName.split(/\s+/).filter((p: string) => p.length > 2);
           if (nameParts.length >= 2) {
             const firstName = nameParts[0];
             const lastName = nameParts[nameParts.length - 1];
@@ -1196,7 +1202,7 @@ export async function POST(req: Request) {
       requester_contact_number: body.transportation?.pickup_contact_number || body.requester_contact_number || null,
       
       status: initialStatus,
-      current_approver_role: WorkflowEngine.getApproverRole(initialStatus),
+      current_approver_role: WorkflowEngine.getApproverRole(initialStatus as RequestStatus),
       
       // Save workflow_metadata with selected approver if head selected VP/admin during submission
       // Also save reason_of_trip and department_head_endorsement if provided
@@ -1802,13 +1808,10 @@ export async function POST(req: Request) {
         // Send email notification if requester has email
         if (requesterProfile?.email && initialStatus === "pending_requester_signature") {
           try {
-            let baseUrl = process.env.NEXT_PUBLIC_APP_URL;
-            if (!baseUrl && process.env.VERCEL_URL) {
-              baseUrl = `https://${process.env.VERCEL_URL}`;
-            }
-            if (!baseUrl) {
-              baseUrl = "http://localhost:3000";
-            }
+            // Use shared utility function for consistent baseUrl resolution
+            // This ensures email links work on mobile devices
+            const { getBaseUrl } = await import("@/lib/utils/getBaseUrl");
+            const baseUrl = getBaseUrl(req);
             const signatureLink = `${baseUrl}/user/inbox`;
 
             const travelDate = data.travel_start_date
@@ -1928,14 +1931,10 @@ export async function POST(req: Request) {
                   
                   if (!inviteError && invitation) {
                     // Send email notification
-                    // Fix: Properly handle baseUrl with fallback
-                    let baseUrl = process.env.NEXT_PUBLIC_APP_URL;
-                    if (!baseUrl && process.env.VERCEL_URL) {
-                      baseUrl = `https://${process.env.VERCEL_URL}`;
-                    }
-                    if (!baseUrl) {
-                      baseUrl = "http://localhost:3000";
-                    }
+                    // Use shared utility function for consistent baseUrl resolution
+                    // This ensures email links work on mobile devices
+                    const { getBaseUrl } = await import("@/lib/utils/getBaseUrl");
+                    const baseUrl = getBaseUrl(req);
                     const confirmationLink = `${baseUrl}/participants/confirm/${token}`;
 
                     const seminarTitle = body.seminar?.title || "Seminar/Training";

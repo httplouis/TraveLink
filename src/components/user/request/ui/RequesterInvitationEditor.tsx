@@ -112,12 +112,7 @@ export default function RequesterInvitationEditor({
   };
 
   const removeRequester = (id: string) => {
-    // Prevent removing if it's the only requester (must have at least 1)
-    if (requesters.length <= 1) {
-      toast.warning("Cannot remove", "At least one requester is required.");
-      return;
-    }
-    
+    // Allow removing all requesters (for form clearing)
     const updatedRequesters = requesters.filter(req => req.id !== id);
     onChange(updatedRequesters);
     
