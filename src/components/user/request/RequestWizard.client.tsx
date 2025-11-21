@@ -120,6 +120,8 @@ function RequestWizardContent() {
 
   // -------- restore on first mount only --------
   const didHydrateRef = React.useRef(false);
+  const checkingRequestingPersonRef = React.useRef(false);
+  const lastCheckedRequestingPersonRef = React.useRef<string>("");
 
   React.useEffect(() => {
     if (didHydrateRef.current) return;
@@ -366,14 +368,31 @@ function RequestWizardContent() {
     const checkRequestingPerson = async () => {
       const requestingPerson = data.travelOrder?.requestingPerson;
       
+      // Prevent concurrent calls
+      if (checkingRequestingPersonRef.current) {
+        console.log('[RequestWizard] ⏭️ Already checking requesting person, skipping...');
+        return;
+      }
+      
+      // Skip if we already checked this requesting person
+      if (requestingPerson && requestingPerson.trim() === lastCheckedRequestingPersonRef.current) {
+        console.log('[RequestWizard] ⏭️ Already checked this requesting person, skipping...');
+        return;
+      }
+      
       if (!requestingPerson || requestingPerson.trim() === "") {
         console.log('[RequestWizard] ⚠️ No requesting person, setting to false');
         setRequestingPersonIsHead(null);
         setRequestingPersonHeadInfo(null);
         setRequestingPersonInfo(null);
         setIsRepresentativeSubmission(false);
+        lastCheckedRequestingPersonRef.current = "";
         return;
       }
+      
+      // Mark as checking
+      checkingRequestingPersonRef.current = true;
+      lastCheckedRequestingPersonRef.current = requestingPerson.trim();
 
       try {
         // CRITICAL: First check if requesting person is the current user
@@ -580,23 +599,20 @@ function RequestWizardContent() {
           }
           
           // Auto-populate department to current user's department
-          // Force update even if department is already set to ensure it's correct
-          // Also check if current value is just a code (e.g., "CCMS") and needs to be converted
+          // Only update if department is different or missing
           const currentDept = data.travelOrder?.department || "";
           const needsUpdate = !currentDept || 
-            currentDept !== requesterDepartment ||
+            currentDept.trim() !== requesterDepartment.trim() ||
             (currentDept.length <= 10 && currentDept === dept?.code); // If it's just a code like "CCMS"
           
           if (requesterDepartment && needsUpdate) {
             console.log('[RequestWizard] 🔄 Auto-populating department to current user\'s department:', requesterDepartment);
             console.log('[RequestWizard]   - Current department in form:', currentDept);
             console.log('[RequestWizard]   - Will update to:', requesterDepartment);
-            // Force update the department field
+            // Update the department field only if needed
             patchTravelOrder({ department: requesterDepartment });
-            // Also log after a short delay to verify it was updated
-            setTimeout(() => {
-              console.log('[RequestWizard] ✅ Department should now be:', requesterDepartment);
-            }, 100);
+          } else if (requesterDepartment && !needsUpdate) {
+            console.log('[RequestWizard] ✅ Department already correct, skipping update:', currentDept);
           } else {
             console.warn('[RequestWizard] ⚠️ No department found for current user:', actualCurrentUser);
           }
@@ -807,13 +823,17 @@ function RequestWizardContent() {
           console.log('  - Is representative submission?', finalIsDifferent);
           setIsRepresentativeSubmission(finalIsDifferent);
 
-          // ALWAYS update department to requesting person's department (requester's department)
-          // This ensures the department matches the requester, not the current user
-          // Force update even if it's already set, to ensure it's always correct
-          if (requesterDepartment) {
+          // Update department to requesting person's department (requester's department)
+          // Only update if department is different or missing to prevent infinite loops
+          const currentDept = data.travelOrder?.department || "";
+          const needsUpdate = !currentDept || currentDept.trim() !== requesterDepartment.trim();
+          
+          if (requesterDepartment && needsUpdate) {
             console.log('[RequestWizard] 🔄 Auto-populating department to requester\'s department:', requesterDepartment);
-            console.log('[RequestWizard]   - Current department in form:', data.travelOrder?.department);
+            console.log('[RequestWizard]   - Current department in form:', currentDept);
             patchTravelOrder({ department: requesterDepartment });
+          } else if (requesterDepartment && !needsUpdate) {
+            console.log('[RequestWizard] ✅ Department already correct, skipping update:', currentDept);
           } else {
             console.warn('[RequestWizard] ⚠️ Requesting person has no department assigned');
           }
@@ -951,6 +971,8 @@ function RequestWizardContent() {
         }
       } catch (error) {
         console.error("Failed to check requesting person:", error);
+        // Reset ref on error so we can retry
+        lastCheckedRequestingPersonRef.current = "";
         // Still check if different from current user even if API fails
         // Try to get current user info if not available
         let actualCurrentUser = currentUser;
@@ -985,6 +1007,11 @@ function RequestWizardContent() {
         setRequestingPersonIsHead(null);
         setRequestingPersonHeadInfo(null);
         setRequestingPersonInfo(null);
+        // Reset ref on error so we can retry
+        lastCheckedRequestingPersonRef.current = "";
+      } finally {
+        // Always reset checking flag
+        checkingRequestingPersonRef.current = false;
       }
     };
 
@@ -997,6 +1024,8 @@ function RequestWizardContent() {
     }
     
     // Check if we have requesting person - we need both to compare properly
+    // CRITICAL: Don't include data.travelOrder?.department in dependencies to prevent infinite loop
+    // The department is auto-populated by this function, so including it causes re-triggers
     if (data.travelOrder?.requestingPerson) {
       console.log('[RequestWizard] ✅ Requesting person available, running check...');
       checkRequestingPerson();
@@ -1004,7 +1033,7 @@ function RequestWizardContent() {
       console.log('[RequestWizard] ⚠️ No requesting person, setting to false');
       setIsRepresentativeSubmission(false);
     }
-  }, [data.travelOrder?.requestingPerson, data.travelOrder?.department, currentUser?.id, currentUser?.name, userLoading, data.reason]);
+  }, [data.travelOrder?.requestingPerson, currentUser?.id, currentUser?.name, userLoading, data.reason]);
 
   // autosave on change (debounced)
   React.useEffect(() => {
@@ -1032,6 +1061,8 @@ function RequestWizardContent() {
         endorsedByHeadName: "",
         endorsedByHeadDate: "",
         endorsedByHeadSignature: "",
+        // Clear requesters array when resetting
+        requesters: undefined,
       },
       schoolService: undefined,
       seminar: undefined,

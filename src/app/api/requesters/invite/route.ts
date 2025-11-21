@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { sendEmail } from "@/lib/email";
+import { getBaseUrl } from "@/lib/utils/getBaseUrl";
 import * as crypto from "crypto";
 
 /**
@@ -195,62 +196,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Generate confirmation link - use absolute URL
-    // Priority order:
-    // 1. NEXT_PUBLIC_APP_URL (explicit production URL)
-    // 2. Request headers (origin/host) - most reliable for current request
-    // 3. VERCEL_URL (auto-set by Vercel)
-    // 4. localhost (development only)
-    
-    let baseUrl = process.env.NEXT_PUBLIC_APP_URL;
-    
-    // If no explicit URL, try to get from request headers (most reliable)
-    if (!baseUrl) {
-      const origin = req.headers.get('origin');
-      const host = req.headers.get('host');
-      const forwardedHost = req.headers.get('x-forwarded-host');
-      const protocol = req.headers.get('x-forwarded-proto') || 
-                      (req.headers.get('x-forwarded-ssl') === 'on' ? 'https' : 'http');
-      
-      // Prefer origin, then forwarded-host, then host
-      const requestHost = origin?.replace(/^https?:\/\//, '') || 
-                         forwardedHost || 
-                         host;
-      
-      if (requestHost && !requestHost.includes('localhost')) {
-        // Use https for production (unless explicitly http)
-        const finalProtocol = protocol === 'http' ? 'http' : 'https';
-        baseUrl = `${finalProtocol}://${requestHost}`;
-        console.log(`[POST /api/requesters/invite] 🌐 Using baseUrl from request headers: ${baseUrl}`);
-      }
-    }
-    
-    // Fallback to VERCEL_URL (auto-set by Vercel in production)
-    if (!baseUrl && process.env.VERCEL_URL) {
-      baseUrl = `https://${process.env.VERCEL_URL}`;
-      console.log(`[POST /api/requesters/invite] 🌐 Using baseUrl from VERCEL_URL: ${baseUrl}`);
-    }
-    
-    // Last resort: localhost (ONLY for development)
-    if (!baseUrl) {
-      if (process.env.NODE_ENV === 'production') {
-        // In production, we should NEVER use localhost
-        console.error(`[POST /api/requesters/invite] ❌ CRITICAL: No baseUrl found in production!`);
-        console.error(`[POST /api/requesters/invite] ❌ Set NEXT_PUBLIC_APP_URL environment variable!`);
-        // Still use localhost as fallback but log warning
-        baseUrl = "http://localhost:3000";
-      } else {
-        baseUrl = "http://localhost:3000";
-      }
-    }
-    
-    // Ensure baseUrl doesn't have trailing slash
-    baseUrl = baseUrl.replace(/\/$/, '');
-    
-    // Warn if using localhost in production
-    if (baseUrl.includes('localhost') && process.env.NODE_ENV === 'production') {
-      console.error(`[POST /api/requesters/invite] ⚠️ WARNING: Using localhost in production!`);
-      console.error(`[POST /api/requesters/invite] ⚠️ Set NEXT_PUBLIC_APP_URL environment variable!`);
-    }
+    // Use shared utility function for consistent baseUrl resolution
+    // This ensures email links work on mobile devices
+    const baseUrl = getBaseUrl(req);
     
     console.log(`[POST /api/requesters/invite] 🌐 Base URL resolved:`, {
       baseUrl,
