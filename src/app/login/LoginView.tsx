@@ -26,7 +26,31 @@ export default function LoginView({
   const [showPassword, setShowPassword] = React.useState(false);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-gray-50 to-slate-100 p-4">
+    <div 
+      className="min-h-screen flex items-center justify-center p-4 relative"
+      style={{
+        backgroundImage: "url('/pattern-light.jpg')",
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat'
+      }}
+    >
+      {/* University Name and Logo - Upper Left, Outside Panel */}
+      <div className="absolute top-6 left-6 z-20 flex items-center gap-3">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/euwhite.png"
+          alt="Manuel S. Enverga University Logo"
+          className="h-10 w-10 object-contain drop-shadow-lg"
+          onError={(e) => {
+            (e.target as HTMLImageElement).style.display = 'none';
+          }}
+        />
+        <h3 className="text-lg font-bold text-white tracking-tight drop-shadow-lg">
+          Manuel S. Enverga University
+        </h3>
+      </div>
+
       <div className="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-2 gap-0 rounded-2xl shadow-2xl overflow-hidden bg-white">
         {/* LEFT: Login Form */}
         <div className="flex flex-col justify-center p-8 sm:p-12 lg:p-16 bg-white">
@@ -42,18 +66,13 @@ export default function LoginView({
                   (e.target as HTMLImageElement).style.display = 'none';
                 }}
               />
-              <h1 className="text-4xl font-extrabold tracking-tight" style={{
-                background: 'linear-gradient(135deg, #7A0010 0%, #9A0020 50%, #BA0030 100%)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                backgroundClip: 'text',
+              <h1 className="text-4xl font-extrabold tracking-tight text-[#7A0010]" style={{
                 letterSpacing: '-0.02em',
                 fontFamily: 'Inter, system-ui, sans-serif'
               }}>
                 Travelink
               </h1>
             </div>
-            <p className="text-sm text-gray-500 font-medium">Campus Transport System</p>
           </div>
 
           {/* Welcome Text */}
@@ -210,16 +229,37 @@ export default function LoginView({
           </div>
 
           {/* Footer */}
-          <p className="mt-8 text-xs text-gray-500 text-center">
-            By signing in, you agree to use your institutional Microsoft account
-          </p>
+          <div className="mt-8 space-y-2">
+            <p className="text-xs text-gray-500 text-center">
+              By signing in, you agree to use your institutional Microsoft account
+            </p>
+            <div className="flex items-center justify-center gap-3 text-xs">
+              <a 
+                href="/privacy" 
+                className="text-[#7A0010] hover:underline transition-colors"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Privacy Policy
+              </a>
+              <span className="text-gray-400">•</span>
+              <a 
+                href="/terms" 
+                className="text-[#7A0010] hover:underline transition-colors"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Terms of Service
+              </a>
+            </div>
+          </div>
         </div>
 
         {/* RIGHT: Promotional Panel */}
         <div className="hidden lg:flex relative overflow-hidden bg-gradient-to-br from-[#7A0010] via-[#8A0010] to-[#6A0010]">
-          {/* Background Pattern */}
+          {/* Background Image - School Image */}
           <div 
-            className="absolute inset-0 opacity-10"
+            className="absolute inset-0"
             style={{ 
               backgroundImage: "url('/pattern-light.jpg')",
               backgroundSize: 'cover',
@@ -228,8 +268,8 @@ export default function LoginView({
             }}
           />
           
-          {/* Gradient Overlay */}
-          <div className="absolute inset-0 bg-gradient-to-br from-[#7A0010]/95 via-[#8A0010]/90 to-[#6A0010]/95" />
+          {/* Gradient Overlay for better text readability */}
+          <div className="absolute inset-0 bg-gradient-to-br from-[#7A0010]/90 via-[#8A0010]/85 to-[#6A0010]/90" />
           
           {/* Decorative Elements */}
           <div className="absolute top-0 right-0 w-96 h-96 bg-white/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
@@ -238,19 +278,6 @@ export default function LoginView({
           {/* Content */}
           <div className="relative z-10 flex flex-col justify-between p-12 text-white min-h-full">
             <div>
-              {/* Logo */}
-              <div className="mb-8">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/euwhite.png"
-                  alt="EU Logo"
-                  className="h-20 w-20 object-contain mb-4 drop-shadow-2xl"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = 'none';
-                  }}
-                />
-              </div>
-
               {/* Main Heading */}
               <h2 className="text-5xl font-extrabold mb-4 leading-tight tracking-tight" style={{
                 letterSpacing: '-0.02em',
