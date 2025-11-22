@@ -1703,6 +1703,245 @@ export async function POST(req: Request) {
         console.error("[/api/requests/submit] ❌ Error processing multiple requesters:", err);
         // Don't fail the request creation
       }
+
+      // ============================================
+      // HEAD ENDORSEMENT INVITATIONS (Multi-Department)
+      // ============================================
+      // If there are multiple requesters from different departments, send head endorsement invitations
+      try {
+        const allRequesters = Array.isArray(body.travelOrder?.requesters) 
+          ? body.travelOrder.requesters 
+          : [];
+        
+        if (allRequesters.length > 0) {
+          // Get unique departments from requesters (excluding main requester if they're a head)
+          const requesterDepartments = new Map<string, { department_id?: string; department_name: string; requester_name: string; requester_email: string }>();
+          
+          for (const req of allRequesters) {
+            if (req.department && req.department.trim()) {
+              const deptKey = req.department_id || req.department.trim().toLowerCase();
+              if (!requesterDepartments.has(deptKey)) {
+                requesterDepartments.set(deptKey, {
+                  department_id: req.department_id,
+                  department_name: req.department,
+                  requester_name: req.name,
+                  requester_email: req.email,
+                });
+              }
+            }
+          }
+
+          // Check if main requester is a head - if so, exclude their department
+          const mainRequesterIsHead = body.requesterIsHead || false;
+          const mainRequesterDept = body.department_id || null;
+          
+          // Filter out main requester's department if they're a head
+          const departmentsNeedingEndorsement = Array.from(requesterDepartments.values()).filter(dept => {
+            if (mainRequesterIsHead && dept.department_id === mainRequesterDept) {
+              console.log(`[/api/requests/submit] ⏭️ Skipping main requester's department (head is requester): ${dept.department_name}`);
+              return false;
+            }
+            return true;
+          });
+
+          console.log(`[/api/requests/submit] 🔍 Multi-department check:`, {
+            totalRequesters: allRequesters.length,
+            uniqueDepartments: requesterDepartments.size,
+            departmentsNeedingEndorsement: departmentsNeedingEndorsement.length,
+            mainRequesterIsHead,
+            mainRequesterDept,
+          });
+
+          // For each department needing endorsement, find the head and send invitation
+          if (departmentsNeedingEndorsement.length > 0) {
+            console.log(`[/api/requests/submit] 📧 Sending head endorsement invitations for ${departmentsNeedingEndorsement.length} departments...`);
+            
+            // Process invitations asynchronously (fire and forget)
+            Promise.resolve().then(async () => {
+              try {
+                const { getBaseUrl } = await import("@/lib/utils/getBaseUrl");
+                const baseUrl = getBaseUrl(req);
+                
+                for (const dept of departmentsNeedingEndorsement) {
+                  try {
+                    // Find department head
+                    let headEmail: string | null = null;
+                    let headName: string | null = null;
+                    let headUserId: string | null = null;
+
+                    if (dept.department_id) {
+                      // Query department head directly from database
+                      const { data: heads, error: headError } = await supabase
+                        .from("users")
+                        .select("id, name, email")
+                        .eq("department_id", dept.department_id)
+                        .eq("is_head", true)
+                        .eq("status", "active")
+                        .limit(1);
+                      
+                      if (!headError && heads && heads.length > 0) {
+                        const head = heads[0];
+                        headEmail = head.email;
+                        headName = head.name;
+                        headUserId = head.id;
+                      } else {
+                        console.warn(`[/api/requests/submit] ⚠️ No head found in database for department_id: ${dept.department_id}`, headError);
+                      }
+                    }
+
+                    if (!headEmail) {
+                      console.warn(`[/api/requests/submit] ⚠️ No head found for department: ${dept.department_name}`);
+                      continue;
+                    }
+
+                    // Check if invitation already exists
+                    const { data: existing, error: existingError } = await supabase
+                      .from("head_endorsement_invitations")
+                      .select("id, status")
+                      .eq("request_id", data.id)
+                      .eq("head_email", headEmail.toLowerCase())
+                      .maybeSingle();
+
+                    if (existing && !existingError && existing.status === 'confirmed') {
+                      console.log(`[/api/requests/submit] ✅ Head endorsement already confirmed for ${headEmail}`);
+                      continue;
+                    }
+
+                    // Create or update invitation
+                    const token = crypto.randomBytes(32).toString('hex');
+                    const expiresAt = new Date();
+                    expiresAt.setDate(expiresAt.getDate() + 7); // 7 days
+
+                    let invitation: any;
+                    if (existing && !existingError) {
+                      // Update existing invitation
+                      const { data: updated, error: updateError } = await supabase
+                        .from("head_endorsement_invitations")
+                        .update({
+                          token,
+                          expires_at: expiresAt.toISOString(),
+                          status: 'pending',
+                          updated_at: new Date().toISOString(),
+                        })
+                        .eq("id", existing.id)
+                        .select()
+                        .single();
+                      
+                      if (updateError) {
+                        console.error(`[/api/requests/submit] ❌ Failed to update invitation:`, updateError);
+                        continue;
+                      }
+                      invitation = updated;
+                    } else {
+                      // Create new invitation
+                      const { data: newInvitation, error: insertError } = await supabase
+                        .from("head_endorsement_invitations")
+                        .insert({
+                          request_id: data.id,
+                          head_email: headEmail.toLowerCase(),
+                          head_name: headName,
+                          head_user_id: headUserId,
+                          department_id: dept.department_id || null,
+                          department_name: dept.department_name,
+                          invited_by: profile.id,
+                          token,
+                          expires_at: expiresAt.toISOString(),
+                          status: 'pending',
+                        })
+                        .select()
+                        .single();
+
+                      if (insertError) {
+                        console.error(`[/api/requests/submit] ❌ Failed to create invitation:`, insertError);
+                        continue;
+                      }
+                      invitation = newInvitation;
+                    }
+
+                    // Send email invitation
+                    const confirmationLink = `${baseUrl}/head-endorsements/confirm/${token}`;
+                    const emailHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Head Endorsement Request</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <div style="background: linear-gradient(135deg, #7a0019 0%, #5a0012 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+    <h1 style="color: white; margin: 0; font-size: 24px;">Head Endorsement Request</h1>
+  </div>
+  
+  <div style="background: white; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 10px 10px;">
+    <p style="font-size: 16px; margin-bottom: 20px;">
+      Hello ${headName || 'Department Head'},
+    </p>
+    
+    <p style="font-size: 16px; margin-bottom: 20px;">
+      You have been requested to endorse a travel request for <strong>${dept.department_name}</strong>.
+    </p>
+    
+    <div style="background: #f9fafb; border-left: 4px solid #7a0019; padding: 20px; margin: 20px 0; border-radius: 4px;">
+      <h2 style="margin-top: 0; color: #7a0019; font-size: 18px;">Request Details</h2>
+      <p style="margin: 8px 0;"><strong>Request Number:</strong> ${data.request_number || 'Request'}</p>
+      <p style="margin: 8px 0;"><strong>Title:</strong> ${data.title || 'Travel Request'}</p>
+      <p style="margin: 8px 0;"><strong>Destination:</strong> ${data.destination || 'Destination'}</p>
+      <p style="margin: 8px 0;"><strong>Requester from ${dept.department_name}:</strong> ${dept.requester_name}</p>
+    </div>
+    
+    <p style="font-size: 16px; margin: 30px 0;">
+      Please review and endorse this request by clicking the button below:
+    </p>
+    
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${confirmationLink}" 
+         style="display: inline-block; background: #7a0019; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px;">
+        Review & Endorse Request
+      </a>
+    </div>
+    
+    <p style="font-size: 14px; color: #6b7280; margin-top: 30px;">
+      Or copy and paste this link into your browser:<br>
+      <a href="${confirmationLink}" style="color: #7a0019; word-break: break-all;">${confirmationLink}</a>
+    </p>
+    
+    <p style="font-size: 14px; color: #6b7280; margin-top: 20px;">
+      This invitation will expire in 7 days.
+    </p>
+  </div>
+</body>
+</html>
+                    `;
+
+                    const { sendEmail } = await import("@/lib/email");
+                    const emailResult = await sendEmail({
+                      to: headEmail.toLowerCase(),
+                      subject: `Head Endorsement Request: ${data.request_number || 'Request'}`,
+                      html: emailHtml,
+                    });
+
+                    if (emailResult.success) {
+                      console.log(`[/api/requests/submit] ✅ Head endorsement invitation sent to ${headEmail}`);
+                    } else {
+                      console.warn(`[/api/requests/submit] ⚠️ Invitation created but email failed for ${headEmail}:`, emailResult.error);
+                    }
+                  } catch (err: any) {
+                    console.error(`[/api/requests/submit] ❌ Error processing head endorsement for ${dept.department_name}:`, err.message);
+                  }
+                }
+                
+                console.log(`[/api/requests/submit] ✅ All head endorsement invitations processed`);
+              } catch (err: any) {
+                console.error(`[/api/requests/submit] ❌ Error processing head endorsement invitations:`, err.message);
+              }
+            });
+          }
+        }
+      } catch (err: any) {
+        console.error("[/api/requests/submit] ❌ Error processing head endorsement invitations:", err);
+        // Don't fail the request creation
+      }
     } else {
       // If no multiple requesters, delete all existing invitations for this request
       // (in case requesters were removed)

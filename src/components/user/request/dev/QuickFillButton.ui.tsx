@@ -16,16 +16,43 @@ import { useToast } from "@/components/common/ui/ToastProvider.ui";
 export function QuickFillCurrentButton() {
   const { data, hardSet, clearIds } = useRequestStore();
   const toast = useToast();
+  const [loading, setLoading] = React.useState(false);
 
-  function handleClick() {
+  async function handleClick() {
     try {
+      setLoading(true);
       console.log("[QuickFill] Button clicked!"); // First log to confirm button works
       console.log("[QuickFill] Current data:", data);
+      
+      // Fetch real drivers and vehicles from API
+      const [driversRes, vehiclesRes] = await Promise.all([
+        fetch('/api/drivers'),
+        fetch('/api/vehicles?status=available'),
+      ]);
+      
+      const driversData = await driversRes.json();
+      const vehiclesData = await vehiclesRes.json();
+      
+      const drivers = driversData.ok && driversData.data 
+        ? driversData.data.map((d: any) => ({ name: d.name, id: d.id }))
+        : [];
+      const vehicles = vehiclesData.ok && vehiclesData.data
+        ? vehiclesData.data.map((v: any) => ({ 
+            name: v.vehicle_name || v.name, 
+            plate: v.plate_number || v.plate || '', 
+            id: v.id 
+          }))
+        : [];
+      
+      console.log("[QuickFill] Fetched drivers:", drivers.length);
+      console.log("[QuickFill] Fetched vehicles:", vehicles.length);
       
       const filled = buildFilledData({
         requesterRole: data.requesterRole,
         reason: data.reason,
         vehicleMode: data.vehicleMode,
+        drivers,
+        vehicles,
       });
       
       console.log("[QuickFill] Built data:", filled);
@@ -51,12 +78,15 @@ export function QuickFillCurrentButton() {
         title: "QuickFill Error",
         message: String(error),
       });
+    } finally {
+      setLoading(false);
     }
   }
 
   return (
     <button
       onClick={handleClick}
+      disabled={loading}
       className="rounded-md border px-3 py-1.5 text-sm hover:bg-neutral-50"
       title="Dev: auto-fill with sample data"
       type="button"
@@ -71,6 +101,7 @@ export function QuickFillMenu() {
   const { hardSet, clearIds } = useRequestStore();
   const toast = useToast();
   const [open, setOpen] = React.useState(false);
+  const [loading, setLoading] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
@@ -82,28 +113,62 @@ export function QuickFillMenu() {
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
 
-  function pick(p: PresetKey) {
-    const filled = buildPreset(p);
-    // ✅ important: detach any draft/submission id
-    clearIds?.();
-    hardSet(filled);
-    setOpen(false);
-    toast({
-      kind: "success",
-      title: "Form populated",
-      message: `Preset “${PRESETS[p].label}” loaded.`,
-    });
+  async function pick(p: PresetKey) {
+    try {
+      setLoading(true);
+      
+      // Fetch real drivers and vehicles from API
+      const [driversRes, vehiclesRes] = await Promise.all([
+        fetch('/api/drivers'),
+        fetch('/api/vehicles?status=available'),
+      ]);
+      
+      const driversData = await driversRes.json();
+      const vehiclesData = await vehiclesRes.json();
+      
+      const drivers = driversData.ok && driversData.data 
+        ? driversData.data.map((d: any) => ({ name: d.name, id: d.id }))
+        : [];
+      const vehicles = vehiclesData.ok && vehiclesData.data
+        ? vehiclesData.data.map((v: any) => ({ 
+            name: v.vehicle_name || v.name, 
+            plate: v.plate_number || v.plate || '', 
+            id: v.id 
+          }))
+        : [];
+      
+      const filled = buildPreset(p, drivers, vehicles);
+      // ✅ important: detach any draft/submission id
+      clearIds?.();
+      hardSet(filled);
+      setOpen(false);
+      toast({
+        kind: "success",
+        title: "Form populated",
+        message: `Preset "${PRESETS[p].label}" loaded.`,
+      });
+    } catch (error) {
+      console.error("[QuickFillMenu] ERROR:", error);
+      toast({
+        kind: "error",
+        title: "QuickFill Error",
+        message: String(error),
+      });
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="rounded-md border px-3 py-1.5 text-sm hover:bg-neutral-50"
+        disabled={loading}
+        className="rounded-md border px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
         title="Dev: choose a preset and auto-fill"
         type="button"
       >
-        ⚡ Fill presets
+        {loading ? "Loading..." : "⚡ Fill presets"}
       </button>
 
       {open && (
@@ -176,9 +241,13 @@ const PRESETS: Record<
   },
 };
 
-function buildPreset(key: PresetKey): RequestFormData {
+function buildPreset(
+  key: PresetKey, 
+  drivers: Array<{ name: string; id: string }> = [],
+  vehicles: Array<{ name: string; plate: string; id: string }> = []
+): RequestFormData {
   const { requesterRole, reason, vehicleMode } = PRESETS[key];
-  return buildFilledData({ requesterRole, reason, vehicleMode });
+  return buildFilledData({ requesterRole, reason, vehicleMode, drivers, vehicles });
 }
 
 /** Generates a valid filled form given a trio of choices */
@@ -186,10 +255,14 @@ function buildFilledData({
   requesterRole,
   reason,
   vehicleMode,
+  drivers = [],
+  vehicles = [],
 }: {
   requesterRole: RequesterRole;
   reason: Reason;
   vehicleMode: VehicleMode;
+  drivers?: Array<{ name: string; id: string }>;
+  vehicles?: Array<{ name: string; plate: string; id: string }>;
 }): RequestFormData {
   const locked = lockVehicle(reason);
   const v = locked ?? vehicleMode;
@@ -277,28 +350,21 @@ function buildFilledData({
   };
 
   // REAL vehicle IDs from your database!
-  const vehicles = [
-    { name: "Bus 1", plate: "ABC-1234", id: "0e9dc284-d380-46a7-8aa9-27baba0b5100" },
-    { name: "Van 2", plate: "DRV-1001", id: "781d619f-2134-4f2f-e6a4-88bc269529aa" },
-    { name: "Van 1", plate: "XYZ-5678", id: "b336080f-a797-4a33-b53d-35ea5e417e1a" },
-    { name: "Car 3", plate: "QWE-1122", id: "32be315f-4981-4850-b111-a5b8b4bb4e38" },
-    { name: "Bus 1", plate: "MSE-001", id: "eac79a97-86c8-4cdf-9f12-9c472223d249" },
-  ];
+  // Use provided drivers and vehicles from API (passed as parameters)
+  // Fallback to empty arrays if not provided
+  const availableDrivers = drivers.length > 0 ? drivers : [];
+  const availableVehicles = vehicles.length > 0 ? vehicles : [];
   
-  // REAL driver IDs from your database! (user_id from users table)
-  const drivers = [
-    { name: "Juan Dela Cruz", id: "07ebccfa-2d2a-400b-bc8c-18c8caa528f3" },
-    { name: "Maria Santos", id: "52fbc959-4e7c-4c1a-a266-f11010285fb8" },
-    { name: "Pedro Reyes", id: "697765f0-0c33-4b0d-aa0b-de39a1dab693" },
-    { name: "Ana Garcia", id: "413fae40-a49c-4519-9bc4-05d16871b9c0" },
-    { name: "Roberto Fernandez", id: "3b887fd1-85db-4c93-b4d5-5c57b5f12088" },
-  ];
-  
-  const randomDriver = drivers[Math.floor(Math.random() * drivers.length)];
-  const randomVehicle = vehicles[Math.floor(Math.random() * vehicles.length)];
+  // Use random driver/vehicle if available, otherwise skip schoolService
+  const randomDriver = availableDrivers.length > 0 
+    ? availableDrivers[Math.floor(Math.random() * availableDrivers.length)] 
+    : null;
+  const randomVehicle = availableVehicles.length > 0 
+    ? availableVehicles[Math.floor(Math.random() * availableVehicles.length)] 
+    : null;
 
   const schoolService: RequestFormData["schoolService"] =
-    v === "institutional"
+    v === "institutional" && randomDriver && randomVehicle
       ? {
           driver: randomDriver.name,
           vehicle: `${randomVehicle.name} • ${randomVehicle.plate}`,

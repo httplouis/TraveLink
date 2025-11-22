@@ -189,6 +189,26 @@ function RequestWizardContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Pre-fill date field with today's date if empty
+  React.useEffect(() => {
+    if (!data.travelOrder?.date) {
+      const today = new Date();
+      const todayString = today.toISOString().slice(0, 10); // Format: YYYY-MM-DD
+      patchTravelOrder({ date: todayString });
+      console.log('[RequestWizard] ✅ Pre-filled date field with today:', todayString);
+    }
+  }, [data.travelOrder?.date, patchTravelOrder]);
+
+  // Pre-fill endorsement date with today's date if empty AND NOT head requester
+  React.useEffect(() => {
+    if (!isHeadRequester && !data.travelOrder?.endorsedByHeadDate) {
+      const today = new Date();
+      const todayString = today.toISOString().slice(0, 10); // Format: YYYY-MM-DD
+      patchTravelOrder({ endorsedByHeadDate: todayString });
+      console.log('[RequestWizard] ✅ Pre-filled endorsement date with today:', todayString);
+    }
+  }, [data.travelOrder?.endorsedByHeadDate, isHeadRequester, patchTravelOrder]);
+
   // Pre-fill requesting person with current user's name - ALWAYS update when user loads
   // Also pre-fill department if requesting person is current user
   React.useEffect(() => {
@@ -617,9 +637,10 @@ function RequestWizardContent() {
             console.warn('[RequestWizard] ⚠️ No department found for current user:', actualCurrentUser);
           }
           
-          // If current user is NOT a head, find their department head
+          // If current user is NOT a head AND requesting person is NOT a head, find their department head
           // Use finalDepartmentId (which may have been looked up)
-          if (!isHead && finalDepartmentId) {
+          // IMPORTANT: Don't auto-fill if head is the requester - they will choose who to send to
+          if (!isHead && !isHeadRequester && finalDepartmentId) {
             console.log('[RequestWizard] 🔍 Fetching department head for department_id:', finalDepartmentId);
             const headResponse = await fetch(`/api/approvers?role=head&department_id=${finalDepartmentId}`);
             const headData = await headResponse.json();
@@ -672,10 +693,12 @@ function RequestWizardContent() {
               }
             }
           } else {
-            if (isHead) {
-              // If current user IS a head, clear head endorsement field
+            if (isHead || isHeadRequester) {
+              // If current user IS a head OR requesting person is a head, clear head endorsement field
               // Head should choose who to send to (parent head, admin, VP, etc.)
-              console.log('[RequestWizard] 🧹 Current user is a head - clearing head endorsement field');
+              console.log('[RequestWizard] 🧹 Head is requester - clearing head endorsement field');
+              console.log('[RequestWizard]   - isHead:', isHead);
+              console.log('[RequestWizard]   - isHeadRequester:', isHeadRequester);
               console.log('[RequestWizard]   - Current head in form:', data.travelOrder?.endorsedByHeadName);
               patchTravelOrder({ endorsedByHeadName: "" });
               setRequestingPersonHeadInfo(null);
@@ -862,74 +885,12 @@ function RequestWizardContent() {
               });
             }
           } else if (result.isHead) {
-            // If requesting person IS a head, fetch their parent head (SVP) if exists
-            // Head should see their parent head (e.g., CCMS head → SVP Academics)
-            console.log('[RequestWizard] 🔍 Requester is a head - checking for parent head');
-            
-            if (result.user?.department_id) {
-              try {
-                // Fetch department info to check for parent_department_id
-                const deptResponse = await fetch(`/api/departments?id=${result.user.department_id}`);
-                const deptData = await deptResponse.json();
-                
-                if (deptData.ok && deptData.departments?.[0]) {
-                  const dept = deptData.departments[0];
-                  console.log('[RequestWizard] 📋 Requester department info:', {
-                    name: dept.name,
-                    code: dept.code,
-                    parent_department_id: dept.parent_department_id
-                  });
-                  
-                  // If department has a parent, fetch parent head (SVP)
-                  if (dept.parent_department_id) {
-                    console.log('[RequestWizard] 🔍 Requester department has parent - fetching parent head (SVP)');
-                    const parentHeadResponse = await fetch(`/api/approvers?role=head&department_id=${dept.parent_department_id}`);
-                    const parentHeadData = await parentHeadResponse.json();
-                    
-                    if (parentHeadData.ok && parentHeadData.data && parentHeadData.data.length > 0) {
-                      const parentHead = parentHeadData.data[0];
-                      const parentHeadName = parentHead.name || "Parent Department Head";
-                      console.log('[RequestWizard] ✅ Found parent head (SVP) for requester:', parentHeadName);
-                      
-                      setRequestingPersonHeadInfo({
-                        name: parentHeadName,
-                        department: parentHead.department?.name || dept.name || requesterDepartment || "",
-                      });
-                      
-                      // Auto-populate parent head name in the form
-                      if (parentHeadName && parentHeadName !== "Parent Department Head") {
-                        console.log('[RequestWizard] 🔄 Auto-populating parent head name (SVP) for requester:', parentHeadName);
-                        patchTravelOrder({ endorsedByHeadName: parentHeadName });
-                      } else {
-                        patchTravelOrder({ endorsedByHeadName: "" });
-                      }
-                    } else {
-                      console.warn('[RequestWizard] ⚠️ No parent head found for requester parent_department_id:', dept.parent_department_id);
-                      patchTravelOrder({ endorsedByHeadName: "" });
-                      setRequestingPersonHeadInfo(null);
-                    }
-                  } else {
-                    // No parent department - head is top-level, they choose who to send to
-                    console.log('[RequestWizard] ℹ️ Requester has no parent department - head is top-level, will choose approver');
-                    patchTravelOrder({ endorsedByHeadName: "" });
-                    setRequestingPersonHeadInfo(null);
-                  }
-                } else {
-                  console.warn('[RequestWizard] ⚠️ Could not fetch requester department info');
-                  patchTravelOrder({ endorsedByHeadName: "" });
-                  setRequestingPersonHeadInfo(null);
-                }
-              } catch (error) {
-                console.error('[RequestWizard] ❌ Error fetching requester parent head:', error);
-                patchTravelOrder({ endorsedByHeadName: "" });
-                setRequestingPersonHeadInfo(null);
-              }
-            } else {
-              // No department_id - can't determine parent
-              console.warn('[RequestWizard] ⚠️ Requester has no department_id - cannot determine parent head');
-              patchTravelOrder({ endorsedByHeadName: "" });
-              setRequestingPersonHeadInfo(null);
-            }
+            // If requesting person IS a head, DO NOT auto-fill endorsement
+            // Head should choose who to send to (parent head, admin, VP, etc.) manually
+            console.log('[RequestWizard] 🧹 Requester is a head - clearing head endorsement field');
+            console.log('[RequestWizard] ℹ️ Head will choose who to send to when submitting');
+            patchTravelOrder({ endorsedByHeadName: "" });
+            setRequestingPersonHeadInfo(null);
           } else {
             setRequestingPersonHeadInfo(null);
           }
@@ -1204,6 +1165,7 @@ function RequestWizardContent() {
   
   // Track confirmation status for requesters and participants
   const [allRequestersConfirmed, setAllRequestersConfirmed] = React.useState<boolean | undefined>(undefined);
+  const [allHeadEndorsementsConfirmed, setAllHeadEndorsementsConfirmed] = React.useState<boolean | undefined>(undefined);
   const [allParticipantsConfirmed, setAllParticipantsConfirmed] = React.useState<boolean | undefined>(undefined);
 
   async function handleSubmit() {
@@ -1459,6 +1421,7 @@ function RequestWizardContent() {
     requestingPersonName: data.travelOrder?.requestingPerson,
     allRequestersConfirmed: hasMultipleRequesters ? requestersAllConfirmed : undefined,
     allParticipantsConfirmed: hasParticipants ? participantsAllConfirmed : undefined,
+    allHeadEndorsementsConfirmed: allHeadEndorsementsConfirmed,
   });
 
   return (
@@ -1541,6 +1504,7 @@ function RequestWizardContent() {
               requestId={currentSubmissionId || currentDraftId || undefined} // Pass request ID for invitations (from submission or draft)
               currentUserEmail={currentUserEmail} // Pass current user email for auto-confirm
               onRequestersStatusChange={setAllRequestersConfirmed}
+              onHeadEndorsementsStatusChange={setAllHeadEndorsementsConfirmed}
             />
           )}
 

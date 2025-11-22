@@ -86,9 +86,10 @@ export default function EndorsementSection({
           </label>
           <input
             type="date"
-            value={dateValue}
+            value={isHeadRequester ? "" : dateValue}
             onChange={(e) => onDateChange(e.target.value)}
-            className="w-full h-11 rounded-xl border-2 border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 transition-all focus:border-maroon-500 focus:outline-none focus:ring-2 focus:ring-maroon-200 hover:border-gray-300"
+            disabled={!!isHeadRequester}
+            className="w-full h-11 rounded-xl border-2 border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 transition-all focus:border-maroon-500 focus:outline-none focus:ring-2 focus:ring-maroon-200 hover:border-gray-300 disabled:bg-gray-100 disabled:text-gray-500"
           />
         </div>
       </div>
