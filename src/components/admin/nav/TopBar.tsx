@@ -95,8 +95,6 @@ export default function TopBar() {
                   3
                 </span>
               </button>
-
-              <ProfileMenu />
             </div>
           </div>
         </div>

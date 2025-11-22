@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { Upload, X, CheckCircle, Info } from "lucide-react";
+import { Upload, X, CheckCircle, Info, Mail } from "lucide-react";
 
 type Props = {
   nameValue: string;
@@ -13,6 +13,7 @@ type Props = {
   // new
   isHeadRequester?: boolean;
   currentUserName?: string;
+  hasMultipleDepartments?: boolean; // True if request has multiple requesters from different departments
 
   // head e-signature
   signature?: string | null;
@@ -26,6 +27,7 @@ export default function EndorsementSection({
   onDateChange,
   isHeadRequester,
   currentUserName,
+  hasMultipleDepartments = false,
   signature,
   onSignatureChange,
 }: Props) {
@@ -47,7 +49,15 @@ export default function EndorsementSection({
           <h4 className="text-lg font-bold text-gray-900 tracking-tight">
             Department Head Endorsement
           </h4>
-          {isHeadRequester && (
+          {hasMultipleDepartments && (
+            <div className="mt-2 flex items-center gap-2 rounded-lg border border-amber-200 bg-gradient-to-br from-amber-50 to-amber-100/50 px-3 py-1.5 w-fit shadow-sm">
+              <Info className="h-4 w-4 text-amber-600" strokeWidth={2.5} />
+              <span className="text-xs font-semibold text-amber-700">
+                Multiple departments detected - Head endorsement invitations will be sent via email to each department's head automatically
+              </span>
+            </div>
+          )}
+          {isHeadRequester && !hasMultipleDepartments && (
             <div className="mt-2 flex items-center gap-2 rounded-lg border border-blue-200 bg-gradient-to-br from-blue-50 to-blue-100/50 px-3 py-1.5 w-fit shadow-sm">
               <Info className="h-4 w-4 text-blue-600" strokeWidth={2.5} />
               <span className="text-xs font-semibold text-blue-700">You are the department head - you will choose who to send this to</span>
@@ -56,43 +66,70 @@ export default function EndorsementSection({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">
-            Endorsed by
-          </label>
-          <input
-            type="text"
-            value={isHeadRequester ? "" : nameValue}
-            onChange={(e) => onNameChange(e.target.value)}
-            disabled={!!isHeadRequester}
-            className="w-full h-11 rounded-xl border-2 border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 transition-all focus:border-maroon-500 focus:outline-none focus:ring-2 focus:ring-maroon-200 hover:border-gray-300 disabled:bg-gray-100 disabled:text-gray-500"
-            placeholder={isHeadRequester ? "You will choose who to send to" : "Department Head Name"}
-          />
-          {!nameValue && !isHeadRequester && (
-            <p className="mt-1 text-xs text-amber-600">
-              ⚠️ No department head found. Please enter the department head name manually.
-            </p>
-          )}
-          {isHeadRequester && (
-            <p className="mt-1 text-xs text-blue-600">
-              ℹ️ As department head, you will select the approver when you click "Send to..."
-            </p>
-          )}
+      {hasMultipleDepartments ? (
+        <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-4">
+          <div className="flex items-start gap-3">
+            <Mail className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-blue-900 mb-2">
+                Multiple Departments Detected - Email Invitations Will Be Sent
+              </p>
+              <p className="text-xs text-blue-700 mb-3">
+                This request includes requesters from multiple departments. When you submit this request, the system will:
+              </p>
+              <ol className="text-xs text-blue-700 space-y-1.5 list-decimal list-inside ml-2">
+                <li>Automatically find each department's head from the database</li>
+                <li>Send email invitations to each department head (e.g., CENG head will receive an email)</li>
+                <li>Each head will receive a confirmation link to review and endorse the request</li>
+                <li>You can track the status of each head endorsement after submission</li>
+              </ol>
+              <div className="mt-3 p-2 bg-blue-100 rounded border border-blue-200">
+                <p className="text-xs font-medium text-blue-900">
+                  📧 Email invitations will be sent automatically when you click "Submit Request"
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">
-            Endorsement Date
-          </label>
-          <input
-            type="date"
-            value={isHeadRequester ? "" : dateValue}
-            onChange={(e) => onDateChange(e.target.value)}
-            disabled={!!isHeadRequester}
-            className="w-full h-11 rounded-xl border-2 border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 transition-all focus:border-maroon-500 focus:outline-none focus:ring-2 focus:ring-maroon-200 hover:border-gray-300 disabled:bg-gray-100 disabled:text-gray-500"
-          />
+      ) : (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Endorsed by
+            </label>
+            <input
+              type="text"
+              value={isHeadRequester ? "" : nameValue}
+              onChange={(e) => onNameChange(e.target.value)}
+              disabled={!!isHeadRequester}
+              className="w-full h-11 rounded-xl border-2 border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 transition-all focus:border-maroon-500 focus:outline-none focus:ring-2 focus:ring-maroon-200 hover:border-gray-300 disabled:bg-gray-100 disabled:text-gray-500"
+              placeholder={isHeadRequester ? "You will choose who to send to" : "Department Head Name"}
+            />
+            {!nameValue && !isHeadRequester && (
+              <p className="mt-1 text-xs text-amber-600">
+                ⚠️ No department head found. Please enter the department head name manually.
+              </p>
+            )}
+            {isHeadRequester && (
+              <p className="mt-1 text-xs text-blue-600">
+                ℹ️ As department head, you will select the approver when you click "Send to..."
+              </p>
+            )}
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Endorsement Date
+            </label>
+            <input
+              type="date"
+              value={isHeadRequester ? "" : dateValue}
+              onChange={(e) => onDateChange(e.target.value)}
+              disabled={!!isHeadRequester}
+              className="w-full h-11 rounded-xl border-2 border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 transition-all focus:border-maroon-500 focus:outline-none focus:ring-2 focus:ring-maroon-200 hover:border-gray-300 disabled:bg-gray-100 disabled:text-gray-500"
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Head e-signature – show only when head is requester OR signature exists */}
       {(isHeadRequester || signature) && (

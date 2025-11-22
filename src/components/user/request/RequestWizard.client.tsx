@@ -117,6 +117,22 @@ function RequestWizardContent() {
   
   // Check if current user is head requester
   const isHeadRequester = requestingPersonIsHead === true || currentUser?.role === "head";
+  
+  // Auto-detect requester role from current user
+  const autoDetectedRole: "faculty" | "head" | null = React.useMemo(() => {
+    if (!currentUser || userLoading) return null;
+    // Check if user is a head
+    const isHead = currentUser.role === "head" || (currentUser as any)?.is_head === true;
+    return isHead ? "head" : "faculty";
+  }, [currentUser, userLoading]);
+  
+  // Auto-set requester role on mount if not already set
+  React.useEffect(() => {
+    if (autoDetectedRole && !data.requesterRole) {
+      console.log('[RequestWizard] 🔄 Auto-setting requester role:', autoDetectedRole);
+      setRequesterRole(autoDetectedRole);
+    }
+  }, [autoDetectedRole, data.requesterRole, setRequesterRole]);
 
   // -------- restore on first mount only --------
   const didHydrateRef = React.useRef(false);
@@ -1376,6 +1392,21 @@ function RequestWizardContent() {
           toast({ kind: "info", title: "Request submitted", message: "You can now send participant invitations. The form will remain open for you to send invitations." });
         }
       } else {
+        // For travel orders: Check if multiple departments (head endorsements will be sent)
+        const requesters = Array.isArray(data.travelOrder?.requesters) ? data.travelOrder.requesters : [];
+        const departments = requesters
+          .map((req: any) => req.department)
+          .filter((dept: any): dept is string => !!dept && dept.trim() !== "");
+        const uniqueDepartments = Array.from(new Set(departments.map((dept: string) => dept.trim())));
+        const hasMultipleDepts = uniqueDepartments.length > 1;
+        
+        if (hasMultipleDepts) {
+          toast({ 
+            kind: "success", 
+            title: "Request submitted successfully", 
+            message: `Head endorsement emails are being sent automatically to ${uniqueDepartments.length} department head(s). Check the "Head Endorsements" section below to track their status.` 
+          });
+        }
         afterSuccessfulSubmitReset();
       }
     } catch (err: any) {
@@ -1415,13 +1446,21 @@ function RequestWizardContent() {
     ? (allParticipantsConfirmed ?? seminarParticipantInvitations?.every((inv: any) => inv.status === 'confirmed') ?? false)
     : true; // If no participants or no invitations sent, consider as confirmed
   
+  // Check if there are multiple departments and if all head endorsements are confirmed
+  const requesters = Array.isArray(data.travelOrder?.requesters) ? data.travelOrder.requesters : [];
+  const departments = requesters
+    .map((req: any) => req.department)
+    .filter((dept: any): dept is string => !!dept && dept.trim() !== "");
+  const uniqueDepartments = Array.from(new Set(departments.map((dept: string) => dept.trim())));
+  const hasMultipleDepts = uniqueDepartments.length > 1;
+  
   const validation = canSubmit(data, { 
     isRepresentativeSubmission,
     currentUserName: currentUser?.name,
     requestingPersonName: data.travelOrder?.requestingPerson,
     allRequestersConfirmed: hasMultipleRequesters ? requestersAllConfirmed : undefined,
     allParticipantsConfirmed: hasParticipants ? participantsAllConfirmed : undefined,
-    allHeadEndorsementsConfirmed: allHeadEndorsementsConfirmed,
+    allHeadEndorsementsConfirmed: hasMultipleDepts ? allHeadEndorsementsConfirmed : undefined,
   });
 
   return (
@@ -1486,6 +1525,7 @@ function RequestWizardContent() {
             onReason={setReason}
             onVehicle={setVehicleMode}
             onRequester={(r: RequesterRole) => setRequesterRole(r)}
+            autoDetectedRole={autoDetectedRole}
           />
 
           {/* Show Travel Order form only if NOT seminar */}

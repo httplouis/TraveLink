@@ -13,6 +13,7 @@ import {
   MessageSquareText,
   Inbox,
   LogOut,
+  Settings,
 } from "lucide-react";
 import * as React from "react";
 import { motion } from "framer-motion";
@@ -59,6 +60,7 @@ const NAV: Item[] = [
   { type: "link", href: "/president/vehicles", label: "Vehicles", Icon: Car },
   { type: "link", href: "/president/drivers", label: "Drivers", Icon: IdCard },
   { type: "link", href: "/president/feedback", label: "Feedback", Icon: MessageSquareText },
+  { type: "link", href: "/president/settings", label: "Settings", Icon: Settings },
 ];
 
 export default function PresidentLeftNav() {

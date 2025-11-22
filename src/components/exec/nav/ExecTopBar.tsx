@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Bell, CircleUserRound, LogOut } from "lucide-react";
+import { Bell, LogOut } from "lucide-react";
 import { useState } from "react";
 
 export default function ExecTopBar() {
@@ -35,9 +35,6 @@ export default function ExecTopBar() {
         <div className="flex items-center gap-1">
           <Link href="/exec/notifications" className="relative rounded-full p-2 hover:bg-white/10" aria-label="Notifications">
             <Bell className="h-5 w-5" />
-          </Link>
-          <Link href="/exec/profile" className="rounded-full p-2 hover:bg-white/10" aria-label="Profile">
-            <CircleUserRound className="h-6 w-6" />
           </Link>
           <button
             onClick={handleLogout}

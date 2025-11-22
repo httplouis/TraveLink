@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { Search, Shield, Building2, Mail, Phone, Edit2, Save, X, UserCheck, CheckCircle2, Trash2, Filter } from "lucide-react";
+import { Search, Shield, Building2, Mail, Phone, Edit2, Save, X, UserCheck, CheckCircle2, Trash2, Filter, Download, Users as UsersIcon, RefreshCw } from "lucide-react";
 import { useToast } from "@/components/common/ui/Toast";
 import { createSupabaseClient } from "@/lib/supabase/client";
 import PasswordConfirmDialog from "@/components/common/PasswordConfirmDialog";
@@ -82,6 +82,11 @@ export default function SuperAdminUsersPage() {
     action: null,
   });
   const [isProcessing, setIsProcessing] = React.useState(false);
+  const [stats, setStats] = React.useState({
+    total: 0,
+    active: 0,
+    byRole: {} as Record<string, number>,
+  });
 
   React.useEffect(() => {
     fetchUsers();
@@ -413,6 +418,88 @@ export default function SuperAdminUsersPage() {
           <p className="mt-2 text-gray-600">
             Manage user roles, permissions, and department assignments. You can assign any CCMS student account as a department head.
           </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={fetchUsers}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-gray-300 hover:border-purple-500 hover:bg-purple-50 transition-colors text-sm font-medium"
+            title="Refresh users list"
+          >
+            <RefreshCw className="h-4 w-4" />
+            <span>Refresh</span>
+          </button>
+          <button
+            onClick={() => {
+              // Export users to CSV
+              const csv = [
+                ['Name', 'Email', 'Role', 'Department', 'Status', 'Phone', 'Position'].join(','),
+                ...filteredUsers.map(user => [
+                  `"${user.name || ''}"`,
+                  `"${user.email || ''}"`,
+                  `"${ROLE_OPTIONS.find(r => r.value === user.role)?.label || user.role || ''}"`,
+                  `"${user.department?.name || 'No department'}"`,
+                  `"${user.status || 'active'}"`,
+                  `"${user.phone_number || ''}"`,
+                  `"${user.position_title || ''}"`
+                ].join(','))
+              ].join('\n');
+              
+              const blob = new Blob([csv], { type: 'text/csv' });
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `users-export-${new Date().toISOString().split('T')[0]}.csv`;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              window.URL.revokeObjectURL(url);
+              toast.success('Export', 'Users exported successfully');
+            }}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700 transition-colors text-sm font-medium shadow-sm"
+          >
+            <Download className="h-4 w-4" />
+            <span>Export CSV</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Statistics Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl border-2 border-gray-200 p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600 font-medium">Total Users</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{stats.total}</p>
+            </div>
+            <UsersIcon className="h-8 w-8 text-purple-600" />
+          </div>
+        </div>
+        <div className="bg-white rounded-xl border-2 border-gray-200 p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600 font-medium">Active Users</p>
+              <p className="text-2xl font-bold text-green-600 mt-1">{stats.active}</p>
+            </div>
+            <CheckCircle2 className="h-8 w-8 text-green-600" />
+          </div>
+        </div>
+        <div className="bg-white rounded-xl border-2 border-gray-200 p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600 font-medium">Departments</p>
+              <p className="text-2xl font-bold text-blue-600 mt-1">{departments.length}</p>
+            </div>
+            <Building2 className="h-8 w-8 text-blue-600" />
+          </div>
+        </div>
+        <div className="bg-white rounded-xl border-2 border-gray-200 p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600 font-medium">Filtered Results</p>
+              <p className="text-2xl font-bold text-purple-600 mt-1">{filteredUsers.length}</p>
+            </div>
+            <Filter className="h-8 w-8 text-purple-600" />
+          </div>
         </div>
       </div>
 
@@ -825,7 +912,7 @@ export default function SuperAdminUsersPage() {
                     </td>
                     <td className="px-6 py-4">
                       {editingId === user.id ? (
-                        <div className="relative" style={{ zIndex: 10001 }}>
+                        <div className="relative" style={{ isolation: 'isolate' }}>
                           <SearchableSelect
                             options={[
                               { value: "", label: "No department" },
@@ -860,52 +947,53 @@ export default function SuperAdminUsersPage() {
                     </td>
                     <td className="px-6 py-4">
                       {editingId === user.id ? (
-                        <select
-                          value={editData.role || "faculty"}
-                          onChange={(e) => {
-                            const selectedRole = e.target.value;
-                            // Automatically sync checkboxes based on selected role
-                            const newEditData: any = { ...editData, role: selectedRole };
-                            
-                            // Preserve is_head if user was already a head (users can be both Head and VP/President)
-                            const wasHead = user.is_head || editData.is_head;
-                            
-                            // Clear permission flags (except is_head which we'll preserve for VP/President)
-                            newEditData.is_admin = false;
-                            newEditData.is_hr = false;
-                            newEditData.is_vp = false;
-                            newEditData.is_president = false;
-                            
-                            // Set the appropriate flag based on role
-                            if (selectedRole === "head") {
-                              newEditData.is_head = true;
-                            } else if (selectedRole === "admin") {
-                              newEditData.is_admin = true;
-                              newEditData.is_head = false; // Admin and Head are mutually exclusive
-                            } else if (selectedRole === "hr") {
-                              newEditData.is_hr = true;
-                              newEditData.is_head = false; // HR and Head are mutually exclusive
-                            } else if (selectedRole === "vp") {
-                              newEditData.is_vp = true;
-                              newEditData.is_head = wasHead; // Preserve is_head for VP (can be both)
-                            } else if (selectedRole === "president") {
-                              newEditData.is_president = true;
-                              newEditData.is_head = wasHead; // Preserve is_head for President (can be both)
-                            } else {
-                              // For other roles (faculty, staff, driver, comptroller), clear is_head
-                              newEditData.is_head = false;
-                            }
-                            
-                            setEditData(newEditData);
-                          }}
-                          className="rounded-lg border-2 border-gray-300 px-3 py-1.5 text-sm font-medium focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none"
-                        >
-                          {ROLE_OPTIONS.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </select>
+                        <div className="relative">
+                          <SearchableSelect
+                            options={ROLE_OPTIONS.map((opt) => ({
+                              value: opt.value,
+                              label: opt.label,
+                            }))}
+                            value={editData.role || "faculty"}
+                            onChange={(selectedRole) => {
+                              // Automatically sync checkboxes based on selected role
+                              const newEditData: any = { ...editData, role: selectedRole };
+                              
+                              // Preserve is_head if user was already a head (users can be both Head and VP/President)
+                              const wasHead = user.is_head || editData.is_head;
+                              
+                              // Clear permission flags (except is_head which we'll preserve for VP/President)
+                              newEditData.is_admin = false;
+                              newEditData.is_hr = false;
+                              newEditData.is_vp = false;
+                              newEditData.is_president = false;
+                              
+                              // Set the appropriate flag based on role
+                              if (selectedRole === "head") {
+                                newEditData.is_head = true;
+                              } else if (selectedRole === "admin") {
+                                newEditData.is_admin = true;
+                                newEditData.is_head = false; // Admin and Head are mutually exclusive
+                              } else if (selectedRole === "hr") {
+                                newEditData.is_hr = true;
+                                newEditData.is_head = false; // HR and Head are mutually exclusive
+                              } else if (selectedRole === "vp") {
+                                newEditData.is_vp = true;
+                                newEditData.is_head = wasHead; // Preserve is_head for VP (can be both)
+                              } else if (selectedRole === "president") {
+                                newEditData.is_president = true;
+                                newEditData.is_head = wasHead; // Preserve is_head for President (can be both)
+                              } else {
+                                // For other roles (faculty, staff, driver, comptroller), clear is_head
+                                newEditData.is_head = false;
+                              }
+                              
+                              setEditData(newEditData);
+                            }}
+                            placeholder="Select role..."
+                            emptyMessage="No roles found"
+                            className="min-w-[200px]"
+                          />
+                        </div>
                       ) : (
                         <span
                           className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border-2 text-xs font-semibold ${getRoleBadgeColor(
@@ -935,7 +1023,7 @@ export default function SuperAdminUsersPage() {
                           )}
                           {user.is_admin && !(user as any).is_super_admin && (
                             <span className="px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800">
-                              Admin
+                              Transportation Coordinator
                             </span>
                           )}
                           {user.is_hr && (

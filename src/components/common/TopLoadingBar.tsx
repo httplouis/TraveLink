@@ -1,64 +1,142 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useState, Suspense, useRef } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 
 /**
- * Top Loading Bar - Thin progress bar at the top of the page
- * Similar to nprogress but custom implementation
+ * Top Loading Bar - Enhanced thin progress bar at the top of the page
+ * Similar to nprogress but custom implementation with better animations
  */
 function TopLoadingBarContent() {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
+    // Clean up any existing timers
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+
     // Reset loading on route change
     setLoading(true);
     setProgress(0);
 
-    // Simulate progress
-    const interval = setInterval(() => {
+    // Start with a small progress to show immediately
+    setProgress(8);
+
+    // Simulate progress - faster initial, slower near completion
+    intervalRef.current = setInterval(() => {
       setProgress((prev) => {
         if (prev >= 90) {
-          clearInterval(interval);
+          if (intervalRef.current) {
+            clearInterval(intervalRef.current);
+            intervalRef.current = null;
+          }
           return 90;
         }
-        // Accelerate then slow down
-        const increment = prev < 50 ? 10 : 5;
+        // Accelerate then slow down for natural feel
+        const increment = prev < 30 ? 18 : prev < 60 ? 10 : prev < 80 ? 5 : 2;
         return Math.min(prev + increment, 90);
       });
-    }, 100);
+    }, 60);
 
-    // Complete after a short delay
-    const timeout = setTimeout(() => {
+    // Complete after route change completes (faster for better UX)
+    timeoutRef.current = setTimeout(() => {
       setProgress(100);
       setTimeout(() => {
         setLoading(false);
         setProgress(0);
       }, 200);
-    }, 500);
+    }, 400);
 
     return () => {
-      clearInterval(interval);
-      clearTimeout(timeout);
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
     };
   }, [pathname, searchParams]);
 
   if (!loading && progress === 0) return null;
 
   return (
-    <div
-      className="fixed top-0 left-0 right-0 z-[9999] h-0.5 bg-gradient-to-r from-[#7A0010] via-[#9A0020] to-[#7A0010] transition-all duration-300 ease-out"
-      style={{
-        width: `${progress}%`,
-        opacity: loading ? 1 : 0,
-        transform: `translateX(${progress === 100 ? "100%" : "0%"})`,
-      }}
-    >
-      <div className="h-full w-full bg-gradient-to-r from-transparent via-white/30 to-transparent animate-pulse" />
-    </div>
+    <>
+      <div
+        className="fixed top-0 left-0 right-0 z-[9999] pointer-events-none"
+        style={{
+          height: '3px',
+        }}
+      >
+        {/* Main progress bar */}
+        <div
+          className="h-full bg-gradient-to-r from-[#7A0010] via-[#9A0020] to-[#7A0010] transition-all duration-200 ease-out relative overflow-hidden"
+          style={{
+            width: `${progress}%`,
+            opacity: loading ? 1 : 0,
+            boxShadow: loading 
+              ? '0 2px 8px rgba(122, 0, 16, 0.5), 0 0 12px rgba(122, 0, 16, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)' 
+              : 'none',
+          }}
+        >
+          {/* Animated shimmer effect */}
+          {loading && (
+            <>
+              <div 
+                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/60 to-transparent top-loading-shimmer"
+                style={{
+                  width: '40%',
+                  transform: 'skewX(-20deg)',
+                }}
+              />
+              
+              {/* Secondary shimmer for depth */}
+              <div 
+                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent top-loading-shimmer-delayed"
+                style={{
+                  width: '30%',
+                  transform: 'skewX(-20deg)',
+                }}
+              />
+            </>
+          )}
+        </div>
+      </div>
+      
+      {/* CSS Animation - injected via style tag */}
+      <style dangerouslySetInnerHTML={{
+        __html: `
+          @keyframes top-loading-shimmer {
+            0% {
+              transform: skewX(-20deg) translateX(-100%);
+            }
+            100% {
+              transform: skewX(-20deg) translateX(400%);
+            }
+          }
+          
+          .top-loading-shimmer {
+            animation: top-loading-shimmer 1.5s ease-in-out infinite;
+          }
+          
+          .top-loading-shimmer-delayed {
+            animation: top-loading-shimmer 2s ease-in-out infinite 0.3s;
+          }
+        `
+      }} />
+    </>
   );
 }
 

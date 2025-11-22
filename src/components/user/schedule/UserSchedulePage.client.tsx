@@ -31,6 +31,30 @@ export default function UserSchedulePage() {
   const [selectedISO, setSelectedISO] = React.useState<string | null>(null);
   const [bookings, setBookings] = React.useState<Booking[]>([]);
   const [modalOpen, setModalOpen] = React.useState(false);
+  const [isPublicUser, setIsPublicUser] = React.useState(true); // Default to public mode
+
+  // Check user role to determine if they should see public mode
+  React.useEffect(() => {
+    async function checkUserRole() {
+      try {
+        const res = await fetch("/api/users/me");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.ok && data.data) {
+            const user = data.data;
+            // Public mode for regular users (not admin, head, comptroller, hr, vp, president)
+            const isPrivileged = user.is_admin || user.is_head || user.is_comptroller || user.is_hr || user.is_executive;
+            setIsPublicUser(!isPrivileged);
+          }
+        }
+      } catch (err) {
+        console.error("[UserSchedulePage] Error checking user role:", err);
+        // Default to public mode on error
+        setIsPublicUser(true);
+      }
+    }
+    checkUserRole();
+  }, []);
 
   // fetch availability for visible month with status
   const refresh = React.useCallback(async () => {
@@ -198,6 +222,7 @@ export default function UserSchedulePage() {
         pos={pos}
         prevLabel={fmt(prevISO)}
         nextLabel={fmt(nextISO)}
+        publicMode={isPublicUser}
       />
     </section>
   );

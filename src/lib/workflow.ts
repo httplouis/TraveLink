@@ -31,6 +31,15 @@ export interface Request {
   exec_level?: "vp" | "president" | null;
   total_budget?: number;
   is_international?: boolean;
+  is_urgent?: boolean;
+  is_priority?: boolean;
+  parent_request_id?: string | null;
+  vp2_approved_by?: string | null;
+  vp2_signature?: string | null;
+  vp2_approved_at?: Date | string | null;
+  returned_at?: Date | string | null;
+  return_reason?: string | null;
+  returned_by?: string | null;
 }
 
 export interface User {
@@ -153,6 +162,23 @@ export function determineExecutiveApprover(
     return "president";
   }
 
+  // Urgent requests from VP/President go to President
+  if (request.is_urgent && (requester.is_executive || requester.exec_type === "vp" || requester.exec_type === "president")) {
+    return "president";
+  }
+
+  // Faculty requesters: >15k budget goes to President
+  // Check if requester is faculty (not head, not exec, not comptroller, not hr)
+  const isFaculty = !requester.is_head && 
+                    !requester.is_executive && 
+                    !requester.is_comptroller && 
+                    !requester.is_hr &&
+                    !requester.is_admin;
+  
+  if (isFaculty && request.total_budget && request.total_budget > 15000) {
+    return "president";
+  }
+
   // High-value or international requests need President
   if (
     (request.total_budget && request.total_budget > 50000) ||
@@ -203,7 +229,8 @@ export function applyDualSignatureLogic(
     result.head_approved_at = now;
   }
 
-  // If requester is comptroller
+  // If requester is comptroller, auto-approve comptroller stage
+  // This allows comptroller to create requests with auto-approval at comptroller stage
   if (requester.is_comptroller) {
     result.comptroller_signature = signature;
     result.comptroller_approved_by = requester.id;
@@ -240,6 +267,11 @@ export function getInitialWorkflowStage(
     return "pending_admin";
   }
 
+  // If requester is comptroller, skip comptroller stage (auto-approved)
+  // Note: This will be handled by applyDualSignatureLogic, but we still need to route correctly
+  // Comptroller requests go through head first (if not head themselves), then admin, then comptroller (auto), then HR
+  // For now, if comptroller is requester, they still need head approval unless they're also head
+  
   // Otherwise, start from head
   return "pending_head";
 }
@@ -288,7 +320,7 @@ export function canUserApproveStage(
 export function getStageName(stage: WorkflowStage): string {
   const stageNames: Record<WorkflowStage, string> = {
     pending_head: "Department Head Approval",
-    pending_admin: "Admin Assignment",
+    pending_admin: "Transportation Coordinator Assignment",
     pending_comptroller: "Comptroller Review",
     pending_hr: "HR Review",
     pending_exec: "Executive Approval",

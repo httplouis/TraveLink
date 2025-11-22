@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-const PUBLIC_PREFIXES = ["/", "/login", "/register", "/api", "/requesters", "/participants", "/contact", "/privacy", "/terms"];
+const PUBLIC_PREFIXES = ["/", "/login", "/register", "/api", "/requesters", "/participants", "/head-endorsements", "/contact", "/privacy", "/terms"];
 const ASSET_PREFIXES = ["/_next", "/images", "/favicon.ico", "/robots.txt", "/sitemap.xml", "/euwhite.png", "/pattern-light.jpg", "/eulogo.png", "/site.webmanifest"];
 
 type Me = {

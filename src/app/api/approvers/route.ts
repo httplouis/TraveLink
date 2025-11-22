@@ -7,7 +7,9 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
  */
 export async function GET(req: NextRequest) {
   try {
+    // CRITICAL: Use service role to bypass RLS
     const supabase = await createSupabaseServerClient(true);
+    console.log(`[GET /api/approvers] ✅ Supabase client created with service role`);
     const { searchParams } = new URL(req.url);
     
     const role = searchParams.get("role");
@@ -31,25 +33,155 @@ export async function GET(req: NextRequest) {
             .eq("id", departmentId)
             .single();
 
-          console.log(`[GET /api/approvers] Fetching heads for department_id: ${departmentId}`);
+          console.log(`[GET /api/approvers] 🎯 TARGET DEPARTMENT:`, {
+            department_id: departmentId,
+            department_name: dept?.name,
+            department_code: dept?.code,
+            found: !!dept
+          });
           
           // STEP 1: First, try to get heads from CURRENT department
-          // CRITICAL: Check BOTH is_head=true AND role='head' (BELSON has both)
-          // Also check department_id match OR department text match
-          let { data: currentHeads, error: currentError } = await supabase
+          // CRITICAL: Check BOTH is_head=true AND role='head'
+          // IMPORTANT: Use .eq() to ensure department_id matches EXACTLY
+          // FIX: Try multiple query patterns to ensure we find the head
+          let currentHeads: any[] = [];
+          let currentError: any = null;
+          
+          // Try query 1: is_head = true (explicit boolean)
+          console.log(`[GET /api/approvers] 🔍 Starting Query 1 for department_id=${departmentId}`);
+          console.log(`[GET /api/approvers] 🔍 Supabase client type:`, supabase ? 'created' : 'null');
+          console.log(`[GET /api/approvers] 🔍 Department ID type:`, typeof departmentId, departmentId);
+          
+          let { data: headsByFlag, error: errorByFlag } = await supabase
             .from("users")
-            .select("id, name, email, profile_picture, phone_number, position_title, department_id, status, role, department")
+            .select("id, name, email, profile_picture, phone_number, position_title, department_id, status, role, department, is_head")
             .eq("department_id", departmentId)
-            .or("is_head.eq.true,role.eq.head")
-            .or("status.eq.active,status.is.null");
+            .eq("is_head", true);
+          
+          console.log(`[GET /api/approvers] 🔍 Query 1 (is_head=true) RESULT:`, {
+            found: headsByFlag?.length || 0,
+            error: errorByFlag,
+            error_message: errorByFlag?.message,
+            error_details: errorByFlag?.details,
+            error_hint: errorByFlag?.hint,
+            heads: headsByFlag?.map((h: any) => ({ 
+              id: h.id,
+              name: h.name, 
+              email: h.email, 
+              is_head: h.is_head, 
+              role: h.role, 
+              status: h.status,
+              department_id: h.department_id
+            })) || []
+          });
+          
+          if (!errorByFlag && headsByFlag && headsByFlag.length > 0) {
+            currentHeads = headsByFlag;
+            currentError = null;
+          } else {
+            // Try query 2: role = 'head'
+            let { data: headsByRole, error: errorByRole } = await supabase
+              .from("users")
+              .select("id, name, email, profile_picture, phone_number, position_title, department_id, status, role, department")
+              .eq("department_id", departmentId)
+              .eq("role", "head");
+            
+            console.log(`[GET /api/approvers] 🔍 Query 2 (role='head'):`, {
+              found: headsByRole?.length || 0,
+              error: errorByRole,
+              heads: headsByRole?.map((h: any) => ({ name: h.name, email: h.email, is_head: h.is_head, role: h.role, status: h.status }))
+            });
+            
+            if (!errorByRole && headsByRole && headsByRole.length > 0) {
+              currentHeads = headsByRole;
+              currentError = null;
+            } else {
+              // Try query 3: OR condition (fallback)
+              let { data: headsByOr, error: errorByOr } = await supabase
+                .from("users")
+                .select("id, name, email, profile_picture, phone_number, position_title, department_id, status, role, department")
+                .eq("department_id", departmentId)
+                .or("is_head.eq.true,role.eq.head");
+              
+              console.log(`[GET /api/approvers] 🔍 Query 3 (OR condition):`, {
+                found: headsByOr?.length || 0,
+                error: errorByOr,
+                heads: headsByOr?.map((h: any) => ({ name: h.name, email: h.email, is_head: h.is_head, role: h.role, status: h.status }))
+              });
+              
+              if (!errorByOr && headsByOr && headsByOr.length > 0) {
+                currentHeads = headsByOr;
+                currentError = null;
+              } else {
+                currentError = errorByOr || errorByRole || errorByFlag;
+              }
+            }
+          }
+          
+          // Filter by status in JavaScript (active or null)
+          if (!currentError && currentHeads && currentHeads.length > 0) {
+            const beforeStatusFilter = currentHeads.length;
+            currentHeads = currentHeads.filter((h: any) => {
+              const isActive = !h.status || h.status === 'active';
+              if (!isActive) {
+                console.log(`[GET /api/approvers] ⚠️ Filtering out ${h.name} - status: ${h.status}`);
+              }
+              return isActive;
+            });
+            console.log(`[GET /api/approvers] 🔍 Status filter: ${beforeStatusFilter} -> ${currentHeads.length} heads`);
+          }
+          
+          console.log(`[GET /api/approvers] 🔍 INITIAL QUERY for department_id=${departmentId} (${dept?.code || dept?.name || 'unknown'}):`, {
+            found: currentHeads?.length || 0,
+            query_params: {
+              department_id: departmentId,
+              is_head_or_role: "is_head=true OR role='head'",
+              status: "active OR null"
+            },
+            heads: currentHeads?.map((h: any) => ({ 
+              name: h.name, 
+              email: h.email,
+              dept_id: h.department_id, 
+              dept_text: h.department,
+              is_head: h.is_head, 
+              role: h.role,
+              user_id: h.id,
+              matches_target: h.department_id === departmentId
+            }))
+          });
 
           let heads: any[] = [];
 
           // Filter to only those with is_head=true OR role='head'
+          // CRITICAL: Also verify department_id matches exactly
           if (!currentError && currentHeads && currentHeads.length > 0) {
-            currentHeads = currentHeads.filter((h: any) => h.is_head === true || h.role === 'head');
+            const beforeFilter = currentHeads.length;
+            currentHeads = currentHeads.filter((h: any) => {
+              const isHead = h.is_head === true || h.role === 'head';
+              const deptMatches = h.department_id === departmentId;
+              
+              console.log(`[GET /api/approvers] 🔍 Filtering head:`, {
+                name: h.name,
+                email: h.email,
+                is_head: h.is_head,
+                role: h.role,
+                department_id: h.department_id,
+                target_department_id: departmentId,
+                dept_matches: deptMatches,
+                is_head_flag: isHead,
+                will_include: isHead && deptMatches
+              });
+              
+              return isHead && deptMatches;
+            });
+            
             if (currentHeads.length > 0) {
-              console.log(`[GET /api/approvers] ✅ Found ${currentHeads.length} head(s) in current department (is_head OR role='head')`);
+              console.log(`[GET /api/approvers] ✅ Found ${currentHeads.length} head(s) in current department (filtered from ${beforeFilter})`);
+              currentHeads.forEach((h: any) => {
+                console.log(`[GET /api/approvers]   - ${h.name} (${h.email}) - dept_id: ${h.department_id}`);
+              });
+            } else {
+              console.warn(`[GET /api/approvers] ⚠️ No heads found after filtering (had ${beforeFilter} before filter)`);
             }
           }
 
@@ -117,35 +249,70 @@ export async function GET(req: NextRequest) {
                       .filter((dh: any) => dh.users) // Filter out any null users
                       .map((dh: any) => ({
                         ...dh.users,
-                        department_id: departmentId
+                        // Keep actual department_id from users table, don't override
+                        department_id: dh.users.department_id || departmentId
                       }));
                     currentError = null;
                   } else if (deptHeadsError) {
                     console.error(`[GET /api/approvers] department_heads query error:`, deptHeadsError);
                   } else {
-                    // CRITICAL FIX: Check by department TEXT field (BELSON might have department_id=NULL but department='CCMS')
-                    console.log(`[GET /api/approvers] Trying department TEXT field search (for users like BELSON with department_id=NULL)...`);
+                    // CRITICAL FIX: Check by department TEXT field ONLY if department_id is NULL
+                    // IMPORTANT: Only use this fallback for the SPECIFIC department being queried, not all departments
+                    console.log(`[GET /api/approvers] Trying department TEXT field search ONLY for department_id=${departmentId} (${dept?.code || dept?.name})...`);
                     // First, get all users with is_head=true or role='head'
                     const { data: allPotentialHeads, error: allPotentialHeadsError } = await supabase
                       .from("users")
                       .select("id, name, email, profile_picture, phone_number, position_title, department_id, status, role, department")
                       .or("is_head.eq.true,role.eq.head");
                     
-                    // Then filter in JavaScript to find CCMS heads
+                    // Then filter in JavaScript to find heads for THIS SPECIFIC department
                     let headsByDeptText: any[] = [];
                     if (!allPotentialHeadsError && allPotentialHeads) {
                       headsByDeptText = allPotentialHeads.filter((h: any) => {
-                        const deptText = h.department?.toLowerCase() || '';
-                        const codeMatch = dept?.code ? deptText.includes(dept.code.toLowerCase()) : false;
-                        const nameMatch = dept?.name ? deptText.includes(dept.name.toLowerCase().substring(0, 20)) : false;
-                        return codeMatch || nameMatch || deptText.includes('ccms') || deptText.includes('computing') || deptText.includes('multimedia');
+                        // Only match if department_id is NULL or doesn't match (fallback case)
+                        if (h.department_id && h.department_id === departmentId) {
+                          // Already matched by department_id, skip text matching
+                          return false;
+                        }
+                        
+                        const deptText = (h.department || '').toLowerCase();
+                        const deptCode = (dept?.code || '').toLowerCase();
+                        const deptName = (dept?.name || '').toLowerCase();
+                        
+                        // Match by department code (e.g., "CENG", "CCMS")
+                        if (deptCode && deptText.includes(deptCode)) {
+                          return true;
+                        }
+                        
+                        // Match by department name keywords
+                        if (deptName) {
+                          const keywords = deptName.split(' ').filter((w: string) => w.length > 3);
+                          if (keywords.some((kw: string) => deptText.includes(kw.toLowerCase()))) {
+                            return true;
+                          }
+                        }
+                        
+                        return false;
                       });
                     }
                     const deptTextError = allPotentialHeadsError;
                     
                     if (!deptTextError && headsByDeptText && headsByDeptText.length > 0) {
-                      console.log(`[GET /api/approvers] ✅ Found ${headsByDeptText.length} CCMS head(s) by department TEXT field (e.g., BELSON GABRIEL TAN)!`);
-                      currentHeads = headsByDeptText;
+                      console.log(`[GET /api/approvers] ✅ Found ${headsByDeptText.length} head(s) by department TEXT field for ${dept?.code || dept?.name}:`, headsByDeptText.map((h: any) => h.name));
+                      // CRITICAL: Keep the actual department_id from database, don't override it
+                      // Only use these heads if their department_id is null/undefined OR matches
+                      currentHeads = headsByDeptText.filter((h: any) => {
+                        // Only include if department_id is null OR matches target
+                        if (h.department_id && h.department_id !== departmentId) {
+                          console.warn(`[GET /api/approvers] ❌ REJECTING ${h.name} from text match - has different department_id: ${h.department_id} !== ${departmentId}`);
+                          return false;
+                        }
+                        return true;
+                      }).map((h: any) => ({
+                        ...h,
+                        // Only set department_id if it was null/undefined
+                        department_id: h.department_id || departmentId
+                      }));
                       currentError = null;
                     }
                   }
@@ -154,21 +321,32 @@ export async function GET(req: NextRequest) {
             }
           }
 
-          // Fetch department info once (we'll use it multiple times)
-          const { data: deptInfo } = await supabase
-            .from("departments")
-            .select("id, name, code")
-            .eq("id", departmentId)
-            .single();
+          // Use deptInfo from dept (already fetched above)
+          const deptInfo = dept ? { id: dept.id, name: dept.name, code: dept.code } : null;
 
           if (currentError) {
             console.error('[GET /api/approvers] Current department query error:', currentError);
           } else if (currentHeads && currentHeads.length > 0) {
-            console.log(`[GET /api/approvers] Found ${currentHeads.length} head(s) in current department`);
-            heads = currentHeads.map((h: any) => ({
-              ...h,
-              department: deptInfo || null
-            }));
+            // CRITICAL: Verify each head's department_id matches exactly
+            const verifiedHeads = currentHeads.filter((h: any) => {
+              const matches = h.department_id === departmentId;
+              if (!matches) {
+                console.error(`[GET /api/approvers] ❌ REJECTING ${h.name} - department_id mismatch: ${h.department_id} !== ${departmentId}`);
+              } else {
+                console.log(`[GET /api/approvers] ✅ VERIFIED ${h.name} - department_id matches: ${h.department_id}`);
+              }
+              return matches;
+            });
+            
+            if (verifiedHeads.length > 0) {
+              console.log(`[GET /api/approvers] ✅ Found ${verifiedHeads.length} verified head(s) in current department (from ${currentHeads.length} total)`);
+              heads = verifiedHeads.map((h: any) => ({
+                ...h,
+                department: deptInfo || null
+              }));
+            } else {
+              console.warn(`[GET /api/approvers] ⚠️ No verified heads found (had ${currentHeads.length} before verification)`);
+            }
           } else {
             console.warn(`[GET /api/approvers] No heads found in current department. Checking parent department...`);
             
@@ -241,10 +419,14 @@ export async function GET(req: NextRequest) {
               if (parentError) {
                 console.error('[GET /api/approvers] Parent department query error:', parentError);
               } else if (parentHeads && parentHeads.length > 0) {
-                console.log(`[GET /api/approvers] Found ${parentHeads.length} head(s) in parent department`);
+                // NOTE: Parent heads are for parent department, not the requested one
+                // Only use parent heads if we can't find any in the current department
+                // But we should still verify they're valid heads
+                console.log(`[GET /api/approvers] Found ${parentHeads.length} head(s) in parent department (will use as fallback)`);
                 heads = parentHeads.map((h: any) => ({
                   ...h,
-                  department: h.department || null
+                  department: h.department || null,
+                  department_id: dept?.parent_department_id || h.department_id // Set to parent dept ID
                 }));
               } else {
                 console.warn(`[GET /api/approvers] No heads found in parent department either`);
@@ -269,28 +451,56 @@ export async function GET(req: NextRequest) {
                 .or("is_head.eq.true,role.eq.head");
               
               if (!allHeadsError && allHeadsAnywhere) {
-                // Filter by department text match
+                // Filter by department text match - ONLY for the SPECIFIC department being queried
                 const matchingHeads = allHeadsAnywhere.filter((h: any) => {
-                  const deptText = (h.department || '').toLowerCase();
-                  const deptCode = (deptCheck?.code || '').toLowerCase();
-                  const deptName = (deptCheck?.name || '').toLowerCase();
-                  return deptText.includes(deptCode) || 
-                         deptText.includes(deptName.substring(0, 20)) ||
-                         deptText.includes('ccms') ||
-                         deptText.includes('computing') ||
-                         deptText.includes('multimedia');
+                  // CRITICAL: If head has department_id, it must match or be NULL
+                  if (h.department_id && h.department_id !== departmentId) {
+                    console.log(`[GET /api/approvers] ❌ REJECTING ${h.name} - has different department_id: ${h.department_id} !== ${departmentId}`);
+                    return false;
+                  }
+                  
+                  // Only use text matching if department_id is NULL
+                  if (!h.department_id) {
+                    const deptText = (h.department || '').toLowerCase();
+                    const deptCode = (deptCheck?.code || '').toLowerCase();
+                    const deptName = (deptCheck?.name || '').toLowerCase();
+                    
+                    // Match by department code (e.g., "CENG", "CCMS")
+                    if (deptCode && deptText.includes(deptCode)) {
+                      return true;
+                    }
+                    
+                    // Match by department name keywords (first 3+ letter words)
+                    if (deptName) {
+                      const keywords = deptName.split(' ').filter((w: string) => w.length > 3);
+                      if (keywords.some((kw: string) => deptText.includes(kw.toLowerCase()))) {
+                        return true;
+                      }
+                    }
+                  }
+                  
+                  return false;
                 });
                 
-                if (matchingHeads.length > 0) {
+                if (matchingHeads.length > 0 && deptCheck) {
                   console.log(`[GET /api/approvers] ✅ Found ${matchingHeads.length} head(s) by department text match!`);
+                  // CRITICAL: Keep actual department_id, only set if null/undefined
                   heads = matchingHeads.map((h: any) => ({
                     ...h,
-                    department_id: departmentId, // Set correct department_id
+                    department_id: h.department_id || departmentId, // Only set if was null/undefined
                     department: { id: deptCheck.id, name: deptCheck.name, code: deptCheck.code }
                   }));
                 } else if (deptCheck?.head_name) {
                   // ONLY use head_name as absolute last resort if NO user found at all
-                  console.log(`[GET /api/approvers] ⚠️ Using hardcoded fallback: department.head_name = "${deptCheck.head_name}" (NO USER FOUND IN DATABASE)`);
+                  // WARNING: This should rarely happen - it means no user in database has is_head=true for this department
+                  console.warn(`[GET /api/approvers] ⚠️ Using hardcoded fallback from departments.head_name = "${deptCheck.head_name}" (NO USER FOUND IN DATABASE)`);
+                  console.warn(`[GET /api/approvers]   - This is a data issue - there should be a user with is_head=true for department_id=${departmentId}`);
+                  console.warn(`[GET /api/approvers]   - Please check the database and ensure the correct head is set in the users table`);
+                  // Return empty array instead of using fallback - let the frontend handle the error
+                  // This prevents showing incorrect/mock data
+                  heads = [];
+                  // If you really need to use the fallback, uncomment below:
+                  /*
                   heads = [{
                     id: null, // No user ID since it's just a name
                     name: deptCheck.head_name,
@@ -303,6 +513,7 @@ export async function GET(req: NextRequest) {
                     role: null,
                     department: { id: deptCheck.id, name: deptCheck.name, code: deptCheck.code }
                   }];
+                  */
                 }
               }
               
@@ -328,22 +539,46 @@ export async function GET(req: NextRequest) {
                 .select("id, name, email, is_head, status, department_id, role, department")
                 .or(`department.ilike.%${dept?.code || ''}%,department.ilike.%${dept?.name || ''}%`)
                 .eq("is_head", true);
-              console.log(`[GET /api/approvers] 🔍 DEBUG - Heads by department TEXT (CCMS or College of Computing):`, headsByDeptText);
+              console.log(`[GET /api/approvers] 🔍 DEBUG - Heads by department TEXT for ${deptCheck?.code || deptCheck?.name || 'department'}:`, headsByDeptText);
               
               // If we found heads by text but not by ID, use them!
+              // CRITICAL: Only use if department_id is NULL or matches
               if (headsByDeptText && headsByDeptText.length > 0 && heads.length === 0) {
                 console.log(`[GET /api/approvers] ✅ Found ${headsByDeptText.length} head(s) by department TEXT field!`);
-                // Filter to only those that match CCMS
-                const ccmsHeads = headsByDeptText.filter((h: any) => 
-                  h.department?.includes('CCMS') || 
-                  h.department?.includes('Computing') ||
-                  h.department?.includes('Multimedia')
-                );
-                if (ccmsHeads.length > 0) {
-                  console.log(`[GET /api/approvers] ✅ Filtered to ${ccmsHeads.length} CCMS head(s)`);
-                  heads = ccmsHeads.map((h: any) => ({
+                
+                // Filter to only those that match THIS SPECIFIC department (not hardcoded CCMS)
+                const validHeads = headsByDeptText.filter((h: any) => {
+                  // CRITICAL: If head has department_id, it must match or be NULL
+                  if (h.department_id && h.department_id !== departmentId) {
+                    console.warn(`[GET /api/approvers] ❌ REJECTING ${h.name} - department_id mismatch: ${h.department_id} !== ${departmentId}`);
+                    return false;
+                  }
+                  
+                  // Match by department code or name for THIS department
+                  const deptText = (h.department || '').toLowerCase();
+                  const deptCode = (deptCheck?.code || '').toLowerCase();
+                  const deptName = (deptCheck?.name || '').toLowerCase();
+                  
+                  if (deptCode && deptText.includes(deptCode)) {
+                    return true;
+                  }
+                  
+                  if (deptName) {
+                    const keywords = deptName.split(' ').filter((w: string) => w.length > 3);
+                    if (keywords.some((kw: string) => deptText.includes(kw.toLowerCase()))) {
+                      return true;
+                    }
+                  }
+                  
+                  return false;
+                });
+                
+                if (validHeads.length > 0 && deptCheck) {
+                  console.log(`[GET /api/approvers] ✅ Filtered to ${validHeads.length} valid head(s) for ${deptCheck.code || deptCheck.name} (from ${headsByDeptText.length} total)`);
+                  // CRITICAL: Keep actual department_id, only set if null/undefined
+                  heads = validHeads.map((h: any) => ({
                     ...h,
-                    department_id: departmentId, // Set the correct department_id
+                    department_id: h.department_id || departmentId, // Only set if was null/undefined
                     department: deptInfo || { id: deptCheck.id, name: deptCheck.name, code: deptCheck.code }
                   }));
                 }
@@ -366,18 +601,43 @@ export async function GET(req: NextRequest) {
               console.log(`[GET /api/approvers] 🔍 DEBUG - Users with role='head' by department TEXT:`, headsByRoleText);
               
               // If we found heads by role text but not by ID, use them!
+              // CRITICAL: Only use if department_id is NULL or matches
               if (headsByRoleText && headsByRoleText.length > 0 && heads.length === 0) {
                 console.log(`[GET /api/approvers] ✅ Found ${headsByRoleText.length} head(s) by role='head' and department TEXT!`);
-                const ccmsHeadsByRole = headsByRoleText.filter((h: any) => 
-                  h.department?.includes('CCMS') || 
-                  h.department?.includes('Computing') ||
-                  h.department?.includes('Multimedia')
-                );
-                if (ccmsHeadsByRole.length > 0) {
-                  console.log(`[GET /api/approvers] ✅ Filtered to ${ccmsHeadsByRole.length} CCMS head(s) by role`);
-                  heads = ccmsHeadsByRole.map((h: any) => ({
+                
+                // Filter to only those that match THIS SPECIFIC department (not hardcoded CCMS)
+                const validHeadsByRole = headsByRoleText.filter((h: any) => {
+                  // CRITICAL: If head has department_id, it must match or be NULL
+                  if (h.department_id && h.department_id !== departmentId) {
+                    console.warn(`[GET /api/approvers] ❌ REJECTING ${h.name} - department_id mismatch: ${h.department_id} !== ${departmentId}`);
+                    return false;
+                  }
+                  
+                  // Match by department code or name for THIS department
+                  const deptText = (h.department || '').toLowerCase();
+                  const deptCode = (deptCheck?.code || '').toLowerCase();
+                  const deptName = (deptCheck?.name || '').toLowerCase();
+                  
+                  if (deptCode && deptText.includes(deptCode)) {
+                    return true;
+                  }
+                  
+                  if (deptName) {
+                    const keywords = deptName.split(' ').filter((w: string) => w.length > 3);
+                    if (keywords.some((kw: string) => deptText.includes(kw.toLowerCase()))) {
+                      return true;
+                    }
+                  }
+                  
+                  return false;
+                });
+                
+                if (validHeadsByRole.length > 0 && deptCheck) {
+                  console.log(`[GET /api/approvers] ✅ Filtered to ${validHeadsByRole.length} valid head(s) for ${deptCheck.code || deptCheck.name} by role (from ${headsByRoleText.length} total)`);
+                  // CRITICAL: Keep actual department_id, only set if null/undefined
+                  heads = validHeadsByRole.map((h: any) => ({
                     ...h,
-                    department_id: departmentId,
+                    department_id: h.department_id || departmentId, // Only set if was null/undefined
                     department: deptInfo || { id: deptCheck.id, name: deptCheck.name, code: deptCheck.code }
                   }));
                 }
@@ -391,31 +651,92 @@ export async function GET(req: NextRequest) {
                 .limit(10);
               console.log(`[GET /api/approvers] 🔍 DEBUG - Sample users with is_head=true (any department, first 10):`, debugAllHeadsAnywhere);
               
-              // Check specifically for BELSON GABRIEL TAN
-              const { data: belsonUser } = await supabase
+              // Debug: Check if any users in the target department have is_head=true
+              // (This helps verify the department_id is correct)
+              const { data: debugHeadsInTargetDept } = await supabase
                 .from("users")
                 .select("id, name, email, is_head, status, department_id, role, department")
-                .ilike("name", "%BELSON%")
+                .eq("department_id", departmentId)
+                .eq("is_head", true)
                 .limit(5);
-              console.log(`[GET /api/approvers] 🔍 DEBUG - Users named BELSON:`, belsonUser);
+              console.log(`[GET /api/approvers] 🔍 DEBUG - Users with is_head=true in target department (${departmentId}):`, debugHeadsInTargetDept);
             }
           }
 
-          approvers = (heads || []).map((h: any) => ({
-            id: h.id,
-            name: h.name,
-            email: h.email,
-            phone: h.phone_number,
-            profile_picture: h.profile_picture,
-            position: h.position_title || "Department Head",
-            department: h.department?.name || (h.department_id ? "Department" : ""),
-            role: "head",
-            roleLabel: "Department Head"
-          }));
+          // CRITICAL: Filter heads to ONLY those that match the requested department_id
+          // This prevents returning wrong heads from fallback logic
+          console.log(`[GET /api/approvers] 🔍 FINAL FILTER - Before filtering:`, {
+            totalHeads: heads?.length || 0,
+            target_department_id: departmentId,
+            heads: (heads || []).map((h: any) => ({
+              name: h.name,
+              email: h.email,
+              department_id: h.department_id,
+              department: h.department?.name || h.department,
+              matches: h.department_id === departmentId
+            }))
+          });
+          
+          const filteredHeads = (heads || []).filter((h: any) => {
+            // If head has department_id, it MUST match exactly
+            if (h.department_id) {
+              const matches = h.department_id === departmentId;
+              if (!matches) {
+                console.warn(`[GET /api/approvers] ❌ EXCLUDING ${h.name} - department_id mismatch: ${h.department_id} !== ${departmentId}`);
+              }
+              return matches;
+            }
+            // If no department_id, exclude it (we need exact match)
+            console.warn(`[GET /api/approvers] ❌ EXCLUDING ${h.name} - no department_id`);
+            return false;
+          });
+          
+          console.log(`[GET /api/approvers] ✅ FINAL RESULT after filtering:`, {
+            totalHeads: heads?.length || 0,
+            filteredHeads: filteredHeads.length,
+            heads: filteredHeads.map((h: any) => ({ 
+              name: h.name, 
+              email: h.email,
+              dept_id: h.department_id,
+              dept_name: h.department?.name || h.department
+            }))
+          });
+          
+          approvers = filteredHeads.map((h: any) => {
+            // CRITICAL: Only use the head's ACTUAL department_id from the database
+            // NEVER override it with the target departmentId - if it doesn't match, it should have been filtered
+            const actualDeptId = h.department_id;
+            
+            // Final safety check - this should never happen if filtering worked correctly
+            if (actualDeptId && actualDeptId !== departmentId) {
+              console.error(`[GET /api/approvers] 🚨 CRITICAL ERROR: Head ${h.name} has department_id ${actualDeptId} but we're querying for ${departmentId} - this should have been filtered!`);
+              console.error(`[GET /api/approvers]   - This head should NOT be in filteredHeads!`);
+              // Still return it but with a warning - the frontend will catch it
+            }
+            
+            if (!actualDeptId) {
+              console.warn(`[GET /api/approvers] ⚠️ Head ${h.name} has no department_id - using target departmentId as fallback`);
+            }
+            
+            return {
+              id: h.id,
+              name: h.name,
+              email: h.email,
+              phone: h.phone_number,
+              profile_picture: h.profile_picture,
+              position: h.position_title || "Department Head",
+              department: h.department?.name || (actualDeptId ? "Department" : ""),
+              department_id: actualDeptId || departmentId, // Use actual department_id, fallback to target only if null
+              role: "head",
+              roleLabel: "Department Head"
+            };
+          });
 
-          console.log(`[GET /api/approvers] Found ${approvers.length} heads for department_id: ${departmentId}`);
+          console.log(`[GET /api/approvers] ✅ Final result: ${approvers.length} head(s) for department_id: ${departmentId}`);
           if (approvers.length > 0) {
             console.log(`[GET /api/approvers] Head details:`, approvers[0]);
+          } else {
+            console.warn(`[GET /api/approvers] ⚠️ No heads found for department_id: ${departmentId}`);
           }
         }
         break;
@@ -582,11 +903,25 @@ export async function GET(req: NextRequest) {
     // Log sample approver for debugging
     if (approvers.length > 0) {
       console.log(`[GET /api/approvers] Sample approver:`, approvers[0]);
+    } else if (role === "head" && departmentId) {
+      // CRITICAL: If no heads found, log detailed debug info
+      console.error(`[GET /api/approvers] ❌ NO HEADS FOUND for department_id=${departmentId}`);
+      console.error(`[GET /api/approvers]   - Check server terminal logs above for Query 1, 2, 3 results`);
+      console.error(`[GET /api/approvers]   - Verify RLS policies are not blocking`);
+      console.error(`[GET /api/approvers]   - Verify service role key is configured`);
     } else {
       console.warn(`[GET /api/approvers] No approvers found for role: ${role}`);
     }
 
-    return NextResponse.json({ ok: true, data: approvers });
+    return NextResponse.json({ 
+      ok: true, 
+      data: approvers,
+      count: approvers.length,
+      debug: role === "head" && departmentId && approvers.length === 0 ? {
+        department_id: departmentId,
+        message: "No heads found - check server terminal logs for Query 1/2/3 results"
+      } : undefined
+    });
   } catch (err: any) {
     console.error("[GET /api/approvers] Error:", err);
     return NextResponse.json({ ok: false, error: err.message }, { status: 500 });

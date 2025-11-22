@@ -647,7 +647,15 @@ export default function UserRequestModal({
                         <div className="flex items-center justify-between mb-2">
                           <p className="text-sm font-medium text-slate-900">VP Approved</p>
                           <span className="text-xs text-green-600 font-medium">
-                            {new Date(requestData.vp_approved_at).toLocaleDateString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                            {new Date(requestData.vp_approved_at).toLocaleString('en-US', { 
+                              timeZone: 'Asia/Manila',
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric',
+                              hour: 'numeric',
+                              minute: '2-digit',
+                              hour12: true
+                            })}
                           </span>
                         </div>
                         {requestData.vp_approved_by && (

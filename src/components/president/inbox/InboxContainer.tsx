@@ -12,6 +12,8 @@ import { Eye, Search, FileText } from "lucide-react";
 import { createSupabaseClient } from "@/lib/supabase/client";
 import { SkeletonRequestCard } from "@/components/common/SkeletonLoader";
 import { createLogger } from "@/lib/debug";
+import { shouldShowPendingAlert, getAlertSeverity, getAlertMessage } from "@/lib/notifications/pending-alerts";
+import { AlertCircle } from "lucide-react";
 
 export default function PresidentInboxContainer() {
   const [items, setItems] = React.useState<any[]>([]);
@@ -150,6 +152,20 @@ export default function PresidentInboxContainer() {
 
   return (
     <div className="space-y-4">
+      {/* Pending Alert */}
+      {shouldShowPendingAlert(items.length) && (
+        <div className={`flex items-center gap-2 px-4 py-3 rounded-lg text-sm font-medium ${
+          getAlertSeverity(items.length) === 'danger'
+            ? 'bg-red-50 border border-red-200 text-red-700'
+            : getAlertSeverity(items.length) === 'warning'
+            ? 'bg-orange-50 border border-orange-200 text-orange-700'
+            : 'bg-amber-50 border border-amber-200 text-amber-700'
+        }`}>
+          <AlertCircle className="h-5 w-5" />
+          <span>{getAlertMessage(items.length, 'president')}</span>
+        </div>
+      )}
+      
       {/* Search */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
@@ -224,7 +240,10 @@ export default function PresidentInboxContainer() {
       {selected && (
         <PresidentRequestModal
           request={selected}
-          onClose={() => setSelected(null)}
+          onClose={() => {
+            setSelected(null);
+            load(false); // Refresh list when modal closes
+          }}
           onApproved={handleApproved}
           onRejected={handleRejected}
         />

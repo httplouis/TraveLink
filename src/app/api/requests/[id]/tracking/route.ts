@@ -441,6 +441,12 @@ export async function GET(
       // Seminar data (if seminar application)
       request_type: request.request_type,
       seminar_data: request.seminar_data || null,
+      
+      // Skip flags for visual indicators
+      admin_skipped: request.admin_skipped || false,
+      comptroller_skipped: request.comptroller_skipped || false,
+      admin_skip_reason: request.admin_skip_reason || null,
+      comptroller_skip_reason: request.comptroller_skip_reason || null,
     };
 
     // Parse seminar_data if it's a string

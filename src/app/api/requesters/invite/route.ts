@@ -15,7 +15,8 @@ export async function POST(req: NextRequest) {
   console.log("=".repeat(70));
   
   try {
-    const supabase = await createSupabaseServerClient(true);
+    // Get authenticated user first (for authorization) - use anon key to read cookies
+    const authSupabase = await createSupabaseServerClient(false);
     const body = await req.json();
     const { request_id, email, requester_id, name } = body;
     
@@ -29,10 +30,13 @@ export async function POST(req: NextRequest) {
     }
 
     // Get current user
-    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+    const { data: { user: authUser }, error: authError } = await authSupabase.auth.getUser();
     if (authError || !authUser) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
+
+    // Use service role client for queries (bypasses RLS)
+    const supabase = await createSupabaseServerClient(true);
 
     // Get user profile
     const { data: profile, error: profileError } = await supabase

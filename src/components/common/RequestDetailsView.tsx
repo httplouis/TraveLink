@@ -43,6 +43,14 @@ export interface RequestData {
   travel_start_date: string;
   travel_end_date: string;
   total_budget: number;
+  comptroller_edited_budget?: number | null;
+  budget_history?: Array<{
+    original_amount: number;
+    final_amount: number;
+    changed_by: string;
+    changed_at: string;
+    reason?: string;
+  }>;
   created_at?: string;
   expense_breakdown?: Array<{
     category: string;
@@ -148,6 +156,31 @@ export interface RequestData {
     department_head_endorsement_date?: string;
     [key: string]: any;
   };
+  
+  // Head endorsement invitations (for multi-department requests)
+  head_endorsements?: Array<{
+    id: string;
+    request_id: string;
+    head_user_id: string;
+    department_id: string;
+    status: 'pending' | 'sent' | 'confirmed' | 'declined' | 'expired';
+    confirmed_at?: string | null;
+    declined_at?: string | null;
+    head_email?: string;
+    head_name?: string;
+    department_name?: string;
+    head?: {
+      id: string;
+      name: string;
+      email: string;
+      profile_picture?: string;
+    };
+    department?: {
+      id: string;
+      name: string;
+      code?: string;
+    };
+  }>;
   
   // Status tracking fields for RequestStatusTracker
   requesterIsHead?: boolean;
@@ -313,8 +346,8 @@ export default function RequestDetailsView({
           console.log('[RequestDetailsView] ✅ Found Admin:', data.data.name);
           setRoutingPerson({
             name: data.data.name || 'Unknown Admin',
-            role: 'Administrator',
-            position: data.data.position_title || 'Admin'
+            role: 'Transportation Coordinator',
+            position: data.data.position_title || 'Transportation Coordinator'
           });
           return;
         } else {
@@ -347,8 +380,8 @@ export default function RequestDetailsView({
                   console.log('[RequestDetailsView] ✅ Found Admin from history (pending_head):', userData.data.name);
                   setRoutingPerson({
                     name: userData.data.name || 'Unknown Admin',
-                    role: 'Administrator',
-                    position: userData.data.position_title || 'Admin'
+                    role: 'Transportation Coordinator',
+                    position: userData.data.position_title || 'Transportation Coordinator'
                   });
                   return;
                 }
@@ -386,8 +419,8 @@ export default function RequestDetailsView({
                   console.log('[RequestDetailsView] ✅ Found Admin from history:', userData.data.name);
                   setRoutingPerson({
                     name: userData.data.name || 'Unknown Admin',
-                    role: 'Administrator',
-                    position: userData.data.position_title || 'Admin'
+                    role: 'Transportation Coordinator',
+                    position: userData.data.position_title || 'Transportation Coordinator'
                   });
                   return;
                 }
@@ -853,7 +886,7 @@ export default function RequestDetailsView({
                     </div>
                   </div>
 
-                  {/* Department Head Endorsement */}
+                  {/* Department Head Endorsement (Legacy - single department) */}
                   {request.workflow_metadata?.department_head_endorsed_by && (
                     <div className="bg-white rounded-lg border border-gray-200 p-6">
                       <h3 className="text-lg font-semibold text-gray-900 mb-4">Department Head Endorsement</h3>
@@ -874,10 +907,140 @@ export default function RequestDetailsView({
                     </div>
                   )}
 
+                  {/* Multi-Department Head Endorsements */}
+                  {request.head_endorsements && Array.isArray(request.head_endorsements) && request.head_endorsements.length > 0 && (
+                    <div className="bg-white rounded-lg border border-gray-200 p-6">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Department Head Endorsements</h3>
+                      <div className="space-y-4">
+                        {request.head_endorsements.map((endorsement: any, index: number) => (
+                          <div
+                            key={endorsement.id || index}
+                            className={`rounded-lg border-2 p-4 ${
+                              endorsement.status === 'confirmed'
+                                ? 'bg-green-50 border-green-200'
+                                : endorsement.status === 'sent' || endorsement.status === 'pending'
+                                ? 'bg-yellow-50 border-yellow-200'
+                                : endorsement.status === 'declined'
+                                ? 'bg-red-50 border-red-200'
+                                : 'bg-gray-50 border-gray-200'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="flex items-start gap-3 flex-1">
+                                {endorsement.head?.profile_picture ? (
+                                  <img
+                                    src={endorsement.head.profile_picture}
+                                    alt={endorsement.head.name || 'Head'}
+                                    className="w-10 h-10 rounded-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                                    <span className="text-blue-600 font-semibold text-sm">
+                                      {(endorsement.head?.name || endorsement.head_email || 'H').charAt(0).toUpperCase()}
+                                    </span>
+                                  </div>
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-semibold text-sm text-gray-900">
+                                    {endorsement.head?.name || endorsement.head_email || 'Department Head'}
+                                  </p>
+                                  <p className="text-xs text-gray-600 mt-0.5">
+                                    {endorsement.department?.name || endorsement.department_name || 'Department'}
+                                  </p>
+                                  {endorsement.head?.email && (
+                                    <p className="text-xs text-gray-500 mt-0.5">
+                                      {endorsement.head.email}
+                                    </p>
+                                  )}
+                                  {endorsement.status === 'confirmed' && endorsement.confirmed_at && (
+                                    <p className="text-xs text-green-700 mt-2 flex items-center gap-1">
+                                      <span className="font-semibold">✓ Confirmed</span>
+                                      <span>on {formatDate(endorsement.confirmed_at)}</span>
+                                    </p>
+                                  )}
+                                  {endorsement.status === 'sent' || endorsement.status === 'pending' ? (
+                                    <p className="text-xs text-yellow-700 mt-2 flex items-center gap-1">
+                                      <span>⏳ Awaiting response</span>
+                                    </p>
+                                  ) : endorsement.status === 'declined' ? (
+                                    <p className="text-xs text-red-700 mt-2 flex items-center gap-1">
+                                      <span>✗ Declined</span>
+                                      {endorsement.declined_at && (
+                                        <span>on {formatDate(endorsement.declined_at)}</span>
+                                      )}
+                                    </p>
+                                  ) : null}
+                                </div>
+                              </div>
+                              <div className="flex-shrink-0">
+                                <span className={`px-3 py-1 rounded-full text-xs font-semibold capitalize ${
+                                  endorsement.status === 'confirmed'
+                                    ? 'bg-green-100 text-green-800'
+                                    : endorsement.status === 'sent' || endorsement.status === 'pending'
+                                    ? 'bg-yellow-100 text-yellow-800'
+                                    : endorsement.status === 'declined'
+                                    ? 'bg-red-100 text-red-800'
+                                    : 'bg-gray-100 text-gray-800'
+                                }`}>
+                                  {endorsement.status || 'pending'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Budget Breakdown - Show expense breakdown if available */}
                   {request.expense_breakdown && Array.isArray(request.expense_breakdown) && request.expense_breakdown.length > 0 && (
                     <div className="bg-white rounded-lg border border-gray-200 p-6">
                       <h3 className="text-lg font-semibold text-gray-900 mb-4">Budget Breakdown</h3>
+                      
+                      {/* Budget History - Show if comptroller edited budget */}
+                      {request.budget_history && Array.isArray(request.budget_history) && request.budget_history.length > 0 && (
+                        <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                          <h4 className="text-sm font-semibold text-amber-900 mb-2 flex items-center gap-2">
+                            <Clock className="w-4 h-4" />
+                            Budget Change History
+                          </h4>
+                          <div className="space-y-2">
+                            {request.budget_history.map((entry: any, idx: number) => (
+                              <div key={idx} className="text-sm">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-amber-800 font-medium">
+                                    {entry.changed_at ? formatLongDateTime(entry.changed_at) : 'Original Budget'}
+                                  </span>
+                                  <span className="text-amber-900 font-semibold">
+                                    {formatCurrency(entry.original_amount || request.total_budget)}
+                                  </span>
+                                </div>
+                                {entry.changed_by && (
+                                  <p className="text-xs text-amber-700">
+                                    Changed by: {entry.changed_by_name || entry.changed_by}
+                                  </p>
+                                )}
+                                {entry.reason && (
+                                  <p className="text-xs text-amber-600 italic mt-1">
+                                    {entry.reason}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                          {request.comptroller_edited_budget && request.comptroller_edited_budget !== request.total_budget && (
+                            <div className="mt-3 pt-3 border-t border-amber-300">
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm font-bold text-amber-900">Final Approved Budget</span>
+                                <span className="text-base font-bold text-amber-900">
+                                  {formatCurrency(request.comptroller_edited_budget)}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
                       <div className="space-y-2 mb-3">
                         {request.expense_breakdown.map((expense: any, idx: number) => {
                           // Use same logic as VP modal for label
@@ -897,14 +1060,26 @@ export default function RequestDetailsView({
                         })}
                       </div>
                       
-                      {request.total_budget > 0 && (
-                        <div className="pt-3 border-t-2 border-gray-300">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-bold text-gray-900">TOTAL BUDGET</span>
-                            <span className="text-lg font-bold text-[#7a0019]">{formatCurrency(request.total_budget)}</span>
+                      {(() => {
+                        const finalBudget = request.comptroller_edited_budget || request.total_budget;
+                        return finalBudget > 0 && (
+                          <div className="pt-3 border-t-2 border-gray-300">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-bold text-gray-900">TOTAL BUDGET</span>
+                              <div className="text-right">
+                                {request.comptroller_edited_budget && request.comptroller_edited_budget !== request.total_budget && (
+                                  <div className="text-sm text-gray-500 line-through mb-1">
+                                    {formatCurrency(request.total_budget)}
+                                  </div>
+                                )}
+                                <span className={`text-lg font-bold ${request.comptroller_edited_budget && request.comptroller_edited_budget !== request.total_budget ? 'text-[#7a0019]' : 'text-[#7a0019]'}`}>
+                                  {formatCurrency(finalBudget)}
+                                </span>
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   )}
 
@@ -968,7 +1143,7 @@ export default function RequestDetailsView({
                     </div>
                   )}
 
-                  {/* Assigned Driver and Vehicle (Admin Assignment) */}
+                  {/* Assigned Driver and Vehicle (Transportation Coordinator Assignment) */}
                   {(request.assigned_driver || request.assigned_vehicle) && (
                     <WowCard className="p-6 bg-gradient-to-br from-green-50 to-white border-2 border-green-200">
                       <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
@@ -1611,6 +1786,10 @@ export default function RequestDetailsView({
                       hasParentHead={request.hasParentHead}
                       requiresPresidentApproval={request.requiresPresidentApproval}
                       bothVpsApproved={request.bothVpsApproved || false}
+                      adminSkipped={(request as any).admin_skipped || false}
+                      comptrollerSkipped={(request as any).comptroller_skipped || false}
+                      adminSkipReason={(request as any).admin_skip_reason || null}
+                      comptrollerSkipReason={(request as any).comptroller_skip_reason || null}
                       headApprovedAt={request.headApprovedAt}
                       headApprovedBy={request.headApprovedBy}
                       parentHeadApprovedAt={request.parentHeadApprovedAt}
@@ -1982,15 +2161,15 @@ export default function RequestDetailsView({
                     routingInfo = {
                       label: 'Sent To',
                       value: routingPerson.name,
-                      role: routingPerson.role || (nextVpId ? 'VP' : 'Administrator')
+                      role: routingPerson.role || (nextVpId ? 'VP' : 'Transportation Coordinator')
                     };
                   } else if (nextAdminId || nextApproverRole === 'admin') {
                     // Head sent to admin but routingPerson not loaded yet - show loading or fetch
                     console.log('[RequestDetailsView] ⚠️ Head sent to admin but routingPerson not loaded, nextAdminId:', nextAdminId);
                     routingInfo = {
                       label: 'Sent To',
-                      value: loadingRoutingPerson ? 'Loading...' : 'Administrator',
-                      role: 'Administrator'
+                      value: loadingRoutingPerson ? 'Loading...' : 'Transportation Coordinator',
+                      role: 'Transportation Coordinator'
                     };
                   } else if (nextVpId || nextApproverRole === 'vp') {
                     // Head sent to VP but routingPerson not loaded yet
@@ -2029,14 +2208,14 @@ export default function RequestDetailsView({
                     if (request.head_approved_by) {
                       routingInfo = {
                         label: 'Sent To',
-                        value: 'Administrator (sent by ' + (request.head_approver?.name || 'Department Head') + ')',
-                        role: 'Administrator'
+                        value: 'Transportation Coordinator (sent by ' + (request.head_approver?.name || 'Department Head') + ')',
+                        role: 'Transportation Coordinator'
                       };
                     } else {
                       routingInfo = {
                         label: 'Sent To',
-                        value: 'Administrator',
-                        role: 'Administrator'
+                        value: 'Transportation Coordinator',
+                        role: 'Transportation Coordinator'
                       };
                     }
                   }
@@ -2113,6 +2292,7 @@ export default function RequestDetailsView({
                 onClick={async () => {
                   try {
                     // Use API route for PDF generation (more reliable)
+                    // PDF can be generated at any stage (pending, approved, rejected, returned)
                     const res = await fetch(`/api/requests/${request.id}/pdf`);
                     if (!res.ok) {
                       const errorText = await res.text();
@@ -2125,7 +2305,18 @@ export default function RequestDetailsView({
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = `travel-order-${request.request_number || request.id}.pdf`;
+                    
+                    // Get filename from Content-Disposition header if available, otherwise use default
+                    const contentDisposition = res.headers.get('Content-Disposition');
+                    let filename = `travel-order-${request.request_number || request.id}.pdf`;
+                    if (contentDisposition) {
+                      const filenameMatch = contentDisposition.match(/filename="?(.+?)"?$/);
+                      if (filenameMatch) {
+                        filename = filenameMatch[1];
+                      }
+                    }
+                    
+                    a.download = filename;
                     document.body.appendChild(a);
                     a.click();
                     window.URL.revokeObjectURL(url);
@@ -2138,7 +2329,7 @@ export default function RequestDetailsView({
                 className="flex items-center gap-2 w-full justify-center rounded-md bg-[#7A0010] hover:bg-[#5c000c] px-4 py-2.5 text-sm font-medium text-white transition"
               >
                 <FileDown className="h-4 w-4" />
-                Travel Order PDF
+                {request.request_type === 'seminar' ? 'Seminar Application PDF' : 'Travel Order PDF'}
               </button>
             </div>
           </WowCard>

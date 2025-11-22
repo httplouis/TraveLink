@@ -11,7 +11,8 @@ import {
   Users, 
   Award,
   FileCheck,
-  AlertCircle
+  AlertCircle,
+  Zap
 } from "lucide-react";
 
 type RequestStatus = 
@@ -43,6 +44,12 @@ interface RequestStatusTrackerProps {
   requiresPresidentApproval?: boolean;
   bothVpsApproved?: boolean; // Whether both VPs need to approve
   
+  // Skip flags
+  adminSkipped?: boolean;
+  comptrollerSkipped?: boolean;
+  adminSkipReason?: string | null;
+  comptrollerSkipReason?: string | null;
+  
   // Approval timestamps and names
   headApprovedAt?: string | null | undefined;
   headApprovedBy?: string | null | undefined;
@@ -73,7 +80,7 @@ interface RequestStatusTrackerProps {
 const STAGES: ApprovalStage[] = [
   { key: "head", label: "Department Head", icon: User, role: "Head" },
   { key: "parent_head", label: "College Dean", icon: Award, role: "Dean" },
-  { key: "admin", label: "Admin (Assignment)", icon: Shield, role: "Admin" },
+  { key: "admin", label: "Transportation Coordinator", icon: Shield, role: "Transportation Coordinator" },
   { key: "comptroller", label: "Comptroller", icon: DollarSign, role: "Comptroller" },
   { key: "hr", label: "Human Resources", icon: Users, role: "HR" },
   { key: "vp", label: "Vice President", icon: Award, role: "VP" },
@@ -88,6 +95,10 @@ export default function RequestStatusTracker({
   hasParentHead = false,
   requiresPresidentApproval = false,
   bothVpsApproved = false,
+  adminSkipped = false,
+  comptrollerSkipped = false,
+  adminSkipReason = null,
+  comptrollerSkipReason = null,
   headApprovedAt,
   headApprovedBy,
   parentHeadApprovedAt,
@@ -128,17 +139,23 @@ export default function RequestStatusTracker({
   });
   
   // Filter stages based on workflow
+  // Show skipped stages with visual indicators
   const activeStages = STAGES.filter(stage => {
     if (stage.key === "head" && requesterIsHead) return false;
     if (stage.key === "parent_head" && !hasParentHead) return false;
-    if (stage.key === "comptroller" && !hasBudget) return false;
-    if (stage.key === "vp2" && !bothVpsApproved) return false; // Only show VP2 if both VPs need to approve
+    // Show comptroller even if skipped (with skip indicator)
+    // if (stage.key === "comptroller" && !hasBudget && !comptrollerSkipped) return false;
+    if (stage.key === "vp2" && !bothVpsApproved) return false;
     // Always show President if they've already approved, or if approval is required
     if (stage.key === "president" && !requiresPresidentApproval && !presidentApprovedAt) return false;
     return true;
   });
 
-  const getStageStatus = (stageKey: string): "completed" | "current" | "pending" | "rejected" => {
+  const getStageStatus = (stageKey: string): "completed" | "current" | "pending" | "rejected" | "skipped" => {
+    // Check for skipped stages first
+    if (stageKey === "admin" && adminSkipped) return "skipped";
+    if (stageKey === "comptroller" && comptrollerSkipped) return "skipped";
+    
     if (status === "rejected" && rejectionStage === stageKey) return "rejected";
     if (status === "cancelled") return "rejected";
     
@@ -148,8 +165,8 @@ export default function RequestStatusTracker({
       switch (stageKey) {
         case "head": return headApprovedAt ? "completed" : "pending";
         case "parent_head": return parentHeadApprovedAt ? "completed" : "pending";
-        case "admin": return adminProcessedAt ? "completed" : "pending";
-        case "comptroller": return comptrollerApprovedAt ? "completed" : "pending";
+        case "admin": return adminSkipped ? "skipped" : (adminProcessedAt ? "completed" : "pending");
+        case "comptroller": return comptrollerSkipped ? "skipped" : (comptrollerApprovedAt ? "completed" : "pending");
         case "hr": return hrApprovedAt ? "completed" : "pending";
         case "vp": return vpApprovedAt ? "completed" : "pending";
         case "vp2": return vp2ApprovedAt ? "completed" : (bothVpsApproved ? "pending" : "pending");
@@ -174,6 +191,7 @@ export default function RequestStatusTracker({
         return "pending";
       
       case "admin":
+        if (adminSkipped) return "skipped";
         if (adminProcessedAt) return "completed";
         if (status === "pending_admin") return "current";
         // If we're past admin stage or request is approved, mark as completed
@@ -181,6 +199,7 @@ export default function RequestStatusTracker({
         return "pending";
       
       case "comptroller":
+        if (comptrollerSkipped) return "skipped";
         if (comptrollerApprovedAt) return "completed";
         if (status === "pending_comptroller") return "current";
         if (status === "pending_hr" || status === "pending_vp" || status === "pending_president" || status === "pending_exec" || status === "approved") return "completed";
@@ -297,10 +316,12 @@ export default function RequestStatusTracker({
                   ${stageStatus === "current" ? "bg-blue-500 text-white animate-pulse" : ""}
                   ${stageStatus === "pending" ? "bg-gray-200 text-gray-400" : ""}
                   ${stageStatus === "rejected" ? "bg-red-500 text-white" : ""}
+                  ${stageStatus === "skipped" ? "bg-amber-500 text-white" : ""}
                 `}>
                   {stageStatus === "completed" && <Check className="w-3 h-3" />}
                   {stageStatus === "current" && <Clock className="w-3 h-3" />}
                   {stageStatus === "rejected" && <X className="w-3 h-3" />}
+                  {stageStatus === "skipped" && <Zap className="w-3 h-3" />}
                   {stageStatus === "pending" && <Icon className="w-3 h-3" />}
                 </div>
               </div>
@@ -366,10 +387,12 @@ export default function RequestStatusTracker({
                   ${stageStatus === "current" ? "bg-blue-500 text-white ring-4 ring-blue-100" : ""}
                   ${stageStatus === "pending" ? "bg-gray-200 text-gray-400" : ""}
                   ${stageStatus === "rejected" ? "bg-red-500 text-white" : ""}
+                  ${stageStatus === "skipped" ? "bg-amber-500 text-white ring-2 ring-amber-200" : ""}
                 `}>
                   {stageStatus === "completed" && <Check className="w-5 h-5" />}
                   {stageStatus === "current" && <Clock className="w-5 h-5 animate-pulse" />}
                   {stageStatus === "rejected" && <X className="w-5 h-5" />}
+                  {stageStatus === "skipped" && <Zap className="w-5 h-5" />}
                   {stageStatus === "pending" && <Icon className="w-5 h-5" />}
                 </div>
                 
@@ -431,6 +454,24 @@ export default function RequestStatusTracker({
                         <Clock className="w-3 h-3" />
                         Pending
                       </span>
+                    )}
+                    
+                    {stageStatus === "skipped" && (
+                      <div className="text-right">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-100 text-amber-700 text-xs font-medium rounded-full">
+                          <Zap className="w-3 h-3" />
+                          Skipped
+                        </span>
+                        {(stage.key === "admin" && adminSkipReason) || (stage.key === "comptroller" && comptrollerSkipReason) ? (
+                          <p className="text-xs text-amber-600 mt-1 italic">
+                            {stage.key === "admin" ? adminSkipReason : comptrollerSkipReason}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-amber-600 mt-1">
+                            {stage.key === "admin" ? "No vehicle needed" : "No budget required"}
+                          </p>
+                        )}
+                      </div>
                     )}
                     
                     {stageStatus === "pending" && (

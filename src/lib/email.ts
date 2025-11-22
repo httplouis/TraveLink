@@ -39,6 +39,11 @@ export async function sendEmail({ to, subject, html, from }: SendEmailOptions): 
     apiKey = process.env.RESEND_API_KEY_3 || 're_643gMPn1_HWKhe1qgnkrcmpnydmiKD9P8';
     console.log(`[sendEmail] 🔑 Using API key 3 for a22-34939@student.mseuf.edu.ph`);
   }
+  // Account 4: a21-31062@student.mseuf.edu.ph -> re_aPJ4bBtj_Fnfxjb9J9fUt2uhPWp9e6YEg
+  else if (to.toLowerCase().includes('a21-31062@student.mseuf.edu.ph')) {
+    apiKey = process.env.RESEND_API_KEY_4 || 're_aPJ4bBtj_Fnfxjb9J9fUt2uhPWp9e6YEg';
+    console.log(`[sendEmail] 🔑 Using API key 4 for a21-31062@student.mseuf.edu.ph`);
+  }
   
   // Fallback to default if no specific key found
   if (!apiKey) {
@@ -97,19 +102,33 @@ export async function sendEmail({ to, subject, html, from }: SendEmailOptions): 
   }
 
   try {
-    // Use Resend API
+    // Use Resend API with improved headers for better deliverability
+    const emailPayload: any = {
+      from: fromEmail,
+      to: [to],
+      subject,
+      html,
+      // Add reply-to header
+      reply_to: fromEmail,
+      // Add headers to improve deliverability
+      headers: {
+        'X-Entity-Ref-ID': `travilink-${Date.now()}`,
+        'List-Unsubscribe': '<mailto:unsubscribe@resend.dev>',
+      },
+    };
+
+    console.log(`[sendEmail] 📧 Sending email with improved headers for better deliverability`);
+    console.log(`[sendEmail] 📧 From: ${fromEmail}`);
+    console.log(`[sendEmail] 📧 To: ${to}`);
+    console.log(`[sendEmail] 📧 Subject: ${subject}`);
+
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        from: fromEmail,
-        to: [to],
-        subject,
-        html,
-      }),
+      body: JSON.stringify(emailPayload),
     });
 
     const data = await response.json();

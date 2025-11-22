@@ -106,9 +106,10 @@ export async function GET(
     try {
       // Use service role client to bypass RLS completely
       // Use maybeSingle() instead of single() to handle 0 rows gracefully
+      // Include budget_history in the select
       const { data, error } = await supabaseServiceRole
         .from("requests")
-        .select("*")
+        .select("*, budget_history")
         .eq("id", requestId)
         .maybeSingle(); // Changed from .single() to .maybeSingle()
 
@@ -441,6 +442,28 @@ export async function GET(
       fullRequest.expense_breakdown = null;
     }
 
+    // Parse budget_history if it's a string (JSONB from database)
+    try {
+      if (fullRequest.budget_history && typeof fullRequest.budget_history === 'string') {
+        try {
+          fullRequest.budget_history = JSON.parse(fullRequest.budget_history);
+          console.log(`[GET /api/requests/${requestId}] Parsed budget_history:`, fullRequest.budget_history);
+        } catch (e) {
+          console.warn(`[GET /api/requests/${requestId}] Failed to parse budget_history:`, e);
+          fullRequest.budget_history = null;
+        }
+      }
+
+      // Ensure budget_history is always an array or null
+      if (fullRequest.budget_history && !Array.isArray(fullRequest.budget_history)) {
+        console.warn(`[GET /api/requests/${requestId}] budget_history is not an array, converting...`);
+        fullRequest.budget_history = null;
+      }
+    } catch (e) {
+      console.warn(`[GET /api/requests/${requestId}] Error processing budget_history:`, e);
+      fullRequest.budget_history = null;
+    }
+
     // Log expense_breakdown for debugging
     try {
       console.log(`[GET /api/requests/${requestId}] Expense breakdown:`, {
@@ -503,6 +526,29 @@ export async function GET(
     } catch (e) {
       console.warn(`[GET /api/requests/${requestId}] Error processing attachments:`, e);
       fullRequest.attachments = [];
+    }
+
+    // Fetch head endorsement invitations (for multi-department requests)
+    try {
+      console.log(`[GET /api/requests/${requestId}] Fetching head endorsement invitations...`);
+      const { data: headEndorsements, error: headEndorsementsError } = await supabaseServiceRole
+        .from("head_endorsement_invitations")
+        .select(`
+          *,
+          head:users!head_endorsement_invitations_head_user_id_fkey(id, name, email, profile_picture),
+          department:departments!head_endorsement_invitations_department_id_fkey(id, name, code)
+        `)
+        .eq("request_id", requestId)
+        .order("created_at", { ascending: true });
+      
+      if (headEndorsementsError) {
+        console.warn(`[GET /api/requests/${requestId}] Error fetching head endorsements:`, headEndorsementsError);
+      } else if (headEndorsements && headEndorsements.length > 0) {
+        fullRequest.head_endorsements = headEndorsements;
+        console.log(`[GET /api/requests/${requestId}] Found ${headEndorsements.length} head endorsement(s)`);
+      }
+    } catch (e) {
+      console.warn(`[GET /api/requests/${requestId}] Exception fetching head endorsements:`, e);
     }
 
     // Step 7: Clean up and serialize response
@@ -671,15 +717,19 @@ export async function PATCH(
       return NextResponse.json({ ok: false, error: "Request not found" }, { status: 404 });
     }
 
-    // Check if user is admin OR the requester (for cancellation)
+    // Check if user is admin OR the requester (for cancellation and returned requests)
     const adminEmails = ["admin@mseuf.edu.ph", "admin.cleofe@mseuf.edu.ph", "comptroller@mseuf.edu.ph"];
     const isAdmin = adminEmails.includes(profile.email) || profile.is_admin;
     
     const isRequester = request.requester_id === profile.id || request.submitted_by_user_id === profile.id;
+    const isReturned = request.status === "returned";
     
     // Allow cancellation if user is requester AND request is still pending
+    // Allow editing if user is requester AND request is returned
     if (isCancellation && isRequester && (request.status.startsWith("pending_") || request.status === "draft")) {
       // Requester can cancel their own pending requests - allow this
+    } else if (isReturned && isRequester) {
+      // Requester can edit returned requests - allow this
     } else if (!isAdmin) {
       return NextResponse.json({ 
         ok: false, 
@@ -697,6 +747,12 @@ export async function PATCH(
       expense_breakdown,
       cost_justification,
       attachments, // Allow updating attachments
+      // Fields that requester can edit when request is returned
+      purpose,
+      destination,
+      travel_start_date,
+      travel_end_date,
+      passengers,
       // Allow updating other fields as needed
       ...otherFields
     } = body;
@@ -733,13 +789,47 @@ export async function PATCH(
       updateData.cost_justification = cost_justification || null;
     }
 
-    // Allow updating attachments
+    // Admin can edit travel details (date, destination, passengers)
+    if (isAdmin) {
+      if (destination !== undefined) {
+        updateData.destination = destination;
+      }
+      if (travel_start_date !== undefined) {
+        updateData.travel_start_date = travel_start_date;
+      }
+      if (travel_end_date !== undefined) {
+        updateData.travel_end_date = travel_end_date;
+      }
+      if (passengers !== undefined) {
+        updateData.passengers = passengers;
+      }
+      if (purpose !== undefined) {
+        updateData.purpose = purpose;
+      }
+    }
+
+    // Allow updating attachments (and adding new ones for returned requests)
     if (attachments !== undefined) {
       updateData.attachments = Array.isArray(attachments) ? attachments : [];
       console.log(`[PATCH /api/requests/${requestId}] Updating attachments:`, {
         count: updateData.attachments.length,
         attachments: updateData.attachments
       });
+    }
+
+    // If request is returned, allow requester to edit all fields
+    if (isReturned && isRequester) {
+      if (purpose !== undefined) updateData.purpose = purpose;
+      if (destination !== undefined) updateData.destination = destination;
+      if (travel_start_date !== undefined) updateData.travel_start_date = travel_start_date;
+      if (travel_end_date !== undefined) updateData.travel_end_date = travel_end_date;
+      if (passengers !== undefined) updateData.passengers = passengers;
+      if (total_budget !== undefined) updateData.total_budget = total_budget;
+      if (expense_breakdown !== undefined) updateData.expense_breakdown = expense_breakdown;
+      if (cost_justification !== undefined) updateData.cost_justification = cost_justification;
+      
+      // When requester resubmits, change status back to pending_head (or appropriate stage)
+      // This will be handled by a separate resubmit action
     }
 
     // Allow other safe fields to be updated

@@ -296,6 +296,10 @@ export default function TrackingModal({ isOpen, onClose, requestId }: TrackingMo
                   hasParentHead={data.has_parent_head}
                   requiresPresidentApproval={data.requires_president_approval}
                   bothVpsApproved={data.both_vps_approved || false}
+                  adminSkipped={data.admin_skipped || false}
+                  comptrollerSkipped={data.comptroller_skipped || false}
+                  adminSkipReason={data.admin_skip_reason || null}
+                  comptrollerSkipReason={data.comptroller_skip_reason || null}
                   headApprovedAt={data.head_approved_at}
                   headApprovedBy={data.head_approved_by}
                   parentHeadApprovedAt={data.parent_head_approved_at}

@@ -54,7 +54,7 @@ export default function SubmitConfirmationDialog({
       "PRESIDENT/COO": "President / COO",
       PRESIDENT: "President",
       OSAS_ADMIN: "OSAS Admin",
-      "TM(close-out)": "TM (Close-out)",
+      "TM(close-out)": "Transportation Manager",
     };
     return labels[role] || role;
   };

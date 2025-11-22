@@ -109,8 +109,20 @@ export default function SearchableSelect({
     const updatePosition = () => {
       if (isOpen && inputRef.current) {
         const rect = inputRef.current.getBoundingClientRect();
+        
+        // Calculate position relative to viewport (fixed positioning uses viewport coordinates)
+        const viewportHeight = window.innerHeight;
+        const dropdownHeight = 240; // max-h-60 = 240px
+        const spaceBelow = viewportHeight - rect.bottom;
+        const spaceAbove = rect.top;
+        
+        // Determine if dropdown should open above or below
+        const openAbove = spaceBelow < dropdownHeight && spaceAbove > spaceBelow;
+        
         setDropdownPos({
-          top: rect.bottom,
+          top: openAbove 
+            ? rect.top - dropdownHeight - 4  // Open above
+            : rect.bottom + 4,                 // Open below
           left: rect.left,
           width: rect.width,
         });
@@ -120,12 +132,34 @@ export default function SearchableSelect({
     updatePosition();
 
     if (isOpen) {
-      window.addEventListener('scroll', updatePosition, true);
+      // Listen to scroll on all scrollable containers, not just window
+      const scrollableParents: (Element | Window)[] = [window];
+      
+      // Find all scrollable parent elements
+      let parent = inputRef.current?.parentElement;
+      while (parent) {
+        const style = window.getComputedStyle(parent);
+        if (style.overflow === 'auto' || style.overflow === 'scroll' || 
+            style.overflowY === 'auto' || style.overflowY === 'scroll') {
+          scrollableParents.push(parent);
+        }
+        parent = parent.parentElement;
+      }
+      
+      // Add scroll listeners to all scrollable parents
+      scrollableParents.forEach((element) => {
+        element.addEventListener('scroll', updatePosition, true);
+      });
+      
       window.addEventListener('resize', updatePosition);
+      window.addEventListener('scroll', updatePosition, true);
       
       return () => {
-        window.removeEventListener('scroll', updatePosition, true);
+        scrollableParents.forEach((element) => {
+          element.removeEventListener('scroll', updatePosition, true);
+        });
         window.removeEventListener('resize', updatePosition);
+        window.removeEventListener('scroll', updatePosition, true);
       };
     }
   }, [isOpen]);
@@ -142,12 +176,13 @@ export default function SearchableSelect({
             duration: 0.3, 
             ease: [0.4, 0.0, 0.2, 1] // Smooth easeInOut like sidebar
           }}
-          className="fixed z-[100] max-h-60 overflow-auto rounded-xl border-2 border-neutral-200 bg-white shadow-xl origin-top"
+          className="fixed max-h-60 overflow-auto rounded-xl border-2 border-neutral-200 bg-white shadow-xl origin-top"
           onMouseDown={(e) => e.preventDefault()}
           style={{
-            top: `${dropdownPos.top + 4}px`,
+            top: `${dropdownPos.top}px`,
             left: `${dropdownPos.left}px`,
             width: `${dropdownPos.width}px`,
+            zIndex: 99999,
             boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
           }}
         >

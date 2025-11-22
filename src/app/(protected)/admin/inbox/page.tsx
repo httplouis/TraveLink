@@ -8,6 +8,8 @@ import RequestCardEnhanced from "@/components/common/RequestCardEnhanced";
 import type { RequestData } from "@/components/common/RequestDetailsView";
 import { SkeletonRequestCard } from "@/components/common/SkeletonLoader";
 import { createLogger } from "@/lib/debug";
+import { shouldShowPendingAlert, getAlertSeverity, getAlertMessage } from "@/lib/notifications/pending-alerts";
+import { AlertCircle } from "lucide-react";
 
 type Request = {
   id: string;
@@ -317,17 +319,40 @@ export default function AdminInboxPage() {
   return (
     <div className="p-4 md:p-6 space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Admin Inbox</h1>
+        <div>
+          <h1 className="text-2xl font-bold">Transportation Coordinator Inbox</h1>
+          {activeTab === "pending" && shouldShowPendingAlert(items.length) && (
+            <div className={`mt-2 flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${
+              getAlertSeverity(items.length) === 'danger'
+                ? 'bg-red-50 border border-red-200 text-red-700'
+                : getAlertSeverity(items.length) === 'warning'
+                ? 'bg-orange-50 border border-orange-200 text-orange-700'
+                : 'bg-amber-50 border border-amber-200 text-amber-700'
+            }`}>
+              <AlertCircle className="h-4 w-4" />
+              <span>{getAlertMessage(items.length, 'admin')}</span>
+            </div>
+          )}
+        </div>
         <div className="flex gap-2">
           <button
             onClick={() => setActiveTab("pending")}
-            className={`px-4 py-2 rounded-lg ${
+            className={`px-4 py-2 rounded-lg relative ${
               activeTab === "pending"
                 ? "bg-[#7a1f2a] text-white"
                 : "bg-gray-200 text-gray-700"
             }`}
           >
             Pending ({items.length})
+            {shouldShowPendingAlert(items.length) && (
+              <span className={`absolute -top-1 -right-1 h-3 w-3 rounded-full ${
+                getAlertSeverity(items.length) === 'danger'
+                  ? 'bg-red-500'
+                  : getAlertSeverity(items.length) === 'warning'
+                  ? 'bg-orange-500'
+                  : 'bg-amber-500'
+              } animate-pulse`} />
+            )}
           </button>
           <button
             onClick={() => setActiveTab("history")}

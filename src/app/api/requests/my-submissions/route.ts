@@ -4,12 +4,15 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET() {
   try {
-    const supabase = await createSupabaseServerClient(true);
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    // Get authenticated user first (for authorization) - use anon key to read cookies
+    const authSupabase = await createSupabaseServerClient(false);
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser();
     if (authError || !user) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
+
+    // Use service role client for queries (bypasses RLS)
+    const supabase = await createSupabaseServerClient(true);
 
     // Get user profile
     const { data: profile } = await supabase

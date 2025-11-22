@@ -12,9 +12,47 @@ function LoginPageContent() {
   const nextUrl = searchParams?.get("next") ?? null;
 
   const [err, setErr] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [microsoftLoading, setMicrosoftLoading] = useState(false);
+  const [emailLoading, setEmailLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+
+  // Load remembered email and failed attempts on mount
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
+    // Load remembered email
+    const rememberedEmail = localStorage.getItem('rememberedEmail');
+    if (rememberedEmail) {
+      setEmail(rememberedEmail);
+      setRememberMe(true);
+    }
+    
+    // Load failed attempts (check if within last 15 minutes)
+    const attemptsData = localStorage.getItem('failedLoginAttempts');
+    if (attemptsData) {
+      try {
+        const { count, timestamp } = JSON.parse(attemptsData);
+        const now = Date.now();
+        const fifteenMinutes = 15 * 60 * 1000;
+        
+        if (now - timestamp < fifteenMinutes) {
+          setFailedAttempts(count);
+          if (count >= 3) {
+            setShowForgotPassword(true);
+          }
+        } else {
+          // Reset if older than 15 minutes
+          localStorage.removeItem('failedLoginAttempts');
+        }
+      } catch (e) {
+        localStorage.removeItem('failedLoginAttempts');
+      }
+    }
+  }, []);
 
   // Check if user already logged in via Supabase session
   // Only redirect if there's a nextUrl (came from middleware redirect)
@@ -31,7 +69,7 @@ function LoginPageContent() {
   }, [nextUrl, router]);
 
   async function handleMicrosoftLogin() {
-    setLoading(true);
+    setMicrosoftLoading(true);
     setErr("");
 
     try {
@@ -69,7 +107,7 @@ function LoginPageContent() {
         } else {
           setErr(error.message || 'Failed to connect to Microsoft');
         }
-        setLoading(false);
+        setMicrosoftLoading(false);
         return;
       }
 
@@ -78,12 +116,12 @@ function LoginPageContent() {
       
     } catch (error: any) {
       setErr(error.message || 'An error occurred');
-      setLoading(false);
+      setMicrosoftLoading(false);
     }
   }
 
   async function handleEmailLogin() {
-    setLoading(true);
+    setEmailLoading(true);
     setErr("");
 
     try {
@@ -96,25 +134,58 @@ function LoginPageContent() {
       const data = await response.json();
 
       if (!response.ok || !data.success) {
+        // Track failed attempts
+        const newAttempts = failedAttempts + 1;
+        setFailedAttempts(newAttempts);
+        
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('failedLoginAttempts', JSON.stringify({
+            count: newAttempts,
+            timestamp: Date.now()
+          }));
+        }
+        
+        if (newAttempts >= 3) {
+          setShowForgotPassword(true);
+        }
+        
         throw new Error(data.error || "Login failed");
       }
+
+      // Success - clear failed attempts and handle remember me
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('failedLoginAttempts');
+        
+        if (rememberMe) {
+          localStorage.setItem('rememberedEmail', email);
+        } else {
+          localStorage.removeItem('rememberedEmail');
+        }
+      }
+      
+      setFailedAttempts(0);
+      setShowForgotPassword(false);
 
       // Redirect to the appropriate portal
       router.push(data.redirectPath || "/user");
     } catch (error: any) {
       setErr(error.message || 'Login failed. Please check your credentials.');
-      setLoading(false);
+      setEmailLoading(false);
     }
   }
 
   return (
     <LoginView
-      loading={loading}
+      microsoftLoading={microsoftLoading}
+      emailLoading={emailLoading}
       err={err}
       email={email}
       password={password}
+      rememberMe={rememberMe}
+      showForgotPassword={showForgotPassword}
       onEmailChange={setEmail}
       onPasswordChange={setPassword}
+      onRememberMeChange={setRememberMe}
       onMicrosoftLogin={handleMicrosoftLogin}
       onEmailLogin={handleEmailLogin}
     />

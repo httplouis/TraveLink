@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import SignaturePad from "./inputs/SignaturePad.ui";
 import { CheckCircle2, Upload, X } from "lucide-react";
 
@@ -10,8 +10,12 @@ export default function SignatureSettings() {
   const [message, setMessage] = useState("");
   const [loadingSignature, setLoadingSignature] = useState(true);
 
+  const hasLoadedRef = useRef(false);
   useEffect(() => {
-    loadSignature();
+    if (!hasLoadedRef.current) {
+      hasLoadedRef.current = true;
+      loadSignature();
+    }
   }, []);
 
   const loadSignature = async () => {
