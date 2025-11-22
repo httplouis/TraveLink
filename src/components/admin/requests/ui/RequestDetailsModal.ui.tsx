@@ -1389,6 +1389,111 @@ export default function RequestDetailsModalUI({
                     )}
                   </div>
                 </div>
+
+                {/* Multi-Department Head Endorsements (for additional requesters from different departments) */}
+                {(() => {
+                  const payload = (row as any)?.payload;
+                  const headEndorsements = payload?.head_endorsements || (row as any)?.head_endorsements;
+                  
+                  // Only show if there are head endorsements from other departments
+                  if (!headEndorsements || !Array.isArray(headEndorsements) || headEndorsements.length === 0) {
+                    return null;
+                  }
+
+                  // Filter out the main requester's department head endorsement (already shown above)
+                  const mainDeptId = payload?.department_id || (row as any)?.department_id;
+                  const additionalHeadEndorsements = headEndorsements.filter((endorsement: any) => {
+                    const endorsementDeptId = endorsement.department_id || endorsement.department?.id;
+                    return endorsementDeptId !== mainDeptId;
+                  });
+
+                  if (additionalHeadEndorsements.length === 0) {
+                    return null;
+                  }
+
+                  return (
+                    <div className="mt-6 space-y-4">
+                      <h4 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                        <Users className="h-4 w-4 text-slate-500" />
+                        Additional Department Head Endorsements ({additionalHeadEndorsements.length})
+                      </h4>
+                      {additionalHeadEndorsements.map((endorsement: any, index: number) => {
+                        const isConfirmed = endorsement.status === 'confirmed';
+                        const headName = endorsement.head_name || endorsement.head?.name || endorsement.head_email || 'Department Head';
+                        const departmentName = endorsement.department_name || endorsement.department?.name || endorsement.department?.code || 'Department';
+                        const signature = endorsement.signature; // Field name in head_endorsement_invitations table
+                        const confirmedAt = endorsement.confirmed_at;
+
+                        return (
+                          <div
+                            key={endorsement.id || index}
+                            className={`bg-white rounded-lg border-2 p-4 ${
+                              isConfirmed
+                                ? 'border-green-200 bg-green-50'
+                                : endorsement.status === 'declined'
+                                ? 'border-red-200 bg-red-50'
+                                : 'border-yellow-200 bg-yellow-50'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-3">
+                              <div>
+                                <p className="text-sm font-semibold text-slate-900">{departmentName}</p>
+                                <p className="text-xs text-slate-600 mt-0.5">{headName}</p>
+                              </div>
+                              <div className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                                isConfirmed
+                                  ? 'bg-green-100 text-green-700'
+                                  : endorsement.status === 'declined'
+                                  ? 'bg-red-100 text-red-700'
+                                  : 'bg-yellow-100 text-yellow-700'
+                              }`}>
+                                {isConfirmed ? 'Confirmed' : endorsement.status === 'declined' ? 'Declined' : 'Pending'}
+                              </div>
+                            </div>
+
+                            {/* Signature Display */}
+                            <div className="flex flex-col items-center mt-3 pt-3 border-t border-slate-200">
+                              {isConfirmed && signature ? (
+                                <>
+                                  <img
+                                    src={signature}
+                                    alt={`${headName}'s signature`}
+                                    className="h-16 object-contain -mb-3"
+                                  />
+                                  <div className="w-64 border-t border-neutral-500" />
+                                  <p className="mt-1 text-sm font-medium text-center">{headName}</p>
+                                  <p className="text-xs text-neutral-500 text-center">
+                                    Dept. Head, {departmentName}
+                                  </p>
+                                  {confirmedAt && (
+                                    <p className="text-xs text-neutral-500 mt-1">
+                                      {new Date(confirmedAt).toLocaleDateString('en-US', {
+                                        year: 'numeric',
+                                        month: 'long',
+                                        day: 'numeric'
+                                      })}
+                                    </p>
+                                  )}
+                                </>
+                              ) : (
+                                <>
+                                  <div className="h-16" />
+                                  <div className="w-64 border-t border-neutral-500" />
+                                  <p className="mt-1 text-sm font-medium text-center text-slate-400">
+                                    {endorsement.status === 'declined' ? 'Endorsement Declined' : 'Awaiting Endorsement'}
+                                  </p>
+                                  <p className="text-xs text-neutral-400 text-center mt-1">
+                                    {endorsement.status === 'declined' ? 'This department head has declined to endorse' : 'Signature pending'}
+                                  </p>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
               </section>
 
               {/* Transportation Details */}
