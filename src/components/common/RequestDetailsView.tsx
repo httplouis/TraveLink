@@ -953,10 +953,17 @@ export default function RequestDetailsView({
                                     </p>
                                   )}
                                   {endorsement.status === 'confirmed' && endorsement.confirmed_at && (
-                                    <p className="text-xs text-green-700 mt-2 flex items-center gap-1">
-                                      <span className="font-semibold">✓ Confirmed</span>
-                                      <span>on {formatDate(endorsement.confirmed_at)}</span>
-                                    </p>
+                                    <div className="mt-2 space-y-2">
+                                      <p className="text-xs text-green-700 flex items-center gap-1">
+                                        <span className="font-semibold">✓ Confirmed</span>
+                                        <span>on {formatDate(endorsement.confirmed_at)}</span>
+                                      </p>
+                                      {endorsement.endorsement_date && (
+                                        <p className="text-xs text-gray-600">
+                                          Endorsement Date: {formatDate(endorsement.endorsement_date)}
+                                        </p>
+                                      )}
+                                    </div>
                                   )}
                                   {endorsement.status === 'sent' || endorsement.status === 'pending' ? (
                                     <p className="text-xs text-yellow-700 mt-2 flex items-center gap-1">
@@ -970,6 +977,23 @@ export default function RequestDetailsView({
                                       )}
                                     </p>
                                   ) : null}
+                                  {endorsement.status === 'confirmed' && endorsement.signature && (
+                                    <div className="mt-3 pt-3 border-t border-gray-200">
+                                      <p className="text-xs font-medium text-gray-700 mb-2">Digital Signature:</p>
+                                      <div className="bg-white rounded border border-gray-300 p-2">
+                                        <img
+                                          src={endorsement.signature}
+                                          alt={`${endorsement.head?.name || 'Head'} signature`}
+                                          className="h-16 w-full max-w-[200px] object-contain"
+                                        />
+                                      </div>
+                                      {endorsement.head_name && (
+                                        <p className="text-xs text-gray-600 mt-1">
+                                          {endorsement.head_name}
+                                        </p>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                               <div className="flex-shrink-0">

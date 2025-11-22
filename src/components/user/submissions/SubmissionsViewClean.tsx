@@ -505,6 +505,9 @@ export default function SubmissionsView() {
               // Workflow metadata for routing information
               workflow_metadata: fullRequestData?.workflow_metadata || (selectedRequest as any).workflow_metadata || {},
               
+              // Head endorsement invitations (for multi-department requests)
+              head_endorsements: fullRequestData?.head_endorsements || [],
+              
               // Seminar data
               request_type: fullRequestData?.request_type || selectedRequest.request_type || 'travel_order',
               seminar_data: (() => {
