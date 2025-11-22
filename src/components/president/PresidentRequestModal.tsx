@@ -1007,6 +1007,7 @@ export default function PresidentRequestModal({
                 </div>
               )}
             </section>
+            )}
 
             {/* Cost Justification */}
             {t.cost_justification && (
@@ -1019,7 +1020,6 @@ export default function PresidentRequestModal({
                   {t.cost_justification}
                 </div>
               </section>
-            )}
             )}
           </div>
 
