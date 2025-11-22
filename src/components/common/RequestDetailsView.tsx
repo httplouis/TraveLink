@@ -908,11 +908,33 @@ export default function RequestDetailsView({
                   )}
 
                   {/* Multi-Department Head Endorsements */}
+                  {(() => {
+                    // Debug logging
+                    if (request.head_endorsements) {
+                      console.log('[RequestDetailsView] Head endorsements:', {
+                        count: Array.isArray(request.head_endorsements) ? request.head_endorsements.length : 0,
+                        isArray: Array.isArray(request.head_endorsements),
+                        endorsements: request.head_endorsements
+                      });
+                    }
+                    return null;
+                  })()}
                   {request.head_endorsements && Array.isArray(request.head_endorsements) && request.head_endorsements.length > 0 && (
                     <div className="bg-white rounded-lg border border-gray-200 p-6">
                       <h3 className="text-lg font-semibold text-gray-900 mb-4">Department Head Endorsements</h3>
                       <div className="space-y-4">
-                        {request.head_endorsements.map((endorsement: any, index: number) => (
+                        {request.head_endorsements.map((endorsement: any, index: number) => {
+                          // Debug logging for each endorsement
+                          console.log(`[RequestDetailsView] Endorsement ${index}:`, {
+                            id: endorsement.id,
+                            head_name: endorsement.head_name,
+                            head_email: endorsement.head_email,
+                            department_name: endorsement.department_name,
+                            status: endorsement.status,
+                            has_signature: !!endorsement.signature,
+                            signature: endorsement.signature ? 'EXISTS' : 'NULL'
+                          });
+                          return (
                           <div
                             key={endorsement.id || index}
                             className={`rounded-lg border-2 p-4 ${
@@ -977,20 +999,42 @@ export default function RequestDetailsView({
                                       )}
                                     </p>
                                   ) : null}
-                                  {endorsement.status === 'confirmed' && endorsement.signature && (
+                                  {endorsement.status === 'confirmed' && (
                                     <div className="mt-3 pt-3 border-t border-gray-200">
-                                      <p className="text-xs font-medium text-gray-700 mb-2">Digital Signature:</p>
-                                      <div className="bg-white rounded border border-gray-300 p-2">
-                                        <img
-                                          src={endorsement.signature}
-                                          alt={`${endorsement.head?.name || 'Head'} signature`}
-                                          className="h-16 w-full max-w-[200px] object-contain"
-                                        />
-                                      </div>
-                                      {endorsement.head_name && (
-                                        <p className="text-xs text-gray-600 mt-1">
-                                          {endorsement.head_name}
-                                        </p>
+                                      {endorsement.signature ? (
+                                        <>
+                                          <p className="text-xs font-medium text-gray-700 mb-2">Digital Signature:</p>
+                                          <div className="bg-white rounded border border-gray-300 p-2">
+                                            <img
+                                              src={endorsement.signature}
+                                              alt={`${endorsement.head?.name || 'Head'} signature`}
+                                              className="h-16 w-full max-w-[200px] object-contain"
+                                              onError={(e) => {
+                                                console.error(`[RequestDetailsView] Failed to load signature for ${endorsement.head?.name}:`, e);
+                                                e.currentTarget.style.display = 'none';
+                                              }}
+                                            />
+                                          </div>
+                                          {endorsement.head_name && (
+                                            <p className="text-xs text-gray-600 mt-1">
+                                              {endorsement.head_name}
+                                            </p>
+                                          )}
+                                        </>
+                                      ) : (
+                                        <>
+                                          <p className="text-xs font-medium text-gray-700 mb-2">Digital Signature:</p>
+                                          <div className="bg-gray-50 rounded border border-gray-200 p-3 text-center">
+                                            <p className="text-xs text-gray-500 italic">
+                                              Signature not provided
+                                            </p>
+                                          </div>
+                                          {endorsement.head_name && (
+                                            <p className="text-xs text-gray-600 mt-1">
+                                              {endorsement.head_name}
+                                            </p>
+                                          )}
+                                        </>
                                       )}
                                     </div>
                                   )}
@@ -1011,7 +1055,8 @@ export default function RequestDetailsView({
                               </div>
                             </div>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   )}

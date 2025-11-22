@@ -127,6 +127,17 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { token, action, head_name, endorsement_date, signature, comments, declined_reason } = body;
 
+    console.log("[POST /api/head-endorsements/confirm] 📥 Received request:", {
+      hasToken: !!token,
+      action,
+      hasHeadName: !!head_name,
+      hasEndorsementDate: !!endorsement_date,
+      hasSignature: !!signature,
+      signatureType: typeof signature,
+      signatureLength: signature ? signature.length : 0,
+      signaturePreview: signature ? signature.substring(0, 50) + "..." : "NULL/UNDEFINED",
+    });
+
     if (!token || !action) {
       return NextResponse.json({ ok: false, error: "Token and action are required" }, { status: 400 });
     }
@@ -141,6 +152,12 @@ export async function POST(req: NextRequest) {
 
     if (action === "decline" && !declined_reason?.trim()) {
       return NextResponse.json({ ok: false, error: "Reason is required for declining" }, { status: 400 });
+    }
+
+    // Validate signature for confirmation
+    if (action === "confirm" && !signature) {
+      console.warn("[POST /api/head-endorsements/confirm] ⚠️ No signature provided in request body");
+      // Don't fail here - we'll try to get saved signature from user profile
     }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -163,14 +180,23 @@ export async function POST(req: NextRequest) {
     // Decode token
     const decodedToken = decodeURIComponent(token);
     
-    // Fetch invitation
+    console.log("[POST /api/head-endorsements/confirm] 🔍 Looking up invitation:", {
+      tokenLength: token.length,
+      tokenPreview: token.substring(0, 20) + "...",
+      decodedTokenLength: decodedToken.length,
+      tokensMatch: token === decodedToken,
+    });
+    
+    // Fetch invitation - try original token first
     let { data: invitation, error: inviteError } = await supabase
       .from("head_endorsement_invitations")
       .select("*")
       .eq("token", token)
       .single();
 
+    // If not found and token was encoded, try decoded version
     if (inviteError && inviteError.code === 'PGRST116' && decodedToken !== token) {
+      console.log("[POST /api/head-endorsements/confirm] 🔄 Token not found, trying decoded version...");
       const { data: decodedData, error: decodedError } = await supabase
         .from("head_endorsement_invitations")
         .select("*")
@@ -180,12 +206,31 @@ export async function POST(req: NextRequest) {
       if (!decodedError && decodedData) {
         invitation = decodedData;
         inviteError = null;
+        console.log("[POST /api/head-endorsements/confirm] ✅ Found invitation with decoded token");
+      } else {
+        console.error("[POST /api/head-endorsements/confirm] ❌ Decoded token also not found:", decodedError?.message);
       }
     }
 
     if (inviteError || !invitation) {
-      return NextResponse.json({ ok: false, error: "Invalid invitation" }, { status: 404 });
+      console.error("[POST /api/head-endorsements/confirm] ❌ Invitation not found:", {
+        errorCode: inviteError?.code,
+        errorMessage: inviteError?.message,
+        tokenPreview: token.substring(0, 20) + "...",
+      });
+      return NextResponse.json({ 
+        ok: false, 
+        error: "Invalid invitation",
+        details: inviteError?.message || "Invitation not found"
+      }, { status: 404 });
     }
+
+    console.log("[POST /api/head-endorsements/confirm] ✅ Found invitation:", {
+      id: invitation.id,
+      headEmail: invitation.head_email,
+      status: invitation.status,
+      requestId: invitation.request_id,
+    });
 
     // Check if already confirmed/declined
     if (invitation.status !== "pending") {
@@ -217,24 +262,56 @@ export async function POST(req: NextRequest) {
       let finalSignature = signature || null;
       let userProfile: any = null;
       
+      console.log("[POST /api/head-endorsements/confirm] 🔍 Processing signature:", {
+        signatureFromBody: signature ? "EXISTS" : "NULL/UNDEFINED",
+        signatureLength: signature ? signature.length : 0,
+        headEmail: invitation.head_email,
+      });
+      
       if (invitation.head_email) {
-        const { data: user } = await supabase
+        const { data: user, error: userError } = await supabase
           .from("users")
-          .select("id, signature")
+          .select("id, signature_url")
           .eq("email", invitation.head_email.toLowerCase())
           .eq("status", "active")
           .maybeSingle();
 
+        if (userError) {
+          console.warn("[POST /api/head-endorsements/confirm] ⚠️ Error fetching user:", userError);
+        }
+
         if (user) {
           userProfile = user;
-          if (!finalSignature && user.signature) {
-            finalSignature = user.signature;
+          console.log("[POST /api/head-endorsements/confirm] 👤 User found:", {
+            userId: user.id,
+            hasSavedSignature: !!user.signature_url,
+          });
+          
+          if (!finalSignature && user.signature_url) {
+            finalSignature = user.signature_url;
             console.log("[POST /api/head-endorsements/confirm] ✅ Using saved signature from user profile");
+          } else if (!finalSignature) {
+            console.warn("[POST /api/head-endorsements/confirm] ⚠️ No signature in request body AND no saved signature in user profile");
           }
+        } else {
+          console.warn("[POST /api/head-endorsements/confirm] ⚠️ User not found for email:", invitation.head_email);
         }
+      }
+      
+      if (!finalSignature) {
+        console.error("[POST /api/head-endorsements/confirm] ❌ CRITICAL: No signature available (neither from body nor from user profile)");
+        // Don't fail - allow confirmation without signature, but log it
       }
 
       // Update invitation to confirmed
+      console.log("[POST /api/head-endorsements/confirm] 🔄 Updating invitation:", {
+        invitationId: invitation.id,
+        headEmail: invitation.head_email,
+        hasSignature: !!finalSignature,
+        headName: head_name.trim(),
+        endorsementDate: endorsement_date || new Date().toISOString().split('T')[0],
+      });
+
       const { data: updatedInvitation, error: updateError } = await supabase
         .from("head_endorsement_invitations")
         .update({
@@ -251,9 +328,31 @@ export async function POST(req: NextRequest) {
         .single();
 
       if (updateError) {
-        console.error("[POST /api/head-endorsements/confirm] Update error:", updateError);
-        return NextResponse.json({ ok: false, error: "Failed to confirm invitation" }, { status: 500 });
+        console.error("[POST /api/head-endorsements/confirm] ❌ Update error:", updateError);
+        console.error("[POST /api/head-endorsements/confirm] ❌ Error details:", JSON.stringify(updateError, null, 2));
+        console.error("[POST /api/head-endorsements/confirm] ❌ Invitation ID:", invitation.id);
+        console.error("[POST /api/head-endorsements/confirm] ❌ Token used:", token);
+        return NextResponse.json({ 
+          ok: false, 
+          error: "Failed to confirm invitation",
+          details: updateError.message 
+        }, { status: 500 });
       }
+
+      if (!updatedInvitation) {
+        console.error("[POST /api/head-endorsements/confirm] ❌ Update returned no data");
+        return NextResponse.json({ 
+          ok: false, 
+          error: "Update completed but no data returned" 
+        }, { status: 500 });
+      }
+
+      console.log("[POST /api/head-endorsements/confirm] ✅ Update successful:", {
+        invitationId: updatedInvitation.id,
+        status: updatedInvitation.status,
+        confirmedAt: updatedInvitation.confirmed_at,
+        hasSignature: !!updatedInvitation.signature,
+      });
 
       // Update head_user_id if user exists
       if (userProfile && userProfile.id) {

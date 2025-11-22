@@ -234,7 +234,17 @@ export default function RequestCardEnhanced({
           {/* Budget */}
           {(() => {
             const displayBudget = request.comptroller_edited_budget || request.total_budget;
-            return displayBudget && displayBudget > 0 && (
+            // Convert to number if it's a string, and ensure it's greater than 0
+            const budgetValue = typeof displayBudget === 'string' 
+              ? parseFloat(displayBudget) 
+              : (displayBudget || 0);
+            
+            // Only show budget if it's a valid number greater than 0
+            if (!budgetValue || budgetValue <= 0 || isNaN(budgetValue)) {
+              return null;
+            }
+            
+            return (
               <div className="flex items-start gap-3 p-3 bg-green-50 rounded-lg border border-green-100 md:col-span-2">
                 <Banknote className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
@@ -242,7 +252,7 @@ export default function RequestCardEnhanced({
                     Total Budget
                   </div>
                   <div className="text-lg font-bold text-gray-900">
-                    {formatCurrency(displayBudget)}
+                    {formatCurrency(budgetValue)}
                   </div>
                 </div>
               </div>
