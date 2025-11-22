@@ -105,19 +105,25 @@ export default function HeadEndorsementConfirmationPage() {
     }
   };
 
-  const handleSubmit = async () => {
-    if (!action) {
+  const handleSubmit = async (submitAction?: 'confirm' | 'decline') => {
+    const finalAction = submitAction || action;
+    
+    if (!finalAction) {
       setError("Please select an action (Confirm or Decline)");
       return;
     }
 
-    if (action === "confirm") {
+    if (finalAction === "confirm") {
       if (!headName.trim()) {
         setError("Head name is required");
         return;
       }
       if (!endorsementDate) {
         setError("Endorsement date is required");
+        return;
+      }
+      if (!signature) {
+        setError("Digital signature is required");
         return;
       }
     } else {
@@ -136,7 +142,7 @@ export default function HeadEndorsementConfirmationPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           token,
-          action,
+          action: finalAction,
           head_name: headName.trim(),
           endorsement_date: endorsementDate,
           signature: signature || undefined,
@@ -332,14 +338,11 @@ export default function HeadEndorsementConfirmationPage() {
             {/* Action Buttons */}
             <div className="mt-6 flex gap-3">
               <button
-                onClick={() => {
-                  setAction('confirm');
-                  handleSubmit();
-                }}
+                onClick={() => handleSubmit('confirm')}
                 disabled={submitting || !headName.trim() || !endorsementDate || !signature}
                 className="flex-1 bg-[#7A0010] text-white py-3 px-6 rounded-xl font-semibold hover:bg-[#5a000c] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
               >
-                {submitting ? (
+                {submitting && action === 'confirm' ? (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin" />
                     Processing...
@@ -354,7 +357,8 @@ export default function HeadEndorsementConfirmationPage() {
               
               <button
                 onClick={() => setAction('decline')}
-                className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 transition-colors"
+                disabled={submitting}
+                className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 Decline
               </button>
@@ -376,11 +380,11 @@ export default function HeadEndorsementConfirmationPage() {
                 />
                 <div className="mt-3 flex gap-3">
                   <button
-                    onClick={handleSubmit}
+                    onClick={() => handleSubmit('decline')}
                     disabled={submitting || !declinedReason.trim()}
                     className="bg-red-600 text-white py-2 px-6 rounded-lg font-semibold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    {submitting ? 'Processing...' : 'Submit Decline'}
+                    {submitting && action === 'decline' ? 'Processing...' : 'Submit Decline'}
                   </button>
                   <button
                     onClick={() => {
