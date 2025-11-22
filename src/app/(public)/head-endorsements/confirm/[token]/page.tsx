@@ -136,19 +136,36 @@ export default function HeadEndorsementConfirmationPage() {
     setSubmitting(true);
     setError(null);
 
+    // Debug logging
+    console.log("[head-endorsement-confirm] 📤 Submitting confirmation:", {
+      action: finalAction,
+      hasSignature: !!signature,
+      signatureLength: signature ? signature.length : 0,
+      signaturePreview: signature ? signature.substring(0, 50) + "..." : "NULL",
+      headName: headName.trim(),
+      endorsementDate,
+    });
+
     try {
+      const requestBody = {
+        token,
+        action: finalAction,
+        head_name: headName.trim(),
+        endorsement_date: endorsementDate,
+        signature: signature || null, // Send null instead of undefined
+        comments: comments.trim() || null,
+        declined_reason: declinedReason.trim() || null,
+      };
+
+      console.log("[head-endorsement-confirm] 📤 Request body:", {
+        ...requestBody,
+        signature: requestBody.signature ? `${requestBody.signature.substring(0, 50)}...` : "NULL",
+      });
+
       const response = await fetch('/api/head-endorsements/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          token,
-          action: finalAction,
-          head_name: headName.trim(),
-          endorsement_date: endorsementDate,
-          signature: signature || undefined,
-          comments: comments.trim() || undefined,
-          declined_reason: declinedReason.trim() || undefined,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       const data = await response.json();
@@ -309,14 +326,29 @@ export default function HeadEndorsementConfirmationPage() {
                 <SignaturePad
                   height={160}
                   value={signature}
-                  onSave={(dataUrl) => setSignature(dataUrl)}
-                  onClear={() => setSignature(null)}
+                  onSave={(dataUrl) => {
+                    console.log("[head-endorsement-confirm] ✍️ Signature saved:", {
+                      hasData: !!dataUrl,
+                      length: dataUrl ? dataUrl.length : 0,
+                      preview: dataUrl ? dataUrl.substring(0, 50) + "..." : "NULL",
+                    });
+                    setSignature(dataUrl);
+                  }}
+                  onClear={() => {
+                    console.log("[head-endorsement-confirm] 🗑️ Signature cleared");
+                    setSignature(null);
+                  }}
                   showUseSavedButton={true}
                   hideSaveButton
                 />
                 {!signature && (
                   <p className="text-xs text-amber-600 mt-1">
                     ⚠️ Signature is required to endorse this request
+                  </p>
+                )}
+                {signature && (
+                  <p className="text-xs text-green-600 mt-1">
+                    ✓ Signature captured ({Math.round(signature.length / 1024)}KB)
                   </p>
                 )}
               </div>

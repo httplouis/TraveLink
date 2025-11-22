@@ -1123,7 +1123,16 @@ export default function RequestDetailsModalUI({
                   const hasExpenseBreakdown = expenseBreakdown && Array.isArray(expenseBreakdown) && expenseBreakdown.length > 0;
                   const hasCosts = costs && Object.keys(costs).length > 0;
                   
-                  if (hasExpenseBreakdown || hasCosts) {
+                  // Calculate total budget
+                  let totalBudget = 0;
+                  if (hasExpenseBreakdown) {
+                    totalBudget = expenseBreakdown.reduce((sum: number, item: any) => sum + (item.amount || 0), 0);
+                  } else if (hasCosts) {
+                    totalBudget = (costs as any).food || 0 + (costs as any).accommodation || 0 + (costs as any).driversAllowance || 0 + (costs as any).hiredDrivers || 0 + (costs as any).rentVehicles || 0 + (costs as any).otherAmount || 0;
+                  }
+                  
+                  // Only show budget section if there's actually a budget (> 0)
+                  if (totalBudget > 0 && (hasExpenseBreakdown || hasCosts)) {
                     return (
                       <div className="mt-6 bg-white rounded-lg border border-slate-200 p-4">
                         <h4 className="mb-3 text-sm font-bold text-slate-700 flex items-center gap-2">
@@ -1152,14 +1161,16 @@ export default function RequestDetailsModalUI({
                                 );
                               })}
                             </div>
-                            <div className="mt-4 pt-4 border-t border-slate-300">
-                              <div className="flex justify-between items-center">
-                                <span className="text-sm font-bold text-slate-900">Total Budget</span>
-                                <span className="text-lg font-bold text-[#7A0010]">
-                                  {peso(expenseBreakdown.reduce((sum: number, item: any) => sum + (item.amount || 0), 0))}
-                                </span>
+                            {totalBudget > 0 && (
+                              <div className="mt-4 pt-4 border-t border-slate-300">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-sm font-bold text-slate-900">Total Budget</span>
+                                  <span className="text-lg font-bold text-[#7A0010]">
+                                    {peso(totalBudget)}
+                                  </span>
+                                </div>
                               </div>
-                            </div>
+                            )}
                           </>
                         ) : (
                           // Fallback to travelOrder.costs (legacy format)
@@ -1260,7 +1271,7 @@ export default function RequestDetailsModalUI({
                             </tbody>
                           </table>
                         )}
-                        {hasCosts && !expenseBreakdown && (
+                        {hasCosts && !expenseBreakdown && totalCost > 0 && (
                           <div className="mt-4 pt-4 border-t border-slate-300">
                             <div className="flex justify-between items-center">
                               <span className="text-sm font-bold text-slate-900">Total Budget</span>
@@ -1395,21 +1406,21 @@ export default function RequestDetailsModalUI({
                   const payload = (row as any)?.payload;
                   const headEndorsements = payload?.head_endorsements || (row as any)?.head_endorsements;
                   
-                  // Only show if there are head endorsements from other departments
+                  // Only show if there are head endorsements
                   if (!headEndorsements || !Array.isArray(headEndorsements) || headEndorsements.length === 0) {
                     return null;
                   }
 
                   // Filter out the main requester's department head endorsement (already shown above)
+                  // But show ALL other department endorsements (including pending ones)
                   const mainDeptId = payload?.department_id || (row as any)?.department_id;
                   const additionalHeadEndorsements = headEndorsements.filter((endorsement: any) => {
                     const endorsementDeptId = endorsement.department_id || endorsement.department?.id;
                     return endorsementDeptId !== mainDeptId;
                   });
 
-                  if (additionalHeadEndorsements.length === 0) {
-                    return null;
-                  }
+                  // Show even if empty - but we'll show all endorsements including pending
+                  // This ensures Irish's pending endorsement is visible
 
                   return (
                     <div className="mt-6 space-y-4">
@@ -1459,6 +1470,10 @@ export default function RequestDetailsModalUI({
                                     src={signature}
                                     alt={`${headName}'s signature`}
                                     className="h-16 object-contain -mb-3"
+                                    onError={(e) => {
+                                      console.error(`[RequestDetailsModal] Failed to load signature for ${headName}:`, e);
+                                      e.currentTarget.style.display = 'none';
+                                    }}
                                   />
                                   <div className="w-64 border-t border-neutral-500" />
                                   <p className="mt-1 text-sm font-medium text-center">{headName}</p>
@@ -1475,6 +1490,28 @@ export default function RequestDetailsModalUI({
                                     </p>
                                   )}
                                 </>
+                              ) : isConfirmed && !signature ? (
+                                <>
+                                  {/* Confirmed but no signature - might be using saved signature */}
+                                  <div className="h-16" />
+                                  <div className="w-64 border-t border-neutral-500" />
+                                  <p className="mt-1 text-sm font-medium text-center">{headName}</p>
+                                  <p className="text-xs text-neutral-500 text-center">
+                                    Dept. Head, {departmentName}
+                                  </p>
+                                  {confirmedAt && (
+                                    <p className="text-xs text-neutral-500 mt-1">
+                                      Confirmed: {new Date(confirmedAt).toLocaleDateString('en-US', {
+                                        year: 'numeric',
+                                        month: 'long',
+                                        day: 'numeric'
+                                      })}
+                                    </p>
+                                  )}
+                                  <p className="text-xs text-amber-600 mt-1 italic">
+                                    (Signature not provided)
+                                  </p>
+                                </>
                               ) : (
                                 <>
                                   <div className="h-16" />
@@ -1483,8 +1520,15 @@ export default function RequestDetailsModalUI({
                                     {endorsement.status === 'declined' ? 'Endorsement Declined' : 'Awaiting Endorsement'}
                                   </p>
                                   <p className="text-xs text-neutral-400 text-center mt-1">
-                                    {endorsement.status === 'declined' ? 'This department head has declined to endorse' : 'Signature pending'}
+                                    {endorsement.status === 'declined' 
+                                      ? `Reason: ${endorsement.declined_reason || 'No reason provided'}`
+                                      : 'Signature pending - waiting for department head confirmation'}
                                   </p>
+                                  {endorsement.status === 'pending' && (
+                                    <p className="text-xs text-blue-600 mt-2 italic">
+                                      An invitation has been sent to {headName}
+                                    </p>
+                                  )}
                                 </>
                               )}
                             </div>
