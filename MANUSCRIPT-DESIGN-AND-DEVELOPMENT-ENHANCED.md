@@ -615,3 +615,4 @@ Each feature has been developed with careful consideration of user requirements,
 - Ensure consistent styling and formatting across all figures
 - Include screenshots of Privacy Policy and Terms of Service pages
 
+

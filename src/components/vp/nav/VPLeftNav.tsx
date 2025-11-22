@@ -13,6 +13,7 @@ import {
   MessageSquareText,
   Inbox,
   LogOut,
+  Settings,
 } from "lucide-react";
 import * as React from "react";
 import { motion } from "framer-motion";
@@ -59,6 +60,7 @@ const NAV: Item[] = [
   { type: "link", href: "/vp/vehicles", label: "Vehicles", Icon: Car },
   { type: "link", href: "/vp/drivers", label: "Drivers", Icon: IdCard },
   { type: "link", href: "/vp/feedback", label: "Feedback", Icon: MessageSquareText },
+  { type: "link", href: "/vp/settings", label: "Settings", Icon: Settings },
 ];
 
 export default function VPLeftNav() {

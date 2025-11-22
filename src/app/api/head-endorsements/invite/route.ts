@@ -16,7 +16,8 @@ export async function POST(req: NextRequest) {
   console.log("=".repeat(70));
   
   try {
-    const supabase = await createSupabaseServerClient(true);
+    // Get authenticated user first (for authorization) - use anon key to read cookies
+    const authSupabase = await createSupabaseServerClient(false);
     const body = await req.json();
     const { request_id, head_email, head_name, department_id, department_name } = body;
     
@@ -36,10 +37,13 @@ export async function POST(req: NextRequest) {
     }
 
     // Get current user (requester)
-    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+    const { data: { user: authUser }, error: authError } = await authSupabase.auth.getUser();
     if (authError || !authUser) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
+
+    // Use service role client for queries (bypasses RLS)
+    const supabase = await createSupabaseServerClient(true);
 
     // Get user profile
     const { data: profile, error: profileError } = await supabase
@@ -174,8 +178,9 @@ export async function POST(req: NextRequest) {
     const confirmationLink = `${baseUrl}/head-endorsements/confirm/${token}`;
 
     // Generate email HTML
-    const requesterName = requestData.requester?.name || profile.name || "Requester";
-    const requesterProfilePicture = requestData.requester?.profile_picture || null;
+    const requester = Array.isArray(requestData.requester) ? requestData.requester[0] : requestData.requester;
+    const requesterName = requester?.name || profile.name || "Requester";
+    const requesterProfilePicture = requester?.profile_picture || null;
     const requestNumber = requestData.request_number || "Request";
     const title = requestData.title || "Travel Request";
     const destination = requestData.destination || "Destination";
@@ -244,10 +249,18 @@ export async function POST(req: NextRequest) {
     <p style="font-size: 14px; color: #6b7280; margin-top: 20px;">
       This invitation will expire in 7 days.
     </p>
+    
+    <div style="background: #fff3cd; border: 1px solid #ffc107; padding: 15px; margin-top: 20px; border-radius: 4px;">
+      <p style="font-size: 12px; color: #856404; margin: 0;">
+        <strong>📧 Email Not Received?</strong> Please check your <strong>Spam/Junk folder</strong>. 
+        If you're using Outlook, the email might be filtered. You can also copy the confirmation link above.
+      </p>
+    </div>
   </div>
   
   <div style="text-align: center; margin-top: 20px; color: #6b7280; font-size: 12px;">
     <p>This is an automated message from TraviLink Travel Management System</p>
+    <p>MSEUF - Manuel S. Enverga University Foundation</p>
   </div>
 </body>
 </html>

@@ -95,78 +95,23 @@ export const DEPARTMENTS: string[] = [
 ];
 
 /** -----------------------------
- *  Department → Head mapping (LEGACY/FALLBACK ONLY)
- *  ⚠️ NOTE: This is a hardcoded fallback. The system should query the database
- *  automatically from the `users` table (where is_head=true or role='head').
- *  This mapping is only used as an absolute last resort if no user is found in the database.
+ *  Department → Head mapping (DEPRECATED - DO NOT USE)
+ *  ⚠️ WARNING: This hardcoded mapping is DEPRECATED and should NOT be used.
+ *  The system ALWAYS queries the database from the `users` table (where is_head=true or role='head').
+ *  This mapping is kept only for reference and will be removed in a future version.
  *  ----------------------------- */
 export const DEPARTMENT_HEADS: Record<string, string> = {
-  // Academics (samples)
-  "College of Computing and Multimedia Studies (CCMS)": "BELSON GABRIEL TAN",
-  "College of Criminal Justice and Criminology (CCJC)": "Dean Roberto Cruz",
-  "College of Nursing and Allied Health Sciences (CNAHS)": "Dr. Melissa Ramos",
-  "College of International Hospitality and Tourism Management (CIHTM)": "Chef Arman Villanueva",
-  "College of Architecture and Fine Arts (CAFA)": "Ar. Paolo Lopez",
-  "College of Maritime Education (CME)": "Capt. Jerome Valdez",
-  "College of Business and Accountancy (CBA)": "Prof. Henry Dizon",
-  "College of Arts and Sciences (CAS)": "Dr. Regina Flores",
-  "College of Education (CED)": "Dr. Celeste Aquino",
-  "College of Engineering (CENG)": "Engr. Liza Ramos",
-  "Enverga Law School (ELS)": "Atty. Miguel Santos",
-  "Institute of Graduate Studies and Research (IGSR)": "Dr. Alvin Garcia",
-  "Basic Education Department (BED)": "Mrs. Karen Bautista",
-
-  // Offices (samples)
-  "Accounting Department": "Ms. Paula Reyes",
-  "Admission Office": "Ms. Tricia Gomez",
-  "Auditing Department": "Mr. Leo Castillo",
-  "Community Relations Department": "Ms. Iya Morales",
-  "Corporate Planning and Development Office": "Mr. Daniel Lim",
-  "Data Protection Office": "Mr. Noel Sarmiento",
-  "Dr. Cesar A. Villariba Research & Knowledgement Management Institute": "Dr. Cesar Villariba",
-  "General Services Department": "Mr. Jason Uy",
-  "Global Engagement Office": "Ms. Sofia Tan",
-  "Health, Safety and Auxiliary Services Department": "Mr. Patrick Cruz",
-  "Human Resource Department": "Ms. Lorna de la Cruz",
-  "Information & Communications Technology Department": "Mr. Carlo Perez",
-  "Institutional Marketing and Promotions": "Ms. Bea Robles",
-  "Learning Development Center": "Ms. Andrea Soriano",
-  "Legal Office": "Atty. Vivian Mendoza",
-  "Medical and Dental Services": "Dr. Ramon Santos",
-  "MSEUF International Student Hub": "Ms. Hannah Ocampo", // <- corrected per your note
-  "Office of Quality Improvement": "Mr. Julius Navarro",
-  "Office of Scholarship & Endowmen, Job Placement, and Alumni Relations": "Ms. Angela Ramos",
-  "Office of Sports & Cultural Relations": "Mr. Marco Villoria",
-  "Office of Student Affairs & Services": "Ms. Kristine Chavez",
-  "Office of the Chairman/CEO": "Mr. Ernesto Enverga",
-  "Office of the Comptroller": "Mr. Luis Fernandez",
-  "Office of the President/COO": "Dr. Maria Enverga",
-  "Office of the Vice President for Academics and Research": "Dr. Roselle Garcia",
-  "Office of the Vice President for Administration": "Mr. Rene Garcia", // <- your correction
-  "Office of the Vice President for External Relations": "Mr. Paolo Miranda",
-  "Office of the Vice President for Finance": "Ms. Clarissa Lim",
-  "Pollution Control Office": "Mr. Nathan Ong",
-  "Procurement Office": "Ms. Faith Santos",
-  "Property Office": "Mr. Jorge Dizon",
-  "Registrar's Office": "Ms. Liza Manuel",
-  "Research Publication, Incubation, and Utilization Center": "Dr. Helen Cruz",
-  "Treasury Department": "Ms. Carmina Reyes",
-  "University Collegiate Student Council": "Mr. Adrian Gomez",
-  "University Laboratories": "Dr. Vincent Tan",
-  "University Libraries": "Ms. Teresa Mariano",
-  "Web Content and Digital Engagement Office": "Ms. Jamie Uy",
-
-  // Short/alias offices
-  "Treasury Office": "Ms. Carmina Reyes",
-  "Alumni Affairs Office": "Ms. Angela Ramos",
-  "Registrar": "Ms. Liza Manuel",
-  "Human Resources": "Ms. Lorna de la Cruz",
-  "Finance Office": "Ms. Clarissa Lim",
+  // ⚠️ DEPRECATED - All department heads are now fetched from the database
+  // This data is kept for reference only and is NOT used by the system
+  // To update department heads, modify the users table in the database, not this file
 };
 
 /** -----------------------------
- *  Helper: get the head for a department
+ *  Helper: get the head for a department (DEPRECATED)
+ *  ⚠️ WARNING: This function is DEPRECATED and returns empty string.
+ *  Always use the API endpoint `/api/approvers?role=head&department_id=<id>` instead.
  *  ----------------------------- */
 export function getDepartmentHead(dept: string): string {
-  return DEPARTMENT_HEADS[dept] ?? "";
+  console.warn(`[DEPRECATED] getDepartmentHead() called for "${dept}" - This function is deprecated. Use /api/approvers?role=head&department_id=<id> instead.`);
+  return ""; // Always return empty - force usage of database API
 }

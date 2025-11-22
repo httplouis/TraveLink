@@ -120,12 +120,14 @@ export default function SignaturePad({
     }
   }, []);
 
-  // Load saved signature if showUseSavedButton is true
+  // Load saved signature if showUseSavedButton is true (only once)
+  const hasLoadedRef = React.useRef(false);
   React.useEffect(() => {
-    if (showUseSavedButton && !savedSignature && !loadingSaved) {
+    if (showUseSavedButton && !savedSignature && !loadingSaved && !hasLoadedRef.current) {
+      hasLoadedRef.current = true;
       loadSavedSignature();
     }
-  }, [showUseSavedButton, savedSignature, loadingSaved, loadSavedSignature]);
+  }, [showUseSavedButton]); // Only depend on showUseSavedButton to prevent loops
 
   const handleUseSaved = React.useCallback(() => {
     if (savedSignature && onUseSaved) {

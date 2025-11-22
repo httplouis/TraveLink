@@ -96,6 +96,52 @@ html, body {
   z-index: 1;
 }
 
+/* ========== Age-Inclusive UX Improvements ========== */
+/* Larger fonts, high contrast, clear labels for users 50+ */
+@layer components {
+  /* Age-inclusive form labels - larger and higher contrast */
+  .age-inclusive-label {
+    @apply text-base font-semibold text-gray-900;
+    font-size: 16px; /* Minimum 16px for better readability */
+    line-height: 1.5;
+  }
+  
+  /* Age-inclusive helper text - larger and clearer */
+  .age-inclusive-helper {
+    @apply text-sm text-gray-700;
+    font-size: 14px; /* Larger than default text-xs */
+    line-height: 1.6;
+  }
+  
+  /* Age-inclusive input fields - larger touch targets */
+  .age-inclusive-input {
+    @apply text-base;
+    font-size: 16px; /* Prevents zoom on iOS */
+    min-height: 44px; /* Minimum touch target size */
+    padding: 12px 16px; /* Larger padding for easier interaction */
+  }
+  
+  /* Age-inclusive buttons - larger and more visible */
+  .age-inclusive-button {
+    @apply text-base font-semibold;
+    min-height: 44px; /* Minimum touch target size */
+    padding: 12px 24px;
+  }
+  
+  /* High contrast text for better visibility */
+  .age-inclusive-text {
+    @apply text-gray-900;
+    color: #111827; /* High contrast black */
+  }
+  
+  /* Clear error messages - larger and high contrast */
+  .age-inclusive-error {
+    @apply text-sm font-medium;
+    color: #dc2626; /* High contrast red */
+    font-size: 14px;
+  }
+}
+
 /* A simple portal root (optional – created on demand in code if missing) */
 #travilink-portal-root {
   position: relative;
@@ -135,6 +181,16 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   background-size: 200% 100%;
 }
 
+/* Enhanced shimmer animation for top loading bar */
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
 /* Fade in animation for filter panel */
 @keyframes fadeIn {
   from {
@@ -150,3 +206,211 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 .animate-fadeIn {
   animation: fadeIn 0.2s ease-out;
 }
+
+/* ========== Accessibility Settings ========== */
+
+/* Basic Mode (for ages 50+) - Larger fonts, more spacing */
+.accessibility-basic {
+  --font-size-base: 18px;
+  --font-size-sm: 16px;
+  --font-size-lg: 20px;
+  --font-size-xl: 24px;
+  --line-height-base: 1.75;
+  --spacing-multiplier: 1.5;
+  --button-min-height: 52px;
+  --input-min-height: 52px;
+  --touch-target-size: 48px;
+}
+
+.accessibility-basic * {
+  font-size: calc(var(--font-size-base, 18px) * var(--spacing-multiplier, 1));
+  line-height: var(--line-height-base, 1.75);
+}
+
+.accessibility-basic button,
+.accessibility-basic .btn {
+  min-height: var(--button-min-height, 52px);
+  padding: 14px 28px;
+  font-size: var(--font-size-base, 18px);
+}
+
+.accessibility-basic input,
+.accessibility-basic textarea,
+.accessibility-basic select {
+  min-height: var(--input-min-height, 52px);
+  padding: 14px 18px;
+  font-size: var(--font-size-base, 18px);
+}
+
+.accessibility-basic label {
+  font-size: var(--font-size-base, 18px);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.accessibility-basic .text-sm {
+  font-size: var(--font-size-sm, 16px) !important;
+}
+
+.accessibility-basic .text-base {
+  font-size: var(--font-size-base, 18px) !important;
+}
+
+.accessibility-basic .text-lg {
+  font-size: var(--font-size-lg, 20px) !important;
+}
+
+.accessibility-basic .text-xl {
+  font-size: var(--font-size-xl, 24px) !important;
+}
+
+/* Advanced Mode (default) - Normal sizing */
+.accessibility-advanced {
+  --font-size-base: 16px;
+  --font-size-sm: 14px;
+  --font-size-lg: 18px;
+  --font-size-xl: 20px;
+  --line-height-base: 1.5;
+  --spacing-multiplier: 1;
+  --button-min-height: 44px;
+  --input-min-height: 44px;
+  --touch-target-size: 44px;
+}
+
+/* Dyslexia-Friendly Font */
+.font-dyslexia {
+  font-family: 'OpenDyslexic', 'Comic Sans MS', 'Arial', sans-serif !important;
+}
+
+.font-dyslexia * {
+  font-family: 'OpenDyslexic', 'Comic Sans MS', 'Arial', sans-serif !important;
+  letter-spacing: 0.05em;
+  word-spacing: 0.1em;
+}
+
+/* OpenDyslexic font fallback - loaded dynamically when needed */
+
+/* High Contrast Mode */
+.high-contrast {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f0f0f0;
+  --text-primary: #000000;
+  --text-secondary: #333333;
+  --border-color: #000000;
+  --button-bg: #000000;
+  --button-text: #ffffff;
+  --link-color: #0000ff;
+  --error-color: #ff0000;
+  --success-color: #008000;
+}
+
+.high-contrast,
+.high-contrast * {
+  background-color: var(--bg-primary, #ffffff) !important;
+  color: var(--text-primary, #000000) !important;
+  border-color: var(--border-color, #000000) !important;
+}
+
+.high-contrast button,
+.high-contrast .btn {
+  background-color: var(--button-bg, #000000) !important;
+  color: var(--button-text, #ffffff) !important;
+  border: 2px solid var(--border-color, #000000) !important;
+}
+
+.high-contrast a {
+  color: var(--link-color, #0000ff) !important;
+  text-decoration: underline !important;
+}
+
+.high-contrast input,
+.high-contrast textarea,
+.high-contrast select {
+  border: 2px solid var(--border-color, #000000) !important;
+  background-color: var(--bg-primary, #ffffff) !important;
+  color: var(--text-primary, #000000) !important;
+}
+
+.high-contrast .text-red-600,
+.high-contrast .text-red-500 {
+  color: var(--error-color, #ff0000) !important;
+}
+
+.high-contrast .text-green-600,
+.high-contrast .text-green-500 {
+  color: var(--success-color, #008000) !important;
+}
+
+/* Dark Mode */
+.dark {
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #2d2d2d;
+  --bg-tertiary: #3d3d3d;
+  --text-primary: #ffffff;
+  --text-secondary: #e0e0e0;
+  --text-muted: #b0b0b0;
+  --border-color: #4a4a4a;
+  --brand-color: #ff6b6b;
+}
+
+.dark,
+.dark body {
+  background-color: var(--bg-primary, #1a1a1a) !important;
+  color: var(--text-primary, #ffffff) !important;
+}
+
+.dark .bg-white {
+  background-color: var(--bg-secondary, #2d2d2d) !important;
+}
+
+.dark .bg-gray-50,
+.dark .bg-gray-100 {
+  background-color: var(--bg-tertiary, #3d3d3d) !important;
+}
+
+.dark .text-gray-900,
+.dark .text-neutral-900 {
+  color: var(--text-primary, #ffffff) !important;
+}
+
+.dark .text-gray-600,
+.dark .text-neutral-600 {
+  color: var(--text-secondary, #e0e0e0) !important;
+}
+
+.dark .text-gray-500,
+.dark .text-neutral-500 {
+  color: var(--text-muted, #b0b0b0) !important;
+}
+
+.dark input,
+.dark textarea,
+.dark select {
+  background-color: var(--bg-secondary, #2d2d2d) !important;
+  color: var(--text-primary, #ffffff) !important;
+  border-color: var(--border-color, #4a4a4a) !important;
+}
+
+.dark button,
+.dark .btn {
+  background-color: var(--brand-color, #ff6b6b) !important;
+  color: var(--text-primary, #ffffff) !important;
+}
+
+.dark .border-gray-200,
+.dark .border-gray-300 {
+  border-color: var(--border-color, #4a4a4a) !important;
+}
+
+/* High Contrast + Dark Mode */
+.high-contrast.dark {
+  --bg-primary: #000000;
+  --bg-secondary: #1a1a1a;
+  --text-primary: #ffffff;
+  --text-secondary: #ffffff;
+  --border-color: #ffffff;
+  --button-bg: #ffffff;
+  --button-text: #000000;
+}
+
+/* Normal Contrast (default) - uses default colors from :root */

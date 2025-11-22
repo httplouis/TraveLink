@@ -191,8 +191,27 @@ export default function CostsSection({
       <div className="grid gap-4 md:grid-cols-2">
         {/* Food */}
         <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-semibold text-gray-700">{TXT.food}</label>
+            <div className="flex gap-1.5">
+              {/* Fixed cost presets for food */}
+              {[500, 1000, 1500, 2000].map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => {
+                    onChangeCosts({ food: preset });
+                  }}
+                  className="px-2 py-1 text-xs font-medium rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
+                  title={`Quick fill: ₱${preset.toLocaleString()}`}
+                >
+                  ₱{preset.toLocaleString()}
+                </button>
+              ))}
+            </div>
+          </div>
           <CurrencyInput
-            label={TXT.food}
+            label=""
             placeholder={TXT.amountPh}
             value={costs?.food ?? ""}
             onChange={(e) => {
@@ -211,8 +230,27 @@ export default function CostsSection({
 
         {/* Driver's Allowance */}
         <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-semibold text-gray-700">{TXT.driversAllowance}</label>
+            <div className="flex gap-1.5">
+              {/* Fixed cost presets for driver allowance */}
+              {[300, 500, 800, 1000].map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => {
+                    onChangeCosts({ driversAllowance: preset });
+                  }}
+                  className="px-2 py-1 text-xs font-medium rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
+                  title={`Quick fill: ₱${preset.toLocaleString()}`}
+                >
+                  ₱{preset.toLocaleString()}
+                </button>
+              ))}
+            </div>
+          </div>
           <CurrencyInput
-            label={TXT.driversAllowance}
+            label=""
             placeholder={TXT.amountPh}
             value={costs?.driversAllowance ?? ""}
             onChange={(e) => {

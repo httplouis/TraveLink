@@ -22,14 +22,19 @@ type Props = {
   pos?: { index: number; total: number } | null;
   prevLabel?: string;
   nextLabel?: string;
+  publicMode?: boolean; // If true, hide trip details and only show counts
 };
 
 export default function DateDetailsModal({
-  open, dateISO, bookings, onClose, onPrevDate, onNextDate, pos, prevLabel, nextLabel,
+  open, dateISO, bookings, onClose, onPrevDate, onNextDate, pos, prevLabel, nextLabel, publicMode = false,
 }: Props) {
   const list = bookings ?? [];
   const count = list.length;
   const status = count === 0 ? "Available" : count >= MAX_SLOTS ? "Full" : "Partial";
+  
+  // Calculate status counts for public view
+  const pendingCount = list.filter(b => b.status?.startsWith("pending_")).length;
+  const approvedCount = list.filter(b => b.status === "approved").length;
 
   // keyboard nav
   React.useEffect(() => {
@@ -82,6 +87,35 @@ export default function DateDetailsModal({
                   {count === 0 ? (
                     <div className="h-full grid place-items-center text-sm text-neutral-500">
                       No reservations for this date.
+                    </div>
+                  ) : publicMode ? (
+                    // Public mode: Only show counts, no trip details
+                    <div className="h-full grid place-items-center">
+                      <div className="text-center space-y-4">
+                        <div className="text-4xl font-bold text-neutral-900">{count}/{MAX_SLOTS}</div>
+                        <div className="text-sm text-neutral-600">Slots Taken</div>
+                        <div className="flex items-center justify-center gap-4 pt-4">
+                          {pendingCount > 0 && (
+                            <div className="flex flex-col items-center gap-1">
+                              <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200 px-3 py-1.5 text-sm font-medium">
+                                <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+                                {pendingCount} Pending
+                              </span>
+                            </div>
+                          )}
+                          {approvedCount > 0 && (
+                            <div className="flex flex-col items-center gap-1">
+                              <span className="inline-flex items-center gap-1.5 rounded-full bg-green-100 text-green-700 border border-green-200 px-3 py-1.5 text-sm font-medium">
+                                <span className="h-2 w-2 rounded-full bg-green-500" />
+                                {approvedCount} Approved
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-xs text-neutral-400 pt-4">
+                          Trip details are hidden for privacy
+                        </p>
+                      </div>
                     </div>
                   ) : (
                     <div className="grid gap-3">

@@ -31,19 +31,19 @@ function FieldWrap({
   required?: boolean;
 }>) {
   return (
-    <div className="grid gap-1.5 w-full">
-      <label className="text-[13px] font-semibold text-gray-800 leading-tight">
-        {label} {required && <span className="text-red-500">*</span>}
+    <div className="grid gap-2 w-full">
+      <label className="age-inclusive-label">
+        {label} {required && <span className="text-red-600 font-bold">*</span>}
       </label>
       <div className="w-full">
         {children}
       </div>
       {error ? (
-        <div className="mt-0.5 flex items-center gap-1.5 rounded-lg border-2 border-red-200 bg-red-50 px-2.5 py-1.5">
-          <span className="text-xs font-medium text-red-700">{error}</span>
+        <div className="mt-1 flex items-center gap-2 rounded-lg border-2 border-red-300 bg-red-50 px-3 py-2">
+          <span className="age-inclusive-error">{error}</span>
         </div>
       ) : helper ? (
-        <span className="mt-0.5 text-xs text-gray-500 leading-tight">{helper}</span>
+        <span className="mt-1 age-inclusive-helper">{helper}</span>
       ) : null}
     </div>
   );
@@ -67,12 +67,12 @@ export function TextInput({
         id={id}
         data-error={error ? "true" : undefined}
         className={clsx(
-          "h-11 w-full rounded-xl border-2 bg-white px-4 text-sm font-medium outline-none transition-all shadow-sm",
-          "placeholder:text-gray-400",
+          "age-inclusive-input w-full rounded-xl border-2 bg-white px-4 font-medium outline-none transition-all shadow-sm",
+          "placeholder:text-gray-500",
           error
-            ? "border-red-500 ring-2 ring-red-100 bg-red-50/30"
-            : "border-gray-300 focus:border-[#7A0010] focus:ring-2 focus:ring-[#7A0010]/20 hover:border-gray-400",
-          disabled && "bg-gray-100 text-gray-500",
+            ? "border-red-600 ring-2 ring-red-200 bg-red-50/50"
+            : "border-gray-400 focus:border-[#7A0010] focus:ring-2 focus:ring-[#7A0010]/30 hover:border-gray-500",
+          disabled && "bg-gray-100 text-gray-600 cursor-not-allowed",
           className
         )}
         placeholder={placeholder}
@@ -124,11 +124,11 @@ export function DateInput({
         data-empty={isEmpty ? "true" : "false"}
         data-error={error ? "true" : undefined}
         className={clsx(
-          "h-11 w-full rounded-xl border-2 bg-white px-4 text-sm font-medium outline-none transition-all shadow-sm",
+          "age-inclusive-input w-full rounded-xl border-2 bg-white px-4 font-medium outline-none transition-all shadow-sm",
           error
-            ? "border-red-500 ring-2 ring-red-100 bg-red-50/30"
-            : "border-gray-300 focus:border-[#7A0010] focus:ring-2 focus:ring-[#7A0010]/20 hover:border-gray-400",
-          disabled && "bg-gray-100 text-gray-500",
+            ? "border-red-600 ring-2 ring-red-200 bg-red-50/50"
+            : "border-gray-400 focus:border-[#7A0010] focus:ring-2 focus:ring-[#7A0010]/30 hover:border-gray-500",
+          disabled && "bg-gray-100 text-gray-600 cursor-not-allowed",
           className
         )}
         placeholder={placeholder}
@@ -162,12 +162,12 @@ export function TextArea({
         rows={rows}
         data-error={error ? "true" : undefined}
         className={clsx(
-          "w-full resize-y rounded-xl border-2 bg-white px-4 py-3 text-sm font-medium outline-none transition-all shadow-sm",
-          "placeholder:text-gray-400",
+          "age-inclusive-input w-full resize-y rounded-xl border-2 bg-white px-4 py-3 font-medium outline-none transition-all shadow-sm",
+          "placeholder:text-gray-500",
           error
-            ? "border-red-500 ring-2 ring-red-100 bg-red-50/30"
-            : "border-gray-300 focus:border-[#7A0010] focus:ring-2 focus:ring-[#7A0010]/20 hover:border-gray-400",
-          disabled && "bg-gray-100 text-gray-500",
+            ? "border-red-600 ring-2 ring-red-200 bg-red-50/50"
+            : "border-gray-400 focus:border-[#7A0010] focus:ring-2 focus:ring-[#7A0010]/30 hover:border-gray-500",
+          disabled && "bg-gray-100 text-gray-600 cursor-not-allowed",
           className
         )}
         placeholder={placeholder}
@@ -195,20 +195,20 @@ export function CurrencyInput({
     <FieldWrap label={label} error={error} helper={helper} required={required}>
       <div
         className={clsx(
-          "flex h-11 items-center rounded-xl border-2 bg-white text-sm transition-all shadow-sm",
+          "flex age-inclusive-input items-center rounded-xl border-2 bg-white transition-all shadow-sm",
           error
-            ? "border-red-500 ring-2 ring-red-100 bg-red-50/30"
-            : "border-gray-300 focus-within:border-[#7A0010] focus-within:ring-2 focus-within:ring-[#7A0010]/20 hover:border-gray-400",
-          disabled && "bg-gray-100 text-gray-500",
+            ? "border-red-600 ring-2 ring-red-200 bg-red-50/50"
+            : "border-gray-400 focus-within:border-[#7A0010] focus-within:ring-2 focus-within:ring-[#7A0010]/30 hover:border-gray-500",
+          disabled && "bg-gray-100 text-gray-600 cursor-not-allowed",
           className
         )}
         data-error={error ? "true" : undefined}
       >
-        <span className="px-4 text-gray-600 font-semibold">₱</span>
+        <span className="px-4 text-gray-700 font-bold text-base">₱</span>
         <input
           id={id}
           inputMode="decimal"
-          className="h-full w-full bg-transparent pr-4 outline-none placeholder:text-gray-400 font-medium"
+          className="h-full w-full bg-transparent pr-4 outline-none placeholder:text-gray-500 font-medium text-base"
           placeholder={placeholder}
           value={value ?? ""}
           onChange={onChange as any}
@@ -243,13 +243,12 @@ export function SelectInput({
         id={id}
         data-error={error ? "true" : undefined}
         className={clsx(
-          "h-11 w-full rounded-xl border-2 bg-white px-4 text-sm font-medium outline-none transition-all shadow-sm",
-          "placeholder:text-gray-400",
+          "age-inclusive-input w-full rounded-xl border-2 bg-white px-4 font-medium outline-none transition-all shadow-sm",
           error
-            ? "border-red-500 ring-2 ring-red-100 bg-red-50/30"
-            : "border-gray-300 focus:border-[#7A0010] focus:ring-2 focus:ring-[#7A0010]/20 hover:border-gray-400",
-          disabled && "bg-gray-100 text-gray-500",
-          !value && "text-gray-400",
+            ? "border-red-600 ring-2 ring-red-200 bg-red-50/50"
+            : "border-gray-400 focus:border-[#7A0010] focus:ring-2 focus:ring-[#7A0010]/30 hover:border-gray-500",
+          disabled && "bg-gray-100 text-gray-600 cursor-not-allowed",
+          !value && "text-gray-500",
           className
         )}
         value={value ?? ""}

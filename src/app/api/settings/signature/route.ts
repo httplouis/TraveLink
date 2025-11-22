@@ -9,12 +9,15 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET() {
   try {
-    const supabase = await createSupabaseServerClient(true);
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    // First authenticate with user session (anon key + cookies)
+    const authSupabase = await createSupabaseServerClient(false);
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser();
     if (authError || !user) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
+
+    // Then use service role for database operations
+    const supabase = await createSupabaseServerClient(true);
 
     const { data: profile } = await supabase
       .from("users")
@@ -34,7 +37,13 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createSupabaseServerClient(true);
+    // First authenticate with user session (anon key + cookies)
+    const authSupabase = await createSupabaseServerClient(false);
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = await request.json();
     const { signature } = body;
 
@@ -42,10 +51,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: "Signature required" }, { status: 400 });
     }
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-    }
+    // Then use service role for database operations
+    const supabase = await createSupabaseServerClient(true);
 
     // Get user profile
     const { data: profile } = await supabase

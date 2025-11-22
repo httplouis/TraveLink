@@ -43,7 +43,7 @@ export async function GET(
     // Fetch user by ID
     const { data, error } = await supabase
       .from("users")
-      .select("id, name, email, position_title, role, is_vp, is_admin, department_id")
+      .select("id, name, email, position_title, role, is_vp, is_admin, department_id, department, is_head")
       .eq("id", id)
       .maybeSingle();
     

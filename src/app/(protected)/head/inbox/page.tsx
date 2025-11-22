@@ -9,6 +9,8 @@ import PersonDisplay from "@/components/common/PersonDisplay";
 import RequestCardEnhanced from "@/components/common/RequestCardEnhanced";
 import { createSupabaseClient } from "@/lib/supabase/client";
 import { createLogger } from "@/lib/debug";
+import { shouldShowPendingAlert, getAlertSeverity, getAlertMessage } from "@/lib/notifications/pending-alerts";
+import { AlertCircle } from "lucide-react";
 
 // Format time ago helper
 function formatTimeAgo(date: Date): string {
@@ -141,14 +143,52 @@ export default function HeadInboxPage() {
     loadHistory();
   }, []);
 
-  // Real-time polling - refresh every 5 seconds
+  // Real-time updates using Supabase Realtime
   React.useEffect(() => {
-    const interval = setInterval(() => {
-      load(false); // Refresh without showing loader
-    }, 5000); // Poll every 5 seconds
+    const supabase = createSupabaseClient();
+    let mutateTimeout: NodeJS.Timeout | null = null;
+    let channel: any = null;
+    
+    channel = supabase
+      .channel("head-inbox-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "requests",
+        },
+        (payload: any) => {
+          // Debounce: only trigger refetch after 500ms
+          if (mutateTimeout) clearTimeout(mutateTimeout);
+          mutateTimeout = setTimeout(() => {
+            load(false); // Silent refresh
+            if (activeTab === 'history') {
+              loadHistory();
+            }
+          }, 500);
+        }
+      )
+      .subscribe((status: string) => {
+        console.log("[Head Inbox] Realtime subscription status:", status);
+      });
 
-    return () => clearInterval(interval);
-  }, []);
+    // Fallback polling every 30 seconds
+    const interval = setInterval(() => {
+      load(false);
+      if (activeTab === 'history') {
+        loadHistory();
+      }
+    }, 30000);
+
+    return () => {
+      clearInterval(interval);
+      if (mutateTimeout) clearTimeout(mutateTimeout);
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
+  }, [activeTab]);
 
   function handleApproved(id: string) {
     // Optimistically remove from UI first
@@ -271,6 +311,18 @@ export default function HeadInboxPage() {
                 : `${filteredItems.length} ${filteredItems.length === 1 ? 'request' : 'requests'} in history`
               }
             </p>
+            {activeTab === 'pending' && shouldShowPendingAlert(items.length) && (
+              <div className={`mt-2 flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${
+                getAlertSeverity(items.length) === 'danger'
+                  ? 'bg-red-50 border border-red-200 text-red-700'
+                  : getAlertSeverity(items.length) === 'warning'
+                  ? 'bg-orange-50 border border-orange-200 text-orange-700'
+                  : 'bg-amber-50 border border-amber-200 text-amber-700'
+              }`}>
+                <AlertCircle className="h-4 w-4" />
+                <span>{getAlertMessage(items.length, 'head')}</span>
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 border border-green-200 rounded-lg text-xs text-green-700">
             <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
@@ -292,7 +344,15 @@ export default function HeadInboxPage() {
           >
             Pending
             {items.length > 0 && (
-              <span className="ml-2 px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-semibold">
+              <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-semibold ${
+                shouldShowPendingAlert(items.length)
+                  ? getAlertSeverity(items.length) === 'danger'
+                    ? 'bg-red-100 text-red-700'
+                    : getAlertSeverity(items.length) === 'warning'
+                    ? 'bg-orange-100 text-orange-700'
+                    : 'bg-amber-100 text-amber-700'
+                  : 'bg-amber-100 text-amber-700'
+              }`}>
                 {items.length}
               </span>
             )}

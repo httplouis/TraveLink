@@ -22,7 +22,7 @@ interface ApproverOption {
 interface ApproverSelectionModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSelect: (approverId: string, approverRole: string, returnReason?: string) => void;
+  onSelect: (approverId: string | string[], approverRole: string | string[], returnReason?: string) => void;
   title: string;
   description?: string;
   options: ApproverOption[];
@@ -37,6 +37,7 @@ interface ApproverSelectionModalProps {
   suggestionReason?: string; // NEW: Reason why this approver was suggested
   allowAllUsers?: boolean; // NEW: Allow selecting from all users, not just specific roles
   fetchAllUsers?: () => Promise<ApproverOption[]>; // NEW: Function to fetch all users
+  allowMultiple?: boolean; // NEW: Allow selecting multiple recipients
 }
 
 export default function ApproverSelectionModal({
@@ -61,9 +62,11 @@ export default function ApproverSelectionModal({
   defaultApproverName,
   suggestionReason,
   allowAllUsers = false,
-  fetchAllUsers
+  fetchAllUsers,
+  allowMultiple = false
 }: ApproverSelectionModalProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [returnReason, setReturnReason] = useState('');
   const [isReturning, setIsReturning] = useState(false);
@@ -75,22 +78,30 @@ export default function ApproverSelectionModal({
   useEffect(() => {
     if (!isOpen) {
       setSelectedId(null);
+      setSelectedIds([]);
       setSearchQuery('');
       setReturnReason('');
       setIsReturning(false);
       setShowAllUsers(false);
       setAllUsersOptions([]);
     } else {
-      // Priority: defaultApproverId > single option > no selection
-      if (defaultApproverId && options.some(opt => opt.id === defaultApproverId)) {
-        // Default approver exists in options, auto-select it
-        setSelectedId(defaultApproverId);
-      } else if (options.length === 1 && !allowReturnToRequester) {
-        // Auto-select if only one option available (but allow change)
-        setSelectedId(options[0].id);
+      if (allowMultiple) {
+        // For multiple selection, pre-select default if provided
+        if (defaultApproverId && options.some(opt => opt.id === defaultApproverId)) {
+          setSelectedIds([defaultApproverId]);
+        }
+      } else {
+        // Priority: defaultApproverId > single option > no selection
+        if (defaultApproverId && options.some(opt => opt.id === defaultApproverId)) {
+          // Default approver exists in options, auto-select it
+          setSelectedId(defaultApproverId);
+        } else if (options.length === 1 && !allowReturnToRequester) {
+          // Auto-select if only one option available (but allow change)
+          setSelectedId(options[0].id);
+        }
       }
     }
-  }, [isOpen, options, allowReturnToRequester, defaultApproverId]);
+  }, [isOpen, options, allowReturnToRequester, defaultApproverId, allowMultiple]);
 
   // Fetch all users when "Show All Users" is toggled
   useEffect(() => {
@@ -112,24 +123,40 @@ export default function ApproverSelectionModal({
   // Use all users options if "Show All Users" is enabled, otherwise use regular options
   const activeOptions = showAllUsers && allowAllUsers ? allUsersOptions : options;
   
-  const filteredOptions = activeOptions.filter(option => {
-    if (!searchQuery.trim()) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      option.name.toLowerCase().includes(query) ||
-      option.email?.toLowerCase().includes(query) ||
-      option.position?.toLowerCase().includes(query) ||
-      option.department?.toLowerCase().includes(query) ||
-      (option.roleLabel || '').toLowerCase().includes(query) ||
-      option.phone?.toLowerCase().includes(query)
-    );
-  });
+  const filteredOptions = activeOptions
+    .filter(option => {
+      if (!searchQuery.trim()) return true;
+      const query = searchQuery.toLowerCase();
+      return (
+        option.name.toLowerCase().includes(query) ||
+        option.email?.toLowerCase().includes(query) ||
+        option.position?.toLowerCase().includes(query) ||
+        option.department?.toLowerCase().includes(query) ||
+        (option.roleLabel || '').toLowerCase().includes(query) ||
+        option.phone?.toLowerCase().includes(query)
+      );
+    })
+    .sort((a, b) => {
+      // Sort suggested approver (defaultApproverId) to the top
+      if (defaultApproverId) {
+        if (a.id === defaultApproverId) return -1;
+        if (b.id === defaultApproverId) return 1;
+      }
+      // Keep original order for others
+      return 0;
+    });
 
   const handleSelect = () => {
     if (isReturning && requesterId) {
       onSelect(requesterId, 'requester', returnReason);
+    } else if (allowMultiple && selectedIds.length > 0) {
+      // Multiple selection mode
+      const selected = activeOptions.filter(opt => selectedIds.includes(opt.id));
+      const approverIds = selected.map(s => s.id);
+      const approverRoles = selected.map(s => s.role || 'user');
+      onSelect(approverIds, approverRoles);
     } else if (selectedId) {
-      // Use activeOptions (which includes allUsersOptions when showAllUsers is true)
+      // Single selection mode
       const selected = activeOptions.find(opt => opt.id === selectedId);
       if (selected) {
         // Always use the actual role code (not roleLabel) - approval endpoints will fetch actual role from DB anyway
@@ -140,7 +167,11 @@ export default function ApproverSelectionModal({
     }
   };
 
-  const canSubmit = isReturning ? (requesterId && returnReason) : selectedId !== null;
+  const canSubmit = isReturning 
+    ? (requesterId && returnReason) 
+    : allowMultiple 
+      ? selectedIds.length > 0 
+      : selectedId !== null;
 
   if (!isOpen) return null;
 
@@ -411,11 +442,24 @@ export default function ApproverSelectionModal({
                     ) : null}
                   </div>
                 ) : (
-                  filteredOptions.map((option, index) => (
+                  filteredOptions.map((option, index) => {
+                    const isSelected = allowMultiple 
+                      ? selectedIds.includes(option.id)
+                      : selectedId === option.id;
+                    
+                    return (
                     <motion.button
                       key={option.id}
                       onClick={() => {
-                        setSelectedId(option.id);
+                        if (allowMultiple) {
+                          setSelectedIds(prev => 
+                            prev.includes(option.id)
+                              ? prev.filter(id => id !== option.id)
+                              : [...prev, option.id]
+                          );
+                        } else {
+                          setSelectedId(option.id);
+                        }
                         setIsReturning(false);
                         setFocusedIndex(-1);
                       }}
@@ -425,7 +469,7 @@ export default function ApproverSelectionModal({
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: index * 0.03 }}
                       className={`w-full p-4 border-2 rounded-lg text-left transition-all ${
-                        selectedId === option.id
+                        isSelected
                           ? 'border-[#7a0019] bg-red-50 shadow-md ring-2 ring-[#7a0019]/20'
                           : defaultApproverId === option.id
                           ? 'border-blue-400 bg-blue-50 shadow-sm ring-1 ring-blue-200'
@@ -436,9 +480,9 @@ export default function ApproverSelectionModal({
                     >
                       <div className="flex items-start gap-3">
                         <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center mt-1 ${
-                          selectedId === option.id ? 'border-[#7a0019] bg-[#7a0019]' : 'border-gray-300'
+                          isSelected ? 'border-[#7a0019] bg-[#7a0019]' : 'border-gray-300'
                         }`}>
-                          {selectedId === option.id && <Check className="w-3 h-3 text-white" />}
+                          {isSelected && <Check className="w-3 h-3 text-white" />}
                         </div>
                         <ProfilePicture
                           src={option.profile_picture}
@@ -483,7 +527,8 @@ export default function ApproverSelectionModal({
                         </div>
                       </div>
                     </motion.button>
-                  ))
+                    );
+                  })
                 )}
               </div>
             )}
@@ -500,7 +545,11 @@ export default function ApproverSelectionModal({
                 onClick={handleSelect}
                 disabled={!canSubmit}
               >
-                {isReturning ? 'Return to Requester' : 'Send to Selected Approver'}
+                {isReturning 
+                  ? 'Return to Requester' 
+                  : allowMultiple && selectedIds.length > 0
+                    ? `Send to ${selectedIds.length} ${selectedIds.length === 1 ? 'Recipient' : 'Recipients'}`
+                    : 'Send to Selected Approver'}
               </WowButton>
             </div>
           </div>

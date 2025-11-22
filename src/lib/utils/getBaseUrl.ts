@@ -66,15 +66,21 @@ export function getBaseUrl(req?: NextRequest | Request | null): string {
   } else {
     baseUrl = "http://localhost:3000";
     console.log(`[getBaseUrl] 🏠 Using localhost for development: ${baseUrl}`);
+    console.log(`[getBaseUrl] ⚠️ WARNING: Email links with localhost will NOT work on mobile devices!`);
+    console.log(`[getBaseUrl] 💡 For local testing on mobile, use ngrok or deploy to production`);
+    console.log(`[getBaseUrl] 💡 Or set NEXT_PUBLIC_APP_URL to your production URL (even in local dev)`);
   }
   
-  // Warn if using localhost in production
-  if (baseUrl.includes('localhost') && process.env.NODE_ENV === 'production') {
-    console.error(`[getBaseUrl] ⚠️ WARNING: Using localhost in production!`);
-    console.error(`[getBaseUrl] ⚠️ Email links will NOT work on mobile devices!`);
-    console.error(`[getBaseUrl] ⚠️ SOLUTION: Set NEXT_PUBLIC_APP_URL in Vercel to your MAIN production URL`);
-    console.error(`[getBaseUrl] ⚠️ Example: https://travilink.vercel.app (or your custom domain)`);
-    console.error(`[getBaseUrl] ⚠️ NOTE: Set it ONCE to your main production URL, not preview URLs`);
+  // Warn if using localhost (in any environment when sending emails)
+  if (baseUrl.includes('localhost')) {
+    console.warn(`[getBaseUrl] ⚠️ WARNING: Using localhost - email links will NOT work on mobile devices!`);
+    if (process.env.NODE_ENV === 'production') {
+      console.error(`[getBaseUrl] ⚠️ CRITICAL: This is PRODUCTION! Set NEXT_PUBLIC_APP_URL immediately!`);
+    } else {
+      console.warn(`[getBaseUrl] ⚠️ For mobile testing: Use ngrok or set NEXT_PUBLIC_APP_URL to production URL`);
+    }
+    console.warn(`[getBaseUrl] ⚠️ SOLUTION: Set NEXT_PUBLIC_APP_URL in Vercel to your MAIN production URL`);
+    console.warn(`[getBaseUrl] ⚠️ Example: https://travilink.vercel.app (or your custom domain)`);
   }
   
   // Remove trailing slash

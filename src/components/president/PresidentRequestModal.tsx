@@ -805,7 +805,15 @@ export default function PresidentRequestModal({
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-sm font-medium text-slate-900">First VP Approved</p>
                       <span className="text-xs text-green-600 font-medium">
-                        {new Date(t.vp_approved_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                        {new Date(t.vp_approved_at).toLocaleString('en-US', { 
+                          timeZone: 'Asia/Manila',
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric',
+                          hour: 'numeric',
+                          minute: '2-digit',
+                          hour12: true
+                        })}
                       </span>
                     </div>
                     {t.vp_approved_by && (
@@ -836,7 +844,15 @@ export default function PresidentRequestModal({
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-sm font-medium text-slate-900">Second VP Approved</p>
                       <span className="text-xs text-green-600 font-medium">
-                        {new Date(t.vp2_approved_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                        {new Date(t.vp2_approved_at).toLocaleString('en-US', { 
+                          timeZone: 'Asia/Manila',
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric',
+                          hour: 'numeric',
+                          minute: '2-digit',
+                          hour12: true
+                        })}
                       </span>
                     </div>
                     {t.vp2_approved_by && (
@@ -862,7 +878,11 @@ export default function PresidentRequestModal({
                   </div>
                 )}
 
-                {t.comptroller_approved_at && (
+                {/* Only show comptroller section if request actually passed through comptroller stage */}
+                {/* Check: comptroller_approved_by exists AND it's different from requester_id (not auto-approved) */}
+                {t.comptroller_approved_by && 
+                 t.comptroller_approved_by !== t.requester_id && 
+                 t.comptroller_approved_at && (
                   <div className="bg-white rounded-lg border border-slate-200 p-3">
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-sm font-medium text-slate-900">Comptroller Approved</p>
@@ -879,7 +899,11 @@ export default function PresidentRequestModal({
                   </div>
                 )}
 
-                {!t.head_approved_at && !t.hr_approved_at && !t.vp_approved_at && !t.vp2_approved_at && !t.comptroller_approved_at && (
+                {!t.head_approved_at && 
+                 !t.hr_approved_at && 
+                 !t.vp_approved_at && 
+                 !t.vp2_approved_at && 
+                 !(t.comptroller_approved_by && t.comptroller_approved_by !== t.requester_id && t.comptroller_approved_at) && (
                   <div className="text-center py-4 text-sm text-slate-500">
                     No previous approvals yet
                   </div>
@@ -887,7 +911,8 @@ export default function PresidentRequestModal({
               </div>
             </section>
 
-            {/* Budget Breakdown - Read Only with Comptroller Edit History */}
+            {/* Budget Breakdown - Only show if request passed through comptroller */}
+            {t.comptroller_approved_at && (
             <section className="rounded-lg bg-slate-50 border-2 border-[#7A0010] p-4 shadow-lg">
               <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-200">
                 <div className="flex items-center gap-2">
@@ -994,6 +1019,7 @@ export default function PresidentRequestModal({
                   {t.cost_justification}
                 </div>
               </section>
+            )}
             )}
           </div>
 

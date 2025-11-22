@@ -79,7 +79,7 @@ export function fullApprovalPath({
     path.push("HRD");
     path.push("VP");
     path.push("PRESIDENT/COO"); // Heads go to President/COO
-    if (needsVeh) path.push("TM(close-out)");
+    path.push("TM(close-out)"); // Transportation Manager close-out always shown
     return path;
   }
   
@@ -87,11 +87,11 @@ export function fullApprovalPath({
   // Faculty/Staff stop at VP (not President/COO)
   if (requesterRole === "faculty") {
     path.push("DEPT_HEAD");
-    path.push("TM"); // Admin always processes after Dept Head
+    path.push("TM"); // Transportation Manager (Admin) always processes after Dept Head
     if (hasBudget) path.push("COMPTROLLER");
     path.push("HRD");
     path.push("VP");
-    if (needsVeh) path.push("TM(close-out)");
+    path.push("TM(close-out)"); // Transportation Manager close-out always shown
     return path;
   }
   
@@ -106,7 +106,7 @@ export function getApproverDisplayName(role: string): string {
   const displayNames: Record<string, string> = {
     "OSAS_ADMIN": "OSAS Admin",
     "DEPT_HEAD": "Department Head",
-    "TM": "Admin (TM)",
+    "TM": "Transportation Manager (Admin)",
     "ADMIN": "Admin",
     "COMPTROLLER": "Comptroller",
     "HRD": "Human Resources Department",
@@ -115,7 +115,7 @@ export function getApproverDisplayName(role: string): string {
     "PRESIDENT/COO": "President / COO",
     "PRESIDENT": "President",
     "COO": "Chief Operating Officer",
-    "TM(close-out)": "Admin (TM) Close-out",
+    "TM(close-out)": "Transportation Manager",
   };
   
   return displayNames[role] || role

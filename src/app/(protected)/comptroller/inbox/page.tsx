@@ -10,6 +10,8 @@ import PageTitle from "@/components/common/PageTitle";
 import { createSupabaseClient } from "@/lib/supabase/client";
 import { SkeletonRequestCard } from "@/components/common/SkeletonLoader";
 import { createLogger } from "@/lib/debug";
+import { shouldShowPendingAlert, getAlertSeverity, getAlertMessage } from "@/lib/notifications/pending-alerts";
+import { AlertCircle } from "lucide-react";
 
 type Request = {
   id: string;
@@ -44,8 +46,47 @@ export default function ComptrollerInboxPage() {
   }, []);
 
   React.useEffect(() => {
-    // Only load once on mount - no auto-reload
+    // Initial load
     loadRequests();
+    
+    // Real-time updates using Supabase Realtime
+    const supabase = createSupabaseClient();
+    let mutateTimeout: NodeJS.Timeout | null = null;
+    let channel: any = null;
+    
+    channel = supabase
+      .channel("comptroller-inbox-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "requests",
+        },
+        (payload: any) => {
+          // Debounce: only trigger refetch after 500ms
+          if (mutateTimeout) clearTimeout(mutateTimeout);
+          mutateTimeout = setTimeout(() => {
+            loadRequests(); // Silent refresh
+          }, 500);
+        }
+      )
+      .subscribe((status: string) => {
+        console.log("[Comptroller Inbox] Realtime subscription status:", status);
+      });
+
+    // Fallback polling every 30 seconds
+    const interval = setInterval(() => {
+      loadRequests();
+    }, 30000);
+
+    return () => {
+      clearInterval(interval);
+      if (mutateTimeout) clearTimeout(mutateTimeout);
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
   }, []);
 
   const loadRequests = async () => {
@@ -173,9 +214,29 @@ export default function ComptrollerInboxPage() {
             <Clock className="h-4 w-4" />
             Requests pending comptroller approval
           </p>
+          {shouldShowPendingAlert(filteredRequests.length) && (
+            <div className={`mt-3 flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${
+              getAlertSeverity(filteredRequests.length) === 'danger'
+                ? 'bg-red-50 border border-red-200 text-red-700'
+                : getAlertSeverity(filteredRequests.length) === 'warning'
+                ? 'bg-orange-50 border border-orange-200 text-orange-700'
+                : 'bg-amber-50 border border-amber-200 text-amber-700'
+            }`}>
+              <AlertCircle className="h-4 w-4" />
+              <span>{getAlertMessage(filteredRequests.length, 'comptroller')}</span>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-4">
-          <div className="bg-gradient-to-br from-[#7A0010] to-[#9c2a3a] text-white px-6 py-3 rounded-xl shadow-lg">
+          <div className={`px-6 py-3 rounded-xl shadow-lg text-white ${
+            shouldShowPendingAlert(filteredRequests.length)
+              ? getAlertSeverity(filteredRequests.length) === 'danger'
+                ? 'bg-gradient-to-br from-red-600 to-red-700'
+                : getAlertSeverity(filteredRequests.length) === 'warning'
+                ? 'bg-gradient-to-br from-orange-600 to-orange-700'
+                : 'bg-gradient-to-br from-amber-600 to-amber-700'
+              : 'bg-gradient-to-br from-[#7A0010] to-[#9c2a3a]'
+          }`}>
             <div className="text-3xl font-bold">{filteredRequests.length}</div>
             <div className="text-xs text-white/80">pending reviews</div>
           </div>

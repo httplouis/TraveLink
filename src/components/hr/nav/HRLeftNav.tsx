@@ -13,6 +13,7 @@ import {
   MessageSquareText,
   Inbox,
   LogOut,
+  Settings,
 } from "lucide-react";
 import * as React from "react";
 import { motion } from "framer-motion";
@@ -59,6 +60,7 @@ const NAV: Item[] = [
   { type: "link", href: "/hr/vehicles", label: "Vehicles", Icon: Car },
   { type: "link", href: "/hr/drivers", label: "Drivers", Icon: IdCard },
   { type: "link", href: "/hr/feedback", label: "Feedback", Icon: MessageSquareText },
+  { type: "link", href: "/hr/settings", label: "Settings", Icon: Settings },
 ];
 
 export default function HRLeftNav() {

@@ -56,7 +56,7 @@ export default function TopGridFields({
   const handleRequestersChange = React.useCallback((requesters: any[]) => {
     console.log('[TopGridFields] 📝 Requester onChange called:', {
       requestersCount: requesters.length,
-      requesters: requesters.map(r => ({ id: r.id, name: r.name, email: r.email }))
+      requesters: requesters.map(r => ({ id: r.id, name: r.name, email: r.email, dept: r.department }))
     });
     
     // Prepare update object with all changes at once
@@ -98,6 +98,15 @@ export default function TopGridFields({
             uniqueDepartments,
             note: 'Head endorsement invitations will be sent to each department\'s head separately'
           });
+          
+          // IMPORTANT: Clear the endorsedByHeadName field when multiple departments are detected
+          // The head endorsement system will send email invitations to each department's head
+          if (data?.endorsedByHeadName) {
+            console.log('[TopGridFields] 🧹 Multiple departments detected - clearing endorsedByHeadName (head endorsements will be sent via email)');
+            update.endorsedByHeadName = "";
+            update.endorsedByHeadDate = "";
+            update.endorsedByHeadSignature = "";
+          }
         }
       }
     }
@@ -105,7 +114,7 @@ export default function TopGridFields({
     // Single onChange call with all updates
     console.log('[TopGridFields] ✅ Calling onChange with update:', update);
     onChange(update);
-  }, [data?.department, onChange, onDepartmentChange]);
+  }, [data?.department, data?.endorsedByHeadName, onChange, onDepartmentChange]);
   
   // Debug: Log the values to see what's happening
   React.useEffect(() => {
@@ -153,9 +162,9 @@ export default function TopGridFields({
                 required
                 error={errors["travelOrder.requestingPerson"]}
               />
-              <div className="mt-1 flex items-start gap-1.5 text-xs text-slate-600 min-h-[20px]">
-                <Info className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
-                <span>Search and select a user. You can edit this if you're filling out the form for someone else</span>
+              <div className="mt-1 flex items-start gap-2 age-inclusive-helper min-h-[20px]">
+                <Info className="h-4 w-4 mt-0.5 flex-shrink-0 text-blue-600" />
+                <span className="text-gray-700">Search and select a user. You can edit this if you're filling out the form for someone else</span>
               </div>
             </>
           )}
@@ -179,9 +188,9 @@ export default function TopGridFields({
                 {errors["travelOrder.department"]}
               </span>
             ) : (
-              <div className="flex items-start gap-1.5 text-xs text-slate-600">
-                <Info className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
-                <span>
+              <div className="flex items-start gap-2 age-inclusive-helper">
+                <Info className="h-4 w-4 mt-0.5 flex-shrink-0 text-blue-600" />
+                <span className="text-gray-700">
                   {requesterRole === "head" || requesterRole === "faculty" 
                     ? "Select the requester's department/office. If multiple requesters have different departments, they will be combined automatically (e.g., 'HRD and WCDEO')."
                     : "Select the requester's department/office"

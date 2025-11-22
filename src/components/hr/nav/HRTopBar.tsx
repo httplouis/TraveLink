@@ -5,27 +5,10 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import HRNotificationDropdown from "./HRNotificationDropdown";
-import ProfilePicture from "@/components/common/ProfilePicture";
 
 export default function HRTopBar() {
   const router = useRouter();
-  const [userProfile, setUserProfile] = useState<any>(null);
   const [loggingOut, setLoggingOut] = useState(false);
-
-  useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        const res = await fetch("/api/profile");
-        const data = await res.json();
-        if (data.ok && data.data) {
-          setUserProfile(data.data);
-        }
-      } catch (err) {
-        console.error("[HRTopBar] Failed to fetch profile:", err);
-      }
-    };
-    fetchProfile();
-  }, []);
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -59,25 +42,8 @@ export default function HRTopBar() {
           <span className="opacity-90 text-sm font-medium">HR Portal</span>
         </div>
 
-        {/* Actions - Profile, Notifications, Logout */}
+        {/* Actions - Notifications, Logout */}
         <div className="flex items-center gap-2">
-          {/* Profile */}
-          <Link
-            href="/hr/profile"
-            className="flex items-center gap-2 rounded-lg px-3 py-1.5 hover:bg-white/10 transition-colors"
-            title="Profile"
-          >
-            <ProfilePicture
-              src={userProfile?.avatarUrl || undefined}
-              name={userProfile?.name || "HR"}
-              size="sm"
-              className="flex-shrink-0"
-            />
-            <span className="hidden sm:inline text-sm font-medium max-w-[150px] truncate">
-              {userProfile?.name || "Profile"}
-            </span>
-          </Link>
-
           {/* Notifications */}
           <HRNotificationDropdown />
 

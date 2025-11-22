@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
+import { sendDriverTravelNotification } from "@/lib/sms/sms-service";
 
 export async function POST(request: Request) {
   try {
@@ -294,6 +295,49 @@ export async function POST(request: Request) {
     if (updateError) {
       console.error("[POST /api/admin/approve] Update error:", updateError);
       return NextResponse.json({ ok: false, error: updateError.message }, { status: 500 });
+    }
+
+    // Send SMS to driver if driver is assigned
+    if (driver) {
+      try {
+        // Fetch driver and requester info for SMS
+        const { data: driverInfo } = await supabaseServiceRole
+          .from("users")
+          .select("name, phone_number, contact_number")
+          .eq("id", driver)
+          .single();
+
+        const { data: requesterInfo } = await supabaseServiceRole
+          .from("users")
+          .select("name, phone_number, contact_number")
+          .eq("id", req.requester_id)
+          .single();
+
+        if (driverInfo && (driverInfo.phone_number || driverInfo.contact_number)) {
+          const driverPhone = driverInfo.phone_number || driverInfo.contact_number;
+          const requesterName = requesterInfo?.name || req.requester_name || "Requester";
+          const requesterPhone = requesterInfo?.phone_number || requesterInfo?.contact_number || req.requester_contact_number || "";
+
+          await sendDriverTravelNotification({
+            driverPhone,
+            requesterName,
+            requesterPhone,
+            travelDate: req.travel_start_date,
+            destination: req.destination || "",
+            pickupLocation: req.pickup_location || null,
+            pickupTime: req.pickup_time || null,
+            pickupPreference: req.pickup_preference || "pickup",
+            requestNumber: req.request_number || `TO-${requestId.substring(0, 8)}`,
+          });
+
+          console.log(`[Admin Approve] 📱 SMS sent to driver ${driverInfo.name} (${driverPhone})`);
+        } else {
+          console.warn(`[Admin Approve] ⚠️ Driver ${driver} has no phone number, SMS not sent`);
+        }
+      } catch (smsError: any) {
+        // Don't fail the approval if SMS fails
+        console.error("[Admin Approve] Failed to send SMS to driver:", smsError);
+      }
     }
 
     // Log to request_history with complete tracking

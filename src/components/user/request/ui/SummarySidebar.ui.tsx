@@ -3,7 +3,7 @@
 
 import * as React from "react";
 import type { RequestFormData } from "@/lib/user/request/types";
-import { ArrowRight, CheckCircle2, MapPin, Calendar, User, Building2, Users, FileText, Wallet, Briefcase, Crown, Truck } from "lucide-react";
+import { ArrowRight, CheckCircle2, MapPin, Calendar, User, Building2, Users, FileText, Wallet, Briefcase, Crown, Truck, Settings } from "lucide-react";
 import { getApproverDisplayName } from "@/lib/user/request/routing";
 
 export default function SummarySidebar({
@@ -119,11 +119,17 @@ export default function SummarySidebar({
         </div>
         <ul className="space-y-2">
           {[
+            // Show Department Head first if requester is faculty
+            ...(data.requesterRole === "faculty" ? [
+              { name: "Department Head", icon: <User className="h-4 w-4 text-blue-600" /> }
+            ] : []),
+            // Transportation Manager (Admin) - always shown
+            { name: "Transportation Manager (Admin)", icon: <Settings className="h-4 w-4 text-purple-600" /> },
             { name: "Comptroller", icon: <Wallet className="h-4 w-4 text-purple-600" /> },
             { name: "Human Resources Department", icon: <Users className="h-4 w-4 text-blue-600" /> },
             { name: "Vice President", icon: <Briefcase className="h-4 w-4 text-indigo-600" /> },
             { name: "President / COO", icon: <Crown className="h-4 w-4 text-amber-600" />, conditional: data.requesterRole === "head", note: "(for Heads only)" },
-            { name: "TM close-out", icon: <Truck className="h-4 w-4 text-amber-600" />, conditional: usedInstitutional, note: "(if institutional)" },
+            { name: "Transportation Manager", icon: <Truck className="h-4 w-4 text-amber-600" /> },
           ].map((approver, idx) => (
             <li
               key={idx}

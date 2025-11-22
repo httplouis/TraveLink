@@ -406,7 +406,25 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
   };
 
   const handleExpenseEdit = (index: number, newAmount: string) => {
-    const amount = parseFloat(newAmount) || 0;
+    // Remove leading zeros and handle empty input
+    let cleanedValue = newAmount.trim();
+    
+    // If empty, set to 0 (but don't show leading zeros)
+    if (cleanedValue === '' || cleanedValue === '0') {
+      cleanedValue = '';
+    } else {
+      // Remove leading zeros (e.g., "0700" -> "700")
+      cleanedValue = cleanedValue.replace(/^0+/, '') || '0';
+      
+      // If it becomes empty after removing zeros, keep it empty
+      if (cleanedValue === '') {
+        cleanedValue = '';
+      }
+    }
+    
+    // Parse to number, but preserve empty string for display
+    const amount = cleanedValue === '' ? 0 : parseFloat(cleanedValue) || 0;
+    
     setEditedExpenses(prev => {
       const updated = [...prev];
       updated[index] = { ...updated[index], amount };
@@ -1238,12 +1256,32 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                                 <span className="text-sm text-slate-600 font-medium">{displayLabel}</span>
                                 {editingBudget ? (
                                   <input
-                                    type="number"
-                                    value={expense.amount || 0}
-                                    onChange={(e) => handleExpenseEdit(index, e.target.value)}
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={expense.amount === 0 ? '' : expense.amount || ''}
+                                    onChange={(e) => {
+                                      // Only allow numbers and decimal point
+                                      const value = e.target.value.replace(/[^0-9.]/g, '');
+                                      // Prevent multiple decimal points
+                                      const parts = value.split('.');
+                                      const cleanedValue = parts.length > 2 
+                                        ? parts[0] + '.' + parts.slice(1).join('')
+                                        : value;
+                                      handleExpenseEdit(index, cleanedValue);
+                                    }}
+                                    onBlur={(e) => {
+                                      // On blur, ensure we have a valid number (default to 0 if empty)
+                                      const value = e.target.value.trim();
+                                      if (value === '' || value === '0') {
+                                        setEditedExpenses(prev => {
+                                          const updated = [...prev];
+                                          updated[index] = { ...updated[index], amount: 0 };
+                                          return updated;
+                                        });
+                                      }
+                                    }}
                                     className="w-32 px-3 py-1.5 border-2 border-[#7A0010]/20 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] text-sm"
-                                    min="0"
-                                    step="0.01"
+                                    placeholder="0"
                                   />
                                 ) : (
                                   <span className="text-sm font-semibold text-slate-900">{peso(expense.amount || 0)}</span>
@@ -1274,16 +1312,32 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                         <span className="text-sm text-slate-600 font-medium">Total Budget</span>
                         {editingBudget ? (
                           <input
-                            type="number"
-                            value={calculatedTotal || (fullRequest?.comptroller_edited_budget || fullRequest?.total_budget || 0)}
+                            type="text"
+                            inputMode="numeric"
+                            value={calculatedTotal === 0 ? '' : (calculatedTotal || (fullRequest?.comptroller_edited_budget || fullRequest?.total_budget || 0))}
                             onChange={(e) => {
-                              const amount = parseFloat(e.target.value) || 0;
+                              // Only allow numbers and decimal point
+                              const value = e.target.value.replace(/[^0-9.]/g, '');
+                              // Prevent multiple decimal points
+                              const parts = value.split('.');
+                              const cleanedValue = parts.length > 2 
+                                ? parts[0] + '.' + parts.slice(1).join('')
+                                : value;
+                              // Remove leading zeros
+                              const finalValue = cleanedValue.replace(/^0+/, '') || '0';
+                              const amount = finalValue === '' || finalValue === '0' ? 0 : parseFloat(finalValue) || 0;
                               setEditedExpenses([{ item: "Travel Expenses", amount }]);
                               setTotalCost(amount);
                             }}
+                            onBlur={(e) => {
+                              const value = e.target.value.trim();
+                              if (value === '' || value === '0') {
+                                setEditedExpenses([{ item: "Travel Expenses", amount: 0 }]);
+                                setTotalCost(0);
+                              }
+                            }}
                             className="w-32 px-3 py-1.5 border-2 border-[#7A0010]/20 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] text-sm"
-                            min="0"
-                            step="0.01"
+                            placeholder="0"
                           />
                         ) : (
                           <span className="text-sm font-semibold text-slate-900">

@@ -3,6 +3,7 @@ import "./globals.css";
 import type { Viewport, Metadata } from "next";
 import { ToastProvider } from "@/components/common/ui/Toast";
 import TopLoadingBar from "@/components/common/TopLoadingBar";
+import { AccessibilitySettingsProvider } from "@/contexts/AccessibilitySettingsContext";
 
 export const metadata: Metadata = {
   title: { default: "Travelink", template: "%s • Travelink" },
@@ -106,10 +107,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="min-h-dvh antialiased bg-white text-neutral-900" suppressHydrationWarning>
-        <TopLoadingBar />
-        <ToastProvider>
-          {children}
-        </ToastProvider>
+        <AccessibilitySettingsProvider>
+          <TopLoadingBar />
+          <ToastProvider>
+            {children}
+          </ToastProvider>
+        </AccessibilitySettingsProvider>
       </body>
     </html>
   );

@@ -9,6 +9,8 @@ import RequestCardEnhanced from "@/components/common/RequestCardEnhanced";
 import { Eye } from "lucide-react";
 import { createSupabaseClient } from "@/lib/supabase/client";
 import { createLogger } from "@/lib/debug";
+import { shouldShowPendingAlert, getAlertSeverity, getAlertMessage } from "@/lib/notifications/pending-alerts";
+import { AlertCircle } from "lucide-react";
 
 export default function HRInboxContainer() {
   const [items, setItems] = React.useState<any[]>([]);
@@ -119,6 +121,18 @@ export default function HRInboxContainer() {
             <p className="text-sm text-slate-600 mt-1">
               {items.length} {items.length === 1 ? 'request' : 'requests'} awaiting HR review
             </p>
+            {shouldShowPendingAlert(items.length) && (
+              <div className={`mt-2 flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${
+                getAlertSeverity(items.length) === 'danger'
+                  ? 'bg-red-50 border border-red-200 text-red-700'
+                  : getAlertSeverity(items.length) === 'warning'
+                  ? 'bg-orange-50 border border-orange-200 text-orange-700'
+                  : 'bg-amber-50 border border-amber-200 text-amber-700'
+              }`}>
+                <AlertCircle className="h-4 w-4" />
+                <span>{getAlertMessage(items.length, 'hr')}</span>
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 border border-green-200 rounded-lg text-xs text-green-700">
             <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>

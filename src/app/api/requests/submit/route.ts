@@ -798,11 +798,13 @@ export async function POST(req: Request) {
         }
       }
       
-      // If there's a Faculty requester, they need their Dean's signature first
-      // Even if the primary requester is a Director/Head
-      if (hasFacultyRequester) {
-        initialStatus = "pending_head"; // Go to Faculty's department head first
-        console.log(`[/api/requests/submit] 🎯 Mixed requesters detected: Faculty requester found, routing to pending_head`);
+      // PRIORITY: If requesting person is a head requesting for themselves, skip head approval
+      // Faculty requesters will get their head endorsements via email (handled separately)
+      if (requestingPersonIsHead && !mightBeRepresentative) {
+        // Requesting person is a head requesting for themselves: skip head approval, go directly to admin
+        // Use WorkflowEngine to get correct initial status
+        initialStatus = WorkflowEngine.getInitialStatus(true); // This returns 'pending_admin' for heads
+        console.log(`[/api/requests/submit] 🎯 Head requester detected, initial status: ${initialStatus}`);
       } else if (mightBeRepresentative && !isSeminar && travelOrder.requestingPerson) {
         // Representative submission: send to requesting person first for signature
         // Status: "pending_requester_signature" or "pending_head" (if requesting person is head)
@@ -811,11 +813,11 @@ export async function POST(req: Request) {
         } else {
           initialStatus = "pending_requester_signature"; // Need requesting person's signature first
         }
-      } else if (requestingPersonIsHead) {
-        // Requesting person is a head: skip head approval, go directly to admin
-        // Use WorkflowEngine to get correct initial status
-        initialStatus = WorkflowEngine.getInitialStatus(true); // This returns 'pending_admin' for heads
-        console.log(`[/api/requests/submit] 🎯 Head requester detected, initial status: ${initialStatus}`);
+      } else if (hasFacultyRequester) {
+        // If there's a Faculty requester, they need their Dean's signature first
+        // Even if the primary requester is a Director/Head
+        initialStatus = "pending_head"; // Go to Faculty's department head first
+        console.log(`[/api/requests/submit] 🎯 Mixed requesters detected: Faculty requester found, routing to pending_head`);
       } else {
         // Requesting person is NOT a head, send to their department head first
         initialStatus = "pending_head";
@@ -1203,6 +1205,24 @@ export async function POST(req: Request) {
       
       status: initialStatus,
       current_approver_role: WorkflowEngine.getApproverRole(initialStatus as RequestStatus),
+      
+      // Apply dual-signature logic for self-requesting (head/comptroller/hr/exec)
+      // If requesting person is head, auto-approve head stage
+      ...(requestingPersonIsHead && requestedStatus !== "draft" && (() => {
+        const signature = isSeminar 
+          ? (seminar.requesterSignature || null)
+          : (travelOrder.requesterSignature || null);
+        if (signature && finalRequesterId) {
+          return {
+            head_signature: signature,
+            head_approved_by: finalRequesterId,
+            head_approved_at: new Date().toISOString(),
+            head_skipped: true,
+            head_skip_reason: "Self-request (dual-signature)"
+          };
+        }
+        return {};
+      })()),
       
       // Save workflow_metadata with selected approver if head selected VP/admin during submission
       // Also save reason_of_trip and department_head_endorsement if provided
@@ -1794,17 +1814,78 @@ export async function POST(req: Request) {
                       continue;
                     }
 
-                    // Check if invitation already exists
+                    // AUTO-CONFIRM: If head is the current user (submitter), auto-confirm immediately
+                    if (headEmail.toLowerCase() === profile.email.toLowerCase()) {
+                      console.log(`[/api/requests/submit] ✅ Head ${headName} is the current user (${profile.email}), auto-confirming endorsement`);
+                      
+                      // Check if invitation already exists
+                      const { data: existing, error: existingError } = await supabase
+                        .from("head_endorsement_invitations")
+                        .select("id, status")
+                        .eq("request_id", data.id)
+                        .eq("head_email", headEmail.toLowerCase())
+                        .maybeSingle();
+
+                      const phNow = getPhilippineTimestamp();
+                      
+                      if (existing && !existingError) {
+                        // Update existing invitation to confirmed
+                        await supabase
+                          .from("head_endorsement_invitations")
+                          .update({
+                            status: 'confirmed',
+                            head_name: headName || profile.name,
+                            endorsement_date: new Date().toISOString().split('T')[0],
+                            confirmed_at: phNow,
+                            updated_at: phNow,
+                            head_user_id: headUserId || profile.id,
+                          })
+                          .eq("id", existing.id);
+                      } else {
+                        // Create confirmed invitation
+                        await supabase
+                          .from("head_endorsement_invitations")
+                          .insert({
+                            request_id: data.id,
+                            head_email: headEmail.toLowerCase(),
+                            head_name: headName || profile.name,
+                            head_user_id: headUserId || profile.id,
+                            department_id: dept.department_id || null,
+                            department_name: dept.department_name,
+                            invited_by: profile.id,
+                            token: crypto.randomBytes(32).toString('hex'),
+                            expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+                            status: 'confirmed',
+                            endorsement_date: new Date().toISOString().split('T')[0],
+                            confirmed_at: phNow,
+                          });
+                      }
+                      
+                      console.log(`[/api/requests/submit] ✅ Auto-confirmed head endorsement for ${headName}`);
+                      continue; // Skip email sending
+                    }
+
+                    // Check if invitation already exists (manually sent via HeadEndorsementInvitationEditor)
                     const { data: existing, error: existingError } = await supabase
                       .from("head_endorsement_invitations")
-                      .select("id, status")
+                      .select("id, status, created_at")
                       .eq("request_id", data.id)
                       .eq("head_email", headEmail.toLowerCase())
                       .maybeSingle();
 
+                    // If invitation exists and is already confirmed, skip
                     if (existing && !existingError && existing.status === 'confirmed') {
                       console.log(`[/api/requests/submit] ✅ Head endorsement already confirmed for ${headEmail}`);
                       continue;
+                    }
+                    
+                    // If invitation exists but is pending, we should still send the email
+                    // (in case the manual send failed or email wasn't received)
+                    if (existing && !existingError && existing.status === 'pending') {
+                      console.log(`[/api/requests/submit] ⚠️ Invitation exists but is pending for ${headEmail}, will resend email`);
+                      // Continue to create/update and send email
+                    } else if (existing && !existingError) {
+                      console.log(`[/api/requests/submit] ⏭️ Head endorsement invitation already exists (status: ${existing.status}) for ${headEmail}, will update and resend email`);
                     }
 
                     // Create or update invitation
@@ -1859,7 +1940,12 @@ export async function POST(req: Request) {
                     }
 
                     // Send email invitation
+                    console.log(`[/api/requests/submit] 📧 Preparing to send email to ${headEmail} (${headName}) for department ${dept.department_name}`);
+                    console.log(`[/api/requests/submit] 🌐 Base URL being used: ${baseUrl}`);
+                    console.log(`[/api/requests/submit] ⚠️ NOTE: If baseUrl is localhost, email links won't work on mobile devices!`);
+                    console.log(`[/api/requests/submit] ⚠️ SOLUTION: Set NEXT_PUBLIC_APP_URL in Vercel to your production URL`);
                     const confirmationLink = `${baseUrl}/head-endorsements/confirm/${token}`;
+                    console.log(`[/api/requests/submit] 🔗 Confirmation link: ${confirmationLink}`);
                     const emailHtml = `
 <!DOCTYPE html>
 <html>
@@ -1909,12 +1995,25 @@ export async function POST(req: Request) {
     <p style="font-size: 14px; color: #6b7280; margin-top: 20px;">
       This invitation will expire in 7 days.
     </p>
+    
+    <div style="background: #fff3cd; border: 1px solid #ffc107; padding: 15px; margin-top: 20px; border-radius: 4px;">
+      <p style="font-size: 12px; color: #856404; margin: 0;">
+        <strong>📧 Email Not Received?</strong> Please check your <strong>Spam/Junk folder</strong>. 
+        If you're using Outlook, the email might be filtered. You can also copy the confirmation link above.
+      </p>
+    </div>
+  </div>
+  
+  <div style="text-align: center; margin-top: 20px; color: #6b7280; font-size: 12px;">
+    <p>This is an automated message from TraviLink Travel Management System</p>
+    <p>MSEUF - Manuel S. Enverga University Foundation</p>
   </div>
 </body>
 </html>
                     `;
 
                     const { sendEmail } = await import("@/lib/email");
+                    console.log(`[/api/requests/submit] 📧 Sending email to ${headEmail} (${headName})...`);
                     const emailResult = await sendEmail({
                       to: headEmail.toLowerCase(),
                       subject: `Head Endorsement Request: ${data.request_number || 'Request'}`,
@@ -1922,9 +2021,13 @@ export async function POST(req: Request) {
                     });
 
                     if (emailResult.success) {
-                      console.log(`[/api/requests/submit] ✅ Head endorsement invitation sent to ${headEmail}`);
+                      console.log(`[/api/requests/submit] ✅ Head endorsement invitation EMAIL SENT successfully to ${headEmail} (${headName})`);
+                      console.log(`[/api/requests/submit] 📧 Email ID: ${emailResult.emailId || 'N/A'}`);
                     } else {
-                      console.warn(`[/api/requests/submit] ⚠️ Invitation created but email failed for ${headEmail}:`, emailResult.error);
+                      console.error(`[/api/requests/submit] ❌ CRITICAL: Invitation created but EMAIL FAILED for ${headEmail} (${headName})`);
+                      console.error(`[/api/requests/submit] ❌ Email error: ${emailResult.error}`);
+                      console.error(`[/api/requests/submit] 🔗 Confirmation link (for manual sharing): ${confirmationLink}`);
+                      // Still continue - invitation is created, user can manually share link
                     }
                   } catch (err: any) {
                     console.error(`[/api/requests/submit] ❌ Error processing head endorsement for ${dept.department_name}:`, err.message);

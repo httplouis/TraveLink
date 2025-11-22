@@ -569,42 +569,33 @@ export default function ProfilePage({
               {profileData.name}
             </h1>
             <div className="flex items-center gap-2 flex-wrap">
-              {profileData.position_title && (
-                <p className="text-lg sm:text-xl text-gray-700 font-medium">
-                  {profileData.position_title}
+              {profileData.department && (
+                <p className="text-lg sm:text-xl text-gray-600">
+                  {profileData.department}
                 </p>
               )}
-              {profileData.department && (
+              {/* Don't show "Student" for @student.mseuf.edu.ph emails */}
+              {/* Only show "Student" if they're actually a student (no special role) */}
+              {profileData.email && 
+               !profileData.email.endsWith("@student.mseuf.edu.ph") && 
+               !profileData.roles?.is_head && 
+               !profileData.roles?.is_admin && 
+               !profileData.roles?.is_hr && 
+               !profileData.roles?.is_comptroller && 
+               !profileData.roles?.is_executive && 
+               profileData.department && (
                 <>
-                  {profileData.position_title && (
-                    <span className="text-gray-400">•</span>
-                  )}
+                  <span className="text-gray-400">•</span>
                   <p className="text-lg sm:text-xl text-gray-600">
-                    {profileData.department}
+                    Student
                   </p>
                 </>
               )}
             </div>
           </div>
 
-          {/* Role Badges - Premium Design */}
-          <div className="flex flex-wrap gap-2.5">
-            {getRoleBadges().map((role, index) => (
-              <motion.span
-                key={role.label}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
-                className={`
-                  px-4 py-1.5 rounded-full text-xs font-semibold
-                  border shadow-sm hover:shadow-md transition-shadow
-                  ${role.className}
-                `}
-              >
-                {role.label}
-              </motion.span>
-            ))}
-          </div>
+          {/* Role Badges - Hidden per user request */}
+          {/* Role badges removed - don't display roles */}
 
         </div>
       </div>

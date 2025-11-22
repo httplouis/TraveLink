@@ -1658,16 +1658,14 @@ export default function RequestDetailsModalUI({
                 {/* Driver/Vehicle Assignment */}
                 {/* Show dropdowns if: no vehicle_mode data (backwards compat) OR vehicle_mode is institutional/rent */}
                 {(!((row as any).vehicle_mode || row.travelOrder?.vehicleMode) || ((row as any).vehicle_mode !== 'owned' && row.travelOrder?.vehicleMode !== 'owned')) ? (
+                <>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-medium mb-1">Assigned Driver</label>
                     <select
                       value={driver}
                       onChange={(e) => setDriver(e.target.value)}
-                      disabled={isApproved}
-                      className={`w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#7A0010] ${
-                        isApproved ? "bg-neutral-100 text-neutral-500" : ""
-                      }`}
+                      className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#7A0010]"
                     >
                       <option value="">— Select Driver —</option>
                       {loadingOptions ? (
@@ -1680,16 +1678,16 @@ export default function RequestDetailsModalUI({
                         ))
                       )}
                     </select>
+                    {isApproved && (driver !== ((row as any)?.assigned_driver_id || "")) && (
+                      <p className="text-xs text-amber-600 mt-1">⚠️ Changes will update assignment</p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs font-medium mb-1">Assigned Vehicle</label>
                     <select
                       value={vehicle}
                       onChange={(e) => setVehicle(e.target.value)}
-                      disabled={isApproved}
-                      className={`w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#7A0010] ${
-                        isApproved ? "bg-neutral-100 text-neutral-500" : ""
-                      }`}
+                      className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#7A0010]"
                     >
                       <option value="">— Select Vehicle —</option>
                       {loadingOptions ? (
@@ -1702,9 +1700,50 @@ export default function RequestDetailsModalUI({
                         ))
                       )}
                     </select>
+                    {isApproved && (vehicle !== ((row as any)?.assigned_vehicle_id || "")) && (
+                      <p className="text-xs text-amber-600 mt-1">⚠️ Changes will update assignment</p>
+                    )}
                   </div>
                 </div>
-                ) : (
+                
+                {/* Save Assignment Changes Button (shown when approved and changes made) */}
+                {isApproved && (
+                  (driver !== ((row as any)?.assigned_driver_id || "") || 
+                   vehicle !== ((row as any)?.assigned_vehicle_id || "")) && (
+                    <div className="mt-3">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const res = await fetch("/api/schedule/assign", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                requestId: (row as any).id,
+                                driverId: driver || null,
+                                vehicleId: vehicle || null,
+                              }),
+                            });
+                            const data = await res.json();
+                            if (data.ok) {
+                              toast.success("Assignment Updated", "Driver and vehicle assignment has been updated");
+                              onApprove?.(); // Refresh the list
+                            } else {
+                              toast.error("Update Failed", data.error || "Failed to update assignment");
+                            }
+                          } catch (error: any) {
+                            toast.error("Update Failed", error.message || "Failed to update assignment");
+                          }
+                        }}
+                        className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                      >
+                        💾 Save Assignment Changes
+                      </button>
+                    </div>
+                  )
+                )}
+              </>
+            ) : (
                   /* Only show this green box if vehicle_mode is explicitly 'owned' */
                   ((row as any).vehicle_mode === 'owned' || row.travelOrder?.vehicleMode === 'owned') && (
                     <div className="text-center py-6 bg-green-50 rounded-lg border-2 border-green-200">

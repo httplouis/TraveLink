@@ -3,6 +3,12 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import fs from "fs";
 import path from "path";
+import {
+  extractInitials,
+  formatPDFFilename,
+  formatApprovalTimestamp,
+  formatApproverInfo,
+} from "@/lib/utils/pdf-helpers";
 
 export async function GET(
   req: NextRequest,
@@ -28,15 +34,38 @@ export async function GET(
       );
     }
 
-    // Fetch related data
-    const fetchUserName = async (userId: string | null) => {
+    // Fetch related data with full user info (name, title, department, position)
+    const fetchUserInfo = async (userId: string | null) => {
       if (!userId) return null;
       const { data } = await supabase
         .from("users")
-        .select("name")
+        .select(`
+          id,
+          name,
+          position_title,
+          department:departments!users_department_id_fkey(
+            id,
+            name,
+            code
+          )
+        `)
         .eq("id", userId)
         .single();
-      return data?.name || null;
+      
+      if (!data) return null;
+      
+      return {
+        name: data.name || null,
+        title: data.position_title || null,
+        department: data.department?.name || data.department?.code || null,
+        position: data.position_title || null,
+      };
+    };
+
+    // Backward compatibility
+    const fetchUserName = async (userId: string | null) => {
+      const info = await fetchUserInfo(userId);
+      return info?.name || null;
     };
 
     const fetchDepartment = async (deptId: string | null) => {
@@ -59,36 +88,48 @@ export async function GET(
       return data || null;
     };
 
-    // Fetch all related data including VP signatures
+    // Fetch all related data including VP signatures with full user info
     const [
-      requesterName,
+      requesterInfo,
       department,
-      headApproverName,
-      parentHeadApproverName,
-      adminProcessorName,
-      comptrollerApproverName,
-      hrApproverName,
-      vpApproverName,
-      vp2ApproverName,
-      presidentApproverName,
-      execApproverName,
+      headApproverInfo,
+      parentHeadApproverInfo,
+      adminProcessorInfo,
+      comptrollerApproverInfo,
+      hrApproverInfo,
+      vpApproverInfo,
+      vp2ApproverInfo,
+      presidentApproverInfo,
+      execApproverInfo,
       assignedVehicle,
       assignedDriverName,
     ] = await Promise.all([
-      fetchUserName(request.requester_id),
+      fetchUserInfo(request.requester_id),
       fetchDepartment(request.department_id),
-      fetchUserName(request.head_approved_by),
-      fetchUserName(request.parent_head_approved_by),
-      fetchUserName(request.admin_processed_by),
-      fetchUserName(request.comptroller_approved_by),
-      fetchUserName(request.hr_approved_by),
-      fetchUserName(request.vp_approved_by),
-      fetchUserName(request.vp2_approved_by),
-      fetchUserName(request.president_approved_by),
-      fetchUserName(request.exec_approved_by),
+      fetchUserInfo(request.head_approved_by),
+      fetchUserInfo(request.parent_head_approved_by),
+      fetchUserInfo(request.admin_processed_by || request.admin_approved_by),
+      fetchUserInfo(request.comptroller_approved_by),
+      fetchUserInfo(request.hr_approved_by),
+      fetchUserInfo(request.vp_approved_by),
+      fetchUserInfo(request.vp2_approved_by),
+      fetchUserInfo(request.president_approved_by),
+      fetchUserInfo(request.exec_approved_by),
       fetchVehicle(request.assigned_vehicle_id),
       fetchUserName(request.assigned_driver_id),
     ]);
+
+    // Extract names for backward compatibility
+    const requesterName = requesterInfo?.name || request.requester_name || "Unknown";
+    const headApproverName = headApproverInfo?.name;
+    const parentHeadApproverName = parentHeadApproverInfo?.name;
+    const adminProcessorName = adminProcessorInfo?.name;
+    const comptrollerApproverName = comptrollerApproverInfo?.name;
+    const hrApproverName = hrApproverInfo?.name;
+    const vpApproverName = vpApproverInfo?.name;
+    const vp2ApproverName = vp2ApproverInfo?.name;
+    const presidentApproverName = presidentApproverInfo?.name;
+    const execApproverName = execApproverInfo?.name;
 
     // Fetch multiple requesters from requester_invitations
     let multiDeptRequesters: any[] = [];
@@ -360,7 +401,7 @@ export async function GET(
       drawInRect(`${assignedVehicle.model} (${assignedVehicle.plate_number})`, 110, 485, 210, 14, 10);
     }
     
-    // Admin/Coordinator signature (RIGHT)
+    // Transportation Coordinator signature (RIGHT)
     // Position: "School Transportation Coordinator" or "Approved by" section
     if (request.admin_signature) {
       const adminSigY = isSeminar ? 455 : 455; // Adjust if Seminar template differs
@@ -556,14 +597,18 @@ export async function GET(
     // Convert to Buffer for NextResponse
     const buffer = Buffer.from(pdfBytes);
 
-    // Use file_code for filename if available, otherwise use request_number
-    const filename = request.file_code || request.request_number || `request-${requestId}`;
+    // Format PDF filename: TO-2025-{number}-{initials}.pdf
+    const filename = formatPDFFilename(
+      request.request_number || request.file_code,
+      requesterName,
+      request.request_type
+    );
 
     // Return PDF as download
     return new NextResponse(buffer, {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${filename}.pdf"`,
+        "Content-Disposition": `attachment; filename="${filename}"`,
       },
     });
   } catch (err: any) {
