@@ -531,24 +531,124 @@ export async function GET(
     // Fetch head endorsement invitations (for multi-department requests)
     try {
       console.log(`[GET /api/requests/${requestId}] Fetching head endorsement invitations...`);
+      
+      // First, fetch the invitations
       const { data: headEndorsements, error: headEndorsementsError } = await supabaseServiceRole
         .from("head_endorsement_invitations")
-        .select(`
-          *,
-          head:users!head_endorsement_invitations_head_user_id_fkey(id, name, email, profile_picture),
-          department:departments!head_endorsement_invitations_department_id_fkey(id, name, code)
-        `)
+        .select("*")
         .eq("request_id", requestId)
         .order("created_at", { ascending: true });
       
       if (headEndorsementsError) {
         console.warn(`[GET /api/requests/${requestId}] Error fetching head endorsements:`, headEndorsementsError);
       } else if (headEndorsements && headEndorsements.length > 0) {
-        fullRequest.head_endorsements = headEndorsements;
-        console.log(`[GET /api/requests/${requestId}] Found ${headEndorsements.length} head endorsement(s)`);
+        console.log(`[GET /api/requests/${requestId}] Found ${headEndorsements.length} raw head endorsement(s)`);
+        
+        // Enrich with user and department data
+        const enrichedEndorsements = await Promise.all(
+          headEndorsements.map(async (inv: any) => {
+            const endorsement: any = {
+              id: inv.id,
+              request_id: inv.request_id,
+              head_user_id: inv.head_user_id,
+              head_email: inv.head_email,
+              head_name: inv.head_name,
+              department_id: inv.department_id,
+              status: inv.status,
+              confirmed_at: inv.confirmed_at,
+              declined_at: inv.declined_at,
+              declined_reason: inv.declined_reason,
+              endorsement_date: inv.endorsement_date,
+              signature: inv.signature,
+              comments: inv.comments,
+              invited_at: inv.invited_at,
+              created_at: inv.created_at,
+              updated_at: inv.updated_at,
+            };
+            
+            // Fetch head user details if head_user_id exists
+            if (inv.head_user_id) {
+              const { data: headUser } = await supabaseServiceRole
+                .from("users")
+                .select("id, name, email, profile_picture")
+                .eq("id", inv.head_user_id)
+                .maybeSingle();
+              
+              if (headUser) {
+                endorsement.head = {
+                  id: headUser.id,
+                  name: headUser.name || inv.head_name,
+                  email: headUser.email || inv.head_email,
+                  profile_picture: headUser.profile_picture,
+                };
+              } else {
+                // Fallback to invitation data
+                endorsement.head = {
+                  id: inv.head_user_id,
+                  name: inv.head_name,
+                  email: inv.head_email,
+                  profile_picture: null,
+                };
+              }
+            } else if (inv.head_email) {
+              // Try to find user by email
+              const { data: headUser } = await supabaseServiceRole
+                .from("users")
+                .select("id, name, email, profile_picture")
+                .eq("email", inv.head_email.toLowerCase())
+                .maybeSingle();
+              
+              if (headUser) {
+                endorsement.head = {
+                  id: headUser.id,
+                  name: headUser.name || inv.head_name,
+                  email: headUser.email || inv.head_email,
+                  profile_picture: headUser.profile_picture,
+                };
+                endorsement.head_user_id = headUser.id;
+              } else {
+                // Fallback to invitation data
+                endorsement.head = {
+                  id: null,
+                  name: inv.head_name,
+                  email: inv.head_email,
+                  profile_picture: null,
+                };
+              }
+            }
+            
+            // Fetch department details
+            if (inv.department_id) {
+              const { data: department } = await supabaseServiceRole
+                .from("departments")
+                .select("id, name, code")
+                .eq("id", inv.department_id)
+                .maybeSingle();
+              
+              if (department) {
+                endorsement.department = {
+                  id: department.id,
+                  name: department.name,
+                  code: department.code,
+                };
+                endorsement.department_name = department.name;
+                endorsement.department_code = department.code;
+              }
+            }
+            
+            return endorsement;
+          })
+        );
+        
+        fullRequest.head_endorsements = enrichedEndorsements;
+        console.log(`[GET /api/requests/${requestId}] ✅ Enriched ${enrichedEndorsements.length} head endorsement(s)`);
+      } else {
+        console.log(`[GET /api/requests/${requestId}] No head endorsements found`);
+        fullRequest.head_endorsements = [];
       }
     } catch (e) {
-      console.warn(`[GET /api/requests/${requestId}] Exception fetching head endorsements:`, e);
+      console.error(`[GET /api/requests/${requestId}] Exception fetching head endorsements:`, e);
+      fullRequest.head_endorsements = [];
     }
 
     // Step 7: Clean up and serialize response

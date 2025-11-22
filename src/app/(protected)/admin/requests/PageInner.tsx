@@ -876,6 +876,9 @@ export default function PageInner() {
         admin_approved_by: remoteReq.admin_approved_by,
         admin_signature: remoteReq.admin_signature,
         admin_approver: (remoteReq as any).admin_approver || null,
+        
+        // Head endorsement invitations (for multi-department requests)
+        head_endorsements: (remoteReq as any).head_endorsements || null,
       };
       
       setActiveRow(transformed);
