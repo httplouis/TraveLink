@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { FleetRepo, type Driver } from "@/lib/user/fleet/store";
+import type { Driver } from "@/lib/user/fleet/store";
 
 function initials(first: string, last: string) {
   return (first[0] ?? "") + (last[0] ?? "");
@@ -17,9 +17,61 @@ function DriverBadge({ s }: { s: Driver["status"] }) {
 }
 
 export default function DriversList() {
-  const [rows] = React.useState<Driver[]>(() => FleetRepo.listDrivers());
+  const [rows, setRows] = React.useState<Driver[]>([]);
+  const [loading, setLoading] = React.useState(true);
   const [q, setQ] = React.useState("");
   const [onlyAvailable, setOnlyAvailable] = React.useState(false);
+
+  // Fetch drivers from API
+  React.useEffect(() => {
+    async function fetchDrivers() {
+      try {
+        setLoading(true);
+        const response = await fetch('/api/drivers');
+        const data = await response.json();
+        
+        if (data.ok && data.data) {
+          // Transform API response to Driver format
+          const drivers: Driver[] = data.data.map((d: any) => {
+            // Parse name (format: "LASTNAME, FIRSTNAME" or "First Last")
+            const nameParts = d.name?.split(', ') || d.name?.split(' ') || ['Unknown', ''];
+            const firstName = nameParts.length > 1 && nameParts[0].includes(',') 
+              ? nameParts[1] 
+              : nameParts[0];
+            const lastName = nameParts.length > 1 && nameParts[0].includes(',')
+              ? nameParts[0]
+              : (nameParts[1] || '');
+            
+            // Determine status from assignments
+            const hasActiveAssignment = d.assignments && d.assignments.length > 0;
+            const status: "Available" | "On Trip" | "Off Duty" = 
+              !d.isAvailable ? "Off Duty" :
+              hasActiveAssignment ? "On Trip" :
+              "Available";
+            
+            // Default canDrive based on common vehicle types (can be enhanced with actual data)
+            const canDrive: ("Bus" | "Van" | "Car" | "Truck")[] = ["Bus", "Van", "Car"];
+            
+            return {
+              id: d.id,
+              firstName: firstName.trim() || 'Unknown',
+              lastName: lastName.trim() || '',
+              status,
+              canDrive,
+              lastActive: d.assignments?.[0]?.startDate || undefined,
+            };
+          });
+          setRows(drivers);
+        }
+      } catch (error) {
+        console.error('[DriversList] Error fetching drivers:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+    
+    fetchDrivers();
+  }, []);
 
   const filtered = React.useMemo(() => {
     let base = rows;
@@ -52,8 +104,13 @@ export default function DriversList() {
         </label>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {filtered.map((d) => (
+      {loading ? (
+        <div className="text-center py-8 text-neutral-500">
+          Loading drivers...
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {filtered.map((d) => (
           <div key={d.id} className="rounded-xl border border-neutral-200 p-4">
             <div className="flex items-start gap-3">
               {/* Privacy: show initials avatar, never a photo */}
@@ -79,12 +136,13 @@ export default function DriversList() {
             </div>
           </div>
         ))}
-        {!filtered.length && (
-          <div className="col-span-full rounded-lg border border-dashed p-8 text-center text-sm text-neutral-500">
-            No drivers match your filters.
-          </div>
-        )}
-      </div>
+          {!filtered.length && (
+            <div className="col-span-full rounded-lg border border-dashed p-8 text-center text-sm text-neutral-500">
+              {loading ? "Loading drivers..." : "No drivers match your filters."}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

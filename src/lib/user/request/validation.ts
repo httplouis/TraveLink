@@ -25,6 +25,7 @@ export function canSubmit(
     requestingPersonName?: string;
     allRequestersConfirmed?: boolean; // For multiple requesters
     allParticipantsConfirmed?: boolean; // For seminar participants
+    allHeadEndorsementsConfirmed?: boolean; // For head endorsements (multi-department)
   }
 ) {
   const errors: Errors = {};
@@ -217,6 +218,11 @@ export function canSubmit(
     // ✅ VALIDATION: All requesters must be confirmed before submitting (for multiple requesters)
     if (options?.allRequestersConfirmed === false) {
       errors["travelOrder.requesters"] = "All invited requesters must confirm their participation before submitting. Please wait for all requesters to confirm or remove pending invitations.";
+    }
+
+    // ✅ VALIDATION: All head endorsements must be confirmed before submitting (for multi-department scenarios)
+    if (options?.allHeadEndorsementsConfirmed === false) {
+      errors["travelOrder.headEndorsements"] = "All department heads must endorse the request before submitting. Please wait for all head endorsements to be confirmed.";
     }
 
     const needsJustif =

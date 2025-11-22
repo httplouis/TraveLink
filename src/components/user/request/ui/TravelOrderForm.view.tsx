@@ -6,6 +6,7 @@ import TopGridFields from "./parts/TopGridFields.view";
 import CostsSection from "./parts/CostsSection.view";
 import EndorsementSection from "./parts/EndorsementSection.view";
 import FileAttachmentSection from "./parts/FileAttachmentSection.view";
+import HeadEndorsementStatus from "./HeadEndorsementStatus";
 import { UI_TEXT } from "@/lib/user/request/uiText";
 
 type ViewProps = {
@@ -27,6 +28,7 @@ type ViewProps = {
   requestId?: string; // Request ID for sending invitations (after saving)
   currentUserEmail?: string; // Current logged-in user's email (for auto-confirm)
   onRequestersStatusChange?: (allConfirmed: boolean) => void; // Callback when all requesters are confirmed
+  onHeadEndorsementsStatusChange?: (allConfirmed: boolean) => void; // Callback when all head endorsements are confirmed
 };
 
 export default function TravelOrderFormView({
@@ -46,6 +48,7 @@ export default function TravelOrderFormView({
   requestId,
   currentUserEmail,
   onRequestersStatusChange,
+  onHeadEndorsementsStatusChange,
 }: ViewProps) {
   const c = data?.costs || {};
 
@@ -119,6 +122,14 @@ export default function TravelOrderFormView({
           onChange({ endorsedByHeadSignature: dataUrl });
         }}
       />
+
+      {/* Head Endorsement Status (for multi-department scenarios) */}
+      {requestId && (
+        <HeadEndorsementStatus
+          requestId={requestId}
+          onAllConfirmed={onHeadEndorsementsStatusChange}
+        />
+      )}
 
       <div className="mt-5 flex items-center justify-end gap-2">{footerRight}</div>
     </section>

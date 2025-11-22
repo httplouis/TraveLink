@@ -19,6 +19,7 @@ type Props = {
   requestId?: string; // Request ID for sending invitations (after saving)
   currentUserEmail?: string; // Current logged-in user's email (for auto-confirm)
   onRequestersStatusChange?: (allConfirmed: boolean) => void; // Callback when all requesters are confirmed
+  onHeadEndorsementsStatusChange?: (allConfirmed: boolean) => void; // Callback when all head endorsements are confirmed
 };
 
 export default function TravelOrderForm({
@@ -35,6 +36,7 @@ export default function TravelOrderForm({
   requestId,
   currentUserEmail,
   onRequestersStatusChange,
+  onHeadEndorsementsStatusChange,
 }: Props) {
   // Always show justification field (but it's optional)
   const needsJustif = true;
@@ -143,6 +145,7 @@ export default function TravelOrderForm({
       requestId={requestId}
       currentUserEmail={currentUserEmail}
       onRequestersStatusChange={onRequestersStatusChange}
+      onHeadEndorsementsStatusChange={onHeadEndorsementsStatusChange}
       // No footerRight - submission handled by SubmitBar at bottom
     />
   );

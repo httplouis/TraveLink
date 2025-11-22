@@ -54,9 +54,12 @@ export default function SearchableSelect({
   const filteredOptions = React.useMemo(() => {
     const needle = q.trim().toLowerCase();
     if (!needle) return options;
-    return options.filter((option) =>
-      option.label.toLowerCase().includes(needle)
-    );
+    return options.filter((option) => {
+      const labelMatch = option.label.toLowerCase().includes(needle);
+      // Also search by code if available (for departments)
+      const codeMatch = (option as any).code?.toLowerCase().includes(needle);
+      return labelMatch || codeMatch;
+    });
   }, [q, options]);
 
   function pick(idx: number) {

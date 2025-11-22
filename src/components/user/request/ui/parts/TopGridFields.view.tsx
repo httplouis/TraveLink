@@ -47,7 +47,7 @@ export default function TopGridFields({
     const reqs = Array.isArray(data?.requesters) ? data.requesters : [];
     console.log('[TopGridFields] 🔍 Requesters array memoized:', {
       count: reqs.length,
-      requesters: reqs.map(r => ({ id: r.id, name: r.name }))
+      requesters: reqs.map((r: any) => ({ id: r.id, name: r.name }))
     });
     return reqs;
   }, [data?.requesters]);
@@ -77,29 +77,27 @@ export default function TopGridFields({
       );
       
       if (uniqueDepartments.length > 0) {
-        // Combine departments: "HRD and WCDEO" for 2, "HRD, WCDEO, and CCMS" for 3+
-        let combinedDepartment = "";
+        // If there's only ONE unique department, auto-fill it
+        // If there are MULTIPLE departments, DON'T auto-fill - let the head endorsement system handle it
+        // The head endorsement system will send invitations to each department's head separately
         if (uniqueDepartments.length === 1) {
-          combinedDepartment = uniqueDepartments[0];
-        } else if (uniqueDepartments.length === 2) {
-          combinedDepartment = `${uniqueDepartments[0]} and ${uniqueDepartments[1]}`;
+          const singleDepartment = uniqueDepartments[0];
+          const currentDept = data?.department || "";
+          if (!currentDept || currentDept !== singleDepartment) {
+            console.log('[TopGridFields] 🔄 Auto-filling department from requesters (single department):', {
+              department: singleDepartment,
+              currentDepartment: currentDept
+            });
+            // Update department separately to trigger onDepartmentChange callback
+            onDepartmentChange(singleDepartment);
+          }
         } else {
-          // For 3+ departments: "HRD, WCDEO, and CCMS"
-          const lastDept = uniqueDepartments[uniqueDepartments.length - 1];
-          const otherDepts = uniqueDepartments.slice(0, -1);
-          combinedDepartment = `${otherDepts.join(", ")}, and ${lastDept}`;
-        }
-        
-        // Only auto-fill if department field is empty or doesn't match the combined value
-        const currentDept = data?.department || "";
-        if (!currentDept || currentDept !== combinedDepartment) {
-          console.log('[TopGridFields] 🔄 Auto-filling department from requesters:', {
+          // Multiple departments - don't auto-fill combined string
+          // The head endorsement system will handle multi-department scenarios
+          console.log('[TopGridFields] ⏭️ Multiple departments detected, skipping auto-fill (head endorsement system will handle):', {
             uniqueDepartments,
-            combinedDepartment,
-            currentDepartment: currentDept
+            note: 'Head endorsement invitations will be sent to each department\'s head separately'
           });
-          // Update department separately to trigger onDepartmentChange callback
-          onDepartmentChange(combinedDepartment);
         }
       }
     }
