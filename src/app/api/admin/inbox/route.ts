@@ -23,14 +23,16 @@ export async function GET() {
       }
     );
 
-    const supabase = await createSupabaseServerClient(true); // Use service role for auth checks
-    
-    // Get authenticated user to check admin status and get profile ID for filtering
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    // First authenticate with user session (anon key + cookies)
+    const authSupabase = await createSupabaseServerClient(false);
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser();
     if (authError || !user) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
+    // Then use service role for database operations
+    const supabase = await createSupabaseServerClient(true);
+    
     // Get user profile to check admin status and get profile ID
     const { data: profile } = await supabase
       .from("users")

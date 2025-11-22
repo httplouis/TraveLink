@@ -143,6 +143,9 @@ export default function RequestDetailsPage({ requestId }: RequestDetailsPageProp
           return [];
         })(),
         
+        // Head endorsement invitations (for multi-department requests)
+        head_endorsements: data.head_endorsements || [],
+        
         // Build signature stages with real data
         signatures: [
           {
