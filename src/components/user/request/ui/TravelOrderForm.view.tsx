@@ -198,7 +198,9 @@ export default function TravelOrderFormView({
       // EXCLUDE main requester's department if they're a head
       // Also exclude if the first requester (main requester) is a head and this is their department
       const firstRequester = resolvedRequesters[0];
-      const firstRequesterIsHead = firstRequester?.user_id && currentUserInfo?.id && firstRequester.user_id === currentUserInfo.id && currentUserInfo.is_head;
+      // Check by user_id OR by email (more robust)
+      const firstRequesterIsHead = (firstRequester?.user_id && currentUserInfo?.id && firstRequester.user_id === currentUserInfo.id && currentUserInfo.is_head) ||
+        (firstRequester?.email && currentUserInfo?.email && firstRequester.email.toLowerCase() === currentUserInfo.email.toLowerCase() && currentUserInfo.is_head);
       const firstRequesterDeptId = firstRequester?.department_id;
       
       const departmentsNeedingEndorsement = Array.from(uniqueDepartments.values()).filter(dept => {
@@ -211,6 +213,24 @@ export default function TravelOrderFormView({
         // Also exclude if first requester is the current user (head) and this is their department
         if (firstRequesterIsHead && firstRequesterDeptId && dept.department_id === firstRequesterDeptId) {
           console.log(`[TravelOrderFormView] ⏭️ Excluding first requester's department (head is requester): ${dept.department_name} (dept_id: ${dept.department_id})`);
+          return false;
+        }
+        
+        // Also check if ANY requester in this department is the current user (head)
+        // This handles cases where the current user is not the first requester
+        const requesterInThisDept = resolvedRequesters.find(req => {
+          const reqDeptId = req.department_id;
+          const matchesDept = reqDeptId && reqDeptId === dept.department_id;
+          if (!matchesDept) return false;
+          
+          // Check if this requester is the current user (by user_id or email)
+          const isCurrentUser = (req.user_id && currentUserInfo?.id && req.user_id === currentUserInfo.id) ||
+            (req.email && currentUserInfo?.email && req.email.toLowerCase() === currentUserInfo.email.toLowerCase());
+          return isCurrentUser && currentUserInfo?.is_head;
+        });
+        
+        if (requesterInThisDept) {
+          console.log(`[TravelOrderFormView] ⏭️ Excluding department ${dept.department_name} - current user (head) is a requester in this department`);
           return false;
         }
         

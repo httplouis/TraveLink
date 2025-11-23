@@ -239,21 +239,35 @@ export default function RequestCardEnhanced({
               ? parseFloat(displayBudget) 
               : (displayBudget || 0);
             
-            // Only show budget if it's a valid number greater than 0
-            if (!budgetValue || budgetValue <= 0 || isNaN(budgetValue)) {
-              return null;
-            }
-            
+            // Show budget section regardless, but with different content based on value
             return (
-              <div className="flex items-start gap-3 p-3 bg-green-50 rounded-lg border border-green-100 md:col-span-2">
-                <Banknote className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
+              <div className={`flex items-start gap-3 p-3 rounded-lg border md:col-span-2 ${
+                budgetValue && budgetValue > 0 && !isNaN(budgetValue)
+                  ? 'bg-green-50 border-green-100'
+                  : 'bg-gray-50 border-gray-200'
+              }`}>
+                <Banknote className={`h-5 w-5 flex-shrink-0 mt-0.5 ${
+                  budgetValue && budgetValue > 0 && !isNaN(budgetValue)
+                    ? 'text-green-600'
+                    : 'text-gray-400'
+                }`} />
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-medium text-green-700 uppercase tracking-wide mb-1">
-                    Total Budget
+                  <div className={`text-xs font-medium uppercase tracking-wide mb-1 ${
+                    budgetValue && budgetValue > 0 && !isNaN(budgetValue)
+                      ? 'text-green-700'
+                      : 'text-gray-600'
+                  }`}>
+                    {budgetValue && budgetValue > 0 && !isNaN(budgetValue) ? 'Total Budget' : 'Budget'}
                   </div>
-                  <div className="text-lg font-bold text-gray-900">
-                    {formatCurrency(budgetValue)}
-                  </div>
+                  {budgetValue && budgetValue > 0 && !isNaN(budgetValue) ? (
+                    <div className="text-lg font-bold text-gray-900">
+                      {formatCurrency(budgetValue)}
+                    </div>
+                  ) : (
+                    <div className="text-sm font-medium text-gray-500 italic">
+                      No budget proposal
+                    </div>
+                  )}
                 </div>
               </div>
             );

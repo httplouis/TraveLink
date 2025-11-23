@@ -116,7 +116,14 @@ function RequestWizardContent() {
   const showSchoolService = data.vehicleMode === "institutional";
   
   // Check if current user is head requester
-  const isHeadRequester = requestingPersonIsHead === true || currentUser?.role === "head";
+  // CRITICAL: If current user is a head AND they are the requesting person, they are a head requester
+  const currentUserIsHead = currentUser?.role === "head" || (currentUser as any)?.is_head === true;
+  const requestingPersonMatchesCurrentUser = currentUser?.name && 
+    data.travelOrder?.requestingPerson && 
+    currentUser.name.toLowerCase().trim() === data.travelOrder.requestingPerson.toLowerCase().trim();
+  const isHeadRequester = (currentUserIsHead && requestingPersonMatchesCurrentUser) || 
+    requestingPersonIsHead === true || 
+    (currentUserIsHead && !data.travelOrder?.requestingPerson); // If head and no requesting person set yet
   
   // Auto-detect requester role from current user
   const autoDetectedRole: "faculty" | "head" | null = React.useMemo(() => {
@@ -559,6 +566,8 @@ function RequestWizardContent() {
             isHead: (actualCurrentUser as any).isHead,
             finalIsHead: isHead
           });
+          // CRITICAL: Set requestingPersonIsHead to true if current user is a head
+          // This ensures isHeadRequester is calculated correctly
           setRequestingPersonIsHead(isHead);
           setIsRepresentativeSubmission(false); // Not representative if it's the current user
           
@@ -1536,7 +1545,7 @@ function RequestWizardContent() {
               onChangeCosts={onChangeCosts}
               errors={errors}
               vehicleMode={data.vehicleMode}
-              isHeadRequester={currentUser?.role === "head"}
+              isHeadRequester={isHeadRequester}
               isRepresentativeSubmission={isRepresentativeSubmission}
               requestingPersonHeadName={requestingPersonHeadInfo?.name}
               currentUserName={currentUser?.name}

@@ -559,12 +559,22 @@ export async function GET(
               declined_at: inv.declined_at,
               declined_reason: inv.declined_reason,
               endorsement_date: inv.endorsement_date,
-              signature: inv.signature,
+              signature: inv.signature, // Include signature field
               comments: inv.comments,
               invited_at: inv.invited_at,
               created_at: inv.created_at,
               updated_at: inv.updated_at,
             };
+            
+            // Debug logging for signature
+            console.log(`[GET /api/requests/${requestId}] Endorsement ${inv.id}:`, {
+              head_name: inv.head_name,
+              head_email: inv.head_email,
+              status: inv.status,
+              has_signature: !!inv.signature,
+              signature_length: inv.signature ? inv.signature.length : 0,
+              signature_preview: inv.signature ? inv.signature.substring(0, 50) + "..." : "NULL",
+            });
             
             // Fetch head user details if head_user_id exists
             if (inv.head_user_id) {
