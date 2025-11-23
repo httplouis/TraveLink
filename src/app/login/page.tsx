@@ -166,8 +166,10 @@ function LoginPageContent() {
       setFailedAttempts(0);
       setShowForgotPassword(false);
 
-      // Redirect to the appropriate portal
-      router.push(data.redirectPath || "/user");
+      // CRITICAL: Use window.location.href instead of router.push() to ensure
+      // cookies are properly set and sent with subsequent requests
+      // router.push() is client-side navigation and might not wait for cookies
+      window.location.href = data.redirectPath || "/user";
     } catch (error: any) {
       setErr(error.message || 'Login failed. Please check your credentials.');
       setEmailLoading(false);

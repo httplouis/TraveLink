@@ -13,9 +13,15 @@ export async function GET(request: Request) {
   try {
     // Log incoming request headers for debugging
     const cookieHeader = request.headers.get('cookie');
+    const cookieStore = await import('next/headers').then(m => m.cookies());
+    const allCookies = cookieStore.getAll();
+    
     console.log('[GET /api/profile] 📥 Request received:', {
       hasCookieHeader: !!cookieHeader,
       cookieCount: cookieHeader ? cookieHeader.split(';').length : 0,
+      cookieStoreCount: allCookies.length,
+      cookieNames: allCookies.map(c => c.name).join(', '),
+      hasSupabaseCookies: allCookies.some(c => c.name.includes('supabase') || c.name.includes('sb-')),
       userAgent: request.headers.get('user-agent')?.substring(0, 50),
       origin: request.headers.get('origin'),
       referer: request.headers.get('referer')?.substring(0, 50)

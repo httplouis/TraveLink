@@ -65,6 +65,14 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('[/api/auth/login] User signed in:', data.user.id, data.user.email);
+    
+    // CRITICAL: Verify session was created and cookies are set
+    const { data: { session: verifySession }, error: sessionVerifyError } = await supabase.auth.getSession();
+    if (sessionVerifyError || !verifySession) {
+      console.error('[/api/auth/login] ❌ Session verification failed after sign in!', sessionVerifyError);
+      return NextResponse.json({ error: "Session creation failed" }, { status: 500 });
+    }
+    console.log('[/api/auth/login] ✅ Session verified, cookies should be set');
 
     // Get user profile using service role to bypass RLS
     const supabaseAdmin = await createSupabaseServerClient(true);
@@ -184,19 +192,30 @@ export async function POST(request: NextRequest) {
     }
 
     // Create response with JSON body
+    // IMPORTANT: In Next.js 15, cookies set via cookieStore.set() are automatically
+    // included in the response, but we need to ensure the response is created AFTER
+    // all cookie operations are complete
     const response = NextResponse.json({ 
       success: true, 
       redirectPath,
       user: data.user
     });
     
-    // Ensure cookies are included in the response
-    // Supabase SSR should have already set cookies via cookieStore, but we verify
-    console.log('[/api/auth/login] ✅ Login successful, cookies should be set');
-    console.log('[/api/auth/login] Response headers:', {
-      hasSetCookie: response.headers.get('set-cookie') ? 'yes' : 'no',
-      cookieCount: response.headers.get('set-cookie')?.split(',').length || 0
+    // Log cookie information for debugging
+    const allCookies = cookieStore.getAll();
+    console.log('[/api/auth/login] ✅ Login successful');
+    console.log('[/api/auth/login] Cookies in store:', {
+      count: allCookies.length,
+      names: allCookies.map(c => c.name).join(', ')
     });
+    
+    // Verify session one more time to ensure it's accessible
+    const { data: { session: finalSession } } = await supabase.auth.getSession();
+    if (!finalSession) {
+      console.error('[/api/auth/login] ❌ WARNING: Session not found in final check!');
+    } else {
+      console.log('[/api/auth/login] ✅ Final session check passed');
+    }
     
     return response;
 
