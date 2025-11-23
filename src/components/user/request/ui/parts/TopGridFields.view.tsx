@@ -25,6 +25,7 @@ type Props = {
   requestId?: string; // Request ID for sending invitations (after saving)
   currentUserEmail?: string; // Current logged-in user's email (for auto-confirm)
   onRequestersStatusChange?: (allConfirmed: boolean) => void; // Callback when all requesters are confirmed
+  onAutoSaveRequest?: () => Promise<string | null>; // Callback to auto-save draft and return requestId
 };
 
 export default function TopGridFields({
@@ -38,6 +39,7 @@ export default function TopGridFields({
   requestId,
   currentUserEmail,
   onRequestersStatusChange,
+  onAutoSaveRequest,
 }: Props) {
   // Calculate if signature pad should be shown
   const shouldShowSignaturePad = !isHeadRequester && !isRepresentativeSubmission;
@@ -151,6 +153,7 @@ export default function TopGridFields({
               requesterRole={requesterRole}
               currentUserEmail={currentUserEmail}
               onStatusChange={onRequestersStatusChange}
+              onAutoSaveRequest={onAutoSaveRequest}
             />
           ) : (
             <>

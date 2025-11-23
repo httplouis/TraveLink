@@ -1042,16 +1042,20 @@ function RequestWizardContent() {
         returnDate: "",
         purposeOfTravel: "",
         costs: {},
-        // keep both signatures in shape when resetting
+        // Clear all signatures when resetting
         requesterSignature: "",
         endorsedByHeadName: "",
         endorsedByHeadDate: "",
         endorsedByHeadSignature: "",
         // Clear requesters array when resetting
         requesters: undefined,
+        // Clear all other fields
+        title: "",
+        attachments: [],
       },
       schoolService: undefined,
       seminar: undefined,
+      transportation: undefined,
     });
     setErrors({});
     clearIds();
@@ -1387,37 +1391,30 @@ function RequestWizardContent() {
       
       // Store request ID for participant invitations (if seminar)
       // This allows sending invitations even after submission
+      // Always reset form after successful submission (data is persisted in database)
       if (data.reason === "seminar" && result.data?.id) {
         // Update seminar data with request ID so invitations can be sent
         patchSeminar({ requestId: result.data.id, isSubmitted: true } as any);
-        // Don't reset immediately if there are pending invitations
-        const hasPendingInvitations = Array.isArray((data.seminar as any)?.participantInvitations) && 
-          (data.seminar as any).participantInvitations.some((inv: any) => !inv.invitationId);
-        
-        if (!hasPendingInvitations) {
-          afterSuccessfulSubmitReset();
-        } else {
-          // Keep form open so they can send invitations
-          toast({ kind: "info", title: "Request submitted", message: "You can now send participant invitations. The form will remain open for you to send invitations." });
-        }
-      } else {
-        // For travel orders: Check if multiple departments (head endorsements will be sent)
-        const requesters = Array.isArray(data.travelOrder?.requesters) ? data.travelOrder.requesters : [];
-        const departments = requesters
-          .map((req: any) => req.department)
-          .filter((dept: any): dept is string => !!dept && dept.trim() !== "");
-        const uniqueDepartments = Array.from(new Set(departments.map((dept: string) => dept.trim())));
-        const hasMultipleDepts = uniqueDepartments.length > 1;
-        
-        if (hasMultipleDepts) {
-          toast({ 
-            kind: "success", 
-            title: "Request submitted successfully", 
-            message: `Head endorsement emails are being sent automatically to ${uniqueDepartments.length} department head(s). Check the "Head Endorsements" section below to track their status.` 
-          });
-        }
-        afterSuccessfulSubmitReset();
       }
+      
+      // For travel orders: Check if multiple departments (head endorsements will be sent)
+      const requesters = Array.isArray(data.travelOrder?.requesters) ? data.travelOrder.requesters : [];
+      const departments = requesters
+        .map((req: any) => req.department)
+        .filter((dept: any): dept is string => !!dept && dept.trim() !== "");
+      const uniqueDepartments = Array.from(new Set(departments.map((dept: string) => dept.trim())));
+      const hasMultipleDepts = uniqueDepartments.length > 1;
+      
+      if (hasMultipleDepts) {
+        toast({ 
+          kind: "success", 
+          title: "Request submitted successfully", 
+          message: `Head endorsement emails are being sent automatically to ${uniqueDepartments.length} department head(s). Check the "Head Endorsements" section below to track their status.` 
+        });
+      }
+      
+      // Always reset form after successful submission
+      afterSuccessfulSubmitReset();
     } catch (err: any) {
       toast({ kind: "error", title: "Submit failed", message: err.message || "Please try again." });
     } finally {
@@ -1540,6 +1537,7 @@ function RequestWizardContent() {
           {/* Show Travel Order form only if NOT seminar */}
           {!showSeminar && (
             <TravelOrderForm
+              onAutoSaveRequest={handleAutoSaveRequest}
               data={data.travelOrder}
               onChange={onChangeTravelOrder}
               onChangeCosts={onChangeCosts}

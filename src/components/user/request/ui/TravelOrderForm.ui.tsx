@@ -20,6 +20,7 @@ type Props = {
   currentUserEmail?: string; // Current logged-in user's email (for auto-confirm)
   onRequestersStatusChange?: (allConfirmed: boolean) => void; // Callback when all requesters are confirmed
   onHeadEndorsementsStatusChange?: (allConfirmed: boolean) => void; // Callback when all head endorsements are confirmed
+  onAutoSaveRequest?: () => Promise<string | null>; // Callback to auto-save draft and return requestId
 };
 
 export default function TravelOrderForm({
@@ -37,6 +38,7 @@ export default function TravelOrderForm({
   currentUserEmail,
   onRequestersStatusChange,
   onHeadEndorsementsStatusChange,
+  onAutoSaveRequest,
 }: Props) {
   // Always show justification field (but it's optional)
   const needsJustif = true;
@@ -146,6 +148,7 @@ export default function TravelOrderForm({
       currentUserEmail={currentUserEmail}
       onRequestersStatusChange={onRequestersStatusChange}
       onHeadEndorsementsStatusChange={onHeadEndorsementsStatusChange}
+      onAutoSaveRequest={onAutoSaveRequest}
       // No footerRight - submission handled by SubmitBar at bottom
     />
   );
