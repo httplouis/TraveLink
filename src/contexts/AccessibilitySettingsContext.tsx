@@ -41,7 +41,7 @@ export function AccessibilitySettingsProvider({ children }: { children: ReactNod
     
     const loadSettings = async () => {
       try {
-        // First, try to load from backend
+        // First, try to load from backend (only if user is authenticated)
         const response = await fetch("/api/profile");
         if (response.ok) {
           const data = await response.json();
@@ -51,9 +51,14 @@ export function AccessibilitySettingsProvider({ children }: { children: ReactNod
             setMounted(true);
             return;
           }
+        } else if (response.status === 401) {
+          // User is not authenticated - this is expected on login page, silently fall through to localStorage
         }
       } catch (error) {
-        console.warn("[AccessibilitySettings] Failed to load from backend:", error);
+        // Only log non-401 errors
+        if (error instanceof TypeError && !error.message.includes('401')) {
+          console.warn("[AccessibilitySettings] Failed to load from backend:", error);
+        }
       }
       
       // Fallback to localStorage
@@ -182,16 +187,28 @@ async function syncToBackend(settings: AccessibilitySettings) {
   try {
     // Get current profile to merge preferences
     let currentPrefs = {};
+    let isAuthenticated = false;
+    
     try {
       const getResponse = await fetch("/api/profile");
       if (getResponse.ok) {
         const data = await getResponse.json();
         if (data.ok && data.data?.preferences) {
           currentPrefs = data.data.preferences;
+          isAuthenticated = true;
         }
+      } else if (getResponse.status === 401) {
+        // User is not authenticated - skip backend sync silently
+        return;
       }
     } catch (e) {
-      // Ignore - will just use empty prefs
+      // Network error - skip backend sync
+      return;
+    }
+    
+    // Only sync if user is authenticated
+    if (!isAuthenticated) {
+      return;
     }
     
     const response = await fetch("/api/profile", {
@@ -206,10 +223,18 @@ async function syncToBackend(settings: AccessibilitySettings) {
     });
     
     if (!response.ok) {
-      console.warn("[AccessibilitySettings] Failed to sync to backend");
+      // Only log if it's not a 401 (unauthorized) error
+      if (response.status !== 401) {
+        console.warn("[AccessibilitySettings] Failed to sync to backend");
+      }
     }
   } catch (error) {
     // Silently fail - localStorage is the source of truth
+    // Only log network errors (not 401 auth errors)
+    if (error instanceof TypeError) {
+      // Network error - silently ignore
+      return;
+    }
     console.warn("[AccessibilitySettings] Backend sync failed:", error);
   }
 }
