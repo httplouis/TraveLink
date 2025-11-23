@@ -10,7 +10,7 @@
 import React from "react";
 import { motion } from "framer-motion";
 import { 
-  User, MapPin, Calendar, DollarSign, Users, Car, FileText, 
+  User, MapPin, Calendar, Users, Car, FileText, 
   Building2, Plus, X, Check, AlertCircle 
 } from "lucide-react";
 import { useToast } from "@/components/common/ui/ToastProvider.ui";
@@ -31,6 +31,17 @@ type Expense = {
 };
 
 export default function OrgRequestPage() {
+  // Prevent SSR to avoid build errors
+  const [mounted, setMounted] = React.useState(false);
+  
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+  
+  if (!mounted) {
+    return null; // Return nothing during SSR
+  }
+  
   const toast = useToast();
   
   // Form state
@@ -407,7 +418,7 @@ export default function OrgRequestPage() {
           {/* Budget */}
           <div>
             <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <DollarSign className="h-5 w-5 text-[#7A0010]" />
+              <span className="text-lg font-bold text-[#7A0010]">₱</span>
               Budget
             </h2>
             <div className="space-y-4">
