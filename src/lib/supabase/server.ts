@@ -45,6 +45,8 @@ export async function createSupabaseServerClient(useServiceRole = false) {
 
   // For authenticated requests, use createServerClient with cookies
   const cookieStore = await cookies();
+  const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
+  
   return createServerClient(finalUrl, finalKey, {
     cookies: {
       get(name: string) {
@@ -52,7 +54,16 @@ export async function createSupabaseServerClient(useServiceRole = false) {
       },
       set(name: string, value: string, options: any) {
         try {
-          cookieStore.set({ name, value, ...options });
+          cookieStore.set({ 
+            name, 
+            value, 
+            ...options,
+            // Ensure cookies work in production (Vercel)
+            httpOnly: options.httpOnly ?? true,
+            secure: isProduction, // Secure cookies in production (HTTPS only)
+            sameSite: 'lax' as const, // Allow cookies to be sent on top-level navigations
+            path: options.path || '/',
+          });
         } catch (error) {
           // Cookie setting might fail in middleware/server components
           // This is expected in some contexts
@@ -60,7 +71,16 @@ export async function createSupabaseServerClient(useServiceRole = false) {
       },
       remove(name: string, options: any) {
         try {
-          cookieStore.set({ name, value: "", ...options });
+          cookieStore.set({ 
+            name, 
+            value: "", 
+            ...options,
+            httpOnly: options.httpOnly ?? true,
+            secure: isProduction,
+            sameSite: 'lax' as const,
+            path: options.path || '/',
+            maxAge: 0,
+          });
         } catch (error) {
           // Cookie removal might fail in middleware/server components
         }
