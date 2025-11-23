@@ -1,0 +1,6 @@
+tree 5a16fee55d73a3ff58690c5b490cf381406f9edd
+parent ff27ef5c54175d785a8b489bb76592a9d162efe7
+author Jolo Rosales <joselouis.rosales.cdscdb@gmail.com> 1762291506 +0800
+committer Jolo Rosales <joselouis.rosales.cdscdb@gmail.com> 1762291506 +0800
+
+Fix: wrap useSearchParams in Suspense boundary for Next.js 15
