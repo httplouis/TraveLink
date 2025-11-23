@@ -21,14 +21,15 @@ export async function POST(request: NextRequest) {
             return cookieStore.get(name)?.value;
           },
           set(name: string, value: string, options: any) {
+            // Don't override httpOnly - let Supabase handle it
+            // Supabase needs some cookies to be httpOnly and some to be accessible
             cookieStore.set({ 
               name, 
               value, 
               ...options,
-              // Ensure cookies work in production (Vercel)
-              httpOnly: options.httpOnly ?? true,
-              secure: isProduction, // Secure cookies in production (HTTPS only)
-              sameSite: 'lax' as const, // Allow cookies to be sent on top-level navigations
+              // Only override secure and sameSite for production
+              secure: isProduction ? (options.secure !== false) : (options.secure ?? false),
+              sameSite: (options.sameSite as 'lax' | 'strict' | 'none') || 'lax',
               path: options.path || '/',
             });
           },
@@ -37,9 +38,8 @@ export async function POST(request: NextRequest) {
               name, 
               value: "", 
               ...options,
-              httpOnly: options.httpOnly ?? true,
-              secure: isProduction,
-              sameSite: 'lax' as const,
+              secure: isProduction ? (options.secure !== false) : (options.secure ?? false),
+              sameSite: (options.sameSite as 'lax' | 'strict' | 'none') || 'lax',
               path: options.path || '/',
               maxAge: 0,
             });
@@ -183,11 +183,22 @@ export async function POST(request: NextRequest) {
       redirectPath = "/driver";
     }
 
-    return NextResponse.json({ 
+    // Create response with JSON body
+    const response = NextResponse.json({ 
       success: true, 
       redirectPath,
       user: data.user
     });
+    
+    // Ensure cookies are included in the response
+    // Supabase SSR should have already set cookies via cookieStore, but we verify
+    console.log('[/api/auth/login] ✅ Login successful, cookies should be set');
+    console.log('[/api/auth/login] Response headers:', {
+      hasSetCookie: response.headers.get('set-cookie') ? 'yes' : 'no',
+      cookieCount: response.headers.get('set-cookie')?.split(',').length || 0
+    });
+    
+    return response;
 
   } catch (error: any) {
     console.error('[/api/auth/login] Error:', error);

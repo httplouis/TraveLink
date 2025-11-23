@@ -43,15 +43,14 @@ export async function GET(request: NextRequest) {
             return cookieStore.get(name)?.value;
           },
           set(name: string, value: string, options: any) {
+            // Don't override httpOnly - let Supabase handle it
             cookieStore.set({ 
               name, 
               value, 
               ...options,
-              // Ensure cookies work in production
-              httpOnly: options.httpOnly ?? true,
-              secure: isProduction, // Secure cookies in production (HTTPS only)
-              sameSite: 'lax' as const, // Allow cookies to be sent on top-level navigations
-              path: '/',
+              secure: isProduction ? (options.secure !== false) : (options.secure ?? false),
+              sameSite: (options.sameSite as 'lax' | 'strict' | 'none') || 'lax',
+              path: options.path || '/',
             });
           },
           remove(name: string, options: any) {
@@ -59,10 +58,9 @@ export async function GET(request: NextRequest) {
               name, 
               value: "", 
               ...options,
-              httpOnly: options.httpOnly ?? true,
-              secure: isProduction,
-              sameSite: 'lax' as const,
-              path: '/',
+              secure: isProduction ? (options.secure !== false) : (options.secure ?? false),
+              sameSite: (options.sameSite as 'lax' | 'strict' | 'none') || 'lax',
+              path: options.path || '/',
             });
           },
         },

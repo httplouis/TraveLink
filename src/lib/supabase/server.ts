@@ -54,14 +54,15 @@ export async function createSupabaseServerClient(useServiceRole = false) {
       },
       set(name: string, value: string, options: any) {
         try {
+          // Don't override httpOnly - let Supabase handle it
+          // Supabase needs some cookies to be httpOnly and some to be accessible
           cookieStore.set({ 
             name, 
             value, 
             ...options,
-            // Ensure cookies work in production (Vercel)
-            httpOnly: options.httpOnly ?? true,
-            secure: isProduction, // Secure cookies in production (HTTPS only)
-            sameSite: 'lax' as const, // Allow cookies to be sent on top-level navigations
+            // Only override secure and sameSite for production
+            secure: isProduction ? (options.secure !== false) : (options.secure ?? false),
+            sameSite: (options.sameSite as 'lax' | 'strict' | 'none') || 'lax',
             path: options.path || '/',
           });
         } catch (error) {
@@ -75,9 +76,8 @@ export async function createSupabaseServerClient(useServiceRole = false) {
             name, 
             value: "", 
             ...options,
-            httpOnly: options.httpOnly ?? true,
-            secure: isProduction,
-            sameSite: 'lax' as const,
+            secure: isProduction ? (options.secure !== false) : (options.secure ?? false),
+            sameSite: (options.sameSite as 'lax' | 'strict' | 'none') || 'lax',
             path: options.path || '/',
             maxAge: 0,
           });

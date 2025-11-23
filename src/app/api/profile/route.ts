@@ -11,6 +11,16 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
  */
 export async function GET(request: Request) {
   try {
+    // Log incoming request headers for debugging
+    const cookieHeader = request.headers.get('cookie');
+    console.log('[GET /api/profile] 📥 Request received:', {
+      hasCookieHeader: !!cookieHeader,
+      cookieCount: cookieHeader ? cookieHeader.split(';').length : 0,
+      userAgent: request.headers.get('user-agent')?.substring(0, 50),
+      origin: request.headers.get('origin'),
+      referer: request.headers.get('referer')?.substring(0, 50)
+    });
+    
     const supabase = await createSupabaseServerClient(false); // Use user auth
     
     // Get current authenticated user
