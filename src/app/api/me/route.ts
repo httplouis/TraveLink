@@ -6,8 +6,9 @@ import { cookies } from "next/headers";
 export async function GET(request: NextRequest) {
   try {
     const cookieStore = await cookies();
+    const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
     
-    // Create Supabase client with proper cookie handling
+    // Create Supabase client with proper cookie handling for production
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -18,14 +19,32 @@ export async function GET(request: NextRequest) {
           },
           set(name: string, value: string, options: any) {
             try {
-              cookieStore.set({ name, value, ...options });
+              cookieStore.set({ 
+                name, 
+                value, 
+                ...options,
+                // Ensure cookies work in production (Vercel)
+                httpOnly: options.httpOnly ?? true,
+                secure: isProduction, // Secure cookies in production (HTTPS only)
+                sameSite: 'lax' as const, // Allow cookies to be sent on top-level navigations
+                path: options.path || '/',
+              });
             } catch (error) {
               // Handle cookie setting errors silently
             }
           },
           remove(name: string, options: any) {
             try {
-              cookieStore.set({ name, value: '', ...options });
+              cookieStore.set({ 
+                name, 
+                value: '', 
+                ...options,
+                httpOnly: options.httpOnly ?? true,
+                secure: isProduction,
+                sameSite: 'lax' as const,
+                path: options.path || '/',
+                maxAge: 0,
+              });
             } catch (error) {
               // Handle cookie removal errors silently
             }
