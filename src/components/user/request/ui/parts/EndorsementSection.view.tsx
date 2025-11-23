@@ -131,14 +131,15 @@ export default function EndorsementSection({
         </div>
       )}
 
-      {/* Head e-signature – show only when head is requester OR signature exists */}
+      {/* Head e-signature – show ALWAYS when head is requester, OR when signature exists */}
+      {/* CRITICAL: If isHeadRequester is true, ALWAYS show signature pad (even if no signature yet) */}
       {(isHeadRequester || signature) && (
         <div className="space-y-3 rounded-lg border border-blue-200 bg-blue-50/30 p-4">
           <div className="flex items-center gap-2">
             <Info className="h-4 w-4 text-blue-600" />
             <p className="text-xs font-medium text-blue-900">
               {isHeadRequester
-                ? "Department Head E-Signature (auto-applied when head submits their own request)"
+                ? "Your E-Signature (as Department Head)"
                 : "Department Head E-Signature"}
             </p>
           </div>
@@ -165,11 +166,18 @@ export default function EndorsementSection({
             </div>
           ) : (
             onSignatureChange && (
-              <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-white px-4 py-2.5 text-xs font-medium text-neutral-700 shadow-sm ring-1 ring-neutral-200 transition-all hover:bg-neutral-50 hover:shadow">
-                <Upload className="h-4 w-4" />
-                <span>Upload signature image</span>
-                <input type="file" accept="image/*" className="hidden" onChange={handleUpload} />
-              </label>
+              <div className="space-y-2">
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-white px-4 py-2.5 text-xs font-medium text-neutral-700 shadow-sm ring-1 ring-neutral-200 transition-all hover:bg-neutral-50 hover:shadow">
+                  <Upload className="h-4 w-4" />
+                  <span>Upload signature image</span>
+                  <input type="file" accept="image/*" className="hidden" onChange={handleUpload} />
+                </label>
+                {isHeadRequester && (
+                  <p className="text-xs text-blue-700">
+                    ℹ️ As the department head, please provide your signature to endorse this request.
+                  </p>
+                )}
+              </div>
             )
           )}
         </div>
