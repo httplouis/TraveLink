@@ -24,6 +24,8 @@ const FIELD_LABELS: Record<string, string> = {
   "travelOrder.returnDate": "Return Date",
   "travelOrder.purposeOfTravel": "Purpose of Travel",
   "travelOrder.requesterSignature": "Requesting Person's Signature",
+  "travelOrder.endorsedByHeadSignature": "Department Head Signature",
+  "travelOrder.requesters": "Additional Requesters",
   "travelOrder.costs.justification": "Justification for Renting/Hiring",
   "travelOrder.headEndorsements": "Head Endorsements",
   

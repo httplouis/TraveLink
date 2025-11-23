@@ -14,7 +14,8 @@ import AnalyticsChart from "@/components/user/dashboard/AnalyticsChart.ui";
 import AIInsights from "@/components/user/dashboard/AIInsights.ui";
 import DashboardSkeleton from "@/components/common/skeletons/DashboardSkeleton";
 import type { Trip } from "@/lib/user/schedule/types";
-import { ClipboardList, BusFront, Activity } from "lucide-react";
+import { ClipboardList, BusFront, Activity, Clock } from "lucide-react";
+import { motion } from "framer-motion";
 
 type KPI = { label: string; value: number | string; sub?: string };
 
@@ -52,12 +53,14 @@ export default function DashboardView({
   loading = false,
 }: Props) {
   const now = new Date();
-  const upcoming = Array.isArray(trips)
-    ? [...trips]
-        .filter((t) => new Date(t.start) >= now)
-        .sort((a, b) => +new Date(a.start) - +new Date(b.start))
-        .slice(0, 6)
-    : [];
+  
+  // Ensure trips is always an array
+  const safeTrips = Array.isArray(trips) ? trips : [];
+  
+  const upcoming = safeTrips
+    .filter((t) => new Date(t.start) >= now)
+    .sort((a, b) => +new Date(a.start) - +new Date(b.start))
+    .slice(0, 6);
 
   // Generate trend data for KPIs from analytics
   const getTrendData = (index: number) => {
@@ -77,64 +80,156 @@ export default function DashboardView({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="w-full space-y-6 pb-8">
+      {/* Hero Section */}
       <DashboardHero userName={userName} onOpenSchedule={onOpenSchedule} onNewRequest={onNewRequest} />
 
-      {/* KPI row with stagger */}
-      <StaggerIn className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <KpiCard 
-          icon={<ClipboardList className="h-5 w-5" />} 
-          label={kpis[0]?.label ?? "Active Requests"} 
-          value={kpis[0]?.value ?? 0} 
-          trend={getTrendData(0)} 
-        />
-        <KpiCard 
-          icon={<BusFront className="h-5 w-5" />} 
-          label={kpis[1]?.label ?? "Vehicles Online"} 
-          value={kpis[1]?.value ?? 0} 
-          trend={[]} 
-        />
-        <KpiCard 
-          icon={<Activity className="h-5 w-5" />} 
-          label={kpis[2]?.label ?? "Pending Approvals"} 
-          value={kpis[2]?.value ?? 0} 
-          trend={getTrendData(2)} 
-        />
-      </StaggerIn>
+      {/* KPI Cards - Enhanced Design */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+        >
+          <KpiCard 
+            icon={<ClipboardList className="h-5 w-5" />} 
+            label={kpis[0]?.label ?? "Active Requests"} 
+            value={kpis[0]?.value ?? 0} 
+            trend={getTrendData(0)}
+            color="#7A0010"
+          />
+        </motion.div>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+        >
+          <KpiCard 
+            icon={<BusFront className="h-5 w-5" />} 
+            label={kpis[1]?.label ?? "Vehicles Online"} 
+            value={kpis[1]?.value ?? 0} 
+            trend={[]}
+            color="#10b981"
+          />
+        </motion.div>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+        >
+          <KpiCard 
+            icon={<Activity className="h-5 w-5" />} 
+            label={kpis[2]?.label ?? "Pending Approvals"} 
+            value={kpis[2]?.value ?? 0} 
+            trend={getTrendData(2)}
+            color="#f59e0b"
+          />
+        </motion.div>
+      </div>
 
       {/* AI Insights - Only show if AI is enabled */}
       {aiInsights && aiInsights.aiEnabled && (
-        <AIInsights insights={aiInsights} loading={loading} />
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+        >
+          <AIInsights insights={aiInsights} loading={loading} />
+        </motion.div>
       )}
 
-      {/* Analytics Chart */}
+      {/* Analytics Chart - Enhanced */}
       {analytics?.monthlyTrends && (
-        <AnalyticsChart monthlyTrends={analytics.monthlyTrends} />
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.5 }}
+        >
+          <AnalyticsChart monthlyTrends={analytics.monthlyTrends} />
+        </motion.div>
       )}
 
-      {/* Overview with stagger */}
-      <StaggerIn className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        {/* Left column */}
-        <div className="space-y-4 xl:col-span-1">
-          <QuickActions onNewRequest={onNewRequest} onOpenSchedule={onOpenSchedule} />
-          <AvailabilityHeatmap trips={trips} />
-          <MiniCalendarWidget trips={trips} onOpenSchedule={onOpenSchedule} title="Next requests" maxItems={6} />
-        </div>
-
-        {/* Right column */}
-        <div className="xl:col-span-2 space-y-4">
-          <VehicleShowcase vehicles={vehicles} />
+      {/* Main Content Grid - Optimized Layout (No Dead Space) */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        {/* Left Column - Quick Actions & Calendar (4 columns on lg, full width on smaller) */}
+        <div className="space-y-6 lg:col-span-4">
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.6 }}
+          >
+            <QuickActions onNewRequest={onNewRequest} onOpenSchedule={onOpenSchedule} />
+          </motion.div>
           
-          <div className="rounded-2xl bg-white p-4 pb-6 shadow-sm ring-1 ring-gray-100">
-            <div className="mb-2 text-sm font-medium text-gray-900">Upcoming (next 6)</div>
-            <UpcomingList trips={upcoming} />
-          </div>
-
-          <ActivityTimeline
-            items={recentActivity.length > 0 ? recentActivity : []}
-          />
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.7 }}
+          >
+            <AvailabilityHeatmap trips={safeTrips} />
+          </motion.div>
+          
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.8 }}
+          >
+            <MiniCalendarWidget trips={safeTrips} onOpenSchedule={onOpenSchedule} title="Next requests" maxItems={6} />
+          </motion.div>
         </div>
-      </StaggerIn>
+
+        {/* Right Column - Vehicles, Upcoming, Activity (8 columns on lg, full width on smaller) */}
+        <div className="lg:col-span-8 space-y-6">
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.6 }}
+          >
+            <VehicleShowcase vehicles={vehicles} />
+          </motion.div>
+          
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.7 }}
+            className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-white via-gray-50/30 to-white p-6 shadow-xl ring-1 ring-gray-200/50"
+          >
+            {/* Decorative background */}
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-indigo-500/5 to-purple-500/5" />
+            <div className="absolute -right-12 -bottom-12 h-32 w-32 rounded-full bg-gradient-to-br from-blue-200/20 to-indigo-200/20 blur-3xl" />
+            
+            <div className="relative">
+              <div className="mb-5 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 text-white shadow-lg">
+                    <Clock className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-gray-900">Upcoming Requests</h3>
+                    <p className="text-xs text-gray-500">Your scheduled trips</p>
+                  </div>
+                </div>
+                {upcoming.length > 0 && (
+                  <span className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 px-3 py-1 text-xs font-bold text-white shadow-sm">
+                    {upcoming.length}
+                  </span>
+                )}
+              </div>
+              <UpcomingList trips={upcoming} />
+            </div>
+          </motion.div>
+
+          {recentActivity.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.8 }}
+            >
+              <ActivityTimeline items={recentActivity} />
+            </motion.div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

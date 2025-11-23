@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 import { sendDriverTravelNotification } from "@/lib/sms/sms-service";
+import { extractInitials } from "@/lib/utils/pdf-helpers";
 
 export async function POST(request: Request) {
   try {
@@ -61,7 +62,8 @@ export async function POST(request: Request) {
       requiresComptroller,
       editedBudget, // NEW: Admin can edit budget before sending to comptroller
       nextApproverId, // NEW: Choice-based sending
-      nextApproverRole // NEW: 'comptroller' or 'hr'
+      nextApproverRole, // NEW: 'comptroller' or 'hr'
+      sendNotifications = true // NEW: Optional email/notification sending (default: true)
     } = body;
 
     if (!requestId || !signature) {
@@ -288,6 +290,51 @@ export async function POST(request: Request) {
     console.log(`[POST /api/admin/approve] 📝 Update data:`, JSON.stringify(updateData, null, 2));
 
     // Use service role client to update request (bypass RLS)
+    // Update request number if driver is assigned (to include driver name in format)
+    if (driver) {
+      try {
+        // Get driver name
+        const { data: driverInfo } = await supabaseServiceRole
+          .from("users")
+          .select("name")
+          .eq("id", driver)
+          .single();
+        
+        if (driverInfo?.name) {
+          // Use database function to update request number with driver
+          const { data: newRequestNumber, error: rpcError } = await supabaseServiceRole
+            .rpc('update_request_number_with_driver', {
+              p_request_id: requestId,
+              p_driver_name: driverInfo.name
+            });
+          
+          if (rpcError) {
+            console.warn("[POST /api/admin/approve] Failed to update request number with driver via RPC:", rpcError);
+            // Fallback: manual update
+            const existingNumber = req.request_number || '';
+            const parts = existingNumber.split('-');
+            if (parts.length >= 3) {
+              const year = parts[1];
+              const sequence = parts[2];
+              const requesterName = req.requester_name || "UNKNOWN";
+              const participantCount = Array.isArray(req.participants) ? req.participants.length : 0;
+              const isSingleRequester = participantCount <= 1;
+              const requesterPart = isSingleRequester 
+                ? extractInitials(requesterName)
+                : requesterName.toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 20);
+              const driverPart = driverInfo.name.toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 15);
+              updateData.request_number = `TO-${year}-${sequence}-${requesterPart}-${driverPart}`;
+            }
+          } else if (newRequestNumber) {
+            updateData.request_number = newRequestNumber;
+          }
+        }
+      } catch (err) {
+        console.warn("[POST /api/admin/approve] Failed to update request number with driver:", err);
+        // Continue without updating request number
+      }
+    }
+
     const { error: updateError } = await supabaseServiceRole
       .from("requests")
       .update(updateData)
@@ -365,41 +412,45 @@ export async function POST(request: Request) {
       }
     });
 
-    // Create notifications
-    try {
-      const { createNotification } = await import("@/lib/notifications/helpers");
-      
-      // Notify requester
-      if (req.requester_id) {
-        await createNotification({
-          user_id: req.requester_id,
-          notification_type: "request_approved",
-          title: "Request Approved by Admin",
-          message: `Your travel order request ${req.request_number || ''} has been approved by Admin and is now with ${nextApproverRoleFinal === 'comptroller' ? 'Comptroller' : 'HR'}.`,
-          related_type: "request",
-          related_id: requestId,
-          action_url: `/user/submissions?view=${requestId}`,
-          action_label: "View Request",
-          priority: "normal",
-        });
-      }
+    // Create notifications (only if sendNotifications is true)
+    if (sendNotifications) {
+      try {
+        const { createNotification } = await import("@/lib/notifications/helpers");
+        
+        // Notify requester
+        if (req.requester_id) {
+          await createNotification({
+            user_id: req.requester_id,
+            notification_type: "request_approved",
+            title: "Request Approved by Admin",
+            message: `Your travel order request ${req.request_number || ''} has been approved by Admin and is now with ${nextApproverRoleFinal === 'comptroller' ? 'Comptroller' : 'HR'}.`,
+            related_type: "request",
+            related_id: requestId,
+            action_url: `/user/submissions?view=${requestId}`,
+            action_label: "View Request",
+            priority: "normal",
+          });
+        }
 
-      // Notify next approver (Comptroller or HR)
-      if (nextApproverId) {
-        await createNotification({
-          user_id: nextApproverId,
-          notification_type: "request_pending_signature",
-          title: "Request Requires Your Approval",
-          message: `A travel order request ${req.request_number || ''} has been sent to you for approval.`,
-          related_type: "request",
-          related_id: requestId,
-          action_url: nextApproverRoleFinal === "comptroller" ? `/comptroller/inbox?view=${requestId}` : `/hr/inbox?view=${requestId}`,
-          action_label: "Review Request",
-          priority: "high",
-        });
+        // Notify next approver (Comptroller or HR)
+        if (nextApproverId) {
+          await createNotification({
+            user_id: nextApproverId,
+            notification_type: "request_pending_signature",
+            title: "Request Requires Your Approval",
+            message: `A travel order request ${req.request_number || ''} has been sent to you for approval.`,
+            related_type: "request",
+            related_id: requestId,
+            action_url: nextApproverRoleFinal === "comptroller" ? `/comptroller/inbox?view=${requestId}` : `/hr/inbox?view=${requestId}`,
+            action_label: "Review Request",
+            priority: "high",
+          });
+        }
+      } catch (notifError: any) {
+        console.error("[Admin Approve] Failed to create notifications:", notifError);
       }
-    } catch (notifError: any) {
-      console.error("[Admin Approve] Failed to create notifications:", notifError);
+    } else {
+      console.log("[Admin Approve] ⚠️ Notifications disabled by admin - skipping email/notification sending");
     }
 
     console.log(`[Admin Approve] ✅ Request ${requestId} approved, sent to ${nextApproverRoleFinal}`);

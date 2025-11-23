@@ -15,6 +15,7 @@ import {
   Settings,
   MessageSquare,
   UserCog,
+  Inbox,
 } from "lucide-react";
 
 type NavItem = {
@@ -26,7 +27,7 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/admin", label: "Dashboard", Icon: LayoutDashboard, section: "CORE" },
-  { href: "/admin/requests", label: "Requests", Icon: FileText, section: "CORE" },
+  { href: "/admin/inbox", label: "Inbox", Icon: Inbox, section: "CORE" },
   
   { href: "/admin/schedule", label: "Schedule", Icon: CalendarDays, section: "MANAGEMENT" },
   { href: "/admin/drivers", label: "Drivers", Icon: Users, section: "MANAGEMENT" },
@@ -34,7 +35,6 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/admin/maintenance", label: "Maintenance", Icon: Wrench, section: "MANAGEMENT" },
   { href: "/admin/users", label: "User Management", Icon: UserCog, section: "MANAGEMENT" },
   
-  { href: "/admin/track", label: "Track / Live", Icon: MapPin, section: "MONITORING" },
   { href: "/admin/history", label: "History", Icon: History, section: "MONITORING" },
   
   { href: "/admin/report", label: "Reports / Exports", Icon: FileBarChart, section: "ANALYTICS" },

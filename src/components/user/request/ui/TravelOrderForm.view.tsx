@@ -236,6 +236,22 @@ export default function TravelOrderFormView({
           return false;
         }
         
+        // NEW: Check if ANY requester in this department is a head (not just current user)
+        // This handles cases where a head from another department is added as a requester
+        const headRequesterInThisDept = resolvedRequesters.find(req => {
+          const reqDeptId = req.department_id;
+          const matchesDept = reqDeptId && reqDeptId === dept.department_id;
+          if (!matchesDept) return false;
+          
+          // Check if this requester is a head (from is_head field stored in requester data)
+          return req.is_head === true;
+        });
+        
+        if (headRequesterInThisDept) {
+          console.log(`[TravelOrderFormView] ⏭️ Excluding department ${dept.department_name} - a head requester is in this department`);
+          return false;
+        }
+        
         return true;
       });
 
@@ -460,6 +476,7 @@ export default function TravelOrderFormView({
         onSignatureChange={(dataUrl) => {
           onChange({ endorsedByHeadSignature: dataUrl });
         }}
+        onAutoSaveRequest={onAutoSaveRequest}
       />
 
       {/* Head Endorsement Invitation Editor (for multi-department scenarios - BEFORE submission) */}

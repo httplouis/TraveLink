@@ -19,6 +19,7 @@ type Props = {
   // head e-signature
   signature?: string | null;
   onSignatureChange?: (dataUrl: string | null) => void;
+  onAutoSaveRequest?: () => Promise<string | null>; // Callback to auto-save draft when signature is saved
 };
 
 export default function EndorsementSection({
@@ -31,6 +32,7 @@ export default function EndorsementSection({
   hasMultipleDepartments = false,
   signature,
   onSignatureChange,
+  onAutoSaveRequest,
 }: Props) {
   // Track the source of the signature
   const signatureSourceRef = React.useRef<'saved' | 'drawn' | 'uploaded' | 'initial' | null>(signature ? 'initial' : null);
@@ -45,16 +47,34 @@ export default function EndorsementSection({
   }, [signature]);
 
   // Handle auto-save (from drawing) - show save button
-  const handleSave = React.useCallback((dataUrl: string) => {
+  const handleSave = React.useCallback(async (dataUrl: string) => {
     // Auto-save from drawing - keep source as 'drawn' or 'uploaded' to show save button
     onSignatureChange?.(dataUrl);
-  }, [onSignatureChange]);
+    // Auto-save draft when signature is saved
+    if (onAutoSaveRequest) {
+      try {
+        await onAutoSaveRequest();
+        console.log('[EndorsementSection] ✅ Auto-saved draft after head signature');
+      } catch (err) {
+        console.warn('[EndorsementSection] ⚠️ Failed to auto-save draft after signature:', err);
+      }
+    }
+  }, [onSignatureChange, onAutoSaveRequest]);
 
   // Handle manual save button click - hide save button
-  const handleSaveButtonClick = React.useCallback((dataUrl: string) => {
+  const handleSaveButtonClick = React.useCallback(async (dataUrl: string) => {
     signatureSourceRef.current = 'saved';
     onSignatureChange?.(dataUrl);
-  }, [onSignatureChange]);
+    // Auto-save draft when signature is manually saved
+    if (onAutoSaveRequest) {
+      try {
+        await onAutoSaveRequest();
+        console.log('[EndorsementSection] ✅ Auto-saved draft after manual head signature save');
+      } catch (err) {
+        console.warn('[EndorsementSection] ⚠️ Failed to auto-save draft after signature:', err);
+      }
+    }
+  }, [onSignatureChange, onAutoSaveRequest]);
 
   // Handle clear - reset everything
   const handleClear = React.useCallback(() => {
@@ -63,10 +83,19 @@ export default function EndorsementSection({
   }, [onSignatureChange]);
 
   // Handle use saved - mark as saved (no save button needed)
-  const handleUseSaved = React.useCallback((dataUrl: string) => {
+  const handleUseSaved = React.useCallback(async (dataUrl: string) => {
     signatureSourceRef.current = 'saved';
     onSignatureChange?.(dataUrl);
-  }, [onSignatureChange]);
+    // Auto-save draft when saved signature is used
+    if (onAutoSaveRequest) {
+      try {
+        await onAutoSaveRequest();
+        console.log('[EndorsementSection] ✅ Auto-saved draft after using saved head signature');
+      } catch (err) {
+        console.warn('[EndorsementSection] ⚠️ Failed to auto-save draft after signature:', err);
+      }
+    }
+  }, [onSignatureChange, onAutoSaveRequest]);
 
   // Handle draw start - mark as drawn (show save button)
   const handleDraw = React.useCallback(() => {

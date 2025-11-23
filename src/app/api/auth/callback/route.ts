@@ -45,6 +45,18 @@ export async function GET(request: NextRequest) {
     
     // Create Supabase client with proper cookie settings for production
     const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
+    const requestOrigin = requestUrl.origin;
+    const isVercel = !!process.env.VERCEL;
+    
+    console.log("[auth/callback] 🌍 Environment:", {
+      isProduction,
+      isVercel,
+      requestOrigin,
+      nodeEnv: process.env.NODE_ENV,
+      vercelUrl: process.env.VERCEL_URL,
+      nextPublicAppUrl: process.env.NEXT_PUBLIC_APP_URL,
+    });
+    
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -60,24 +72,40 @@ export async function GET(request: NextRequest) {
             return value;
           },
           set(name: string, value: string, options: any) {
-            // Don't override httpOnly - let Supabase handle it
+            // CRITICAL: For production/Vercel, ensure cookies are set correctly
+            // Don't set domain - let browser use default (same-origin)
+            // This ensures cookies work on Vercel's domain
             cookieStore.set({ 
               name, 
               value, 
               ...options,
-              secure: isProduction ? (options.secure !== false) : (options.secure ?? false),
-              sameSite: (options.sameSite as 'lax' | 'strict' | 'none') || 'lax',
+              // Don't set domain - browser will use request origin
+              // domain: undefined, // Explicitly don't set domain
+              secure: isProduction ? true : (options.secure ?? false),
+              sameSite: (options.sameSite as 'lax' | 'strict' | 'none') || (isProduction ? 'lax' : 'lax'),
               path: options.path || '/',
+              httpOnly: options.httpOnly !== false, // Preserve httpOnly if set
             });
+            
+            // Log cookie setting for debugging
+            if (name.includes('auth-token') || name.includes('sb-') || name.includes('supabase')) {
+              console.log(`[auth/callback] 🍪 Set cookie: ${name}`, {
+                hasValue: !!value,
+                secure: isProduction ? true : (options.secure ?? false),
+                sameSite: (options.sameSite as 'lax' | 'strict' | 'none') || 'lax',
+                path: options.path || '/',
+              });
+            }
           },
           remove(name: string, options: any) {
             cookieStore.set({ 
               name, 
               value: "", 
               ...options,
-              secure: isProduction ? (options.secure !== false) : (options.secure ?? false),
+              secure: isProduction ? true : (options.secure ?? false),
               sameSite: (options.sameSite as 'lax' | 'strict' | 'none') || 'lax',
               path: options.path || '/',
+              maxAge: 0,
             });
           },
         },
@@ -635,12 +663,31 @@ export async function GET(request: NextRequest) {
     // Create redirect response
     const response = NextResponse.redirect(redirectUrl);
     
-    // Log final cookie check
+    // CRITICAL: Ensure cookies are included in the response
+    // Next.js should handle this automatically, but we verify
     const finalCookies = cookieStore.getAll();
     console.log("[auth/callback] Final cookies before redirect:", {
       count: finalCookies.length,
-      names: finalCookies.map(c => c.name).join(', ')
+      names: finalCookies.map(c => c.name).join(', '),
+      supabaseCookies: finalCookies.filter(c => 
+        c.name.includes('supabase') || 
+        c.name.includes('sb-') ||
+        c.name.includes('auth-token')
+      ).map(c => c.name)
     });
+    
+    // Verify session cookie is present
+    const hasSessionCookie = finalCookies.some(c => 
+      c.name.includes('sb-') && 
+      (c.name.includes('auth-token') || c.name.includes('access-token'))
+    );
+    
+    if (!hasSessionCookie) {
+      console.error("[auth/callback] ⚠️ WARNING: No session cookie found before redirect!");
+      console.error("[auth/callback] This might cause authentication to fail on the next request.");
+    } else {
+      console.log("[auth/callback] ✅ Session cookie confirmed before redirect");
+    }
     
     return response;
 

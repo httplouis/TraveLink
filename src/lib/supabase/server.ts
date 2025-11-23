@@ -54,20 +54,24 @@ export async function createSupabaseServerClient(useServiceRole = false) {
       },
       set(name: string, value: string, options: any) {
         try {
-          // Don't override httpOnly - let Supabase handle it
-          // Supabase needs some cookies to be httpOnly and some to be accessible
+          // CRITICAL: For production/Vercel, ensure cookies are set correctly
+          // Don't set domain - let browser use default (same-origin)
+          // This ensures cookies work on Vercel's domain
           cookieStore.set({ 
             name, 
             value, 
             ...options,
-            // Only override secure and sameSite for production
-            secure: isProduction ? (options.secure !== false) : (options.secure ?? false),
-            sameSite: (options.sameSite as 'lax' | 'strict' | 'none') || 'lax',
+            // Don't set domain - browser will use request origin
+            // domain: undefined, // Explicitly don't set domain
+            secure: isProduction ? true : (options.secure ?? false),
+            sameSite: (options.sameSite as 'lax' | 'strict' | 'none') || (isProduction ? 'lax' : 'lax'),
             path: options.path || '/',
+            httpOnly: options.httpOnly !== false, // Preserve httpOnly if set
           });
         } catch (error) {
           // Cookie setting might fail in middleware/server components
           // This is expected in some contexts
+          console.warn(`[createSupabaseServerClient] Cookie set failed for ${name}:`, error);
         }
       },
       remove(name: string, options: any) {
@@ -76,13 +80,14 @@ export async function createSupabaseServerClient(useServiceRole = false) {
             name, 
             value: "", 
             ...options,
-            secure: isProduction ? (options.secure !== false) : (options.secure ?? false),
+            secure: isProduction ? true : (options.secure ?? false),
             sameSite: (options.sameSite as 'lax' | 'strict' | 'none') || 'lax',
             path: options.path || '/',
             maxAge: 0,
           });
         } catch (error) {
           // Cookie removal might fail in middleware/server components
+          console.warn(`[createSupabaseServerClient] Cookie remove failed for ${name}:`, error);
         }
       },
     },

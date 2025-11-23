@@ -190,6 +190,15 @@ export async function POST(req: Request) {
     const isSeminar = reason === "seminar";
     const requestedStatus = body.status; // Extract early to use in validation checks
     
+    // DEBUG: Log travelOrder signature fields
+    console.log(`[/api/requests/submit] 🔍 DEBUG - travelOrder signature fields:`, {
+      hasEndorsedByHeadSignature: !!travelOrder.endorsedByHeadSignature,
+      hasRequesterSignature: !!travelOrder.requesterSignature,
+      endorsedByHeadSignatureLength: travelOrder.endorsedByHeadSignature ? travelOrder.endorsedByHeadSignature.length : 0,
+      requesterSignatureLength: travelOrder.requesterSignature ? travelOrder.requesterSignature.length : 0,
+      travelOrderKeys: Object.keys(travelOrder).filter(k => k.toLowerCase().includes('signature'))
+    });
+    
     // Quick check: might this be a representative submission?
     // For travel orders, check if requesting person is different from submitter
     // Handle multiple requesters (for faculty/head role)
@@ -501,7 +510,7 @@ export async function POST(req: Request) {
     const hasParentDepartment = !!(finalDepartment as any)?.parent_department_id;
 
     // Extract request data from body (travelOrder and reason already extracted above)
-    const costs = travelOrder.costs ?? {};
+    let costs = travelOrder.costs ?? {};
     const vehicleMode = body.vehicleMode ?? "owned"; // "owned", "institutional", "rent"
 
     // Get the department ID - use finalDepartmentId (which is requester's department for representative submissions)
@@ -611,6 +620,15 @@ export async function POST(req: Request) {
 
     // Determine request type
     const requestType = reason === "seminar" ? "seminar" : "travel_order";
+    
+    // Auto-propose budget for institutional vehicles if no budget exists
+    if (vehicleMode === "institutional") {
+      const { mergeProposedBudget, hasExistingBudget } = await import("@/lib/user/request/budget-proposal");
+      if (!hasExistingBudget(costs)) {
+        console.log("[/api/requests/submit] 💰 Auto-proposing budget for institutional vehicle");
+        costs = mergeProposedBudget(costs);
+      }
+    }
     
     // Calculate budget
     const hasBudget = costs && Object.keys(costs).length > 0;
@@ -1083,7 +1101,34 @@ export async function POST(req: Request) {
     const { nextApproverId, nextApproverRole } = body;
     console.log("[/api/requests/submit] 📋 Selected approver:", { nextApproverId, nextApproverRole });
     
+    // Generate request number using database function
+    // For drafts, use a temporary draft number (will be replaced on final submission)
+    // For final submissions, let database trigger generate it (or generate it here if needed)
+    let requestNumber: string | null = null;
+    
+    if (requestedStatus === "draft") {
+      // Draft: use temporary number
+      requestNumber = `DRAFT-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+    } else {
+      // Final submission: let database trigger generate it (set to null so trigger fires)
+      // OR generate it here using the requester name
+      // Check if single requester (count participants)
+      const participantCount = Array.isArray(body.participants) ? body.participants.length : 
+                              (Array.isArray(travelOrder?.participants) ? travelOrder.participants.length : 0);
+      const isSingleRequester = participantCount <= 1;
+      
+      // Get requester name
+      const requesterNameForNumber = requestingPersonName || submitterName || "UNKNOWN";
+      
+      // Generate using database function via RPC call
+      // We'll set request_number to null and let the trigger handle it
+      requestNumber = null; // Let database trigger generate it
+    }
+    
     const requestData = {
+      // Set request_number to null for final submissions so database trigger generates it
+      // For drafts, use the temporary number
+      request_number: requestNumber,
       request_type: requestType,
       title: finalTitle,
       purpose: finalPurpose,
@@ -1208,11 +1253,28 @@ export async function POST(req: Request) {
       
       // Apply dual-signature logic for self-requesting (head/comptroller/hr/exec)
       // If requesting person is head, auto-approve head stage
+      // CRITICAL: For head requesters, use endorsedByHeadSignature (from EndorsementSection) 
+      // instead of requesterSignature (from TopGridFields)
       ...(requestingPersonIsHead && requestedStatus !== "draft" && (() => {
+        // Priority: endorsedByHeadSignature > requesterSignature (for head requesters)
         const signature = isSeminar 
           ? (seminar.requesterSignature || null)
-          : (travelOrder.requesterSignature || null);
+          : (travelOrder.endorsedByHeadSignature || travelOrder.requesterSignature || null);
+        
+        console.log(`[/api/requests/submit] 🔍 Head signature check:`, {
+          requestingPersonIsHead,
+          requestedStatus,
+          isSeminar,
+          hasEndorsedByHeadSignature: !!travelOrder.endorsedByHeadSignature,
+          hasRequesterSignature: !!travelOrder.requesterSignature,
+          hasSeminarSignature: !!seminar.requesterSignature,
+          signatureLength: signature ? signature.length : 0,
+          finalRequesterId,
+          willSave: !!(signature && finalRequesterId)
+        });
+        
         if (signature && finalRequesterId) {
+          console.log(`[/api/requests/submit] ✅ Saving head signature (length: ${signature.length})`);
           return {
             head_signature: signature,
             head_approved_by: finalRequesterId,
@@ -1220,6 +1282,40 @@ export async function POST(req: Request) {
             head_skipped: true,
             head_skip_reason: "Self-request (dual-signature)"
           };
+        } else {
+          console.warn(`[/api/requests/submit] ⚠️ NOT saving head signature:`, {
+            hasSignature: !!signature,
+            hasFinalRequesterId: !!finalRequesterId
+          });
+        }
+        return {};
+      })()),
+      
+      // CRITICAL: Also save head_signature for drafts if head is requester and signature exists
+      // This ensures the signature is saved even for drafts
+      ...(requestingPersonIsHead && requestedStatus === "draft" && (() => {
+        const signature = isSeminar 
+          ? (seminar.requesterSignature || null)
+          : (travelOrder.endorsedByHeadSignature || travelOrder.requesterSignature || null);
+        
+        console.log(`[/api/requests/submit] 🔍 Draft head signature check:`, {
+          requestingPersonIsHead,
+          requestedStatus,
+          isSeminar,
+          hasEndorsedByHeadSignature: !!travelOrder.endorsedByHeadSignature,
+          hasRequesterSignature: !!travelOrder.requesterSignature,
+          hasSeminarSignature: !!seminar.requesterSignature,
+          signatureLength: signature ? signature.length : 0,
+          willSave: !!signature
+        });
+        
+        if (signature) {
+          console.log(`[/api/requests/submit] ✅ Saving draft head signature (length: ${signature.length})`);
+          return {
+            head_signature: signature,
+          };
+        } else {
+          console.warn(`[/api/requests/submit] ⚠️ NOT saving draft head signature: no signature found`);
         }
         return {};
       })()),
@@ -1442,9 +1538,18 @@ export async function POST(req: Request) {
     // Insert request with retry logic for duplicate key errors
     let data: any = null;
     let error: any = null;
-    const maxRetries = 5;
+    const maxRetries = 5; // Retry for both drafts and final submissions
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      // Regenerate request_number on retry (for both drafts and final submissions)
+      if (attempt > 1) {
+        const newRequestNumber = requestedStatus === "draft"
+          ? `DRAFT-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`
+          : `TO-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+        (requestData as any).request_number = newRequestNumber;
+        console.log(`[/api/requests/submit] Regenerated request_number for attempt ${attempt}: ${newRequestNumber}`);
+      }
+      
       const result = await supabase
         .from("requests")
         .insert(requestData)
@@ -1806,7 +1911,8 @@ export async function POST(req: Request) {
             Promise.resolve().then(async () => {
               try {
                 const { getBaseUrl } = await import("@/lib/utils/getBaseUrl");
-                const baseUrl = getBaseUrl(req);
+                // ALWAYS use production URL for email links (forceProduction = true)
+                const baseUrl = getBaseUrl(req, true);
                 
                 for (const dept of departmentsNeedingEndorsement) {
                   try {
@@ -1855,7 +1961,7 @@ export async function POST(req: Request) {
                       const phNow = getPhilippineTimestamp();
                       
                       // CRITICAL FIX: Copy signature from requests.head_signature to head_endorsement_invitations.signature
-                      // When head is requester, the signature is saved in requests.head_signature (line 1217)
+                      // When head is requester, the signature is saved in requests.head_signature (line 1256)
                       // We need to copy it to head_endorsement_invitations.signature for auto-confirmed endorsements
                       const { data: requestData } = await supabase
                         .from("requests")
@@ -1864,6 +1970,12 @@ export async function POST(req: Request) {
                         .single();
                       
                       const headSignature = requestData?.head_signature || null;
+                      
+                      console.log(`[/api/requests/submit] 🔍 Copying head signature to head_endorsement_invitations:`, {
+                        requestId: data.id,
+                        hasHeadSignature: !!headSignature,
+                        signatureLength: headSignature ? headSignature.length : 0
+                      });
                       
                       if (existing && !existingError) {
                         // Update existing invitation to confirmed
@@ -2258,7 +2370,7 @@ export async function POST(req: Request) {
               message: `A travel order request ${data.request_number || ''} from ${requestingPersonName || submitterName} requires your review.`,
               related_type: "request",
               related_id: data.id,
-              action_url: `/admin/inbox?view=${data.id}`,
+              action_url: `/admin/requests?view=${data.id}`,
               action_label: "Review Request",
               priority: "high",
             })

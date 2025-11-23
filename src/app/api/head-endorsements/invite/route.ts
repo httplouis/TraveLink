@@ -174,7 +174,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Generate confirmation link
-    const baseUrl = getBaseUrl(req);
+    // ALWAYS use production URL for email links (forceProduction = true)
+    // This ensures email links work on mobile devices and in production
+    const baseUrl = getBaseUrl(req, true);
     const confirmationLink = `${baseUrl}/head-endorsements/confirm/${token}`;
 
     // Generate email HTML

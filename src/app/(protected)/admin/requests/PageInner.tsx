@@ -729,22 +729,248 @@ export default function PageInner() {
     });
   };
 
-  const openRow = async (r: RequestRow) => {
-    // Try to get from remote (Supabase) first
-    const remoteReq = remoteRequests?.find((req: any) => req.id === r.id);
-    
-    console.log("🔍 Opening row:", r.id);
-    console.log("📡 Remote data found?", !!remoteReq);
-    if (remoteReq) {
-      console.log("✅ Using SUPABASE data for:", remoteReq.requester?.name || remoteReq.requester?.email);
-      console.log("🔍 VP Approval Data:", {
-        vp_approved_at: (remoteReq as any).vp_approved_at,
-        vp_approved_by: (remoteReq as any).vp_approved_by,
-        vp_signature: (remoteReq as any).vp_signature ? "EXISTS" : "NULL",
-        vp_approver: (remoteReq as any).vp_approver,
-        vp_approver_is_head: (remoteReq as any).vp_approver?.is_head
-      });
+  // Helper function to transform tracking API data to AdminRequest format
+  const transformTrackingDataToAdminRequest = (fullRequestData: any): any => {
+    // Parse expense_breakdown if it's a string
+    let expenseBreakdown = fullRequestData.expense_breakdown;
+    if (typeof expenseBreakdown === "string") {
+      try {
+        expenseBreakdown = JSON.parse(expenseBreakdown);
+      } catch {}
     }
+
+    // Calculate total budget
+    let totalBudget = fullRequestData.total_budget || 0;
+    if (Array.isArray(expenseBreakdown) && expenseBreakdown.length > 0) {
+      totalBudget = expenseBreakdown.reduce((sum: number, item: any) => {
+        const amount = typeof item.amount === 'number' ? item.amount : parseFloat(item.amount || 0);
+        return sum + (isNaN(amount) ? 0 : amount);
+      }, 0);
+    }
+
+    return {
+      id: fullRequestData.id,
+      createdAt: fullRequestData.created_at,
+      updatedAt: fullRequestData.updated_at,
+      status: fullRequestData.status as AdminRequest["status"],
+      department: fullRequestData.department?.name || fullRequestData.department?.code || "Unknown",
+      departmentCode: fullRequestData.department?.code,
+      requesterName: fullRequestData.requester?.name || fullRequestData.requester_name || "Unknown",
+      requesterEmail: fullRequestData.requester?.email || "",
+      requestNumber: fullRequestData.request_number, // Travel Order code
+      driver: fullRequestData.assigned_driver?.name || fullRequestData.assigned_driver_id || '',
+      vehicle: fullRequestData.assigned_vehicle ? 
+        `${fullRequestData.assigned_vehicle.model || fullRequestData.assigned_vehicle.vehicle_name || 'Vehicle'} (${fullRequestData.assigned_vehicle.plate_number})` : 
+        (fullRequestData.assigned_vehicle_id || ''),
+      
+      // IMPORTANT: Include all data from tracking API
+      requester_name: fullRequestData.requester?.name || fullRequestData.requester_name,
+      preferred_driver: fullRequestData.preferred_driver_name || fullRequestData.preferred_driver || null,
+      preferred_vehicle: fullRequestData.preferred_vehicle_name || fullRequestData.preferred_vehicle || null,
+      preferred_driver_id: fullRequestData.preferred_driver_id,
+      preferred_vehicle_id: fullRequestData.preferred_vehicle_id,
+      requester: fullRequestData.requester,
+      vehicle_mode: fullRequestData.transportation_type === 'pickup' ? 'institutional' : 
+                    fullRequestData.transportation_type === 'self' ? 'owned' : 'rent',
+      
+      // Transform request data to travelOrder format
+      travelOrder: {
+        date: fullRequestData.travel_start_date?.split('T')[0] || fullRequestData.created_at?.split('T')[0] || '',
+        requestingPerson: fullRequestData.requester?.name || fullRequestData.requester_name || '',
+        department: fullRequestData.department?.name || fullRequestData.department?.code || '',
+        destination: fullRequestData.destination || '',
+        departureDate: fullRequestData.travel_start_date?.split('T')[0] || '',
+        returnDate: fullRequestData.travel_end_date?.split('T')[0] || '',
+        purposeOfTravel: fullRequestData.purpose || '',
+        
+        // Transform expense_breakdown array to costs object format
+        costs: (() => {
+          const breakdown = expenseBreakdown || [];
+          const costs: any = {};
+          
+          breakdown.forEach((item: any) => {
+            const itemName = (item.item || item.category || '').toLowerCase();
+            
+            if (itemName === 'food') {
+              costs.food = item.amount;
+              if (item.description) costs.foodDescription = item.description;
+            } else if (itemName === 'accommodation') {
+              costs.accommodation = item.amount;
+              if (item.description) costs.accommodationDescription = item.description;
+            } else if (itemName.includes('driver') && itemName.includes('allowance')) {
+              costs.driversAllowance = item.amount;
+              if (item.description) costs.driversAllowanceDescription = item.description;
+            } else if (itemName.includes('hired') && itemName.includes('driver')) {
+              costs.hiredDrivers = item.amount;
+              if (item.description) costs.hiredDriversDescription = item.description;
+            } else if (itemName.includes('rent') || itemName.includes('vehicle') || itemName.includes('transport')) {
+              costs.rentVehicles = item.amount;
+              if (item.description) costs.rentVehiclesDescription = item.description;
+            } else if (itemName === 'other' && item.description) {
+              costs.otherLabel = item.description;
+              costs.otherAmount = item.amount;
+            } else if (itemName !== '') {
+              if (!costs.otherItems) costs.otherItems = [];
+              costs.otherItems.push({
+                label: item.item || item.category,
+                amount: item.amount,
+                description: item.description
+              });
+            }
+          });
+          
+          return costs;
+        })(),
+        
+        // Signatures
+        requesterSignature: fullRequestData.requester_signature,
+        endorsedByHeadSignature: fullRequestData.head_signature || fullRequestData.parent_head_signature,
+        endorsedByHeadName: fullRequestData.head_approver?.name || fullRequestData.parent_head_approver?.name || '',
+        endorsedByHeadDate: fullRequestData.head_approved_at || fullRequestData.parent_head_approved_at ? 
+          new Date(fullRequestData.head_approved_at || fullRequestData.parent_head_approved_at).toLocaleDateString() : '',
+      } as any,
+      
+      // Seminar data if exists
+      seminar: fullRequestData.seminar_data || fullRequestData.seminar_details,
+      schoolService: fullRequestData.school_service_details,
+      
+      // Store original payload for compatibility
+      payload: fullRequestData as any,
+      
+      // Admin approval fields
+      approverSignature: fullRequestData.admin_signature || null,
+      approvedAt: fullRequestData.admin_approved_at || null,
+      approvedBy: fullRequestData.admin_processed_by || null,
+      
+      // Other approval fields
+      comptrollerSignature: fullRequestData.comptroller_signature || null,
+      comptrollerAt: fullRequestData.comptroller_approved_at || null,
+      comptrollerBy: fullRequestData.comptroller_approved_by || null,
+      
+      hrSignature: fullRequestData.hr_signature || null,
+      hrAt: fullRequestData.hr_approved_at || null,
+      hrBy: fullRequestData.hr_approved_by || null,
+      
+      // VP approval fields
+      vp_approved_at: fullRequestData.vp_approved_at || null,
+      vp_approved_by: fullRequestData.vp_approved_by || null,
+      vp_signature: fullRequestData.vp_signature || null,
+      vp_approver: fullRequestData.vp_approver || null,
+      
+      // Parent head approval fields
+      parent_head_approved_at: fullRequestData.parent_head_approved_at || null,
+      parent_head_approved_by: fullRequestData.parent_head_approved_by || null,
+      parent_head_signature: fullRequestData.parent_head_signature || null,
+      parent_head_approver: fullRequestData.parent_head_approver || null,
+      
+      // Head approval fields
+      head_approved_at: fullRequestData.head_approved_at || null,
+      head_approved_by: fullRequestData.head_approved_by || null,
+      head_signature: fullRequestData.head_signature || null,
+      head_approver: fullRequestData.head_approver || null,
+      
+      executiveSignature: fullRequestData.executive_signature || null,
+      executiveAt: fullRequestData.executive_approved_at || null,
+      executiveBy: fullRequestData.executive_approved_by || null,
+      
+      tmNote: fullRequestData.admin_notes || null,
+      
+      // Preserve approval timestamps and signatures
+      admin_approved_at: fullRequestData.admin_approved_at,
+      admin_approved_by: fullRequestData.admin_approved_by,
+      admin_signature: fullRequestData.admin_signature,
+      admin_approver: fullRequestData.admin_processed_by || null,
+      
+      // Head endorsement invitations (for multi-department requests) - CRITICAL!
+      head_endorsements: fullRequestData.head_endorsements || [],
+      
+      // Additional requesters
+      additional_requesters: fullRequestData.requester_tracking || [],
+      
+      // Participants
+      participants: fullRequestData.participants || [],
+    };
+  };
+
+  const openRow = async (r: RequestRow) => {
+    // Fetch full request details from tracking API (same as inbox page)
+    console.log("🔍 Opening row:", r.id);
+    
+    try {
+      logger.info(`Fetching full details for request ${r.id} from tracking API`);
+      const response = await fetch(`/api/requests/${r.id}/tracking`);
+      const json = await response.json();
+      
+      if (!json.ok || !json.data) {
+        logger.warn("Failed to fetch full request details from tracking API, falling back to remote data");
+        // Fallback to remote data
+        const remoteReq = remoteRequests?.find((req: any) => req.id === r.id);
+        if (remoteReq) {
+          // Use existing transformation logic
+          const transformed = transformRemoteRequest(remoteReq);
+          setActiveRow(transformed);
+          markOneRead(r.id);
+          setOpenDetails(true);
+          return;
+        } else {
+          // Final fallback to fetchRequest
+          try {
+            const fullRequest = await fetchRequest(r.id);
+            if (fullRequest) {
+              const full = transformToAdminRequest(fullRequest);
+              setActiveRow(full);
+              markOneRead(r.id);
+              setOpenDetails(true);
+            } else {
+              toast({ message: "Request not found", kind: "error" });
+            }
+          } catch (err: any) {
+            console.error("❌ Error fetching request:", err);
+            toast({ message: `Error loading request: ${err.message}`, kind: "error" });
+          }
+          return;
+        }
+      }
+
+      const fullRequestData = json.data;
+      logger.debug("Full request data fetched from tracking API:", {
+        request_number: fullRequestData.request_number,
+        has_head_endorsements: !!fullRequestData.head_endorsements,
+        head_endorsements_count: fullRequestData.head_endorsements?.length || 0,
+        preferred_driver_name: fullRequestData.preferred_driver_name,
+        preferred_vehicle_name: fullRequestData.preferred_vehicle_name,
+      });
+
+      // Transform tracking API data to AdminRequest format
+      const transformed = transformTrackingDataToAdminRequest(fullRequestData);
+      setActiveRow(transformed);
+      markOneRead(r.id);
+      setOpenDetails(true);
+    } catch (error: any) {
+      logger.error("Error fetching full request details:", error);
+      // Fallback to remote data
+      const remoteReq = remoteRequests?.find((req: any) => req.id === r.id);
+      if (remoteReq) {
+        const transformed = transformRemoteRequest(remoteReq);
+        setActiveRow(transformed);
+        markOneRead(r.id);
+        setOpenDetails(true);
+      } else {
+        toast({ message: `Error loading request: ${error.message}`, kind: "error" });
+      }
+    }
+  };
+
+  // Helper function to transform remote request data
+  const transformRemoteRequest = (remoteReq: any): any => {
+    console.log("✅ Using SUPABASE data for:", remoteReq.requester?.name || remoteReq.requester?.email);
+    console.log("🔍 VP Approval Data:", {
+      vp_approved_at: (remoteReq as any).vp_approved_at,
+      vp_approved_by: (remoteReq as any).vp_approved_by,
+      vp_signature: (remoteReq as any).vp_signature ? "EXISTS" : "NULL",
+      vp_approver: (remoteReq as any).vp_approver,
+      vp_approver_is_head: (remoteReq as any).vp_approver?.is_head
+    });
     
     if (remoteReq) {
       // Transform Supabase data to match AdminRequest format expected by modal
@@ -881,30 +1107,8 @@ export default function PageInner() {
         head_endorsements: (remoteReq as any).head_endorsements || null,
       };
       
-      setActiveRow(transformed);
-    } else {
-      // Fallback to localStorage
-      console.log("⚠️ Using LOCALSTORAGE data (Supabase data not found)");
-      // Fetch full request details from API instead of localStorage
-      try {
-        const fullRequest = await fetchRequest(r.id);
-        if (fullRequest) {
-          const full = transformToAdminRequest(fullRequest);
-          console.log("📦 Fetched from API:", full.travelOrder?.requestingPerson || full.requesterName);
-          setActiveRow(full);
-        } else {
-          console.log("❌ No data found in API");
-          toast({ message: "Request not found", kind: "error" });
-        }
-      } catch (err: any) {
-        console.error("❌ Error fetching request:", err);
-        toast({ message: `Error loading request: ${err.message}`, kind: "error" });
-      }
-    }
-    
-    markOneRead(r.id);
-    setOpenDetails(true);
-  };
+      return transformed;
+    };
 
   const onToggleOne = (id: string) => {
     setSelected((prev) => {
@@ -1354,12 +1558,15 @@ export default function PageInner() {
               return (
                 <div
                   key={item.id}
-                  onClick={() => {
+                  onClick={async () => {
                     // When clicking tracking card, switch to history tab and open request details
                     setActiveTab('history');
-                    fetchRequest(item.id).then((req) => {
-                      if (req) {
-                        setActiveRow(req);
+                    try {
+                      const response = await fetch(`/api/requests/${item.id}/tracking`);
+                      const json = await response.json();
+                      if (json.ok && json.data) {
+                        const transformed = transformTrackingDataToAdminRequest(json.data);
+                        setActiveRow(transformed);
                         setOpenDetails(true);
                         markReqRead(item.id);
                         setUnreadIds((prev) => {
@@ -1367,8 +1574,23 @@ export default function PageInner() {
                           next.delete(item.id);
                           return next;
                         });
+                      } else {
+                        const req = await fetchRequest(item.id);
+                        if (req) {
+                          const full = transformToAdminRequest(req);
+                          setActiveRow(full);
+                          setOpenDetails(true);
+                          markReqRead(item.id);
+                          setUnreadIds((prev) => {
+                            const next = new Set(prev);
+                            next.delete(item.id);
+                            return next;
+                          });
+                        }
                       }
-                    });
+                    } catch (err) {
+                      console.error("Error loading request:", err);
+                    }
                   }}
                   className="cursor-pointer rounded-lg border border-neutral-200 bg-white p-4 shadow-sm hover:border-[#7A0010] hover:shadow-md transition-all"
                 >

@@ -132,7 +132,12 @@ export const useRequestStore = create<Store>((set, get) => ({
   setVehicleMode: (v) =>
     set((s) => {
       const next = s.lockedVehicle ? s.lockedVehicle : v;
-      return { data: { ...s.data, vehicleMode: next } };
+      const nextData = { ...s.data, vehicleMode: next };
+      
+      // Note: Budget auto-proposal is handled in RequestWizard component
+      // to avoid async issues in Zustand store
+      
+      return { data: nextData };
     }),
 
   setRequesterRole: (r) => set((s) => ({ data: { ...s.data, requesterRole: r } })),

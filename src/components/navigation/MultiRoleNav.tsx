@@ -111,7 +111,7 @@ export default function MultiRoleNav({
         }
       ],
       admin: [
-        { icon: Inbox, label: 'Admin Inbox', href: '/admin/inbox', badge: '5' },
+        { icon: Inbox, label: 'Admin Inbox', href: '/admin/requests', badge: '5' },
         { 
           icon: FileText, 
           label: 'Requests', 

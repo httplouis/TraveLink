@@ -4,6 +4,26 @@
 import * as React from "react";
 import { Mail, CheckCircle2, XCircle, Clock, Send, Building2, AlertCircle, Copy, Check, RefreshCw } from "lucide-react";
 import { useToast } from "@/components/common/ui/Toast";
+import Modal from "@/components/common/Modal";
+
+// Utility function to replace localhost URLs with production URL
+function sanitizeUrl(url: string): string {
+  if (!url) return url;
+  
+  // Check if URL contains localhost
+  if (url.includes('localhost') || url.includes('127.0.0.1')) {
+    // ALWAYS use production URL for email links (even in local dev)
+    // This ensures links work when shared via email
+    const productionUrl = 'https://travilink.vercel.app';
+    
+    // Replace localhost with production URL
+    const sanitized = url.replace(/https?:\/\/[^/]+/, productionUrl.replace(/\/$/, ''));
+    console.log('[HeadEndorsementInvitationEditor] 🔄 Sanitized URL:', { original: url, sanitized });
+    return sanitized;
+  }
+  
+  return url;
+}
 
 interface HeadEndorsementInvitation {
   id: string; // Unique ID for this head slot
@@ -41,6 +61,11 @@ export default function HeadEndorsementInvitationEditor({
   const [sendingAll, setSendingAll] = React.useState(false);
   const [pollingInterval, setPollingInterval] = React.useState<NodeJS.Timeout | null>(null);
   const toast = useToast();
+  
+  // Confirmation link modal state
+  const [showLinkModal, setShowLinkModal] = React.useState(false);
+  const [linkToShow, setLinkToShow] = React.useState<{ email: string; link: string } | null>(null);
+  const [copied, setCopied] = React.useState(false);
   
   // Cooldown state (10 seconds)
   const [lastSendTime, setLastSendTime] = React.useState<number | null>(null);
@@ -246,6 +271,13 @@ export default function HeadEndorsementInvitationEditor({
 
       const data = await response.json();
 
+      console.log('[HeadEndorsementInvitationEditor] API Response:', {
+        ok: data.ok,
+        hasConfirmationLink: !!data.confirmationLink,
+        confirmationLink: data.confirmationLink?.substring(0, 50) + '...',
+        emailSent: data.emailSent,
+      });
+
       if (!response.ok || !data.ok) {
         throw new Error(data.error || "Failed to send invitation");
       }
@@ -258,12 +290,51 @@ export default function HeadEndorsementInvitationEditor({
       );
       onChange(updatedHeads);
 
-      toast.success("Invitation sent", `Email invitation sent to ${head.head_name || head.head_email}`);
+      // Always show confirmation link modal if available (for manual sharing)
+      if (data.confirmationLink) {
+        const sanitizedLink = sanitizeUrl(data.confirmationLink);
+        console.log('[HeadEndorsementInvitationEditor] Showing confirmation link modal:', {
+          email: head.head_email,
+          originalLink: data.confirmationLink.substring(0, 50) + '...',
+          sanitizedLink: sanitizedLink.substring(0, 50) + '...',
+        });
+        setLinkToShow({ email: head.head_email || '', link: sanitizedLink });
+        setShowLinkModal(true);
+      } else {
+        console.warn('[HeadEndorsementInvitationEditor] No confirmation link in response');
+      }
+
+      if (data.emailSent) {
+        toast.success("Invitation sent", `Email invitation sent to ${head.head_name || head.head_email}. Confirmation link is available for manual sharing.`);
+      } else if (data.confirmationLink) {
+        toast.warning("Email failed", `Email could not be sent. Confirmation link is available for manual sharing.`);
+      } else {
+        toast.success("Invitation sent", `Email invitation sent to ${head.head_name || head.head_email}`);
+      }
     } catch (err: any) {
       console.error('[HeadEndorsementInvitationEditor] Error sending invitation:', err);
       toast.error("Failed to send", err.message || "Please try again.");
+      // Show link even on error if available
+      if (err.confirmationLink) {
+        const sanitizedLink = sanitizeUrl(err.confirmationLink);
+        setLinkToShow({ email: head.head_email || '', link: sanitizedLink });
+        setShowLinkModal(true);
+      }
     } finally {
       setSending(null);
+    }
+  };
+
+  const copyLink = async () => {
+    if (!linkToShow) return;
+    try {
+      await navigator.clipboard.writeText(linkToShow.link);
+      setCopied(true);
+      toast.success("Link copied", "Confirmation link copied to clipboard");
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy link:', err);
+      toast.error("Failed to copy", "Could not copy link to clipboard");
     }
   };
 
@@ -332,9 +403,18 @@ export default function HeadEndorsementInvitationEditor({
       });
       onChange(updatedHeads);
 
+      // Show confirmation link for the first successful invitation (or first one with a link)
+      const firstSuccess = results.find(r => r.status === 'fulfilled' && r.value.ok && r.value.confirmationLink);
+      if (firstSuccess && firstSuccess.status === 'fulfilled') {
+        const firstHead = toSend[0];
+        const sanitizedLink = sanitizeUrl(firstSuccess.value.confirmationLink);
+        setLinkToShow({ email: firstHead.head_email || '', link: sanitizedLink });
+        setShowLinkModal(true);
+      }
+
       const successCount = results.filter(r => r.status === 'fulfilled' && r.value.ok).length;
       if (successCount === toSend.length) {
-        toast.success("All invitations sent", `Sent ${successCount} head endorsement invitation(s)`);
+        toast.success("All invitations sent", `Sent ${successCount} head endorsement invitation(s). Confirmation links are available for manual sharing.`);
       } else {
         toast.warning("Some invitations failed", `${successCount} of ${toSend.length} invitations sent successfully.`);
       }
@@ -443,7 +523,7 @@ export default function HeadEndorsementInvitationEditor({
                 {!head.invitationId && head.head_email && !disabled && (
                   <button
                     onClick={() => sendInvitation(head.id)}
-                    disabled={!requestId || sending === head.id || cooldownRemaining > 0}
+                    disabled={sending === head.id || cooldownRemaining > 0}
                     className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     title={cooldownRemaining > 0 ? `Please wait ${Math.ceil(cooldownRemaining / 1000)}s before sending again` : undefined}
                   >
@@ -484,13 +564,12 @@ export default function HeadEndorsementInvitationEditor({
               {pendingInvitations.length} head endorsement invitation{pendingInvitations.length > 1 ? 's' : ''} not yet sent
             </p>
           </div>
-          {requestId && (
-            <button
-              onClick={sendAllInvitations}
-              disabled={sendingAll || pendingInvitations.filter(h => h.head_email).length === 0 || cooldownRemaining > 0}
-              className="flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              title={cooldownRemaining > 0 ? `Please wait ${Math.ceil(cooldownRemaining / 1000)}s before sending again` : undefined}
-            >
+          <button
+            onClick={sendAllInvitations}
+            disabled={sendingAll || pendingInvitations.filter(h => h.head_email).length === 0 || cooldownRemaining > 0}
+            className="flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            title={cooldownRemaining > 0 ? `Please wait ${Math.ceil(cooldownRemaining / 1000)}s before sending again` : undefined}
+          >
               {sendingAll ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
@@ -508,7 +587,6 @@ export default function HeadEndorsementInvitationEditor({
                 </>
               )}
             </button>
-          )}
         </div>
       )}
 
@@ -519,6 +597,125 @@ export default function HeadEndorsementInvitationEditor({
             Waiting for {heads.filter(h => h.status === 'sent' || h.status === 'pending').length} head endorsement{heads.filter(h => h.status === 'sent' || h.status === 'pending').length > 1 ? 's' : ''} before you can submit this request.
           </p>
         </div>
+      )}
+
+      {/* Link Modal - Same design as RequesterInvitationEditor */}
+      {showLinkModal && linkToShow && (
+        <Modal
+          isOpen={showLinkModal}
+          onClose={() => {
+            setShowLinkModal(false);
+            setCopied(false);
+          }}
+          title=""
+          size="lg"
+        >
+          <div className="p-6 space-y-6">
+            {/* Header Section */}
+            <div className="flex items-start gap-4 pb-4 border-b border-gray-200">
+              <div className="flex-shrink-0">
+                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center shadow-lg">
+                  <Mail className="h-7 w-7 text-white" />
+                </div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-xl font-bold text-gray-900 mb-2">Confirmation Link</h3>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Recipient</span>
+                  <span className="text-sm font-semibold text-[#7A0010] truncate">{linkToShow.email}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Link Input Section */}
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-gray-700 mb-3">
+                Confirmation URL
+              </label>
+              <div className="group relative">
+                <div className="relative flex items-stretch gap-0 bg-white rounded-xl border-2 border-gray-200 hover:border-[#7A0010]/40 transition-all duration-200 shadow-sm hover:shadow-md overflow-hidden">
+                  <div className="flex-1 min-w-0 p-4">
+                    <input
+                      type="text"
+                      value={linkToShow.link}
+                      readOnly
+                      className="w-full text-sm font-mono text-gray-800 bg-transparent border-none outline-none break-all cursor-text select-all"
+                      onClick={(e) => (e.target as HTMLInputElement).select()}
+                    />
+                  </div>
+                  <div className="flex-shrink-0 w-px h-auto bg-gray-200 my-2" />
+                  <button
+                    type="button"
+                    onClick={copyLink}
+                    className={`flex-shrink-0 px-6 py-4 font-semibold text-sm transition-all duration-200 flex items-center gap-2 ${
+                      copied
+                        ? "bg-gradient-to-r from-green-500 to-green-600 text-white hover:from-green-600 hover:to-green-700"
+                        : "bg-gradient-to-r from-[#7A0010] to-[#5e000d] text-white hover:from-[#8a0015] hover:to-[#7A0010]"
+                    }`}
+                    title={copied ? "Copied to clipboard!" : "Copy to clipboard"}
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="h-5 w-5" />
+                        <span>Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-5 w-5" />
+                        <span>Copy</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 mt-2 text-right">Click the URL to select all</p>
+              </div>
+            </div>
+
+            {/* Info Section */}
+            <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-blue-50 via-blue-50/80 to-indigo-50/50 border border-blue-200/80 shadow-sm">
+              <div className="absolute top-0 right-0 w-40 h-40 bg-blue-100/40 rounded-full -mr-20 -mt-20 blur-3xl" />
+              <div className="absolute bottom-0 left-0 w-32 h-32 bg-indigo-100/30 rounded-full -ml-16 -mb-16 blur-2xl" />
+              
+              <div className="relative p-5">
+                <div className="flex items-start gap-4">
+                  <div className="flex-shrink-0">
+                    <div className="w-11 h-11 rounded-xl bg-blue-100 flex items-center justify-center shadow-sm">
+                      <AlertCircle className="h-6 w-6 text-blue-600" />
+                    </div>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-sm font-bold text-blue-900 mb-2.5 flex items-center gap-2">
+                      Manual Sharing Instructions
+                    </h4>
+                    <p className="text-sm text-blue-800 leading-relaxed mb-4">
+                      If the email invitation wasn't received, you can copy and share this confirmation link directly with the recipient. The link will remain valid for <span className="font-bold text-blue-900">7 days</span> from the time it was generated.
+                    </p>
+                    <div className="pt-3 border-t border-blue-200/60">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Recipient Email</span>
+                        <span className="text-xs font-bold text-blue-900 bg-blue-100/50 px-2 py-1 rounded-md">{linkToShow.email}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Button */}
+            <div className="flex justify-center pt-4 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLinkModal(false);
+                  setCopied(false);
+                }}
+                className="px-8 py-3 text-sm font-semibold text-gray-700 bg-white border-2 border-gray-200 hover:border-gray-300 hover:bg-gray-50 rounded-xl transition-all duration-200 shadow-sm hover:shadow-md min-w-[120px]"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );

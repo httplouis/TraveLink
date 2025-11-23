@@ -21,6 +21,7 @@ export function canSubmit(
   data: RequestFormData, 
   options?: { 
     isRepresentativeSubmission?: boolean;
+    isHeadRequester?: boolean; // If head is the requester, their head signature counts as requester signature
     currentUserName?: string;
     requestingPersonName?: string;
     allRequestersConfirmed?: boolean; // For multiple requesters
@@ -165,8 +166,12 @@ export function canSubmit(
     }
     
     // ✅ REQUIRED: Requester signature must be saved (and not blank)
-    // BUT: Skip if this is a representative submission (requester will sign later via inbox)
-    if (!isRepresentative && !hasSignature(s.requesterSignature)) {
+    // BUT: Skip if:
+    // 1. This is a representative submission (requester will sign later via inbox)
+    // 2. Head is the requester (their head signature counts as requester signature - dual-signature logic)
+    const isHeadRequester = options?.isHeadRequester ?? false;
+    
+    if (!isRepresentative && !isHeadRequester && !hasSignature(s.requesterSignature)) {
       errors["seminar.requesterSignature"] = "Requesting person's signature is required";
     }
     
@@ -207,9 +212,28 @@ export function canSubmit(
     if (!req(to.purposeOfTravel)) errors["travelOrder.purposeOfTravel"] = "Purpose of travel is required";
 
     // ✅ REQUIRED: Requester signature must be saved (and not blank)
-    // BUT: Skip if this is a representative submission (requester will sign later via inbox)
-    if (!isRepresentative && !hasSignature(to.requesterSignature)) {
+    // BUT: Skip if:
+    // 1. This is a representative submission (requester will sign later via inbox)
+    // 2. Head is the requester (their head signature counts as requester signature - dual-signature logic)
+    const isHeadRequester = options?.isHeadRequester ?? false;
+    const hasHeadSignature = hasSignature(to.endorsedByHeadSignature);
+    
+    if (!isRepresentative && !isHeadRequester && !hasSignature(to.requesterSignature)) {
       errors["travelOrder.requesterSignature"] = "Requesting person's signature is required";
+    }
+    
+    // For head requesters: their head signature should count as requester signature
+    // BUT: Skip this check if all head endorsements are confirmed (multi-department scenario)
+    // In multi-department scenarios, head signatures are stored in head_endorsement_invitations table,
+    // not in the form field, so we rely on allHeadEndorsementsConfirmed flag
+    const allHeadEndorsementsConfirmed = options?.allHeadEndorsementsConfirmed;
+    
+    // Only require head signature if:
+    // 1. Head is requester AND
+    // 2. Not all head endorsements are confirmed (single department or multi-department not yet confirmed) AND
+    // 3. No head signature in form field
+    if (isHeadRequester && allHeadEndorsementsConfirmed !== true && !hasHeadSignature) {
+      errors["travelOrder.endorsedByHeadSignature"] = "Please provide your signature as the department head. Since you are the requesting person, your signature is required before submission.";
     }
 
     // Note: Head signature is NOT required for initial submission
@@ -217,12 +241,12 @@ export function canSubmit(
     
     // ✅ VALIDATION: All requesters must be confirmed before submitting (for multiple requesters)
     if (options?.allRequestersConfirmed === false) {
-      errors["travelOrder.requesters"] = "All invited requesters must confirm their participation before submitting. Please wait for all requesters to confirm or remove pending invitations.";
+      errors["travelOrder.requesters"] = "All requesters must be invited and confirm their participation with a signature before you can submit. Please send invitations to all requesters and wait for their confirmations.";
     }
 
     // ✅ VALIDATION: All head endorsements must be confirmed before submitting (for multi-department scenarios)
     if (options?.allHeadEndorsementsConfirmed === false) {
-      errors["travelOrder.headEndorsements"] = "Please wait for all department heads to confirm their endorsements before submitting. You can check the status in the 'Head Endorsements' section below.";
+      errors["travelOrder.headEndorsements"] = "All department heads must confirm their endorsements before submission. Check the status in the 'Head Endorsements' section below.";
     }
 
     const needsJustif =

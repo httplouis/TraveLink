@@ -256,10 +256,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Reason is required for declining" }, { status: 400 });
     }
 
-    // Validate signature for confirmation
+    // Validate signature for confirmation - REQUIRED
     if (action === "confirm" && !signature) {
-      console.warn("[POST /api/head-endorsements/confirm] ⚠️ No signature provided in request body");
-      // Don't fail here - we'll try to get saved signature from user profile
+      console.warn("[POST /api/head-endorsements/confirm] ⚠️ No signature provided in request body - will check user profile");
+      // Don't fail yet - we'll try to get saved signature from user profile first
     }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -402,7 +402,22 @@ export async function POST(req: NextRequest) {
       
       if (!finalSignature) {
         console.error("[POST /api/head-endorsements/confirm] ❌ CRITICAL: No signature available (neither from body nor from user profile)");
-        // Don't fail - allow confirmation without signature, but log it
+        return NextResponse.json({ 
+          ok: false, 
+          error: "Digital signature is required to confirm endorsement. Please provide a signature.",
+          details: "No signature was provided in the form and no saved signature was found in your profile."
+        }, { status: 400 });
+      }
+
+      // Set endorsement_date to confirmed_at date if not provided or if provided date is in the future
+      // This ensures endorsement_date matches the actual confirmation date
+      const phNowDate = new Date(phNow).toISOString().split('T')[0]; // Get date part only
+      let finalEndorsementDate = endorsement_date || phNowDate;
+      
+      // Validate: endorsement_date should not be in the future
+      if (endorsement_date && new Date(endorsement_date) > new Date(phNowDate)) {
+        console.warn("[POST /api/head-endorsements/confirm] ⚠️ Endorsement date is in the future, using confirmation date instead");
+        finalEndorsementDate = phNowDate;
       }
 
       // Update invitation to confirmed
@@ -410,8 +425,10 @@ export async function POST(req: NextRequest) {
         invitationId: invitation.id,
         headEmail: invitation.head_email,
         hasSignature: !!finalSignature,
+        signatureLength: finalSignature ? finalSignature.length : 0,
         headName: head_name.trim(),
-        endorsementDate: endorsement_date || new Date().toISOString().split('T')[0],
+        endorsementDate: finalEndorsementDate,
+        confirmedAt: phNow,
       });
 
       const { data: updatedInvitation, error: updateError } = await supabase
@@ -419,7 +436,7 @@ export async function POST(req: NextRequest) {
         .update({
           status: 'confirmed',
           head_name: head_name.trim(),
-          endorsement_date: endorsement_date || new Date().toISOString().split('T')[0],
+          endorsement_date: finalEndorsementDate,
           signature: finalSignature,
           comments: comments?.trim() || null,
           confirmed_at: phNow,
@@ -454,7 +471,58 @@ export async function POST(req: NextRequest) {
         status: updatedInvitation.status,
         confirmedAt: updatedInvitation.confirmed_at,
         hasSignature: !!updatedInvitation.signature,
+        signatureLength: updatedInvitation.signature ? updatedInvitation.signature.length : 0,
       });
+
+      // CRITICAL: Verify signature was actually saved - fetch from database to confirm
+      if (action === 'confirm' && finalSignature) {
+        // Fetch the invitation again to verify signature was saved
+        const { data: verifyInvitation, error: verifyError } = await supabase
+          .from("head_endorsement_invitations")
+          .select("id, signature, status")
+          .eq("id", invitation.id)
+          .single();
+        
+        if (verifyError) {
+          console.error("[POST /api/head-endorsements/confirm] ❌ Failed to verify signature:", verifyError);
+        } else if (verifyInvitation) {
+          if (!verifyInvitation.signature && finalSignature) {
+            console.error("[POST /api/head-endorsements/confirm] ❌ CRITICAL: Signature was provided but not saved! Attempting to save again...", {
+              invitationId: updatedInvitation.id,
+              signatureProvided: !!finalSignature,
+              signatureLength: finalSignature.length,
+              savedSignature: !!verifyInvitation.signature,
+            });
+            
+            // Try to update signature again
+            const { data: retryUpdate, error: retryError } = await supabase
+              .from("head_endorsement_invitations")
+              .update({
+                signature: finalSignature,
+                updated_at: phNow,
+              })
+              .eq("id", invitation.id)
+              .select("signature")
+              .single();
+            
+            if (retryError) {
+              console.error("[POST /api/head-endorsements/confirm] ❌ Failed to save signature on retry:", retryError);
+            } else if (retryUpdate?.signature) {
+              console.log("[POST /api/head-endorsements/confirm] ✅ Signature saved on retry");
+              updatedInvitation.signature = retryUpdate.signature;
+            } else {
+              console.error("[POST /api/head-endorsements/confirm] ❌ Signature still not saved after retry");
+            }
+          } else if (verifyInvitation.signature) {
+            console.log("[POST /api/head-endorsements/confirm] ✅ Signature verified in database:", {
+              signatureLength: verifyInvitation.signature.length,
+              signaturePreview: verifyInvitation.signature.substring(0, 50) + "...",
+            });
+            // Update the response with verified signature
+            updatedInvitation.signature = verifyInvitation.signature;
+          }
+        }
+      }
 
       // Update head_user_id if user exists
       if (userProfile && userProfile.id) {
@@ -462,6 +530,124 @@ export async function POST(req: NextRequest) {
           .from("head_endorsement_invitations")
           .update({ head_user_id: userProfile.id })
           .eq("id", invitation.id);
+      }
+
+      // CRITICAL: Sync signature to main requests table
+      if (finalSignature && invitation.request_id) {
+        const { data: request } = await supabase
+          .from("requests")
+          .select("head_signature, parent_head_signature, department_id, requester_id, requester_signature")
+          .eq("id", invitation.request_id)
+          .single();
+
+        if (request) {
+          // Check if head is also the requester
+          let headIsRequester = false;
+          if (invitation.head_email && request.requester_id) {
+            // Fetch requester details to compare
+            const { data: requester } = await supabase
+              .from("users")
+              .select("id, email")
+              .eq("id", request.requester_id)
+              .single();
+            
+            if (requester) {
+              // Compare by email (case-insensitive)
+              const headEmail = invitation.head_email.toLowerCase().trim();
+              const requesterEmail = requester.email?.toLowerCase().trim();
+              headIsRequester = headEmail === requesterEmail;
+              
+              // Also check by user_id if available
+              if (!headIsRequester && userProfile && userProfile.id === request.requester_id) {
+                headIsRequester = true;
+              }
+              
+              console.log("[POST /api/head-endorsements/confirm] 🔍 Checking if head is requester:", {
+                headEmail,
+                requesterEmail,
+                headUserId: userProfile?.id,
+                requesterId: request.requester_id,
+                headIsRequester,
+              });
+            }
+          }
+          
+          // Determine if this is the primary head or parent head based on department
+          const isPrimaryHead = invitation.department_id === request.department_id;
+          
+          const updateData: any = { updated_at: phNow };
+          
+          if (isPrimaryHead) {
+            // Primary department head
+            updateData.head_signature = finalSignature;
+            console.log("[POST /api/head-endorsements/confirm] ✅ Syncing to head_signature (primary)");
+          } else {
+            // Parent department head
+            updateData.parent_head_signature = finalSignature;
+            console.log("[POST /api/head-endorsements/confirm] ✅ Syncing to parent_head_signature");
+          }
+          
+          // CRITICAL: If head is also the requester, sync signature to requester_signature
+          if (headIsRequester) {
+            updateData.requester_signature = finalSignature;
+            console.log("[POST /api/head-endorsements/confirm] ✅ Head is also requester - syncing signature to requester_signature");
+          }
+
+          const { error: syncError } = await supabase
+            .from("requests")
+            .update(updateData)
+            .eq("id", invitation.request_id);
+
+          if (syncError) {
+            console.error("[POST /api/head-endorsements/confirm] ❌ Failed to sync signature to requests table:", syncError);
+          } else {
+            console.log("[POST /api/head-endorsements/confirm] ✅ Successfully synced signature to requests table");
+          }
+          
+          // Also sync to requester_invitations if head is requester
+          if (headIsRequester && userProfile?.id) {
+            const { data: requesterInvitations } = await supabase
+              .from("requester_invitations")
+              .select("id, user_id, status")
+              .eq("request_id", invitation.request_id)
+              .eq("user_id", userProfile.id)
+              .maybeSingle();
+            
+            if (requesterInvitations && requesterInvitations.status !== 'confirmed') {
+              // Update requester invitation with signature and confirm it
+              const { error: reqInvError } = await supabase
+                .from("requester_invitations")
+                .update({
+                  signature: finalSignature,
+                  status: 'confirmed',
+                  confirmed_at: phNow,
+                  updated_at: phNow,
+                })
+                .eq("id", requesterInvitations.id);
+              
+              if (reqInvError) {
+                console.error("[POST /api/head-endorsements/confirm] ❌ Failed to sync signature to requester_invitations:", reqInvError);
+              } else {
+                console.log("[POST /api/head-endorsements/confirm] ✅ Successfully synced signature to requester_invitations");
+              }
+            } else if (requesterInvitations && requesterInvitations.status === 'confirmed') {
+              // If already confirmed, just update the signature
+              const { error: reqInvError } = await supabase
+                .from("requester_invitations")
+                .update({
+                  signature: finalSignature,
+                  updated_at: phNow,
+                })
+                .eq("id", requesterInvitations.id);
+              
+              if (reqInvError) {
+                console.error("[POST /api/head-endorsements/confirm] ❌ Failed to update signature in requester_invitations:", reqInvError);
+              } else {
+                console.log("[POST /api/head-endorsements/confirm] ✅ Successfully updated signature in requester_invitations");
+              }
+            }
+          }
+        }
       }
 
       // Update request workflow_metadata with endorsement info

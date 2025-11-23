@@ -1,40 +1,48 @@
 "use client";
 
 import * as React from "react";
-import { createSupabaseClient } from "@/lib/supabase/client";
 
 export function useRequestsNavBadge() {
   const [count, setCount] = React.useState(0);
 
   React.useEffect(() => {
-    const supabase = createSupabaseClient();
+    let mounted = true;
     
     const fetchPendingCount = async () => {
       try {
-        // Optimized: Use count query with WHERE clauses instead of fetching all rows
-        // Count requests waiting for ADMIN action where admin hasn't acted yet
-        // Focus on the main pending statuses that need admin action
+        // Use API endpoint instead of direct Supabase query to avoid RLS issues
+        const response = await fetch("/api/admin/inbox/count", { 
+          cache: "no-store",
+          headers: { 'Cache-Control': 'no-cache' }
+        });
         
-        const { count, error } = await supabase
-          .from("requests")
-          .select("*", { count: "exact", head: true })
-          .in("status", ["pending_head", "pending_admin"])
-          .is("admin_approved_at", null)
-          .is("admin_approved_by", null);
-
-        if (error) {
-          console.error("[useRequestsNavBadge] ❌ Query error:", error);
-          console.error("[useRequestsNavBadge] Error details:", JSON.stringify(error, null, 2));
+        if (!mounted) return;
+        
+        if (!response.ok) {
+          console.warn("[useRequestsNavBadge] ⚠️ API response not OK:", response.status, response.statusText);
           setCount(0);
           return;
         }
 
-        const totalCount = count || 0;
-        console.log("[useRequestsNavBadge] ✅ Success! Admin pending requests:", totalCount);
+        const result = await response.json();
         
-        setCount(totalCount);
-      } catch (error) {
-        console.error("[useRequestsNavBadge] ⚠️ Caught error:", error);
+        if (!mounted) return;
+        
+        if (result.ok) {
+          const totalCount = result.count || 0;
+          console.log("[useRequestsNavBadge] ✅ Success! Admin pending requests:", totalCount);
+          setCount(totalCount);
+        } else {
+          console.warn("[useRequestsNavBadge] ⚠️ API returned error:", result.error);
+          setCount(0);
+        }
+      } catch (error: any) {
+        if (!mounted) return;
+        // Silently handle network errors - don't spam console
+        // Only log if it's not a network error (which is expected during development)
+        if (error?.message && !error.message.includes("Failed to fetch")) {
+          console.error("[useRequestsNavBadge] ⚠️ Error fetching count:", error);
+        }
         setCount(0);
       }
     };
@@ -42,32 +50,12 @@ export function useRequestsNavBadge() {
     // Initial fetch
     fetchPendingCount();
 
-    // Set up real-time subscription
-    console.log("[useRequestsNavBadge] Setting up real-time subscription...");
-    const channel = supabase
-      .channel("badge-requests-changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "*", // Listen to INSERT, UPDATE, DELETE
-          schema: "public",
-          table: "requests",
-        },
-        (payload) => {
-          console.log("[useRequestsNavBadge] Change detected, refetching count...");
-          fetchPendingCount();
-        }
-      )
-      .subscribe((status) => {
-        console.log("[useRequestsNavBadge] Subscription status:", status);
-      });
-
-    // Also poll every 30 seconds as backup
+    // Poll every 30 seconds
     const id = setInterval(fetchPendingCount, 30000);
 
     return () => {
+      mounted = false;
       clearInterval(id);
-      supabase.removeChannel(channel);
     };
   }, []);
 

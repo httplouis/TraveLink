@@ -19,9 +19,11 @@ export async function GET() {
   if (!profile || !profile.is_hr) {
     return NextResponse.json({
       ok: true,
-      pending_count: 0,
-      active_count: 0,
-      processed_today: 0,
+      data: {
+        pendingApprovals: 0,
+        activeRequests: 0,
+        thisMonth: 0,
+      }
     });
   }
 
@@ -89,8 +91,10 @@ export async function GET() {
 
   return NextResponse.json({
     ok: true,
-    pending_count: pendingCount || 0,
-    active_count: activeCount || 0,
-    processed_today: processedToday || 0,
+    data: {
+      pendingApprovals: pendingCount || 0,
+      activeRequests: activeCount || 0,
+      thisMonth: processedToday || 0,
+    }
   });
 }

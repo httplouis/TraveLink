@@ -20,6 +20,7 @@ import {
   ChevronLeft,
   X,
   Building2,
+  Inbox,
 } from "lucide-react";
 import { useRequestsNavBadge } from "@/components/admin/requests/hooks/useRequestsBadge";
 import { motion } from "framer-motion";
@@ -35,7 +36,7 @@ type Item = { href: string; label: string; Icon: React.ComponentType<any>; secti
 
 const NAV: Item[] = [
   { href: "/admin", label: "Dashboard", Icon: LayoutDashboard, section: "CORE" },
-  { href: "/admin/requests", label: "Requests", Icon: FileText, section: "CORE" },
+  { href: "/admin/inbox", label: "Inbox", Icon: Inbox, section: "CORE" },
   { href: "/admin/org-request", label: "Org Request", Icon: Building2, section: "CORE" },
 
   { href: "/admin/schedule", label: "Schedule", Icon: CalendarDays, section: "MANAGEMENT" },
@@ -43,7 +44,6 @@ const NAV: Item[] = [
   { href: "/admin/vehicles", label: "Vehicles", Icon: Truck, section: "MANAGEMENT" },
   { href: "/admin/maintenance", label: "Maintenance", Icon: Wrench, section: "MANAGEMENT" },
 
-  { href: "/admin/track", label: "Track / Live", Icon: MapPin, section: "MONITORING" },
   { href: "/admin/history", label: "History", Icon: History, section: "MONITORING" },
 
   { href: "/admin/report", label: "Reports / Exports", Icon: FileBarChart, section: "ANALYTICS" },
@@ -68,7 +68,9 @@ function CollapseToggle({ collapsed, onClick }: { collapsed: boolean; onClick: (
 }
 
 export default function AdminLeftNav() {
-  const pathname = usePathname();
+  const pathnameFromHook = usePathname();
+  // Use state to avoid hydration mismatch - pathname might be different on server vs client
+  const [pathname, setPathname] = React.useState<string>("");
   const [collapsed, setCollapsed] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
   const searchInputRef = React.useRef<HTMLInputElement>(null);
@@ -76,6 +78,11 @@ export default function AdminLeftNav() {
   const [hoveredItem, setHoveredItem] = React.useState<string | null>(null);
   const navRefs = React.useRef<Record<string, HTMLElement | null>>({});
   const menuContainerRef = React.useRef<HTMLDivElement>(null);
+
+  // Set pathname on client side only to avoid hydration mismatch
+  React.useEffect(() => {
+    setPathname(pathnameFromHook || "");
+  }, [pathnameFromHook]);
 
   // Debug: Log badge value
   React.useEffect(() => {
@@ -233,10 +240,10 @@ export default function AdminLeftNav() {
           className="flex-1 overflow-y-auto no-scrollbar px-3 py-3 relative"
           onMouseLeave={() => setHoveredItem(null)}
         >
-          {/* Sliding active background */}
-          {(() => {
+          {/* Sliding active background - Only show when not collapsed */}
+          {!collapsed && pathname && (() => {
             const activeHref = NAV.find(item => 
-              pathname === item.href || (item.href !== "/admin" && (pathname ?? "").startsWith(item.href))
+              pathname === item.href || (item.href !== "/admin" && pathname.startsWith(item.href))
             )?.href;
             
             if (!activeHref || !navRefs.current[activeHref] || !menuContainerRef.current) return null;
@@ -268,10 +275,10 @@ export default function AdminLeftNav() {
             );
           })()}
 
-          {/* Floating hover background with smooth fade for active items */}
-          {hoveredItem && navRefs.current[hoveredItem] && menuContainerRef.current && (() => {
+          {/* Floating hover background with smooth fade for active items - Only show when not collapsed */}
+          {!collapsed && pathname && hoveredItem && navRefs.current[hoveredItem] && menuContainerRef.current && (() => {
             // Check if hovered item is active page
-            const isHoveredActive = pathname === hoveredItem || (hoveredItem !== "/admin" && (pathname ?? "").startsWith(hoveredItem));
+            const isHoveredActive = pathname === hoveredItem || (hoveredItem !== "/admin" && pathname.startsWith(hoveredItem));
             
             const item = navRefs.current[hoveredItem];
             const container = menuContainerRef.current;
@@ -309,9 +316,11 @@ export default function AdminLeftNav() {
 
               <ul className="space-y-0.5">
                 {items.map(({ href, label, Icon }) => {
-                  const active =
-                    pathname === href || (href !== "/admin" && (pathname ?? "").startsWith(href));
-                  const showBadge = href === "/admin/requests" && (requestsBadge ?? 0) > 0;
+                  // Only compute active state if pathname is available (client-side)
+                  const active = pathname
+                    ? (pathname === href || (href !== "/admin" && pathname.startsWith(href)))
+                    : false;
+                  const showBadge = href === "/admin/inbox" && (requestsBadge ?? 0) > 0;
 
                   const base = collapsed
                     ? "relative flex h-10 w-full items-center justify-center rounded-lg px-0"
@@ -351,8 +360,8 @@ export default function AdminLeftNav() {
                           />
                         )}
 
-                        <div className="h-7 w-7 rounded-md flex items-center justify-center transition-all duration-200">
-                          <Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={active ? 2.5 : 2} />
+                        <div className={collapsed ? "h-10 w-10 rounded-lg flex items-center justify-center transition-all duration-200" : "h-7 w-7 rounded-md flex items-center justify-center transition-all duration-200"}>
+                          <Icon className={collapsed ? "h-5 w-5 shrink-0" : "h-[18px] w-[18px] shrink-0"} strokeWidth={active ? 2.5 : 2} />
                         </div>
 
                         {!collapsed && (
@@ -377,13 +386,14 @@ export default function AdminLeftNav() {
                         )}
                         {showBadge && collapsed && (
                           <span 
-                            className="pointer-events-none absolute -right-1 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] font-semibold leading-none transition-all duration-300" 
+                            className="pointer-events-none absolute -right-0.5 -top-0.5 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[9px] font-bold leading-none transition-all duration-300 z-10" 
                             style={{
-                              backgroundColor: (active || isHovered) ? PRIMARY_MAROON : '#ffffff',
-                              color: (active || isHovered) ? '#ffffff' : PRIMARY_MAROON
+                              backgroundColor: '#ffffff',
+                              color: PRIMARY_MAROON,
+                              boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
                             }}
                           >
-                            {requestsBadge > 99 ? "9+" : requestsBadge}
+                            {requestsBadge > 99 ? "99+" : requestsBadge}
                           </span>
                         )}
                       </Link>

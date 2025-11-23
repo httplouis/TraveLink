@@ -104,10 +104,16 @@ export default function TopGridFields({
           });
           
           // Auto-fill the combined department string
+          // Only update if it's actually different to prevent infinite loops
           if (!currentDept || currentDept !== combinedDepartments) {
             console.log('[TopGridFields] ✅ Auto-filling combined departments:', combinedDepartments);
             // Update department separately to trigger onDepartmentChange callback
-            onDepartmentChange(combinedDepartments);
+            // Use setTimeout to debounce and prevent cascading updates
+            setTimeout(() => {
+              onDepartmentChange(combinedDepartments);
+            }, 0);
+          } else {
+            console.log('[TopGridFields] ⏭️ Department already set to combined value, skipping update');
           }
           
           // IMPORTANT: Clear the endorsedByHeadName field when multiple departments are detected
@@ -299,9 +305,31 @@ export default function TopGridFields({
           <SignaturePad
             height={160}
             value={data?.requesterSignature || null}
-            onSave={(dataUrl) => onChange({ requesterSignature: dataUrl })}
+            onSave={async (dataUrl) => {
+              onChange({ requesterSignature: dataUrl });
+              // Auto-save draft when signature is saved
+              if (onAutoSaveRequest) {
+                try {
+                  await onAutoSaveRequest();
+                  console.log('[TopGridFields] ✅ Auto-saved draft after requester signature');
+                } catch (err) {
+                  console.warn('[TopGridFields] ⚠️ Failed to auto-save draft after signature:', err);
+                }
+              }
+            }}
             onClear={() => onChange({ requesterSignature: "" })}
-            onUseSaved={(dataUrl) => onChange({ requesterSignature: dataUrl })}
+            onUseSaved={async (dataUrl) => {
+              onChange({ requesterSignature: dataUrl });
+              // Auto-save draft when saved signature is used
+              if (onAutoSaveRequest) {
+                try {
+                  await onAutoSaveRequest();
+                  console.log('[TopGridFields] ✅ Auto-saved draft after using saved requester signature');
+                } catch (err) {
+                  console.warn('[TopGridFields] ⚠️ Failed to auto-save draft after signature:', err);
+                }
+              }
+            }}
             showUseSavedButton={true}
             hideSaveButton
           />

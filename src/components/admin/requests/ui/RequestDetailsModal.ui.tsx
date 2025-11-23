@@ -223,7 +223,7 @@ export default function RequestDetailsModalUI({
     if (open) fetchOptions();
   }, [open, row]);
 
-  // Fetch confirmed requesters
+  // Fetch confirmed requesters from API response (requester_invitations) or fallback to API call
   React.useEffect(() => {
     async function fetchRequesters() {
       if (!row?.id) {
@@ -233,6 +233,32 @@ export default function RequestDetailsModalUI({
 
       try {
         setLoadingRequesters(true);
+        
+        // First, try to get from payload (from API response)
+        const payload = (row as any)?.payload;
+        const requesterInvitations = payload?.requester_invitations || (row as any)?.requester_invitations;
+        
+        if (requesterInvitations && Array.isArray(requesterInvitations) && requesterInvitations.length > 0) {
+          // Filter only confirmed requesters AND exclude the main requester
+          const confirmed = requesterInvitations.filter((req: any) => {
+            // Only include if status is confirmed
+            if (req.status !== 'confirmed') {
+              return false;
+            }
+            
+            // Exclude if this is the main requester (by user_id, email, or name match)
+            const isMainRequester = 
+              (req.user_id && row?.requester?.id && req.user_id === row.requester.id) ||
+              (req.email && row?.requester?.email && req.email.toLowerCase() === row.requester.email.toLowerCase()) ||
+              (req.name && row?.requester?.name && req.name.toLowerCase().trim() === row.requester.name.toLowerCase().trim());
+            
+            return !isMainRequester;
+          });
+          setConfirmedRequesters(confirmed);
+          return;
+        }
+        
+        // Fallback: fetch from API
         const response = await fetch(`/api/requesters/status?request_id=${row.id}`);
         const data = await response.json();
         
@@ -262,7 +288,7 @@ export default function RequestDetailsModalUI({
     }
     
     if (open && row?.id) fetchRequesters();
-  }, [open, row?.id]);
+  }, [open, row?.id, row]);
 
   // Compute total cost — sum base categories + otherItems + single "other"
   const totalCost = React.useMemo(() => {
@@ -775,7 +801,7 @@ export default function RequestDetailsModalUI({
                 </h2>
                 <div className="space-y-1">
                   {(row as any).request_number && (
-                    <p className="text-sm text-white/80 font-mono">
+                    <p className="text-lg text-white font-bold font-mono tracking-wide">
                       {(row as any).request_number}
                     </p>
                   )}
@@ -1001,29 +1027,6 @@ export default function RequestDetailsModalUI({
                             )}
                           </div>
                         </div>
-                        {(() => {
-                          const sig = getRequesterSig(row.travelOrder) || (row as any).requester_signature || (row as any).payload?.requester_signature;
-                          if (sig) {
-                            return (
-                              <div className="mt-3 pt-3 border-t border-blue-200">
-                                <p className="text-xs font-semibold text-blue-900 mb-2 flex items-center gap-1">
-                                  <PenTool className="h-3.5 w-3.5" />
-                                  Requester Signature
-                                </p>
-                                <div className="p-2 bg-white border border-blue-200 rounded-lg">
-                                  <img
-                                    src={sig}
-                                    alt="Requester signature"
-                                    className="h-12 w-auto max-w-[200px] object-contain mx-auto"
-                                    title="Requester e-signature"
-                                  />
-                                  <p className="text-center text-xs text-slate-500 mt-1">Digital Signature</p>
-                                </div>
-                              </div>
-                            );
-                          }
-                          return null;
-                        })()}
                       </div>
                       {(row as any).requester?.name && (row as any).requester.name !== ((row as any).requester_name || row.travelOrder?.requestingPerson) && (
                         <div className="mt-1.5 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700 flex items-center gap-1.5">
@@ -1084,22 +1087,33 @@ export default function RequestDetailsModalUI({
                                     </div>
                                   </div>
 
-                                  {/* Signature */}
-                                  {requester.signature && (
-                                    <div className="mt-2 pt-2 border-t border-green-200">
-                                      <div className="flex items-center gap-1.5 mb-1.5">
-                                        <PenTool className="w-3.5 h-3.5 text-green-600" />
-                                        <span className="text-xs font-semibold text-green-900">Signature</span>
-                                      </div>
+                                  {/* Signature - Always show section, display message if no signature */}
+                                  <div className="mt-2 pt-2 border-t border-green-200">
+                                    <div className="flex items-center gap-1.5 mb-1.5">
+                                      <PenTool className="w-3.5 h-3.5 text-green-600" />
+                                      <span className="text-xs font-semibold text-green-900">Digital Signature</span>
+                                    </div>
+                                    {requester.signature ? (
                                       <div className="bg-white rounded p-1.5 border border-green-200">
                                         <img
                                           src={requester.signature}
                                           alt={`${requester.name || 'Requester'} signature`}
                                           className="w-full h-12 object-contain"
+                                          onError={(e) => {
+                                            console.error(`[RequestDetailsModal] Failed to load signature for ${requester.name}:`, e);
+                                            e.currentTarget.style.display = 'none';
+                                            const errorMsg = e.currentTarget.parentElement?.querySelector('.signature-error');
+                                            if (errorMsg) errorMsg.classList.remove('hidden');
+                                          }}
                                         />
+                                        <p className="hidden signature-error text-xs text-amber-600 italic text-center py-2">Signature image failed to load</p>
                                       </div>
-                                    </div>
-                                  )}
+                                    ) : (
+                                      <div className="bg-white rounded p-1.5 border border-dashed border-gray-300">
+                                        <p className="text-xs text-amber-600 italic text-center py-2">No signature provided</p>
+                                      </div>
+                                    )}
+                                  </div>
 
                                   {/* Confirmation Time */}
                                   {requester.confirmed_at && (
@@ -1318,254 +1332,198 @@ export default function RequestDetailsModalUI({
                   return null;
                 })()}
 
-                {/* Endorsement / Signature */}
-                <div className="mt-6 bg-white rounded-lg border border-slate-200 p-4">
-                  <h4 className="mb-3 text-sm font-bold text-slate-700 flex items-center gap-2">
-                    {hasHeadApproval ? (
-                      <svg className="h-4 w-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    ) : (
-                      <Clock className="h-4 w-4 text-amber-600" />
-                    )}
-                    Department Head Endorsement
-                  </h4>
 
-                  {/* Centered "signature over printed name" block */}
-                  <div className="flex flex-col items-center mt-2">
-                    {hasAnyHeadApproval ? (
-                      <>
-                        {/* Get head signature from the API response - check parent, direct head, and VP (if VP is head) */}
-                        {(() => {
-                          // Priority: parent_head_signature > head_signature > vp_signature (if VP is head)
-                          let signature: string | null = null;
-                          
-                          const payload = (row as any)?.payload;
-                          // Check parent head signature first
-                          if ((row as any)?.parent_head_signature || payload?.parent_head_signature) {
-                            signature = (row as any).parent_head_signature || payload?.parent_head_signature;
-                          }
-                          // Then check direct head signature
-                          else if ((row as any)?.head_signature || payload?.head_signature) {
-                            signature = (row as any).head_signature || payload?.head_signature;
-                          }
-                          // Then check VP signature if VP is head
-                          else if (hasVpApproval && vpIsHead && ((row as any)?.vp_signature || payload?.vp_signature)) {
-                            signature = (row as any).vp_signature || payload?.vp_signature;
-                          }
-                          // Fallback to travelOrder signature
-                          else if (row.travelOrder?.endorsedByHeadSignature) {
-                            signature = row.travelOrder.endorsedByHeadSignature;
-                          }
-                          
-                          console.log("🔍 Signature check:", {
-                            parent_head_signature: !!(row as any)?.parent_head_signature,
-                            head_signature: !!(row as any)?.head_signature,
-                            vp_signature: !!(row as any)?.vp_signature,
-                            vpIsHead,
-                            hasVpApproval,
-                            vpApproverExists: !!vpApprover,
-                            finalSignature: signature ? "EXISTS" : "NULL",
-                            signatureType: typeof signature
-                          });
-                          
-                          return signature ? (
-                            <img
-                              src={signature}
-                              alt="Head Signature"
-                              className="h-16 object-contain -mb-3"
-                            />
-                          ) : (
-                            <div className="h-16" />
-                          );
-                        })()}
-
-                        {/* signature line */}
-                        <div className="w-64 border-t border-neutral-500" />
-
-                        {/* printed name - get from approver (parent or direct) or fallback */}
-                        <p className="mt-1 text-sm font-medium text-center">
-                          {approverToUse?.name || row.travelOrder?.endorsedByHeadName || "—"}
-                        </p>
-
-                        {/* role + department - use approver's department */}
-                        <p className="text-xs text-neutral-500 text-center">
-                          {hasParentHeadApproval ? "Parent " : ""}Dept. Head{deptName ? `, ${deptName}` : ""}
-                        </p>
-
-                        {/* optional date */}
-                        {(() => {
-                          const payload = (row as any)?.payload;
-                          const parentHeadDate = (row as any)?.parent_head_approved_at || payload?.parent_head_approved_at;
-                          const headDate = (row as any)?.head_approved_at || payload?.head_approved_at;
-                          const vpDate = ((row as any)?.vp_approved_at || payload?.vp_approved_at) && vpApprover?.is_head 
-                            ? ((row as any)?.vp_approved_at || payload?.vp_approved_at) 
-                            : null;
-                          const dateToShow = parentHeadDate || headDate || vpDate || row.travelOrder?.endorsedByHeadDate;
-                          
-                          return dateToShow ? (
-                            <p className="text-xs text-neutral-500">
-                              {dateToShow && typeof dateToShow === 'string' 
-                                ? new Date(dateToShow).toLocaleDateString('en-US', { 
-                                    year: 'numeric', 
-                                    month: 'long', 
-                                    day: 'numeric' 
-                                  })
-                                : dateToShow}
-                            </p>
-                          ) : null;
-                        })()}
-                      </>
-                    ) : (
-                      <>
-                        {/* Awaiting endorsement - show empty signature line */}
-                        <div className="h-16" />
-                        <div className="w-64 border-t border-neutral-500" />
-                        <p className="mt-1 text-sm font-medium text-center text-slate-400">
-                          Awaiting Department Head Endorsement
-                        </p>
-                        <p className="text-xs text-neutral-400 text-center mt-1">
-                          Signature pending
-                        </p>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* Multi-Department Head Endorsements (for additional requesters from different departments) */}
+                {/* ALL Department Head Endorsements - Unified View */}
                 {(() => {
                   const payload = (row as any)?.payload;
                   const headEndorsements = payload?.head_endorsements || (row as any)?.head_endorsements;
                   
-                  // Only show if there are head endorsements
-                  if (!headEndorsements || !Array.isArray(headEndorsements) || headEndorsements.length === 0) {
+                  // Build a comprehensive list of ALL head endorsements
+                  const allHeadEndorsements: any[] = [];
+                  
+                  // First, add the main department head endorsement if it exists
+                  const mainDeptId = payload?.department_id || (row as any)?.department_id;
+                  
+                  // Get main head signature (check even if no approval date - for drafts)
+                  let mainSignature: string | null = null;
+                  if ((row as any)?.parent_head_signature || payload?.parent_head_signature) {
+                    mainSignature = (row as any).parent_head_signature || payload?.parent_head_signature;
+                  } else if ((row as any)?.head_signature || payload?.head_signature) {
+                    mainSignature = (row as any).head_signature || payload?.head_signature;
+                  } else if (row.travelOrder?.endorsedByHeadSignature) {
+                    mainSignature = row.travelOrder.endorsedByHeadSignature;
+                  }
+                  
+                  // Show head endorsement if there's approval OR if there's a signature (for drafts)
+                  const hasHeadSignature = !!mainSignature;
+                  if (hasAnyHeadApproval || hasHeadSignature) {
+                    
+                    const approverToUse = hasParentHeadApproval ? parentHeadApprover : headApprover;
+                    const mainHeadName = approverToUse?.name || row.travelOrder?.endorsedByHeadName || "Department Head";
+                    const mainDeptName = approverToUse?.department?.name || payload?.department?.name || (row as any)?.department?.name;
+                    
+                    const parentHeadDate = (row as any)?.parent_head_approved_at || payload?.parent_head_approved_at;
+                    const headDate = (row as any)?.head_approved_at || payload?.head_approved_at;
+                    const dateToShow = parentHeadDate || headDate || row.travelOrder?.endorsedByHeadDate;
+                    
+                    allHeadEndorsements.push({
+                      id: 'main-head-endorsement',
+                      department_id: mainDeptId,
+                      department_name: mainDeptName,
+                      head_name: mainHeadName,
+                      head_email: approverToUse?.email,
+                      signature: mainSignature,
+                      status: hasAnyHeadApproval ? 'confirmed' : (hasHeadSignature ? 'pending' : 'pending'),
+                      confirmed_at: dateToShow || (hasHeadSignature ? new Date().toISOString() : null),
+                      isMain: true,
+                    });
+                  }
+                  
+                  // Then add ALL head endorsements from head_endorsement_invitations table (don't skip any)
+                  if (headEndorsements && Array.isArray(headEndorsements) && headEndorsements.length > 0) {
+                    console.log(`[RequestDetailsModal] Processing ${headEndorsements.length} head endorsement(s) from invitations:`, headEndorsements.map((e: any) => ({
+                      id: e.id,
+                      head_name: e.head_name || e.head?.name,
+                      department_name: e.department_name || e.department?.name,
+                      department_id: e.department_id || e.department?.id,
+                      status: e.status,
+                    })));
+                    
+                    headEndorsements.forEach((endorsement: any) => {
+                      // Add all endorsements, even if same department (they might be different heads)
+                      // Don't filter by department_id - show ALL endorsements
+                      allHeadEndorsements.push({
+                        ...endorsement,
+                        isMain: false,
+                      });
+                    });
+                  }
+                  
+                  console.log(`[RequestDetailsModal] Total head endorsements to display: ${allHeadEndorsements.length}`, allHeadEndorsements.map((e: any) => ({
+                    head_name: e.head_name || e.head?.name,
+                    department_name: e.department_name || e.department?.name,
+                    status: e.status,
+                  })));
+                  
+                  // Only show if we have at least one head endorsement
+                  if (allHeadEndorsements.length === 0) {
                     return null;
                   }
 
-                  // Filter out the main requester's department head endorsement (already shown above)
-                  // But show ALL other department endorsements (including pending ones)
-                  const mainDeptId = payload?.department_id || (row as any)?.department_id;
-                  const additionalHeadEndorsements = headEndorsements.filter((endorsement: any) => {
-                    const endorsementDeptId = endorsement.department_id || endorsement.department?.id;
-                    return endorsementDeptId !== mainDeptId;
-                  });
-
-                  // Show even if empty - but we'll show all endorsements including pending
-                  // This ensures Irish's pending endorsement is visible
-
                   return (
-                    <div className="mt-6 space-y-4">
-                      <h4 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                    <div className="mt-6 bg-white rounded-lg border border-slate-200 p-4">
+                      <h4 className="mb-4 text-sm font-bold text-slate-700 flex items-center gap-2">
                         <Users className="h-4 w-4 text-slate-500" />
-                        Additional Department Head Endorsements ({additionalHeadEndorsements.length})
+                        Department Head Endorsements ({allHeadEndorsements.length})
                       </h4>
-                      {additionalHeadEndorsements.map((endorsement: any, index: number) => {
-                        const isConfirmed = endorsement.status === 'confirmed';
-                        const headName = endorsement.head_name || endorsement.head?.name || endorsement.head_email || 'Department Head';
-                        const departmentName = endorsement.department_name || endorsement.department?.name || endorsement.department?.code || 'Department';
-                        const signature = endorsement.signature; // Field name in head_endorsement_invitations table
-                        const confirmedAt = endorsement.confirmed_at;
+                      <div className="space-y-4">
+                        {allHeadEndorsements.map((endorsement: any, index: number) => {
+                          const isConfirmed = endorsement.status === 'confirmed';
+                          const headName = endorsement.head_name || endorsement.head?.name || endorsement.head_email || 'Department Head';
+                          const departmentName = endorsement.department_name || endorsement.department?.name || endorsement.department?.code || 'Department';
+                          const signature = endorsement.signature;
+                          const confirmedAt = endorsement.confirmed_at;
 
-                        return (
-                          <div
-                            key={endorsement.id || index}
-                            className={`bg-white rounded-lg border-2 p-4 ${
-                              isConfirmed
-                                ? 'border-green-200 bg-green-50'
-                                : endorsement.status === 'declined'
-                                ? 'border-red-200 bg-red-50'
-                                : 'border-yellow-200 bg-yellow-50'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between mb-3">
-                              <div>
-                                <p className="text-sm font-semibold text-slate-900">{departmentName}</p>
-                                <p className="text-xs text-slate-600 mt-0.5">{headName}</p>
-                              </div>
-                              <div className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                          return (
+                            <div
+                              key={endorsement.id || `endorsement-${index}`}
+                              className={`rounded-lg border-2 p-4 ${
                                 isConfirmed
-                                  ? 'bg-green-100 text-green-700'
+                                  ? 'border-green-200 bg-green-50'
                                   : endorsement.status === 'declined'
-                                  ? 'bg-red-100 text-red-700'
-                                  : 'bg-yellow-100 text-yellow-700'
-                              }`}>
-                                {isConfirmed ? 'Confirmed' : endorsement.status === 'declined' ? 'Declined' : 'Pending'}
+                                  ? 'border-red-200 bg-red-50'
+                                  : 'border-yellow-200 bg-yellow-50'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-3">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">{departmentName}</p>
+                                  <p className="text-xs text-slate-600 mt-0.5">{headName}</p>
+                                </div>
+                                <div className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                                  isConfirmed
+                                    ? 'bg-green-100 text-green-700'
+                                    : endorsement.status === 'declined'
+                                    ? 'bg-red-100 text-red-700'
+                                    : 'bg-yellow-100 text-yellow-700'
+                                }`}>
+                                  {isConfirmed ? 'Confirmed' : endorsement.status === 'declined' ? 'Declined' : 'Pending'}
+                                </div>
+                              </div>
+
+                              {/* Signature Display */}
+                              <div className="flex flex-col items-center mt-3 pt-3 border-t border-slate-200">
+                                {isConfirmed && signature ? (
+                                  <>
+                                    <img
+                                      src={signature}
+                                      alt={`${headName}'s signature`}
+                                      className="h-16 object-contain -mb-3"
+                                      onError={(e) => {
+                                        console.error(`[RequestDetailsModal] Failed to load signature for ${headName}:`, e);
+                                        e.currentTarget.style.display = 'none';
+                                      }}
+                                    />
+                                    <div className="w-64 border-t border-neutral-500" />
+                                    <p className="mt-1 text-sm font-medium text-center">{headName}</p>
+                                    <p className="text-xs text-neutral-500 text-center">
+                                      Dept. Head, {departmentName}
+                                    </p>
+                                    {confirmedAt && (
+                                      <p className="text-xs text-neutral-500 mt-1">
+                                        {new Date(confirmedAt).toLocaleDateString('en-US', {
+                                          year: 'numeric',
+                                          month: 'long',
+                                          day: 'numeric'
+                                        })}
+                                      </p>
+                                    )}
+                                  </>
+                                ) : isConfirmed && !signature ? (
+                                  <>
+                                    <div className="h-16" />
+                                    <div className="w-64 border-t border-neutral-500" />
+                                    <p className="mt-1 text-sm font-medium text-center">{headName}</p>
+                                    <p className="text-xs text-neutral-500 text-center">
+                                      Dept. Head, {departmentName}
+                                    </p>
+                                    {confirmedAt && (
+                                      <p className="text-xs text-neutral-500 mt-1">
+                                        Confirmed: {new Date(confirmedAt).toLocaleDateString('en-US', {
+                                          year: 'numeric',
+                                          month: 'long',
+                                          day: 'numeric'
+                                        })}
+                                      </p>
+                                    )}
+                                    <p className="text-xs text-amber-600 mt-1 italic">
+                                      (Signature not provided)
+                                    </p>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div className="h-16" />
+                                    <div className="w-64 border-t border-neutral-500" />
+                                    <p className="mt-1 text-sm font-medium text-center text-slate-400">
+                                      {endorsement.status === 'declined' ? 'Endorsement Declined' : 'Awaiting Endorsement'}
+                                    </p>
+                                    <p className="text-xs text-neutral-400 text-center mt-1">
+                                      {endorsement.status === 'declined' 
+                                        ? `Reason: ${endorsement.declined_reason || 'No reason provided'}`
+                                        : 'Signature pending - waiting for department head confirmation'}
+                                    </p>
+                                    {endorsement.status === 'pending' && (
+                                      <p className="text-xs text-blue-600 mt-2 italic">
+                                        An invitation has been sent to {headName}
+                                      </p>
+                                    )}
+                                  </>
+                                )}
                               </div>
                             </div>
-
-                            {/* Signature Display */}
-                            <div className="flex flex-col items-center mt-3 pt-3 border-t border-slate-200">
-                              {isConfirmed && signature ? (
-                                <>
-                                  <img
-                                    src={signature}
-                                    alt={`${headName}'s signature`}
-                                    className="h-16 object-contain -mb-3"
-                                    onError={(e) => {
-                                      console.error(`[RequestDetailsModal] Failed to load signature for ${headName}:`, e);
-                                      e.currentTarget.style.display = 'none';
-                                    }}
-                                  />
-                                  <div className="w-64 border-t border-neutral-500" />
-                                  <p className="mt-1 text-sm font-medium text-center">{headName}</p>
-                                  <p className="text-xs text-neutral-500 text-center">
-                                    Dept. Head, {departmentName}
-                                  </p>
-                                  {confirmedAt && (
-                                    <p className="text-xs text-neutral-500 mt-1">
-                                      {new Date(confirmedAt).toLocaleDateString('en-US', {
-                                        year: 'numeric',
-                                        month: 'long',
-                                        day: 'numeric'
-                                      })}
-                                    </p>
-                                  )}
-                                </>
-                              ) : isConfirmed && !signature ? (
-                                <>
-                                  {/* Confirmed but no signature - might be using saved signature */}
-                                  <div className="h-16" />
-                                  <div className="w-64 border-t border-neutral-500" />
-                                  <p className="mt-1 text-sm font-medium text-center">{headName}</p>
-                                  <p className="text-xs text-neutral-500 text-center">
-                                    Dept. Head, {departmentName}
-                                  </p>
-                                  {confirmedAt && (
-                                    <p className="text-xs text-neutral-500 mt-1">
-                                      Confirmed: {new Date(confirmedAt).toLocaleDateString('en-US', {
-                                        year: 'numeric',
-                                        month: 'long',
-                                        day: 'numeric'
-                                      })}
-                                    </p>
-                                  )}
-                                  <p className="text-xs text-amber-600 mt-1 italic">
-                                    (Signature not provided)
-                                  </p>
-                                </>
-                              ) : (
-                                <>
-                                  <div className="h-16" />
-                                  <div className="w-64 border-t border-neutral-500" />
-                                  <p className="mt-1 text-sm font-medium text-center text-slate-400">
-                                    {endorsement.status === 'declined' ? 'Endorsement Declined' : 'Awaiting Endorsement'}
-                                  </p>
-                                  <p className="text-xs text-neutral-400 text-center mt-1">
-                                    {endorsement.status === 'declined' 
-                                      ? `Reason: ${endorsement.declined_reason || 'No reason provided'}`
-                                      : 'Signature pending - waiting for department head confirmation'}
-                                  </p>
-                                  {endorsement.status === 'pending' && (
-                                    <p className="text-xs text-blue-600 mt-2 italic">
-                                      An invitation has been sent to {headName}
-                                    </p>
-                                  )}
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                      </div>
                     </div>
                   );
                 })()}
@@ -2029,6 +1987,236 @@ export default function RequestDetailsModalUI({
                         Rental Approved
                       </button>
                     </div>
+                </div>
+              </section>
+
+              {/* Approval Signatures */}
+              <section className="rounded-xl bg-gradient-to-br from-emerald-50 to-slate-100 border border-emerald-200 p-5">
+                <h3 className="mb-4 text-base font-bold text-slate-800 flex items-center gap-2">
+                  <svg className="h-5 w-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                  Approval Signatures
+                </h3>
+                <div className="space-y-4">
+
+                  {/* Administrator */}
+                  <div className="bg-white rounded-lg border border-emerald-200 p-4">
+                    <h4 className="text-sm font-bold text-emerald-900 mb-3 flex items-center gap-2">
+                      {hasAdminApproved ? (
+                        <CheckCircle className="h-4 w-4 text-emerald-600" />
+                      ) : (
+                        <Clock className="h-4 w-4 text-amber-600" />
+                      )}
+                      Administrator
+                    </h4>
+                    <div className="flex flex-col items-center">
+                      {hasAdminApproved ? (
+                        <>
+                          {(() => {
+                            const adminSig = (row as any).admin_signature || payload?.admin_signature;
+                            return adminSig ? (
+                              <img src={adminSig} alt="Admin Signature" className="h-16 object-contain -mb-3" />
+                            ) : (
+                              <div className="h-16" />
+                            );
+                          })()}
+                          <div className="w-64 border-t border-neutral-500" />
+                          <p className="mt-1 text-sm font-medium text-center">
+                            {(row as any).admin_approver?.name || "Administrator"}
+                          </p>
+                          {(() => {
+                            const approvedAt = (row as any).admin_approved_at || payload?.admin_approved_at;
+                            return approvedAt ? (
+                              <p className="text-xs text-neutral-500 mt-1">
+                                Approved on {formatDate(approvedAt)}
+                              </p>
+                            ) : null;
+                          })()}
+                        </>
+                      ) : (
+                        <p className="text-sm text-slate-400">Waiting</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Comptroller */}
+                  <div className="bg-white rounded-lg border border-emerald-200 p-4">
+                    <h4 className="text-sm font-bold text-emerald-900 mb-3 flex items-center gap-2">
+                      {(() => {
+                        const hasComptrollerApproval = !!(row as any).comptroller_approved_at || payload?.comptroller_approved_at;
+                        return hasComptrollerApproval ? (
+                          <CheckCircle className="h-4 w-4 text-emerald-600" />
+                        ) : (
+                          <Clock className="h-4 w-4 text-amber-600" />
+                        );
+                      })()}
+                      Comptroller
+                    </h4>
+                    <div className="flex flex-col items-center">
+                      {(() => {
+                        const hasComptrollerApproval = !!(row as any).comptroller_approved_at || payload?.comptroller_approved_at;
+                        return hasComptrollerApproval ? (
+                          <>
+                            {(() => {
+                              const comptrollerSig = (row as any).comptroller_signature || payload?.comptroller_signature;
+                              return comptrollerSig ? (
+                                <img src={comptrollerSig} alt="Comptroller Signature" className="h-16 object-contain -mb-3" />
+                              ) : (
+                                <div className="h-16" />
+                              );
+                            })()}
+                            <div className="w-64 border-t border-neutral-500" />
+                            <p className="mt-1 text-sm font-medium text-center">
+                              {(row as any).comptroller_approver?.name || "Comptroller"}
+                            </p>
+                            {(() => {
+                              const approvedAt = (row as any).comptroller_approved_at || payload?.comptroller_approved_at;
+                              return approvedAt ? (
+                                <p className="text-xs text-neutral-500 mt-1">
+                                  Approved on {formatDate(approvedAt)}
+                                </p>
+                              ) : null;
+                            })()}
+                          </>
+                        ) : (
+                          <p className="text-sm text-slate-400">Waiting</p>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Human Resources */}
+                  <div className="bg-white rounded-lg border border-emerald-200 p-4">
+                    <h4 className="text-sm font-bold text-emerald-900 mb-3 flex items-center gap-2">
+                      {(() => {
+                        const hasHrApproval = !!(row as any).hr_approved_at || payload?.hr_approved_at;
+                        return hasHrApproval ? (
+                          <CheckCircle className="h-4 w-4 text-emerald-600" />
+                        ) : (
+                          <Clock className="h-4 w-4 text-amber-600" />
+                        );
+                      })()}
+                      Human Resources
+                    </h4>
+                    <div className="flex flex-col items-center">
+                      {(() => {
+                        const hasHrApproval = !!(row as any).hr_approved_at || payload?.hr_approved_at;
+                        return hasHrApproval ? (
+                          <>
+                            {(() => {
+                              const hrSig = (row as any).hr_signature || payload?.hr_signature;
+                              return hrSig ? (
+                                <img src={hrSig} alt="HR Signature" className="h-16 object-contain -mb-3" />
+                              ) : (
+                                <div className="h-16" />
+                              );
+                            })()}
+                            <div className="w-64 border-t border-neutral-500" />
+                            <p className="mt-1 text-sm font-medium text-center">
+                              {(row as any).hr_approver?.name || "Human Resources"}
+                            </p>
+                            {(() => {
+                              const approvedAt = (row as any).hr_approved_at || payload?.hr_approved_at;
+                              return approvedAt ? (
+                                <p className="text-xs text-neutral-500 mt-1">
+                                  Approved on {formatDate(approvedAt)}
+                                </p>
+                              ) : null;
+                            })()}
+                          </>
+                        ) : (
+                          <p className="text-sm text-slate-400">Waiting</p>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Vice President */}
+                  <div className="bg-white rounded-lg border border-emerald-200 p-4">
+                    <h4 className="text-sm font-bold text-emerald-900 mb-3 flex items-center gap-2">
+                      {hasVpApproval ? (
+                        <CheckCircle className="h-4 w-4 text-emerald-600" />
+                      ) : (
+                        <Clock className="h-4 w-4 text-amber-600" />
+                      )}
+                      Vice President
+                    </h4>
+                    <div className="flex flex-col items-center">
+                      {hasVpApproval ? (
+                        <>
+                          {(() => {
+                            const vpSig = (row as any).vp_signature || payload?.vp_signature;
+                            return vpSig ? (
+                              <img src={vpSig} alt="VP Signature" className="h-16 object-contain -mb-3" />
+                            ) : (
+                              <div className="h-16" />
+                            );
+                          })()}
+                          <div className="w-64 border-t border-neutral-500" />
+                          <p className="mt-1 text-sm font-medium text-center">
+                            {vpApprover?.name || "Vice President"}
+                          </p>
+                          {(() => {
+                            const approvedAt = (row as any).vp_approved_at || payload?.vp_approved_at;
+                            return approvedAt ? (
+                              <p className="text-xs text-neutral-500 mt-1">
+                                Approved on {formatDate(approvedAt)}
+                              </p>
+                            ) : null;
+                          })()}
+                        </>
+                      ) : (
+                        <p className="text-sm text-slate-400">Waiting</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* University President */}
+                  <div className="bg-white rounded-lg border border-emerald-200 p-4">
+                    <h4 className="text-sm font-bold text-emerald-900 mb-3 flex items-center gap-2">
+                      {(() => {
+                        const hasPresidentApproval = !!(row as any).president_approved_at || payload?.president_approved_at;
+                        return hasPresidentApproval ? (
+                          <CheckCircle className="h-4 w-4 text-emerald-600" />
+                        ) : (
+                          <Clock className="h-4 w-4 text-amber-600" />
+                        );
+                      })()}
+                      University President
+                    </h4>
+                    <div className="flex flex-col items-center">
+                      {(() => {
+                        const hasPresidentApproval = !!(row as any).president_approved_at || payload?.president_approved_at;
+                        return hasPresidentApproval ? (
+                          <>
+                            {(() => {
+                              const presidentSig = (row as any).president_signature || payload?.president_signature;
+                              return presidentSig ? (
+                                <img src={presidentSig} alt="President Signature" className="h-16 object-contain -mb-3" />
+                              ) : (
+                                <div className="h-16" />
+                              );
+                            })()}
+                            <div className="w-64 border-t border-neutral-500" />
+                            <p className="mt-1 text-sm font-medium text-center">
+                              {(row as any).president_approver?.name || "University President"}
+                            </p>
+                            {(() => {
+                              const approvedAt = (row as any).president_approved_at || payload?.president_approved_at;
+                              return approvedAt ? (
+                                <p className="text-xs text-neutral-500 mt-1">
+                                  Approved on {formatDate(approvedAt)}
+                                </p>
+                              ) : null;
+                            })()}
+                          </>
+                        ) : (
+                          <p className="text-sm text-slate-400">Waiting</p>
+                        );
+                      })()}
+                    </div>
+                  </div>
                 </div>
               </section>
 

@@ -36,27 +36,29 @@ export default function VPDashboardContainer() {
         ]);
 
         let profileData: any = { ok: false };
-        if (profileRes.ok) {
+        if (profileRes.ok && 'json' in profileRes) {
           const contentType = profileRes.headers?.get("content-type");
           if (contentType && contentType.includes("application/json")) {
             try {
-              profileData = await profileRes.json();
+              profileData = await (profileRes as Response).json();
             } catch (e) {
               logger.warn("Failed to parse profile JSON:", e);
             }
           }
         }
         if (profileData.ok && profileData.data?.name) {
-          const firstName = profileData.data.name.split(' ')[0];
-          setUserName(firstName);
+          // Import name formatting utility to skip titles like "Dr.", "Atty."
+          const { getDisplayName } = await import('@/lib/utils/name-formatting');
+          const displayName = getDisplayName(profileData.data.name);
+          setUserName(displayName);
         }
 
         let statsData: any = { ok: false };
-        if (statsRes.ok) {
+        if (statsRes.ok && 'json' in statsRes) {
           const contentType = statsRes.headers?.get("content-type");
           if (contentType && contentType.includes("application/json")) {
             try {
-              statsData = await statsRes.json();
+              statsData = await (statsRes as Response).json();
             } catch (e) {
               logger.warn("Failed to parse stats JSON:", e);
             }
@@ -79,11 +81,11 @@ export default function VPDashboardContainer() {
         ]);
 
         let vehiclesData: any = { ok: false };
-        if (vehiclesRes.ok) {
+        if (vehiclesRes.ok && 'json' in vehiclesRes) {
           const contentType = vehiclesRes.headers?.get("content-type");
           if (contentType && contentType.includes("application/json")) {
             try {
-              vehiclesData = await vehiclesRes.json();
+              vehiclesData = await (vehiclesRes as Response).json();
             } catch (e) {
               logger.warn("Failed to parse vehicles JSON:", e);
             }
@@ -94,11 +96,11 @@ export default function VPDashboardContainer() {
         }
 
         let analyticsData: any = { ok: false };
-        if (analyticsRes.ok) {
+        if (analyticsRes.ok && 'json' in analyticsRes) {
           const contentType = analyticsRes.headers?.get("content-type");
           if (contentType && contentType.includes("application/json")) {
             try {
-              analyticsData = await analyticsRes.json();
+              analyticsData = await (analyticsRes as Response).json();
             } catch (e) {
               logger.warn("Failed to parse analytics JSON:", e);
             }
@@ -109,11 +111,11 @@ export default function VPDashboardContainer() {
         }
 
         let aiData: any = { ok: false };
-        if (aiInsightsRes.ok) {
+        if (aiInsightsRes.ok && 'json' in aiInsightsRes) {
           const contentType = aiInsightsRes.headers?.get("content-type");
           if (contentType && contentType.includes("application/json")) {
             try {
-              aiData = await aiInsightsRes.json();
+              aiData = await (aiInsightsRes as Response).json();
             } catch (e) {
               logger.warn("Failed to parse AI insights JSON:", e);
             }
@@ -124,11 +126,11 @@ export default function VPDashboardContainer() {
         }
 
         let activityData: any = { ok: false };
-        if (activityRes.ok) {
+        if (activityRes.ok && 'json' in activityRes) {
           const contentType = activityRes.headers?.get("content-type");
           if (contentType && contentType.includes("application/json")) {
             try {
-              activityData = await activityRes.json();
+              activityData = await (activityRes as Response).json();
             } catch (e) {
               logger.warn("Failed to parse activity JSON:", e);
             }

@@ -37,8 +37,10 @@ export default function PresidentDashboardContainer() {
 
         const profileData = await profileRes.json().catch(() => ({ ok: false }));
         if (profileData.ok && profileData.data?.name) {
-          const firstName = profileData.data.name.split(' ')[0];
-          setUserName(firstName);
+          // Import name formatting utility to skip titles like "Dr.", "Atty."
+          const { getDisplayName } = await import('@/lib/utils/name-formatting');
+          const displayName = getDisplayName(profileData.data.name);
+          setUserName(displayName);
         }
 
         const statsData = await statsRes.json().catch(() => ({ ok: false }));

@@ -110,11 +110,14 @@ export default function HeadEndorsementConfirmationPage() {
       // Pre-fill form if already confirmed
       if (inv.status === 'confirmed') {
         setHeadName(inv.head_name || "");
-        setEndorsementDate(inv.endorsement_date || "");
+        // Use confirmed_at date if endorsement_date is not set or is before confirmation
+        const confirmedDate = inv.confirmed_at ? new Date(inv.confirmed_at).toISOString().split('T')[0] : null;
+        const endorsementDate = inv.endorsement_date || confirmedDate || new Date().toISOString().split('T')[0];
+        setEndorsementDate(endorsementDate);
         setSignature(inv.signature || null);
         setComments(inv.comments || "");
       } else {
-        // Pre-fill with today's date
+        // Pre-fill with today's date (will be used as endorsement_date)
         const today = new Date().toISOString().split('T')[0];
         setEndorsementDate(today);
         setHeadName(inv.head_name || "");
@@ -169,19 +172,43 @@ export default function HeadEndorsementConfirmationPage() {
     });
 
     try {
+      // Ensure token is properly decoded before sending
+      let tokenToSend = token;
+      try {
+        const decoded = decodeURIComponent(token);
+        if (decoded !== token && decoded.length > 0) {
+          tokenToSend = decoded;
+          console.log("[head-endorsement-confirm] 🔄 Using decoded token");
+        }
+      } catch (e) {
+        // Keep original token if decoding fails
+        console.warn("[head-endorsement-confirm] ⚠️ Token decode warning:", e);
+      }
+
+      // CRITICAL: Ensure signature is included and not null/undefined
+      if (finalAction === 'confirm' && !signature) {
+        setError("Digital signature is required. Please sign the form before submitting.");
+        setSubmitting(false);
+        return;
+      }
+
       const requestBody = {
-        token,
+        token: tokenToSend,
         action: finalAction,
         head_name: headName.trim(),
         endorsement_date: endorsementDate,
-        signature: signature || null, // Send null instead of undefined
+        signature: signature || null, // Send null instead of undefined - but we've already validated it's not null above
         comments: comments.trim() || null,
         declined_reason: declinedReason.trim() || null,
       };
 
       console.log("[head-endorsement-confirm] 📤 Request body:", {
         ...requestBody,
+        tokenLength: requestBody.token.length,
+        tokenPreview: requestBody.token.substring(0, 20) + "...",
         signature: requestBody.signature ? `${requestBody.signature.substring(0, 50)}...` : "NULL",
+        signatureLength: requestBody.signature ? requestBody.signature.length : 0,
+        hasSignature: !!requestBody.signature,
       });
 
       const response = await fetch('/api/head-endorsements/confirm', {
@@ -193,16 +220,36 @@ export default function HeadEndorsementConfirmationPage() {
       const data = await response.json();
 
       if (!response.ok || !data.ok) {
-        throw new Error(data.error || "Failed to submit response");
+        throw new Error(data.error || data.details || "Failed to submit response");
       }
 
-      console.log("[head-endorsement-confirm] ✅ Confirmation successful:", data);
+      // Verify the update was successful
+      if (finalAction === 'confirm' && data.data) {
+        if (data.data.status !== 'confirmed') {
+          throw new Error("Confirmation failed - status was not updated. Please try again.");
+        }
+        if (!data.data.signature && signature) {
+          console.warn("[head-endorsement-confirm] ⚠️ Signature was sent but not saved in response");
+          // Don't fail - signature might be saved but not returned
+        }
+      }
+
+      console.log("[head-endorsement-confirm] ✅ Confirmation successful:", {
+        status: data.data?.status,
+        hasSignature: !!data.data?.signature,
+        confirmedAt: data.data?.confirmed_at,
+      });
       
+      // Refresh invitation data to show updated status
+      await fetchInvitation();
+      
+      // Small delay before redirect to ensure user sees success
       setTimeout(() => {
         router.push('/head-endorsements/confirm/success');
-      }, 500);
+      }, 1000);
     } catch (err: any) {
-      setError(err.message || "Failed to submit response");
+      console.error("[head-endorsement-confirm] ❌ Submission error:", err);
+      setError(err.message || "Failed to submit response. Please try again.");
       setSubmitting(false);
     }
   };

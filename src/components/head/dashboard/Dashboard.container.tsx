@@ -37,19 +37,23 @@ export default function HeadDashboardContainer() {
 
         const profileData = await profileRes.json().catch(() => ({ ok: false }));
         if (profileData.ok && profileData.data?.name) {
-          // Import name formatting utility
-          const { getFirstName } = await import('@/lib/utils/name-formatting');
-          const firstName = getFirstName(profileData.data.name);
-          setUserName(firstName);
+          // Import name formatting utility to skip titles like "Dr.", "Atty."
+          const { getDisplayName } = await import('@/lib/utils/name-formatting');
+          const displayName = getDisplayName(profileData.data.name);
+          setUserName(displayName);
         }
 
         const statsData = await statsRes.json().catch(() => ({ ok: false }));
+        logger.info("Head stats data received:", statsData);
         if (statsData.ok && statsData.data) {
+          logger.info("Setting Head KPIs with data:", statsData.data);
           setKpis([
-            { label: "Pending Endorsements", value: statsData.data.pendingEndorsements || 0 },
-            { label: "Active Requests", value: statsData.data.activeRequests || 0 },
-            { label: "My Department", value: statsData.data.departmentRequests || 0 },
+            { label: "Pending Endorsements", value: statsData.data.pendingEndorsements ?? 0 },
+            { label: "Active Requests", value: statsData.data.activeRequests ?? 0 },
+            { label: "My Department", value: statsData.data.departmentRequests ?? 0 },
           ]);
+        } else {
+          logger.warn("Head stats data not OK or missing. Response:", statsData);
         }
 
         // Fetch non-critical data in parallel (can load after initial render)

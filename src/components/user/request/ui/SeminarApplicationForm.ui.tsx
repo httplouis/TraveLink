@@ -445,7 +445,18 @@ export default function SeminarApplicationForm({
         <SignaturePad
           height={160}
           value={data?.requesterSignature || null}
-          onSave={(dataUrl) => onChange({ requesterSignature: dataUrl })}
+          onSave={async (dataUrl) => {
+            onChange({ requesterSignature: dataUrl });
+            // Auto-save draft when signature is saved
+            if (onAutoSaveRequest) {
+              try {
+                await onAutoSaveRequest();
+                console.log('[SeminarApplicationForm] ✅ Auto-saved draft after requester signature');
+              } catch (err) {
+                console.warn('[SeminarApplicationForm] ⚠️ Failed to auto-save draft after signature:', err);
+              }
+            }
+          }}
           onClear={() => onChange({ requesterSignature: "" })}
           hideSaveButton
         />

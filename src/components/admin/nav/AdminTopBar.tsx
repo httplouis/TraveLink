@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { Bell, CircleUserRound, LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -25,14 +26,23 @@ export default function AdminTopBar() {
       <div className="flex h-full items-center justify-between px-4 md:px-6">
         {/* Logo + App Name */}
         <div className="flex items-center gap-3">
-          <Link href="/admin" className="inline-flex items-center gap-2">
-            <span className="grid h-8 w-8 place-items-center rounded-md bg-white text-[#7a0010] text-sm font-semibold">
-              TL
-            </span>
-            <span className="font-medium">Travelink</span>
+          <Link href="/admin" className="inline-flex items-center gap-3">
+            <div className="relative h-10 w-10 rounded-lg bg-white p-1.5 shadow-md">
+              <Image
+                src="/travelink.png"
+                alt="Travelink Logo"
+                width={32}
+                height={32}
+                className="h-full w-full object-contain"
+                priority
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-xl font-bold tracking-tight">Travelink</span>
+              <span className="h-6 w-px bg-white/30" />
+              <span className="opacity-90 text-sm font-medium">Admin</span>
+            </div>
           </Link>
-          <span className="opacity-70">|</span>
-          <span className="opacity-90">Admin</span>
         </div>
 
         {/* Actions */}

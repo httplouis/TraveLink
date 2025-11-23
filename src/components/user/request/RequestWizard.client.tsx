@@ -109,11 +109,29 @@ function RequestWizardContent() {
   const [loadingApprovers, setLoadingApprovers] = React.useState(false);
   const [selectedApproverId, setSelectedApproverId] = React.useState<string | null>(null);
   const [selectedApproverRole, setSelectedApproverRole] = React.useState<string | null>(null);
+  const [selectedApproverName, setSelectedApproverName] = React.useState<string | null>(null);
   const [defaultApproverId, setDefaultApproverId] = React.useState<string | undefined>(undefined);
   const [defaultApproverName, setDefaultApproverName] = React.useState<string | undefined>(undefined);
 
   const showSeminar = data.reason === "seminar";
   const showSchoolService = data.vehicleMode === "institutional";
+  
+  // Auto-propose budget when institutional vehicle is selected
+  React.useEffect(() => {
+    if (data.vehicleMode === "institutional" && data.travelOrder) {
+      // Import budget proposal utility
+      import("@/lib/user/request/budget-proposal").then(({ mergeProposedBudget, hasExistingBudget }) => {
+        const currentCosts = data.travelOrder?.costs;
+        
+        // Only auto-propose if no budget exists yet
+        if (!hasExistingBudget(currentCosts)) {
+          const proposedCosts = mergeProposedBudget(currentCosts);
+          console.log('[RequestWizard] 💰 Auto-proposing budget for institutional vehicle:', proposedCosts);
+          patchCosts(proposedCosts);
+        }
+      });
+    }
+  }, [data.vehicleMode, data.travelOrder, patchCosts]);
   
   // Check if current user is head requester
   // CRITICAL: If current user is a head AND they are the requesting person, they are a head requester
@@ -169,6 +187,7 @@ function RequestWizardContent() {
 
       const draftId = search?.get("draft") ?? null;
       const subId = search?.get("submission") ?? null;
+      const requestId = search?.get("requestId") ?? null;
 
       if (draftId) {
         const d = await getDraft(draftId);
@@ -179,18 +198,112 @@ function RequestWizardContent() {
           toast({ kind: "success", title: "Draft loaded", message: "Form populated from draft." });
           did = true;
         }
-      } else if (subId) {
-        const s = await getSubmission(subId);
-        if (s?.data) {
-          hardSet(s.data);
-          clearIds();
-          setCurrentSubmissionId(subId);
-          toast({ kind: "info", title: "Editing submission", message: "Form populated from submission." });
-          did = true;
+      } else if (subId || requestId) {
+        // Load from database (draft or submission)
+        const idToLoad = subId || requestId;
+        try {
+          const response = await fetch(`/api/requests/${idToLoad}`);
+          const result = await response.json();
+          
+          if (result.ok && result.data) {
+            const dbReq = result.data;
+            
+            // Transform database request to form data format
+            const formData: any = {
+              requesterRole: dbReq.requester_is_head ? "head" : "faculty",
+              reason: dbReq.request_type === "seminar" ? "seminar" : "official",
+              vehicleMode: dbReq.needs_rental ? "rent" : dbReq.needs_vehicle ? "institutional" : "owned",
+              travelOrder: {
+                date: dbReq.travel_start_date ? new Date(dbReq.travel_start_date).toISOString().split('T')[0] : "",
+                requestingPerson: dbReq.requester_name || "",
+                department: dbReq.department?.name || dbReq.department?.code || "",
+                destination: dbReq.destination || "",
+                departureDate: dbReq.travel_start_date ? new Date(dbReq.travel_start_date).toISOString().split('T')[0] : "",
+                returnDate: dbReq.travel_end_date ? new Date(dbReq.travel_end_date).toISOString().split('T')[0] : "",
+                purposeOfTravel: dbReq.purpose || "",
+                costs: dbReq.expense_breakdown || {},
+                // CRITICAL: Restore signatures from database
+                requesterSignature: dbReq.requester_signature || null,
+                endorsedByHeadName: dbReq.head_approver?.name || dbReq.head_approver?.email || "",
+                endorsedByHeadDate: dbReq.head_approved_at ? new Date(dbReq.head_approved_at).toISOString().split('T')[0] : "",
+                endorsedByHeadSignature: dbReq.head_signature || null,
+                requesters: dbReq.requesters || [],
+              },
+              // Restore seminar data if exists
+              seminar: dbReq.seminar_details ? {
+                ...dbReq.seminar_details,
+                // CRITICAL: Restore seminar signature
+                requesterSignature: dbReq.requester_signature || dbReq.seminar_details.requesterSignature || null,
+              } : undefined,
+              schoolService: dbReq.school_service_details || undefined,
+              transportation: dbReq.transportation || undefined,
+            };
+            
+            hardSet(formData);
+            clearIds();
+            setCurrentSubmissionId(idToLoad);
+            // Also save to localStorage draft for persistence
+            await saveDraft(formData, currentDraftId || undefined);
+            toast({ kind: "info", title: "Draft restored", message: "Form populated from saved draft with signatures." });
+            did = true;
+          }
+        } catch (err: any) {
+          console.error("[RequestWizard] Error loading request from database:", err);
         }
       }
 
-      // 3) Autosave fallback
+      // 3) Check if there's a currentSubmissionId in store (from previous session)
+      if (!did && currentSubmissionId) {
+        try {
+          const response = await fetch(`/api/requests/${currentSubmissionId}`);
+          const result = await response.json();
+          
+          if (result.ok && result.data && result.data.status === "draft") {
+            const dbReq = result.data;
+            
+            // Transform database request to form data format
+            const formData: any = {
+              requesterRole: dbReq.requester_is_head ? "head" : "faculty",
+              reason: dbReq.request_type === "seminar" ? "seminar" : "official",
+              vehicleMode: dbReq.needs_rental ? "rent" : dbReq.needs_vehicle ? "institutional" : "owned",
+              travelOrder: {
+                date: dbReq.travel_start_date ? new Date(dbReq.travel_start_date).toISOString().split('T')[0] : "",
+                requestingPerson: dbReq.requester_name || "",
+                department: dbReq.department?.name || dbReq.department?.code || "",
+                destination: dbReq.destination || "",
+                departureDate: dbReq.travel_start_date ? new Date(dbReq.travel_start_date).toISOString().split('T')[0] : "",
+                returnDate: dbReq.travel_end_date ? new Date(dbReq.travel_end_date).toISOString().split('T')[0] : "",
+                purposeOfTravel: dbReq.purpose || "",
+                costs: dbReq.expense_breakdown || {},
+                // CRITICAL: Restore signatures from database
+                requesterSignature: dbReq.requester_signature || null,
+                endorsedByHeadName: dbReq.head_approver?.name || dbReq.head_approver?.email || "",
+                endorsedByHeadDate: dbReq.head_approved_at ? new Date(dbReq.head_approved_at).toISOString().split('T')[0] : "",
+                endorsedByHeadSignature: dbReq.head_signature || null,
+                requesters: dbReq.requesters || [],
+              },
+              // Restore seminar data if exists
+              seminar: dbReq.seminar_details ? {
+                ...dbReq.seminar_details,
+                // CRITICAL: Restore seminar signature
+                requesterSignature: dbReq.requester_signature || dbReq.seminar_details.requesterSignature || null,
+              } : undefined,
+              schoolService: dbReq.school_service_details || undefined,
+              transportation: dbReq.transportation || undefined,
+            };
+            
+            hardSet(formData);
+            // Also save to localStorage draft for persistence
+            await saveDraft(formData, currentDraftId || undefined);
+            toast({ kind: "info", title: "Draft restored", message: "Form populated from saved draft with signatures." });
+            did = true;
+          }
+        } catch (err: any) {
+          console.error("[RequestWizard] Error loading request from store ID:", err);
+        }
+      }
+
+      // 4) Autosave fallback
       if (!did) {
         const autosaved = loadAutosave();
         if (autosaved) {
@@ -1049,9 +1162,6 @@ function RequestWizardContent() {
         endorsedByHeadSignature: "",
         // Clear requesters array when resetting
         requesters: undefined,
-        // Clear all other fields
-        title: "",
-        attachments: [],
       },
       schoolService: undefined,
       seminar: undefined,
@@ -1121,6 +1231,17 @@ function RequestWizardContent() {
 
       if (!response.ok || !result.ok) {
         console.error("[handleAutoSaveRequest] API error:", result);
+        console.error("[handleAutoSaveRequest] Response status:", response.status);
+        console.error("[handleAutoSaveRequest] Response headers:", Object.fromEntries(response.headers.entries()));
+        
+        // If unauthorized, try to refresh session or show helpful message
+        if (response.status === 401) {
+          console.error("[handleAutoSaveRequest] ⚠️ Unauthorized - Session may have expired");
+          // Don't throw error for auto-save - just log it
+          // The user can manually save later
+          return null;
+        }
+        
         throw new Error(result.error || result.message || "Failed to save draft");
       }
 
@@ -1130,6 +1251,16 @@ function RequestWizardContent() {
           patchSeminar({ requestId: result.data.id } as any);
         }
         setCurrentSubmissionId(result.data.id);
+        
+        // CRITICAL: Also save to localStorage draft with latest data (including signatures)
+        // This ensures signatures persist even if database load fails
+        try {
+          await saveDraft(data, currentDraftId || undefined);
+          console.log("[handleAutoSaveRequest] ✅ Saved to localStorage draft with signatures");
+        } catch (draftErr) {
+          console.warn("[handleAutoSaveRequest] ⚠️ Failed to save to localStorage draft:", draftErr);
+        }
+        
         return result.data.id;
       }
 
@@ -1176,9 +1307,15 @@ function RequestWizardContent() {
         setCurrentSubmissionId(result.data.id);
       }
 
-      // Also save to localStorage for draft management
+      // CRITICAL: Save to localStorage for draft management (includes signatures)
+      // This ensures signatures persist even after page reload
       const res = await saveDraft(data, currentDraftId || undefined);
       if (!currentDraftId) setCurrentDraftId(res.id);
+      console.log("[handleSaveDraft] ✅ Saved draft to localStorage with signatures:", {
+        hasRequesterSignature: !!data.travelOrder?.requesterSignature,
+        hasHeadSignature: !!data.travelOrder?.endorsedByHeadSignature,
+        hasSeminarSignature: !!data.seminar?.requesterSignature,
+      });
       toast({ kind: "success", title: "Draft saved", message: "Your draft has been saved." });
     } catch (err: any) {
       console.error("[handleSaveDraft] Error saving draft:", err);
@@ -1246,6 +1383,7 @@ function RequestWizardContent() {
     console.log('  - isHeadRequester:', isHeadRequester);
     const v = canSubmit(data, { 
       isRepresentativeSubmission,
+      isHeadRequester,
       currentUserName: currentUser?.name,
       requestingPersonName: data.travelOrder?.requestingPerson,
     });
@@ -1385,10 +1523,19 @@ function RequestWizardContent() {
   }
   
   // Handle approver selection and proceed with submission
-  const handleApproverSelected = (approverId: string, approverRole: string) => {
-    console.log('[RequestWizard] ✅ Approver selected:', { approverId, approverRole });
-    setSelectedApproverId(approverId);
-    setSelectedApproverRole(approverRole);
+  const handleApproverSelected = (approverId: string | string[], approverRole: string | string[], returnReason?: string) => {
+    // Handle single selection (arrays are for multiple selection which we don't support here)
+    const id = Array.isArray(approverId) ? approverId[0] : approverId;
+    const role = Array.isArray(approverRole) ? approverRole[0] : approverRole;
+    
+    console.log('[RequestWizard] ✅ Approver selected:', { approverId: id, approverRole: role, returnReason });
+    // Find the approver name from approverOptions
+    const selectedApprover = approverOptions.find(opt => opt.id === id);
+    const approverName = selectedApprover?.name || selectedApprover?.email || null;
+    
+    setSelectedApproverId(id);
+    setSelectedApproverRole(role);
+    setSelectedApproverName(approverName);
     setShowApproverSelection(false);
     // Now show confirmation dialog with selected approver info
     setShowConfirmDialog(true);
@@ -1401,6 +1548,14 @@ function RequestWizardContent() {
       // Call real API
       console.log("[Submit] Full form data:", data);
       console.log("[Submit] School Service:", data.schoolService);
+      console.log("[Submit] 🔍 DEBUG - travelOrder signature fields:", {
+        hasEndorsedByHeadSignature: !!(data.travelOrder as any)?.endorsedByHeadSignature,
+        hasRequesterSignature: !!(data.travelOrder as any)?.requesterSignature,
+        endorsedByHeadSignatureLength: (data.travelOrder as any)?.endorsedByHeadSignature ? (data.travelOrder as any).endorsedByHeadSignature.length : 0,
+        requesterSignatureLength: (data.travelOrder as any)?.requesterSignature ? (data.travelOrder as any).requesterSignature.length : 0,
+        isHeadRequester,
+        travelOrderKeys: Object.keys(data.travelOrder || {}).filter((k: string) => k.toLowerCase().includes('signature'))
+      });
       
       const response = await fetch("/api/requests/submit", {
         method: "POST",
@@ -1465,22 +1620,65 @@ function RequestWizardContent() {
   const hasBudget = computeTotalBudget(data.travelOrder?.costs) > 0;
   const needsVehicle = data.vehicleMode === "institutional" || data.vehicleMode === "rent";
   
-  const firstHop = firstReceiver({
-    requesterRole: data.requesterRole,
-    vehicleMode: data.vehicleMode,
-    reason: data.reason,
-    hasBudget,
-  });
+  // If head requester selected an approver, use that role instead of default routing
+  let firstHop: string;
+  if (isHeadRequester && selectedApproverRole) {
+    // Map selected approver role to routing role
+    if (selectedApproverRole === 'admin') {
+      firstHop = "TM"; // Admin = Transportation Manager
+    } else if (selectedApproverRole === 'vp') {
+      firstHop = "VP"; // VP
+    } else if (selectedApproverRole === 'head') {
+      firstHop = "DEPT_HEAD"; // Parent head
+    } else {
+      // Fallback to default
+      firstHop = firstReceiver({
+        requesterRole: data.requesterRole,
+        vehicleMode: data.vehicleMode,
+        reason: data.reason,
+        hasBudget,
+      });
+    }
+  } else {
+    // Use default routing for non-head requesters or when no approver selected yet
+    firstHop = firstReceiver({
+      requesterRole: data.requesterRole,
+      vehicleMode: data.vehicleMode,
+      reason: data.reason,
+      hasBudget,
+    });
+  }
   // Check if all requesters are confirmed (for travel orders with multiple requesters)
   const hasMultipleRequesters = Array.isArray(data.travelOrder?.requesters) && data.travelOrder.requesters.length > 1;
-  const hasSentRequesterInvitations = hasMultipleRequesters && data.travelOrder?.requesters?.some((req: any) => req.invitationId && req.invitationId !== 'auto-confirmed');
+  const requesters = Array.isArray(data.travelOrder?.requesters) ? data.travelOrder.requesters : [];
   
-  // Only require confirmation if invitations were sent
-  const requestersAllConfirmed = hasMultipleRequesters && hasSentRequesterInvitations
-    ? (allRequestersConfirmed ?? data.travelOrder?.requesters?.every((req: any) => 
-        req.status === 'confirmed' || (req.invitationId === 'auto-confirmed' && req.status === 'confirmed')
-      ) ?? false)
-    : true; // If no multiple requesters or no invitations sent, consider as confirmed
+  // Check if there are requesters who haven't been invited yet
+  const hasUninvitedRequesters = hasMultipleRequesters && requesters.some((req: any) => {
+    // Requester is uninvited if they have email but no invitationId (or invitationId is undefined/null)
+    return req.email && !req.invitationId;
+  });
+  
+  // Check if invitations were sent
+  const hasSentRequesterInvitations = hasMultipleRequesters && requesters.some((req: any) => req.invitationId && req.invitationId !== 'auto-confirmed');
+  
+  // Check if all invited requesters are confirmed
+  // If there are uninvited requesters, consider as not confirmed
+  const requestersAllConfirmed = hasMultipleRequesters
+    ? (hasUninvitedRequesters 
+        ? false // If there are uninvited requesters, not all are confirmed
+        : (hasSentRequesterInvitations
+            ? (allRequestersConfirmed ?? requesters.every((req: any) => {
+                // Auto-confirmed (current user) counts as confirmed
+                if (req.invitationId === 'auto-confirmed' && req.status === 'confirmed') return true;
+                // Invited requesters must have status 'confirmed'
+                if (req.invitationId && req.invitationId !== 'auto-confirmed') {
+                  return req.status === 'confirmed';
+                }
+                // If no invitationId, don't count (shouldn't happen if hasUninvitedRequesters is false)
+                return true;
+              }) ?? false)
+            : true)) // If no invitations sent yet, consider as confirmed (will be caught by uninvited check)
+    : true; // If no multiple requesters, consider as confirmed
   
   // Check if all participants are confirmed (for seminars)
   const seminarParticipantInvitations = (data.seminar as any)?.participantInvitations;
@@ -1493,7 +1691,7 @@ function RequestWizardContent() {
     : true; // If no participants or no invitations sent, consider as confirmed
   
   // Check if there are multiple departments and if all head endorsements are confirmed
-  const requesters = Array.isArray(data.travelOrder?.requesters) ? data.travelOrder.requesters : [];
+  // Note: requesters is already defined above (line 1653)
   const departments = requesters
     .map((req: any) => req.department)
     .filter((dept: any): dept is string => !!dept && dept.trim() !== "");
@@ -1502,6 +1700,7 @@ function RequestWizardContent() {
   
   const validation = canSubmit(data, { 
     isRepresentativeSubmission,
+    isHeadRequester,
     currentUserName: currentUser?.name,
     requestingPersonName: data.travelOrder?.requestingPerson,
     allRequestersConfirmed: hasMultipleRequesters ? requestersAllConfirmed : undefined,
@@ -1774,6 +1973,7 @@ function RequestWizardContent() {
         })}
         firstReceiver={firstHop}
         isSubmitting={submitting}
+        selectedApproverName={selectedApproverName || undefined}
         headName={(() => {
           // Priority: 1. requestingPersonHeadInfo.name (if available and requester is not head)
           // 2. data.travelOrder?.endorsedByHeadName (auto-populated in form)

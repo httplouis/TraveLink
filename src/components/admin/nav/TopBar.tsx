@@ -2,6 +2,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import ProfileMenu from "./ProfileMenu";
 import { Bell, Search as SearchIcon } from "lucide-react";
@@ -33,18 +34,22 @@ export default function TopBar() {
         <div className="mx-auto grid h-full max-w-[1600px] grid-cols-[1fr_minmax(720px,700px)_1fr] items-center gap-3 px-3 sm:px-4">
           {/* LEFT: brand */}
           <div className="justify-self-start">
-            <Link href="/admin" className="flex items-center gap-2">
-              <div
-                className="flex h-7 w-7 items-center justify-center rounded-md text-xs font-bold text-white"
-                style={{ background: BRAND }}
-              >
-                TL
+            <Link href="/admin" className="flex items-center gap-3">
+              <div className="relative h-9 w-9 rounded-lg bg-white p-1.5 shadow-md">
+                <Image
+                  src="/travelink.png"
+                  alt="Travelink Logo"
+                  width={28}
+                  height={28}
+                  className="h-full w-full object-contain"
+                  priority
+                />
               </div>
               <span
-                className="hidden text-[15px] font-semibold tracking-tight sm:block"
+                className="hidden text-xl font-bold tracking-tight sm:block"
                 style={{ color: BRAND }}
               >
-                TraviLink Admin
+                Travelink
               </span>
             </Link>
           </div>

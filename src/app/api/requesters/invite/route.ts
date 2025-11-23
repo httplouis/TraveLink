@@ -157,6 +157,43 @@ export async function POST(req: NextRequest) {
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiration
 
+      // Fetch user's department if user_id is provided
+      let department = null;
+      let department_id = null;
+      if (requester_id) {
+        const { data: userData } = await supabase
+          .from("users")
+          .select("department, department_id")
+          .eq("id", requester_id)
+          .maybeSingle();
+        
+        if (userData) {
+          // Get department name from user data
+          if (typeof userData.department === 'string' && userData.department.trim()) {
+            department = userData.department;
+            department_id = userData.department_id;
+          } else if (userData.department_id) {
+            // Fetch department name from departments table
+            const { data: deptData } = await supabase
+              .from("departments")
+              .select("id, name")
+              .eq("id", userData.department_id)
+              .maybeSingle();
+            
+            if (deptData) {
+              department = deptData.name;
+              department_id = deptData.id;
+            }
+          }
+          
+          console.log(`[POST /api/requesters/invite] ✅ Fetched user department:`, {
+            department,
+            department_id,
+            userId: requester_id,
+          });
+        }
+      }
+
       // Create new invitation
       const { data: newInvitation, error: inviteError } = await supabase
         .from("requester_invitations")
@@ -165,6 +202,8 @@ export async function POST(req: NextRequest) {
           email: email.toLowerCase(),
           name: name || null,
           user_id: requester_id || null,
+          department: department || null,
+          department_id: department_id || null,
           invited_by: profile.id,
           token,
           expires_at: expiresAt.toISOString(),
@@ -200,9 +239,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Generate confirmation link - use absolute URL
-    // Use shared utility function for consistent baseUrl resolution
-    // This ensures email links work on mobile devices
-    const baseUrl = getBaseUrl(req);
+    // ALWAYS use production URL for email links (forceProduction = true)
+    // This ensures email links work on mobile devices and in production
+    const baseUrl = getBaseUrl(req, true);
     
     console.log(`[POST /api/requesters/invite] 🌐 Base URL resolved:`, {
       baseUrl,
@@ -276,13 +315,50 @@ export async function POST(req: NextRequest) {
     // Prepare email content
     const requesterName = name || "Requester";
     const requesterProfilePicture = (requestData?.requester as any)?.profile_picture || null;
-    const travelDate = requestData.travel_start_date 
-      ? new Date(requestData.travel_start_date).toLocaleDateString('en-PH', { 
-          year: 'numeric', 
-          month: 'long', 
-          day: 'numeric' 
-        })
-      : "TBD";
+    
+    // Format travel date range properly
+    let travelDate = "TBD";
+    if (requestData.travel_start_date && requestData.travel_end_date) {
+      const startDate = new Date(requestData.travel_start_date);
+      const endDate = new Date(requestData.travel_end_date);
+      const startFormatted = startDate.toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+      const endFormatted = endDate.toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+      
+      if (startDate.getTime() === endDate.getTime()) {
+        travelDate = startFormatted;
+      } else {
+        travelDate = `${startFormatted} - ${endFormatted}`;
+      }
+    } else if (requestData.travel_start_date) {
+      travelDate = new Date(requestData.travel_start_date).toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+    }
+    
+    // Format request number - hide draft prefix if present
+    let displayRequestNumber = requestData.request_number || 'Draft';
+    if (displayRequestNumber.startsWith('DRAFT-')) {
+      displayRequestNumber = displayRequestNumber.replace('DRAFT-', '');
+    }
+    
+    // Format destination - show "To be determined" if empty or "TBD"
+    let displayDestination = requestData.destination || 'To be determined';
+    if (displayDestination.trim().toUpperCase() === 'TBD' || displayDestination.trim() === '') {
+      displayDestination = 'To be determined';
+    }
+    
+    // Format purpose - use title if purpose is empty
+    const displayPurpose = requestData.purpose || requestData.title || 'Travel Request';
 
     // Generate email HTML (similar to participant invitation but for requesters)
     const emailHtml = `
@@ -313,9 +389,9 @@ export async function POST(req: NextRequest) {
           </p>
           <div style="background: #f9fafb; padding: 20px; border-radius: 6px; margin: 20px 0;">
             <h3 style="margin-top: 0; color: #7A0010;">Request Details:</h3>
-            <p style="margin: 5px 0;"><strong>Request Number:</strong> ${requestData.request_number || 'N/A'}</p>
-            <p style="margin: 5px 0;"><strong>Purpose:</strong> ${requestData.purpose || requestData.title || 'N/A'}</p>
-            <p style="margin: 5px 0;"><strong>Destination:</strong> ${requestData.destination || 'N/A'}</p>
+            <p style="margin: 5px 0;"><strong>Request Number:</strong> ${displayRequestNumber}</p>
+            <p style="margin: 5px 0;"><strong>Purpose:</strong> ${displayPurpose}</p>
+            <p style="margin: 5px 0;"><strong>Destination:</strong> ${displayDestination}</p>
             <p style="margin: 5px 0;"><strong>Travel Date:</strong> ${travelDate}</p>
           </div>
           <p style="font-size: 14px; color: #6b7280; margin-top: 30px;">

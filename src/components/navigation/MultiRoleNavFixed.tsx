@@ -73,7 +73,7 @@ export default function MultiRoleNavFixed({
         { icon: Inbox, label: 'Head Inbox', href: '/head/inbox', badge: '3' }
       ],
       admin: [
-        { icon: Inbox, label: 'Admin Inbox', href: '/admin/inbox', badge: '5' }
+        { icon: Inbox, label: 'Admin Inbox', href: '/admin/requests', badge: '5' }
       ],
       comptroller: [
         { icon: Inbox, label: 'Budget Review', href: '/comptroller/inbox', badge: '2' }

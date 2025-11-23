@@ -47,14 +47,6 @@ export async function GET(
     
     console.log('[Tracking API] Raw request data:', request);
 
-    if (requestError) {
-      console.error("[GET /api/requests/[id]/tracking] Error:", requestError);
-      return NextResponse.json(
-        { ok: false, error: requestError.message },
-        { status: 500 }
-      );
-    }
-
     if (!request) {
       return NextResponse.json(
         { ok: false, error: "Request not found" },
@@ -186,8 +178,37 @@ export async function GET(
       }
     };
 
+    // Fetch head approver full object
+    const fetchHeadApprover = async (userId: string | null) => {
+      if (!userId) return null;
+      try {
+        const { data, error } = await supabase
+          .from("users")
+          .select("id, name, full_name, email, profile_picture, position_title, department_id, departments:department_id(id, name, code)")
+          .eq("id", userId)
+          .single();
+        
+        if (error) {
+          console.error('[fetchHeadApprover] Error:', error);
+          return null;
+        }
+        
+        return data ? {
+          id: data.id,
+          name: data.name || data.full_name || 'Unknown',
+          email: data.email || null,
+          profile_picture: data.profile_picture || null,
+          position_title: data.position_title || 'Department Head',
+          department: data.departments || null
+        } : null;
+      } catch (err) {
+        console.error('[fetchHeadApprover] Exception:', err);
+        return null;
+      }
+    };
+
     // Fetch all related data in parallel with error handling
-    let requesterData, department, headApproverName, parentHeadApproverName, adminProcessorName;
+    let requesterData, department, headApproverName, headApprover, parentHeadApproverName, parentHeadApprover, adminProcessorName;
     let comptrollerApproverName, hrApproverName, vpApproverName, vp2ApproverName, presidentApproverName, execApproverName;
     let rejectedByName, assignedVehicle, assignedDriver, preferredVehicle, preferredDriver;
     
@@ -196,7 +217,9 @@ export async function GET(
       requesterData,
       department,
       headApproverName,
+      headApprover,
       parentHeadApproverName,
+      parentHeadApprover,
       adminProcessorName,
       comptrollerApproverName,
       hrApproverName,
@@ -213,7 +236,9 @@ export async function GET(
       fetchRequesterData(request.requester_id),
       fetchDepartment(request.department_id),
       fetchUserName(request.head_approved_by),
+      fetchHeadApprover(request.head_approved_by), // Fetch full head approver object
       fetchUserName(request.parent_head_approved_by),
+      fetchHeadApprover(request.parent_head_approved_by), // Fetch full parent head approver object
       fetchUserName(request.admin_processed_by),
       fetchUserName(request.comptroller_approved_by),
       fetchUserName(request.hr_approved_by),
@@ -236,10 +261,48 @@ export async function GET(
     console.log('[Tracking API] Vehicle/Driver Resolution:', {
       preferred_vehicle_id: request.preferred_vehicle_id,
       preferred_driver_id: request.preferred_driver_id,
-      preferredVehicle,
-      preferredDriver,
+      preferredVehicle: preferredVehicle ? {
+        id: preferredVehicle.id,
+        name: preferredVehicle.vehicle_name,
+        model: preferredVehicle.model,
+        plate: preferredVehicle.plate_number
+      } : null,
+      preferredDriver: preferredDriver ? {
+        id: preferredDriver.id,
+        name: preferredDriver.name,
+        full_name: preferredDriver.full_name
+      } : null,
       transportation_type: request.transportation_type
     });
+    
+    // If preferredDriver is null but preferred_driver_id exists, try to fetch it again
+    if (!preferredDriver && request.preferred_driver_id) {
+      console.log('[Tracking API] ⚠️ Preferred driver fetch returned null, retrying...');
+      try {
+        preferredDriver = await fetchDriver(request.preferred_driver_id);
+        console.log('[Tracking API] Retry result:', preferredDriver ? {
+          id: preferredDriver.id,
+          name: preferredDriver.name
+        } : 'null');
+      } catch (retryErr) {
+        console.error('[Tracking API] Retry failed:', retryErr);
+      }
+    }
+    
+    // If preferredVehicle is null but preferred_vehicle_id exists, try to fetch it again
+    if (!preferredVehicle && request.preferred_vehicle_id) {
+      console.log('[Tracking API] ⚠️ Preferred vehicle fetch returned null, retrying...');
+      try {
+        preferredVehicle = await fetchVehicle(request.preferred_vehicle_id);
+        console.log('[Tracking API] Retry result:', preferredVehicle ? {
+          id: preferredVehicle.id,
+          name: preferredVehicle.vehicle_name,
+          plate: preferredVehicle.plate_number
+        } : 'null');
+      } catch (retryErr) {
+        console.error('[Tracking API] Retry failed:', retryErr);
+      }
+    }
 
     // Use department from request join, or separate fetch, or requester's department
     let finalDepartment = request.departments || department;
@@ -280,7 +343,7 @@ export async function GET(
     }
 
     // Get comprehensive requester-level tracking (multiple requesters from different departments)
-    let requesterTracking = [];
+    let requesterTracking: any[] = [];
     try {
       const { data: requesterInvitations, error: requesterError } = await supabase
         .from("requester_invitations")
@@ -316,6 +379,57 @@ export async function GET(
       requesterTracking = [];
     }
 
+    // Get head endorsement invitations (for multi-department requests)
+    let headEndorsements: any[] = [];
+    try {
+      const { data: headEndorsementInvitations, error: headEndorsementError } = await supabase
+        .from("head_endorsement_invitations")
+        .select(`
+          *,
+          head:users!head_user_id(id, name, email, profile_picture, position_title, department_id),
+          department:departments!department_id(id, name, code)
+        `)
+        .eq("request_id", requestId)
+        .order("confirmed_at", { ascending: true });
+      
+      if (headEndorsementError) {
+        console.error('[Tracking API] Error fetching head endorsement invitations:', headEndorsementError);
+      } else {
+        headEndorsements = (headEndorsementInvitations || []).map((inv: any) => ({
+          id: inv.id,
+          head_email: inv.head_email,
+          head_name: inv.head_name || inv.head?.name,
+          head_user_id: inv.head_user_id,
+          department_id: inv.department_id,
+          department_name: inv.department_name || inv.department?.name,
+          department_code: inv.department?.code,
+          status: inv.status,
+          invited_at: inv.invited_at,
+          confirmed_at: inv.confirmed_at,
+          declined_at: inv.declined_at,
+          declined_reason: inv.declined_reason,
+          endorsement_date: inv.endorsement_date,
+          signature: inv.signature,
+          comments: inv.comments,
+          head: inv.head ? {
+            id: inv.head.id,
+            name: inv.head.name,
+            email: inv.head.email,
+            profile_picture: inv.head.profile_picture,
+            position_title: inv.head.position_title,
+            department: inv.head.department_id ? {
+              id: inv.department?.id,
+              name: inv.department?.name,
+              code: inv.department?.code
+            } : null
+          } : null
+        }));
+      }
+    } catch (err) {
+      console.error('[Tracking API] Exception fetching head endorsement invitations:', err);
+      headEndorsements = [];
+    }
+
     // Build tracking data
     const trackingData = {
       request_number: request.request_number,
@@ -331,7 +445,8 @@ export async function GET(
       
       requester: { full_name: requesterName },
       requester_name: requesterName || request.requester_name,
-      requester_signature: request.requester_signature,
+      // Prioritize signature from requests table, then from main requester's invitation, NOT from any confirmed requester
+      requester_signature: request.requester_signature || (requesterTracking.find((r: any) => r.status === 'confirmed' && r.user_id === request.requester_id && r.signature)?.signature || null),
       department: finalDepartment,
       department_name: finalDepartment?.name || null,
       department_code: finalDepartment?.code || null,
@@ -348,15 +463,28 @@ export async function GET(
       has_budget: request.has_budget,
       total_budget: request.total_budget,
       expense_breakdown: request.expense_breakdown,
+      vehicle_mode: request.vehicle_mode,
       transportation_type: request.transportation_type,
       pickup_location: request.pickup_location,
+      pickup_location_lat: request.pickup_location_lat,
+      pickup_location_lng: request.pickup_location_lng,
+      pickup_contact_number: request.pickup_contact_number,
+      pickup_special_instructions: request.pickup_special_instructions,
+      own_vehicle_details: request.own_vehicle_details,
       pickup_time: request.pickup_time,
+      return_transportation_same: request.return_transportation_same,
+      dropoff_location: request.dropoff_location,
+      dropoff_time: request.dropoff_time,
+      parking_required: request.parking_required,
       cost_justification: request.cost_justification,
       preferred_vehicle_id: request.preferred_vehicle_id,
       preferred_driver_id: request.preferred_driver_id,
       preferred_vehicle: preferredVehicle ? 
         `${preferredVehicle.model || preferredVehicle.vehicle_name || 'Vehicle'} (${preferredVehicle.plate_number})` : null,
-      preferred_driver: preferredDriver ? preferredDriver.full_name : null,
+      preferred_vehicle_name: preferredVehicle ? 
+        `${preferredVehicle.model || preferredVehicle.vehicle_name || 'Vehicle'} (${preferredVehicle.plate_number})` : null, // Add preferred_vehicle_name
+      preferred_driver: preferredDriver ? (preferredDriver.name || preferredDriver.full_name || 'Unknown Driver') : null,
+      preferred_driver_name: preferredDriver ? (preferredDriver.name || preferredDriver.full_name || 'Unknown Driver') : (request.preferred_driver_id ? 'Driver preference specified' : null), // Add preferred_driver_name with fallback
       preferred_vehicle_note: request.preferred_vehicle_note,
       preferred_driver_note: request.preferred_driver_note,
       has_parent_head: request.has_parent_head || false,
@@ -365,12 +493,16 @@ export async function GET(
       // Approval chain tracking
       head_approved_at: request.head_approved_at,
       head_approved_by: headApproverName,
-      head_signature: request.head_signature,
+      head_approver: headApprover || null, // Add full head approver object
+      // Prioritize signature from requests table, fallback to head_endorsement_invitations
+      head_signature: request.head_signature || (headEndorsements.find((e: any) => e.status === 'confirmed' && e.signature)?.signature || null),
       head_comments: request.head_comments,
       
       parent_head_approved_at: request.parent_head_approved_at,
       parent_head_approved_by: parentHeadApproverName,
-      parent_head_signature: request.parent_head_signature,
+      parent_head_approver: parentHeadApprover || null, // Add full parent head approver object
+      // Prioritize signature from requests table, fallback to head_endorsement_invitations
+      parent_head_signature: request.parent_head_signature || (headEndorsements.find((e: any) => e.status === 'confirmed' && e.department_id !== request.department_id && e.signature)?.signature || null),
       parent_head_comments: request.parent_head_comments,
       
       admin_processed_at: request.admin_processed_at,
@@ -437,6 +569,10 @@ export async function GET(
       // Requester-level tracking (multiple requesters from different departments)
       requester_tracking: requesterTracking || [],
       has_multiple_requesters: (requesterTracking || []).length > 0,
+      
+      // Head endorsement invitations (for multi-department requests)
+      head_endorsements: headEndorsements || [],
+      has_multiple_head_endorsements: (headEndorsements || []).length > 0,
       
       // Seminar data (if seminar application)
       request_type: request.request_type,

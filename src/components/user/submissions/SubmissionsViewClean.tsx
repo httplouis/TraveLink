@@ -31,6 +31,7 @@ type Request = {
   has_parent_head?: boolean; // Whether department has parent head
   request_type?: 'seminar' | 'travel_order'; // Request type
   seminar_data?: any; // Seminar data (JSONB field)
+  attachments?: any; // Attachments (can be array or JSON string from database)
   department: {
     code: string;
     name: string;
@@ -198,7 +199,9 @@ export default function SubmissionsView() {
         preferred_vehicle_note: json.data?.preferred_vehicle_note,
         preferred_driver_note: json.data?.preferred_driver_note,
         preferred_vehicle: json.data?.preferred_vehicle,
-        preferred_driver: json.data?.preferred_driver
+        preferred_driver: json.data?.preferred_driver,
+        preferred_driver_name: json.data?.preferred_driver_name || json.data?.preferred_driver,
+        preferred_vehicle_name: json.data?.preferred_vehicle_name || json.data?.preferred_vehicle
       });
       logger.debug('=== VP/PRESIDENT FIELD DEBUG ===', {
         vp_approved_at: json.data?.vp_approved_at,
@@ -476,6 +479,10 @@ export default function SubmissionsView() {
               cost_justification: fullRequestData?.cost_justification || null,
               preferred_vehicle: fullRequestData?.preferred_vehicle || null, // Now resolved to vehicle name from API
               preferred_driver: fullRequestData?.preferred_driver || null, // Now resolved to driver name from API
+              preferred_vehicle_id: fullRequestData?.preferred_vehicle_id || null,
+              preferred_driver_id: fullRequestData?.preferred_driver_id || null,
+              preferred_vehicle_name: fullRequestData?.preferred_vehicle_name || fullRequestData?.preferred_vehicle || null,
+              preferred_driver_name: fullRequestData?.preferred_driver_name || fullRequestData?.preferred_driver || null,
               preferred_vehicle_note: fullRequestData?.preferred_vehicle_note || null,
               preferred_driver_note: fullRequestData?.preferred_driver_note || null,
               
@@ -517,7 +524,7 @@ export default function SubmissionsView() {
                   try {
                     return JSON.parse(seminarData);
                   } catch (e) {
-                    logger.warn('Failed to parse seminar_data:', e);
+                    console.warn('Failed to parse seminar_data:', e);
                     return undefined;
                   }
                 }
@@ -554,7 +561,7 @@ export default function SubmissionsView() {
                   try {
                     attachments = JSON.parse(attachments);
                   } catch (e) {
-                    logger.warn('Failed to parse attachments:', e);
+                    console.warn('Failed to parse attachments:', e);
                     attachments = [];
                   }
                 }
@@ -563,16 +570,27 @@ export default function SubmissionsView() {
               })(),
               
               // Requester signature
-              requester_signature: fullRequestData?.requester_signature || null,
+              // For head requesters: use head signature as fallback (dual-signature logic)
+              requester_signature: (() => {
+                const requesterIsHead = fullRequestData?.requester_is_head || false;
+                // If requester is head, check head signature as fallback (same signature)
+                if (requesterIsHead) {
+                  return fullRequestData?.requester_signature || 
+                         fullRequestData?.head_signature || 
+                         fullRequestData?.parent_head_signature || 
+                         null;
+                }
+                return fullRequestData?.requester_signature || null;
+              })(),
+              
+              // Head approver data
+              head_approver: fullRequestData?.parent_head_approver || fullRequestData?.head_approver || null,
               
               // Additional form fields
               destination_geo: fullRequestData?.destination_geo || null,
               vehicle_mode: fullRequestData?.vehicle_mode || null,
-              preferred_driver_name: fullRequestData?.preferred_driver_name || null,
-              preferred_vehicle_name: fullRequestData?.preferred_vehicle_name || null,
-              reason_of_trip: fullRequestData?.workflow_metadata?.reason_of_trip || null,
-              department_head_endorsed_by: fullRequestData?.workflow_metadata?.department_head_endorsed_by || null,
-              department_head_endorsement_date: fullRequestData?.workflow_metadata?.department_head_endorsement_date || null,
+              preferred_driver_name: fullRequestData?.preferred_driver_name || fullRequestData?.preferred_driver || null,
+              preferred_vehicle_name: fullRequestData?.preferred_vehicle_name || fullRequestData?.preferred_vehicle || null,
               pickup_preference: fullRequestData?.pickup_preference || null,
               pickup_location_lat: fullRequestData?.pickup_location_lat || null,
               pickup_location_lng: fullRequestData?.pickup_location_lng || null,
@@ -592,6 +610,14 @@ export default function SubmissionsView() {
                 const hasBudget = fullRequestData?.has_budget || false;
                 const requiresPresidentApproval = requesterIsHead || ((fullRequestData?.total_budget || 0) > 50000);
                 
+                // For head requesters: requester signature should be same as head signature (dual-signature)
+                const requesterSignature = requesterIsHead 
+                  ? (fullRequestData?.requester_signature || 
+                     fullRequestData?.head_signature || 
+                     fullRequestData?.parent_head_signature || 
+                     null)
+                  : (fullRequestData?.requester_signature || null);
+                
                 const signatures: any[] = [
                 {
                   id: 'requester',
@@ -605,7 +631,7 @@ export default function SubmissionsView() {
                     department: selectedRequest.department?.name || 'No Department',
                     position: requesterIsHead ? 'Department Head' : 'Faculty/Staff'
                   },
-                  signature: fullRequestData?.requester_signature || null,
+                  signature: requesterSignature,
                   approved_at: selectedRequest.created_at
                 },
               ];
@@ -614,8 +640,8 @@ export default function SubmissionsView() {
               // (Head requests use dual-signature - requester signature appears in both places)
               // DO NOT add head signature stage for head requesters - they already signed as requester
               if (!requesterIsHead) {
-                // Get head approver data from API response
-                const headApprover = fullRequestData?.head_approver || fullRequestData?.parent_head_approver;
+                // Get head approver data from API response - prefer parent_head_approver if exists, otherwise head_approver
+                const headApprover = fullRequestData?.parent_head_approver || fullRequestData?.head_approver;
                 const hasHeadApproval = !!(fullRequestData?.head_signature || fullRequestData?.parent_head_signature || fullRequestData?.head_approved_at || fullRequestData?.parent_head_approved_at);
                 
                 signatures.push({
@@ -625,10 +651,11 @@ export default function SubmissionsView() {
                   status: hasHeadApproval ? 'approved' : 'pending',
                   approver: hasHeadApproval && headApprover ? {
                     id: headApprover.id || 'dept-head',
-                    name: headApprover.name || 'Department Head',
+                    name: headApprover.name || fullRequestData?.head_approved_by || fullRequestData?.parent_head_approved_by || 'Department Head',
                     position: headApprover.position_title || 'Department Head',
                     department: headApprover.department?.name || selectedRequest.department?.name || 'No Department',
-                    profile_picture: headApprover.profile_picture
+                    profile_picture: headApprover.profile_picture,
+                    email: headApprover.email || undefined
                   } : undefined,
                   signature: fullRequestData?.parent_head_signature || fullRequestData?.head_signature || null,
                   approved_at: fullRequestData?.parent_head_approved_at || fullRequestData?.head_approved_at || null

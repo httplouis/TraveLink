@@ -96,10 +96,21 @@ export async function POST(req: Request) {
     // ═══════════════════════════════════════════════════════════════════
 
     const travelOrder = body.travelOrder ?? body.payload?.travelOrder ?? {};
-    const costs = travelOrder.costs ?? {};
+    let costs = travelOrder.costs ?? {};
     const vehicleMode = body.vehicleMode ?? "owned";
     const reason = body.reason ?? "official";
     const departmentRouting: DepartmentRouting = body.departmentRouting ?? "own_office";
+
+    // Auto-propose budget for institutional vehicles if no budget exists
+    if (vehicleMode === "institutional") {
+      const { mergeProposedBudget, hasExistingBudget } = await import("@/lib/user/request/budget-proposal");
+      if (!hasExistingBudget(costs)) {
+        console.log("[SMART SUBMIT] 💰 Auto-proposing budget for institutional vehicle");
+        costs = mergeProposedBudget(costs);
+        // Update travelOrder with proposed costs
+        travelOrder.costs = costs;
+      }
+    }
 
     // 💰 SMART BUDGET DETECTION
     const totalBudget = Object.values(costs).reduce((sum: number, val: any) => {

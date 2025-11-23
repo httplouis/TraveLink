@@ -20,7 +20,12 @@ export default function ExecDashboardContainer() {
     fetch("/api/me")
       .then(res => res.json())
       .then(data => {
-        if (data.full_name) setUserName(data.full_name.split(" ")[0]);
+        if (data.full_name) {
+          // Import name formatting utility to skip titles like "Dr.", "Atty."
+          const { getDisplayName } = await import('@/lib/utils/name-formatting');
+          const displayName = getDisplayName(data.full_name);
+          setUserName(displayName);
+        }
       });
 
     fetch("/api/exec/stats")

@@ -18,6 +18,7 @@ type Props = {
   firstReceiver: string;
   isSubmitting?: boolean;
   headName?: string; // Department head name for display
+  selectedApproverName?: string; // Selected approver name (for head requesters who selected admin/VP)
   isSeminar?: boolean; // Whether this is a seminar application
 };
 
@@ -39,6 +40,7 @@ export default function SubmitConfirmationDialog({
   firstReceiver,
   isSubmitting = false,
   headName,
+  selectedApproverName,
   isSeminar = false,
 }: Props) {
   if (!isOpen) return null;
@@ -46,7 +48,8 @@ export default function SubmitConfirmationDialog({
   const getApproverLabel = (role: string) => {
     const labels: Record<string, string> = {
       DEPT_HEAD: "Department Head",
-      TM: "Transportation Manager",
+      TM: "Transportation Manager (Admin)",
+      ADMIN: "Administrator",
       COMPTROLLER: "Comptroller",
       HRD: "Human Resources",
       VP: "Vice President",
@@ -123,17 +126,21 @@ export default function SubmitConfirmationDialog({
                   FIRST
                 </span>
                 <span className="text-sm font-medium text-blue-900">
-                  {firstReceiver === "DEPT_HEAD" && headName && headName.trim() !== ""
+                  {selectedApproverName && selectedApproverName.trim() !== ""
+                    ? `${selectedApproverName} - ${getApproverLabel(firstReceiver)}`
+                    : firstReceiver === "DEPT_HEAD" && headName && headName.trim() !== ""
                     ? `${headName} - ${getApproverLabel(firstReceiver)}`
                     : getApproverLabel(firstReceiver)}
                 </span>
               </div>
               <p className="text-xs text-blue-700">
-                {firstReceiver === "DEPT_HEAD" && headName && headName.trim() !== ""
+                {selectedApproverName && selectedApproverName.trim() !== ""
+                  ? `Your request will be sent to ${selectedApproverName} (${getApproverLabel(firstReceiver)}) first for approval`
+                  : firstReceiver === "DEPT_HEAD" && headName && headName.trim() !== ""
                   ? `Your request will be sent to ${headName}${department ? ` (${department})` : ''} first for approval`
                   : firstReceiver === "DEPT_HEAD"
                   ? `Your request will be sent to your department head${department ? ` (${department})` : ''} first for approval`
-                  : `Your request will be sent here first for approval`}
+                  : `Your request will be sent to ${getApproverLabel(firstReceiver)} first for approval`}
               </p>
             </div>
 

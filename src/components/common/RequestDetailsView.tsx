@@ -825,16 +825,6 @@ export default function RequestDetailsView({
                   <div className="bg-white rounded-lg border border-gray-200 p-6">
                     <h3 className="text-lg font-semibold text-gray-900 mb-4">Basic Information</h3>
                     <div className="space-y-4">
-                      {/* Reason of Trip */}
-                      {request.workflow_metadata?.reason_of_trip && (
-                        <div>
-                          <p className="text-xs font-medium text-gray-500 mb-1">Reason of Trip</p>
-                          <p className="text-gray-900 font-medium capitalize">
-                            {request.workflow_metadata.reason_of_trip.replace('_', ' ')}
-                          </p>
-                        </div>
-                      )}
-                      
                       {/* Purpose */}
                       <div>
                         <p className="text-xs font-medium text-gray-500 mb-1">Purpose</p>
@@ -1015,11 +1005,6 @@ export default function RequestDetailsView({
                                               }}
                                             />
                                           </div>
-                                          {endorsement.head_name && (
-                                            <p className="text-xs text-gray-600 mt-1">
-                                              {endorsement.head_name}
-                                            </p>
-                                          )}
                                         </>
                                       ) : (
                                         <>
@@ -1029,11 +1014,6 @@ export default function RequestDetailsView({
                                               Signature not provided
                                             </p>
                                           </div>
-                                          {endorsement.head_name && (
-                                            <p className="text-xs text-gray-600 mt-1">
-                                              {endorsement.head_name}
-                                            </p>
-                                          )}
                                         </>
                                       )}
                                     </div>
@@ -1287,8 +1267,8 @@ export default function RequestDetailsView({
                     </WowCard>
                   )}
 
-                  {/* Transportation Details */}
-                  {request.transportation_type && (
+                  {/* Transportation Details - Only show if vehicle_mode is NOT 'owned' */}
+                  {request.transportation_type && request.vehicle_mode !== 'owned' && (
                     <div className="bg-white rounded-lg border border-gray-200 p-6">
                       <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
                         <Car className="w-5 h-5 text-[#7a0019]" />
@@ -1736,18 +1716,18 @@ export default function RequestDetailsView({
                   )}
 
                   {/* Preferred Vehicle and Driver */}
-                  {(request.preferred_vehicle || request.preferred_driver) && (
+                  {(request.preferred_vehicle || request.preferred_vehicle_name || request.preferred_vehicle_id || request.preferred_driver || request.preferred_driver_name || request.preferred_driver_id) && (
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900 mb-3">Vehicle Preferences</h3>
                       <div className="bg-gray-50 rounded-lg p-4 space-y-4">
-                        {request.preferred_vehicle && (
+                        {(request.preferred_vehicle || request.preferred_vehicle_name) && (
                           <div className="flex items-start gap-3">
                             <div className="w-5 h-5 flex items-center justify-center mt-0.5">
                               <Car className="w-5 h-5 text-[#7a0019]" />
                             </div>
                             <div className="flex-1">
                               <p className="text-sm font-medium text-gray-500">Preferred Vehicle</p>
-                              <p className="text-gray-900">{request.preferred_vehicle}</p>
+                              <p className="text-gray-900">{request.preferred_vehicle_name || request.preferred_vehicle}</p>
                               {request.preferred_vehicle_note && (
                                 <p className="text-sm text-gray-600 mt-1">{request.preferred_vehicle_note}</p>
                               )}
@@ -1755,14 +1735,14 @@ export default function RequestDetailsView({
                           </div>
                         )}
                         
-                        {request.preferred_driver && (
+                        {(request.preferred_driver || request.preferred_driver_name || request.preferred_driver_id) && (
                           <div className="flex items-start gap-3">
                             <div className="w-5 h-5 flex items-center justify-center mt-0.5">
                               <User className="w-5 h-5 text-[#7a0019]" />
                             </div>
                             <div className="flex-1">
                               <p className="text-sm font-medium text-gray-500">Preferred Driver</p>
-                              <p className="text-gray-900">{request.preferred_driver}</p>
+                              <p className="text-gray-900">{request.preferred_driver_name || request.preferred_driver || 'Driver preference specified'}</p>
                               {request.preferred_driver_note && (
                                 <p className="text-sm text-gray-600 mt-1">{request.preferred_driver_note}</p>
                               )}
@@ -1932,8 +1912,25 @@ export default function RequestDetailsView({
               <h3 className="text-2xl font-bold text-gray-900">Requested By</h3>
             </div>
             <div className="space-y-4">
-              {/* Main Requester (always show) */}
+              {/* Main Requester - ALWAYS show main requester card */}
+              {/* NOTE: Main requester should ALWAYS appear in "Requested By" section */}
+              {/* Even if they're also in confirmedRequesters or head_endorsements, they should still show here */}
+              {/* The confirmedRequesters section will filter them out to avoid duplicates */}
               {(() => {
+                const mainRequesterEmail = request.requester?.email?.toLowerCase()?.trim();
+                const mainRequesterId = String(request.requester?.id || '');
+                const mainRequesterName = request.requester?.name?.toLowerCase()?.trim();
+                
+                console.log('[RequestDetailsView] ✅ ALWAYS showing main requester card:', {
+                  mainRequesterEmail,
+                  mainRequesterId,
+                  mainRequesterName,
+                  confirmedRequestersCount: confirmedRequesters.length,
+                  headEndorsementsCount: request.head_endorsements?.length || 0,
+                  note: 'Main requester always shows in "Requested By" section'
+                });
+                
+                // Get requester signature from signatures array or direct field
                 // Get requester signature from signatures array or direct field
                 const requesterSignatureStage = request.signatures?.find((s: any) => s.id === 'requester' || s.role === 'Requester');
                 const requesterSignature = request.requester_signature || requesterSignatureStage?.signature || null;
@@ -2030,11 +2027,13 @@ export default function RequestDetailsView({
                   // Filter out main requester completely - they're already shown in the main requester card above
                   const mainRequesterEmail = request.requester?.email?.toLowerCase()?.trim();
                   const mainRequesterId = String(request.requester?.id || '');
+                  const mainRequesterName = request.requester?.name?.toLowerCase()?.trim();
                   
                   console.log('[RequestDetailsView] 🔍 Filtering confirmed requesters:', {
                     totalBeforeFilter: confirmedRequesters.length,
                     mainRequesterEmail,
                     mainRequesterId,
+                    mainRequesterName,
                     allRequesters: confirmedRequesters.map((r: any) => ({
                       name: r.name,
                       email: r.email,
@@ -2046,13 +2045,16 @@ export default function RequestDetailsView({
                   const filtered = confirmedRequesters.filter((requester: any) => {
                     const requesterEmail = String(requester.email || '').toLowerCase().trim();
                     const requesterUserId = String(requester.user_id || '');
+                    const requesterName = String(requester.name || '').toLowerCase().trim();
                     
                     // Check if this is the main requester by comparing:
-                    // 1. Email (case-insensitive, trimmed)
+                    // 1. Email (case-insensitive, trimmed) - most reliable
                     // 2. user_id matches requester_id
+                    // 3. Name match (fallback, less reliable)
                     const emailMatches = mainRequesterEmail && requesterEmail && requesterEmail === mainRequesterEmail;
                     const userIdMatches = mainRequesterId && requesterUserId && requesterUserId === mainRequesterId;
-                    const isMainRequester = emailMatches || userIdMatches;
+                    const nameMatches = mainRequesterName && requesterName && requesterName === mainRequesterName;
+                    const isMainRequester = emailMatches || userIdMatches || nameMatches;
                     
                     if (isMainRequester) {
                       console.log('[RequestDetailsView] 🚫 FILTERING OUT - Main requester duplicate:', {
@@ -2061,7 +2063,8 @@ export default function RequestDetailsView({
                         requesterUserId,
                         mainRequesterId,
                         emailMatches,
-                        userIdMatches
+                        userIdMatches,
+                        nameMatches
                       });
                       return false;
                     }

@@ -1,8 +1,22 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 
 export async function GET() {
   try {
+    // Use service role client to bypass RLS for stats queries
+    const supabaseServiceRole = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    );
+    
+    // Use regular client for auth check only
     const supabase = await createSupabaseServerClient(true);
 
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -38,7 +52,8 @@ export async function GET() {
 
     // 1. Pending Endorsements: Requests in pending_head or pending_parent_head status for this head's department
     // Also count requests from child departments (for parent heads like SVP)
-    const { count: directPending, error: directPendingError } = await supabase
+    // Use service role client to bypass RLS
+    const { count: directPending, error: directPendingError } = await supabaseServiceRole
       .from("requests")
       .select("*", { count: "exact", head: true })
       .in("status", ["pending_head", "pending_parent_head"])
@@ -47,14 +62,14 @@ export async function GET() {
     // Count child department requests (for parent heads)
     let childPendingCount = 0;
     try {
-      const { data: childDepartments } = await supabase
+      const { data: childDepartments } = await supabaseServiceRole
         .from("departments")
         .select("id")
         .eq("parent_department_id", departmentId);
       
       if (childDepartments && childDepartments.length > 0) {
         const childDeptIds = childDepartments.map((d: any) => d.id);
-        const { count: childCount } = await supabase
+        const { count: childCount } = await supabaseServiceRole
           .from("requests")
           .select("*", { count: "exact", head: true })
           .in("status", ["pending_parent_head"])
@@ -74,7 +89,8 @@ export async function GET() {
     }
 
     // 2. Active Requests: Requests submitted by or requested by this user, not in final states
-    const { count: activeRequests, error: activeError } = await supabase
+    // Use service role client to bypass RLS
+    const { count: activeRequests, error: activeError } = await supabaseServiceRole
       .from("requests")
       .select("*", { count: "exact", head: true })
       .or(`submitted_by_user_id.eq.${userId},requester_id.eq.${userId}`)
@@ -85,7 +101,8 @@ export async function GET() {
     }
 
     // 3. My Department: All requests from this head's department (any status except cancelled)
-    const { count: departmentRequests, error: deptError } = await supabase
+    // Use service role client to bypass RLS
+    const { count: departmentRequests, error: deptError } = await supabaseServiceRole
       .from("requests")
       .select("*", { count: "exact", head: true })
       .eq("department_id", departmentId)

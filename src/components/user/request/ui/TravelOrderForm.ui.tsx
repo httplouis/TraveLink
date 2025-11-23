@@ -48,6 +48,20 @@ export default function TravelOrderForm({
   async function handleDepartmentChange(nextDept: string) {
     const patch: any = { department: nextDept };
 
+    // Skip database lookup if this is a combined department name (contains " and ")
+    // Combined departments are for display only and don't exist in the database
+    const isCombinedDepartment = nextDept && nextDept.includes(" and ");
+    
+    if (isCombinedDepartment) {
+      console.log('[TravelOrderForm] ⏭️ Skipping database lookup for combined department:', nextDept);
+      // Clear head name for combined departments (head endorsements will be handled via email)
+      patch.endorsedByHeadName = "";
+      patch.endorsedByHeadDate = "";
+      patch.endorsedByHeadSignature = "";
+      onChange(patch);
+      return;
+    }
+
     const currentHead = data?.endorsedByHeadName ?? "";
     if (!headEditedRef.current || !currentHead) {
       // Try to fetch department head from database first

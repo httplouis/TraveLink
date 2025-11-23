@@ -122,6 +122,13 @@ export async function GET(req: NextRequest) {
           destination,
           travel_start_date,
           travel_end_date,
+          pickup_location,
+          pickup_location_lat,
+          pickup_location_lng,
+          dropoff_location,
+          vehicle_mode,
+          own_vehicle_details,
+          transportation_type,
           requester:users!requester_id(id, name, email, profile_picture)
         )
       `)
@@ -149,6 +156,13 @@ export async function GET(req: NextRequest) {
               destination,
               travel_start_date,
               travel_end_date,
+              pickup_location,
+              pickup_location_lat,
+              pickup_location_lng,
+              dropoff_location,
+              vehicle_mode,
+              own_vehicle_details,
+              transportation_type,
               requester:users!requester_id(id, name, email, profile_picture)
             )
           `)
@@ -212,6 +226,13 @@ export async function GET(req: NextRequest) {
                   destination,
                   travel_start_date,
                   travel_end_date,
+                  pickup_location,
+                  pickup_location_lat,
+                  pickup_location_lng,
+                  dropoff_location,
+                  vehicle_mode,
+                  own_vehicle_details,
+                  transportation_type,
                   requester:users!requester_id(id, name, email, profile_picture)
                 )
               `)
@@ -566,17 +587,102 @@ export async function POST(req: NextRequest) {
           .eq("id", invitation.id);
       }
 
+      // CRITICAL: Sync signature to main requests table ONLY if this is the primary requester
+      // Additional requesters' signatures should stay ONLY in requester_invitations.signature
+      if (finalSignature && invitation.request_id) {
+        const { data: request } = await supabase
+          .from("requests")
+          .select("requester_id, requester_signature")
+          .eq("id", invitation.request_id)
+          .single();
+
+        if (request) {
+          // ONLY sync if this is the primary requester (requester_id matches)
+          // Do NOT sync for additional requesters - their signatures stay in requester_invitations
+          const isPrimaryRequester = userProfile && request.requester_id === userProfile.id;
+
+          if (isPrimaryRequester) {
+            const { error: syncError } = await supabase
+              .from("requests")
+              .update({ 
+                requester_signature: finalSignature,
+                updated_at: phNow,
+              })
+              .eq("id", invitation.request_id);
+
+            if (syncError) {
+              console.error("[POST /api/requesters/confirm] ❌ Failed to sync signature to requests table:", syncError);
+            } else {
+              console.log("[POST /api/requesters/confirm] ✅ Synced signature to requests table (primary requester)");
+            }
+          } else {
+            console.log("[POST /api/requesters/confirm] ⏭️ Skipping signature sync - this is an additional requester, signature stays in requester_invitations");
+          }
+        }
+      }
+
+      // CRITICAL: Verify signature was actually saved - fetch from database to confirm
+      let verifiedInvitation = updatedInvitation;
+      if (finalSignature) {
+        const { data: verifyInvitation, error: verifyError } = await supabase
+          .from("requester_invitations")
+          .select("id, signature, status, name, department, confirmed_at")
+          .eq("id", invitation.id)
+          .single();
+        
+        if (verifyError) {
+          console.error("[POST /api/requesters/confirm] ❌ Failed to verify signature:", verifyError);
+        } else if (verifyInvitation) {
+          if (!verifyInvitation.signature && finalSignature) {
+            console.error("[POST /api/requesters/confirm] ❌ CRITICAL: Signature was provided but not saved! Attempting to save again...", {
+              invitationId: updatedInvitation?.id,
+              signatureProvided: !!finalSignature,
+              signatureLength: finalSignature.length,
+              savedSignature: !!verifyInvitation.signature,
+            });
+            
+            // Try to update signature again
+            const { data: retryUpdate, error: retryError } = await supabase
+              .from("requester_invitations")
+              .update({
+                signature: finalSignature,
+                updated_at: phNow,
+              })
+              .eq("id", invitation.id)
+              .select("signature")
+              .single();
+            
+            if (retryError) {
+              console.error("[POST /api/requesters/confirm] ❌ Failed to save signature on retry:", retryError);
+            } else if (retryUpdate?.signature) {
+              console.log("[POST /api/requesters/confirm] ✅ Signature saved on retry");
+              verifiedInvitation = { ...updatedInvitation, signature: retryUpdate.signature };
+            } else {
+              console.error("[POST /api/requesters/confirm] ❌ Signature still not saved after retry");
+            }
+          } else if (verifyInvitation.signature) {
+            console.log("[POST /api/requesters/confirm] ✅ Signature verified in database:", {
+              signatureLength: verifyInvitation.signature.length,
+              signaturePreview: verifyInvitation.signature.substring(0, 50) + "...",
+            });
+            // Update the response with verified signature
+            verifiedInvitation = { ...updatedInvitation, signature: verifyInvitation.signature };
+          }
+        }
+      }
+
       console.log("[POST /api/requesters/confirm] ✅ Confirmation successful:", {
-        invitationId: updatedInvitation?.id,
-        status: updatedInvitation?.status,
-        hasSignature: !!updatedInvitation?.signature,
-        name: updatedInvitation?.name,
+        invitationId: verifiedInvitation?.id,
+        status: verifiedInvitation?.status,
+        hasSignature: !!verifiedInvitation?.signature,
+        signatureLength: verifiedInvitation?.signature?.length || 0,
+        name: verifiedInvitation?.name,
       });
 
       return NextResponse.json({
         ok: true,
         message: "Successfully confirmed participation",
-        data: updatedInvitation || { ...invitation, status: 'confirmed', signature: finalSignature }
+        data: verifiedInvitation || { ...invitation, status: 'confirmed', signature: finalSignature }
       });
     } else {
       // Decline

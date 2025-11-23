@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { Inbox, Search, FileText, Calendar, MapPin, CheckCircle, History, Clock } from "lucide-react";
+import { Inbox, Search, FileText, Calendar, MapPin, CheckCircle, Clock } from "lucide-react";
 import UserRequestModal from "@/components/user/UserRequestModal";
 import { useToast } from "@/components/common/ui/Toast";
 import { createSupabaseClient } from "@/lib/supabase/client";
@@ -27,14 +27,10 @@ type Request = {
 
 function UserInboxPageContent() {
   const [requests, setRequests] = React.useState<Request[]>([]);
-  const [historyRequests, setHistoryRequests] = React.useState<Request[]>([]);
-  const [historyCount, setHistoryCount] = React.useState(0);
   const [loading, setLoading] = React.useState(true);
-  const [historyLoading, setHistoryLoading] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [selectedRequest, setSelectedRequest] = React.useState<Request | null>(null);
   const [showModal, setShowModal] = React.useState(false);
-  const [activeTab, setActiveTab] = React.useState<"pending" | "history">("pending");
   const toast = useToast();
   const searchParams = useSearchParams();
 
@@ -42,22 +38,6 @@ function UserInboxPageContent() {
     document.title = "My Inbox - Travelink";
   }, []);
 
-  // Fetch history count on mount
-  React.useEffect(() => {
-    const fetchHistoryCount = async () => {
-      try {
-        const res = await fetch("/api/user/inbox/history/count", { cache: "no-store" });
-        const data = await res.json();
-        if (data.ok) {
-          setHistoryCount(data.count || 0);
-        }
-      } catch (err) {
-        console.error("Failed to fetch history count:", err);
-      }
-    };
-
-    fetchHistoryCount();
-  }, []);
 
   // Handle view parameter from notification click - FAST loading
   React.useEffect(() => {
@@ -264,39 +244,8 @@ function UserInboxPageContent() {
     loadRequests(); // Refresh list
   };
 
-  const loadHistory = async () => {
-    try {
-      setHistoryLoading(true);
-      const res = await fetch("/api/user/inbox/history", { cache: "no-store" });
-      const data = await res.json();
-      
-      if (data.ok && Array.isArray(data.data)) {
-        setHistoryRequests(data.data);
-        setHistoryCount(data.data.length); // Update count when history is loaded
-      }
-    } catch (err) {
-      console.error("Failed to load history:", err);
-    } finally {
-      setHistoryLoading(false);
-    }
-  };
-
   const handleSigned = () => {
     loadRequests(); // Refresh list after signing
-    
-    // Refresh history count
-    fetch("/api/user/inbox/history/count", { cache: "no-store" })
-      .then(res => res.json())
-      .then(data => {
-        if (data.ok) {
-          setHistoryCount(data.count || 0);
-        }
-      })
-      .catch(err => console.error("Failed to refresh history count:", err));
-    
-    if (activeTab === "history") {
-      loadHistory(); // Also refresh history
-    }
   };
 
   function formatDate(dateStr?: string | null) {
@@ -313,66 +262,8 @@ function UserInboxPageContent() {
     }
   }
 
-  // Load history when switching to history tab and set up real-time
-  React.useEffect(() => {
-    if (activeTab === "history") {
-      if (historyRequests.length === 0) {
-        loadHistory();
-      }
-      
-      // Set up real-time subscription for history
-      let isMounted = true;
-      const supabase = createSupabaseClient();
-      let mutateTimeout: NodeJS.Timeout | null = null;
-      
-      const channel = supabase
-        .channel("user-inbox-history-changes")
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "requests",
-          },
-          (payload: any) => {
-            if (!isMounted || activeTab !== "history") return;
-            
-            // If requester_signature was just added, refresh history
-            if (payload.new?.requester_signature && !payload.old?.requester_signature) {
-              console.log("[UserInbox History] 🔄 New signature detected, refreshing history");
-              if (mutateTimeout) clearTimeout(mutateTimeout);
-              mutateTimeout = setTimeout(() => {
-                if (isMounted) {
-                  // Refresh history count
-                  fetch("/api/user/inbox/history/count", { cache: "no-store" })
-                    .then(res => res.json())
-                    .then(data => {
-                      if (data.ok && isMounted) {
-                        setHistoryCount(data.count || 0);
-                      }
-                    })
-                    .catch(err => console.error("Failed to refresh history count:", err));
-                  
-                  if (activeTab === "history") {
-                    loadHistory();
-                  }
-                }
-              }, 500);
-            }
-          }
-        )
-        .subscribe();
-
-      return () => {
-        isMounted = false;
-        if (mutateTimeout) clearTimeout(mutateTimeout);
-        supabase.removeChannel(channel);
-      };
-    }
-  }, [activeTab]);
-
-  const displayRequests = activeTab === "pending" ? requests : historyRequests;
-  const isLoading = activeTab === "pending" ? loading : historyLoading;
+  const displayRequests = requests;
+  const isLoading = loading;
 
   const logger = createLogger("UserInbox");
 
@@ -412,41 +303,9 @@ function UserInboxPageContent() {
               My Inbox
             </h1>
             <p className="text-sm text-gray-600 mt-1">
-              {activeTab === "pending" 
-                ? "Requests pending your signature"
-                : "Signed requests history"}
+              Requests pending your signature
             </p>
           </div>
-        </div>
-
-        {/* Tabs */}
-        <div className="flex gap-2 border-b border-gray-200">
-          <button
-            onClick={() => setActiveTab("pending")}
-            className={`
-              px-4 py-2 font-medium text-sm transition-colors border-b-2
-              ${activeTab === "pending"
-                ? "border-[#7A0010] text-[#7A0010]"
-                : "border-transparent text-gray-500 hover:text-gray-700"
-              }
-            `}
-          >
-            <Clock className="h-4 w-4 inline mr-2" />
-            Pending ({requests.length})
-          </button>
-          <button
-            onClick={() => setActiveTab("history")}
-            className={`
-              px-4 py-2 font-medium text-sm transition-colors border-b-2
-              ${activeTab === "history"
-                ? "border-[#7A0010] text-[#7A0010]"
-                : "border-transparent text-gray-500 hover:text-gray-700"
-              }
-            `}
-          >
-            <History className="h-4 w-4 inline mr-2" />
-            History ({historyCount})
-          </button>
         </div>
 
         {/* Search */}
@@ -468,16 +327,12 @@ function UserInboxPageContent() {
             <p className="text-gray-500 font-medium">
               {searchQuery 
                 ? "No requests match your search" 
-                : activeTab === "pending"
-                  ? "No pending requests"
-                  : "No signed requests yet"}
+                : "No pending requests"}
             </p>
             <p className="text-sm text-gray-400 mt-1">
               {searchQuery 
                 ? "Try a different search term" 
-                : activeTab === "pending"
-                  ? "Requests submitted on your behalf will appear here"
-                  : "Requests you've signed will appear here"}
+                : "Requests submitted on your behalf will appear here"}
             </p>
           </div>
         ) : (
@@ -522,7 +377,7 @@ function UserInboxPageContent() {
                   }}
                   showActions={true}
                   onView={() => handleReviewClick(req)}
-                  onApprove={activeTab === "pending" ? () => handleReviewClick(req) : undefined}
+                  onApprove={() => handleReviewClick(req)}
                 />
               ))}
           </div>

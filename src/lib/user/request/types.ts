@@ -126,6 +126,8 @@ export interface SeminarApplication {
   makeUpClassSchedule?: string;
   applicantUndertaking?: boolean;
   fundReleaseLine?: number | null;
+  /** Requester's e-signature (data URL) */
+  requesterSignature?: string;
 }
 
 /* ---------- Transportation (for institutional vehicles) ---------- */

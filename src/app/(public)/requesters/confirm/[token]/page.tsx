@@ -292,27 +292,147 @@ export default function RequesterConfirmationPage() {
 
   if (isConfirmed || isDeclined || isExpired) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-        <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-6 text-center">
-          {isConfirmed ? (
-            <>
-              <CheckCircle2 className="h-12 w-12 text-green-600 mx-auto mb-4" />
-              <h1 className="text-xl font-semibold text-gray-900 mb-2">Already Confirmed</h1>
-              <p className="text-gray-600">You have already confirmed your participation in this request.</p>
-            </>
-          ) : isDeclined ? (
-            <>
-              <XCircle className="h-12 w-12 text-red-600 mx-auto mb-4" />
-              <h1 className="text-xl font-semibold text-gray-900 mb-2">Invitation Declined</h1>
-              <p className="text-gray-600">You have already declined this invitation.</p>
-            </>
-          ) : (
-            <>
-              <AlertCircle className="h-12 w-12 text-amber-600 mx-auto mb-4" />
-              <h1 className="text-xl font-semibold text-gray-900 mb-2">Invitation Expired</h1>
-              <p className="text-gray-600">This invitation has expired. Please contact the requester for a new invitation.</p>
-            </>
-          )}
+      <div className="min-h-screen bg-gray-50 py-8 px-4">
+        <div className="max-w-2xl mx-auto">
+          {/* Header */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="h-12 w-12 rounded-full bg-[#7A0010]/10 flex items-center justify-center">
+                <Mail className="h-6 w-6 text-[#7A0010]" />
+              </div>
+              <div>
+                <h1 className="text-xl font-semibold text-gray-900">Travel Request Confirmation</h1>
+                <p className="text-sm text-gray-500">You've been added as a requester</p>
+              </div>
+            </div>
+
+            {/* Request Details */}
+            <div className="space-y-3 border-t border-gray-200 pt-4">
+              <div className="flex items-start gap-3">
+                <Calendar className="h-5 w-5 text-gray-400 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-gray-900">
+                    {request?.title || request?.purpose || "Travel Request"}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {request?.travel_start_date && request?.travel_end_date
+                      ? `${new Date(request.travel_start_date).toLocaleDateString()} - ${new Date(request.travel_end_date).toLocaleDateString()}`
+                      : "Dates TBA"}
+                  </p>
+                </div>
+              </div>
+
+            <div className="flex items-start gap-3">
+              <MapPin className="h-5 w-5 text-gray-400 mt-0.5" />
+              <div className="space-y-1">
+                <p className="text-sm text-gray-600">
+                  <span className="font-medium">Destination:</span> {request?.destination || "To be determined"}
+                </p>
+                {request?.pickup_location && (
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">Pickup:</span> {request.pickup_location}
+                  </p>
+                )}
+                {request?.dropoff_location && (
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">Dropoff:</span> {request.dropoff_location}
+                  </p>
+                )}
+                {request?.vehicle_mode === 'owned' && request?.own_vehicle_details && (
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">Vehicle:</span> {request.own_vehicle_details}
+                  </p>
+                )}
+              </div>
+            </div>
+
+              {request?.requester && (
+                <div className="flex items-start gap-3">
+                  <User className="h-5 w-5 text-gray-400 mt-0.5" />
+                  <div>
+                    <p className="text-sm text-gray-600">
+                      Requested by: <span className="font-medium">{request.requester.name}</span>
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Status Card */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-center">
+            {isConfirmed ? (
+              <>
+                <CheckCircle2 className="h-12 w-12 text-green-600 mx-auto mb-4" />
+                <h1 className="text-xl font-semibold text-gray-900 mb-2">Already Confirmed</h1>
+                <p className="text-gray-600 mb-4">You have already confirmed your participation in this request.</p>
+                
+                {/* Show confirmation details */}
+                {invitation.confirmed_at && (
+                  <p className="text-sm text-gray-500 mb-4">
+                    Confirmed on {new Date(invitation.confirmed_at).toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric'
+                    })}
+                  </p>
+                )}
+
+                {/* Show signature if available */}
+                {invitation.signature && (
+                  <div className="mt-6 pt-6 border-t border-gray-200">
+                    <p className="text-sm font-medium text-gray-700 mb-3">Your Signature:</p>
+                    <div className="bg-white rounded-lg border-2 border-gray-200 p-4 inline-block">
+                      <img
+                        src={invitation.signature}
+                        alt="Your signature"
+                        className="h-24 object-contain"
+                        onError={(e) => {
+                          console.error("[requester-confirm] Failed to load signature:", e);
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Show name and department if available */}
+                {(invitation.name || invitation.department) && (
+                  <div className="mt-6 pt-6 border-t border-gray-200 text-left max-w-md mx-auto">
+                    <p className="text-sm font-medium text-gray-700 mb-2">Your Details:</p>
+                    {invitation.name && (
+                      <p className="text-sm text-gray-600">
+                        <span className="font-medium">Name:</span> {invitation.name}
+                      </p>
+                    )}
+                    {invitation.department && (
+                      <p className="text-sm text-gray-600">
+                        <span className="font-medium">Department:</span> {invitation.department}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </>
+            ) : isDeclined ? (
+              <>
+                <XCircle className="h-12 w-12 text-red-600 mx-auto mb-4" />
+                <h1 className="text-xl font-semibold text-gray-900 mb-2">Invitation Declined</h1>
+                <p className="text-gray-600">You have already declined this invitation.</p>
+                {invitation.declined_reason && (
+                  <div className="mt-4 p-3 bg-red-50 rounded-lg text-left max-w-md mx-auto">
+                    <p className="text-sm font-medium text-red-900 mb-1">Reason:</p>
+                    <p className="text-sm text-red-700">{invitation.declined_reason}</p>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <AlertCircle className="h-12 w-12 text-amber-600 mx-auto mb-4" />
+                <h1 className="text-xl font-semibold text-gray-900 mb-2">Invitation Expired</h1>
+                <p className="text-gray-600">This invitation has expired. Please contact the requester for a new invitation.</p>
+              </>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -364,14 +484,29 @@ export default function RequesterConfirmationPage() {
               </div>
             </div>
 
-            {request?.destination && (
-              <div className="flex items-start gap-3">
-                <MapPin className="h-5 w-5 text-gray-400 mt-0.5" />
-                <div>
-                  <p className="text-sm text-gray-600">{request.destination}</p>
-                </div>
+            <div className="flex items-start gap-3">
+              <MapPin className="h-5 w-5 text-gray-400 mt-0.5" />
+              <div className="space-y-1">
+                <p className="text-sm text-gray-600">
+                  <span className="font-medium">Destination:</span> {request?.destination || "To be determined"}
+                </p>
+                {request?.pickup_location && (
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">Pickup:</span> {request.pickup_location}
+                  </p>
+                )}
+                {request?.dropoff_location && (
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">Dropoff:</span> {request.dropoff_location}
+                  </p>
+                )}
+                {request?.vehicle_mode === 'owned' && request?.own_vehicle_details && (
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">Vehicle:</span> {request.own_vehicle_details}
+                  </p>
+                )}
               </div>
-            )}
+            </div>
 
             {request?.requester && (
               <div className="flex items-start gap-3">

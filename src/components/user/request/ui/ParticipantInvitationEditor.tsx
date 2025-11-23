@@ -14,6 +14,7 @@ interface ParticipantInvitation {
   availableFdp?: number | null;
   status?: 'pending' | 'confirmed' | 'declined';
   invitationId?: string; // ID from database after sending
+  signature?: string; // Base64 signature (if confirmed)
 }
 
 interface ParticipantInvitationEditorProps {
@@ -140,7 +141,8 @@ export default function ParticipantInvitationEditor({
       try {
         setSending(email);
         // Silent auto-save - no toast notifications since data is already persisted
-        finalRequestId = await onAutoSaveRequest();
+        const savedRequestId = await onAutoSaveRequest();
+        finalRequestId = savedRequestId || undefined;
         
         if (!finalRequestId) {
           throw new Error("Draft created but no request ID returned");
@@ -253,7 +255,8 @@ export default function ParticipantInvitationEditor({
       try {
         setSendingAll(true);
         // Silent auto-save - no toast notifications since data is already persisted
-        finalRequestId = await onAutoSaveRequest();
+        const savedRequestId = await onAutoSaveRequest();
+        finalRequestId = savedRequestId || undefined;
         
         if (!finalRequestId) {
           throw new Error("Draft created but no request ID returned");
@@ -450,14 +453,14 @@ export default function ParticipantInvitationEditor({
     <>
       {/* Link Modal */}
       <Modal
-        open={showLinkModal}
+        isOpen={showLinkModal}
         onClose={() => {
           setShowLinkModal(false);
           setLinkToShow(null);
           setCopied(false);
         }}
         title="📧 Invitation Link"
-        maxWidth="max-w-2xl"
+        size="lg"
       >
         <div className="space-y-4">
           <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-4">
@@ -567,17 +570,18 @@ export default function ParticipantInvitationEditor({
             {emailFields.map((email, index) => (
               <div key={index} className="flex items-end gap-2">
                 <div className="flex-1">
-                  <TextInput
-                    label=""
+                  <input
+                    type="email"
                     placeholder={`Participant ${index + 1} email address`}
                     value={email}
                     onChange={(e) => updateEmailField(index, e.target.value)}
-                    onKeyDown={(e) => {
+                    onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
                       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                         e.preventDefault();
                         addAllInvitations();
                       }
                     }}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7A0010] focus:border-transparent"
                   />
                 </div>
                 {emailFields.length > 1 && (
@@ -611,7 +615,7 @@ export default function ParticipantInvitationEditor({
           <button
             type="button"
             onClick={sendAllInvitations}
-            disabled={sendingAll || !requestId}
+            disabled={sendingAll}
             className="w-full flex items-center justify-center gap-2 rounded-xl border-2 border-[#7A0010] bg-gradient-to-r from-[#7A0010] to-[#5A0010] px-5 py-3.5 text-sm font-bold text-white shadow-lg transition-all hover:shadow-xl hover:from-[#8A0010] hover:to-[#6A0010] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {sendingAll ? (

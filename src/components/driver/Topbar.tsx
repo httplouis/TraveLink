@@ -1,23 +1,32 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { Search, Bell } from "lucide-react";
 
 export default function Topbar({ title }: { title?: string }) {
   return (
     <header className="sticky top-0 z-40 w-full bg-[var(--brand)] text-white border-b border-white/10">
       <div className="flex items-center justify-between px-4 sm:px-6 py-2">
-        {/* Brand — now clickable to /driver with small gray “| Driver” */}
-        <Link href="/driver" className="flex items-center gap-2 group">
-          <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-white/15 font-semibold">
-            TL
-          </span>
-          <span className="hidden sm:flex items-baseline gap-2 font-semibold tracking-wide">
-            <span>TraviLink</span>
-            <span className="text-white/70 text-xs font-normal align-baseline">
-              | Driver
+        {/* Brand — now clickable to /driver with small gray "| Driver" */}
+        <Link href="/driver" className="flex items-center gap-3 group">
+          <div className="relative h-9 w-9 rounded-lg bg-white p-1.5 shadow-md">
+            <Image
+              src="/travelink.png"
+              alt="Travelink Logo"
+              width={28}
+              height={28}
+              className="h-full w-full object-contain"
+              priority
+            />
+          </div>
+          <div className="hidden sm:flex items-center gap-3">
+            <span className="text-xl font-bold tracking-tight">Travelink</span>
+            <span className="h-6 w-px bg-white/30" />
+            <span className="text-white/90 text-sm font-medium">
+              Driver
             </span>
-          </span>
+          </div>
         </Link>
 
         {/* Right side: search + bell */}

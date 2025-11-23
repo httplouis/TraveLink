@@ -37,17 +37,25 @@ export default function HRDashboardContainer() {
 
         const profileData = await profileRes.json().catch(() => ({ ok: false }));
         if (profileData.ok && profileData.data?.name) {
-          const firstName = profileData.data.name.split(' ')[0];
-          setUserName(firstName);
+          // Import name formatting utility to skip titles like "Dr.", "Atty."
+          const { getDisplayName } = await import('@/lib/utils/name-formatting');
+          const displayName = getDisplayName(profileData.data.name);
+          setUserName(displayName);
         }
 
         const statsData = await statsRes.json().catch(() => ({ ok: false }));
-        if (statsData.ok && statsData.data) {
+        logger.info("HR stats data received:", statsData);
+        if (statsData.ok) {
+          // HR stats returns: pendingApprovals, activeRequests, thisMonth in data object
+          const data = statsData.data || statsData; // Handle both formats
+          logger.info("Setting HR KPIs with data:", data);
           setKpis([
-            { label: "Pending Approvals", value: statsData.data.pendingApprovals || 0 },
-            { label: "Active Requests", value: statsData.data.activeRequests || 0 },
-            { label: "This Month", value: statsData.data.thisMonth || 0 },
+            { label: "Pending Approvals", value: data.pendingApprovals ?? data.pending_count ?? 0 },
+            { label: "Active Requests", value: data.activeRequests ?? data.active_count ?? 0 },
+            { label: "This Month", value: data.thisMonth ?? data.processed_today ?? 0 },
           ]);
+        } else {
+          logger.warn("HR stats data not OK. Response:", statsData);
         }
 
         // Fetch non-critical data in parallel

@@ -29,13 +29,9 @@ function formatTimeAgo(date: Date): string {
 
 export default function HeadInboxPage() {
   const [items, setItems] = React.useState<any[]>([]);
-  const [historyItems, setHistoryItems] = React.useState<any[]>([]);
   const [selected, setSelected] = React.useState<any | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [lastUpdate, setLastUpdate] = React.useState<Date>(new Date());
-  
-  // Tab system
-  const [activeTab, setActiveTab] = React.useState<'pending' | 'history'>('pending');
   
   // Search and filter
   const [searchQuery, setSearchQuery] = React.useState("");
@@ -76,12 +72,12 @@ export default function HeadInboxPage() {
   // Extract unique departments for filter
   const departments = React.useMemo(() => {
     const depts = new Set<string>();
-    [...items, ...historyItems].forEach(item => {
+    items.forEach(item => {
       const deptName = item.department?.name || item.department?.code;
       if (deptName) depts.add(deptName);
     });
     return Array.from(depts).sort();
-  }, [items, historyItems]);
+  }, [items]);
 
   const logger = createLogger("HeadInbox");
 
@@ -116,31 +112,9 @@ export default function HeadInboxPage() {
     }
   }
 
-  async function loadHistory() {
-    try {
-      const res = await fetch("/api/head/history", { cache: "no-store" });
-      if (!res.ok) {
-        console.warn("History API not OK:", res.status);
-        return;
-      }
-      const contentType = res.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        console.warn("History API returned non-JSON response");
-        return;
-      }
-      const json = await res.json();
-      if (json.ok) {
-        setHistoryItems(json.data ?? []);
-      }
-    } catch (err) {
-      console.error("Failed to load history:", err);
-    }
-  }
-
   // Initial load
   React.useEffect(() => { 
     load(); 
-    loadHistory();
   }, []);
 
   // Real-time updates using Supabase Realtime
@@ -163,9 +137,6 @@ export default function HeadInboxPage() {
           if (mutateTimeout) clearTimeout(mutateTimeout);
           mutateTimeout = setTimeout(() => {
             load(false); // Silent refresh
-            if (activeTab === 'history') {
-              loadHistory();
-            }
           }, 500);
         }
       )
@@ -176,9 +147,6 @@ export default function HeadInboxPage() {
     // Fallback polling every 30 seconds
     const interval = setInterval(() => {
       load(false);
-      if (activeTab === 'history') {
-        loadHistory();
-      }
     }, 30000);
 
     return () => {
@@ -188,18 +156,16 @@ export default function HeadInboxPage() {
         supabase.removeChannel(channel);
       }
     };
-  }, [activeTab]);
+  }, []);
 
   function handleApproved(id: string) {
     // Optimistically remove from UI first
     setItems(prev => prev.filter(x => x.id !== id));
     setSelected(null);
     
-    // Reload both lists to ensure fresh data
+    // Reload pending list to ensure fresh data
     setTimeout(() => {
       load(false);  // Reload pending list (silent)
-      loadHistory(); // Reload history
-      setActiveTab('history'); // Switch to history tab
     }, 500);
   }
 
@@ -208,27 +174,15 @@ export default function HeadInboxPage() {
     setItems(prev => prev.filter(x => x.id !== id));
     setSelected(null);
     
-    // Reload both lists to ensure fresh data
+    // Reload pending list to ensure fresh data
     setTimeout(() => {
       load(false);  // Reload pending list (silent)
-      loadHistory(); // Reload history
-      setActiveTab('history'); // Switch to history tab
     }, 500);
   }
 
-  // Count rejected items
-  const rejectedCount = React.useMemo(() => {
-    return historyItems.filter(item => item.status === 'rejected').length;
-  }, [historyItems]);
-
   // Filter and search logic
   const filteredItems = React.useMemo(() => {
-    let filtered = activeTab === 'pending' ? items : historyItems;
-
-    // Apply status filter (only for history tab)
-    if (activeTab === 'history' && filterStatus !== "all") {
-      filtered = filtered.filter(item => item.status === filterStatus);
-    }
+    let filtered = items;
     
     // Apply department filter
     if (filterDepartment !== "all") {
@@ -295,7 +249,7 @@ export default function HeadInboxPage() {
     });
 
     return filtered;
-  }, [items, historyItems, activeTab, filterStatus, searchQuery, dateFrom, dateTo, filterDepartment, filterRequestType, sortBy]);
+  }, [items, filterStatus, searchQuery, dateFrom, dateTo, filterDepartment, filterRequestType, sortBy]);
 
   return (
     <div className="min-h-screen">
@@ -306,12 +260,9 @@ export default function HeadInboxPage() {
               Requests for Endorsement
             </h1>
             <p className="text-sm text-slate-600 mt-1">
-              {activeTab === 'pending' 
-                ? `${filteredItems.length} ${filteredItems.length === 1 ? 'request' : 'requests'} pending your review`
-                : `${filteredItems.length} ${filteredItems.length === 1 ? 'request' : 'requests'} in history`
-              }
+              {filteredItems.length} {filteredItems.length === 1 ? 'request' : 'requests'} pending your review
             </p>
-            {activeTab === 'pending' && shouldShowPendingAlert(items.length) && (
+            {shouldShowPendingAlert(items.length) && (
               <div className={`mt-2 flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${
                 getAlertSeverity(items.length) === 'danger'
                   ? 'bg-red-50 border border-red-200 text-red-700'
@@ -330,48 +281,6 @@ export default function HeadInboxPage() {
               Auto-refresh • {lastUpdate.toLocaleTimeString()}
             </span>
           </div>
-        </div>
-
-        {/* Tabs */}
-        <div className="flex gap-2 border-b border-slate-200">
-          <button
-            onClick={() => setActiveTab('pending')}
-            className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
-              activeTab === 'pending'
-                ? 'text-[#7A0010] border-b-2 border-[#7A0010] -mb-[2px]'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Pending
-            {items.length > 0 && (
-              <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-semibold ${
-                shouldShowPendingAlert(items.length)
-                  ? getAlertSeverity(items.length) === 'danger'
-                    ? 'bg-red-100 text-red-700'
-                    : getAlertSeverity(items.length) === 'warning'
-                    ? 'bg-orange-100 text-orange-700'
-                    : 'bg-amber-100 text-amber-700'
-                  : 'bg-amber-100 text-amber-700'
-              }`}>
-                {items.length}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab('history')}
-            className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
-              activeTab === 'history'
-                ? 'text-[#7A0010] border-b-2 border-[#7A0010] -mb-[2px]'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            History
-            {historyItems.length > 0 && (
-              <span className="ml-2 px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full text-xs font-semibold">
-                {historyItems.length}
-              </span>
-            )}
-          </button>
         </div>
       </div>
 
@@ -419,29 +328,6 @@ export default function HeadInboxPage() {
               <span className="ml-1 px-1.5 py-0.5 bg-white/20 rounded text-xs font-bold">Active</span>
             )}
           </button>
-          
-          {activeTab === 'history' && rejectedCount > 0 && (
-            <button
-              onClick={() => setFilterStatus(filterStatus === 'rejected' ? 'all' : 'rejected')}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                filterStatus === 'rejected'
-                  ? 'bg-red-100 text-red-700 border-2 border-red-300'
-                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-red-50 hover:text-red-600'
-              }`}
-            >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-              Rejected
-              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-                filterStatus === 'rejected'
-                  ? 'bg-red-200 text-red-800'
-                  : 'bg-red-100 text-red-700'
-              }`}>
-                {rejectedCount}
-              </span>
-            </button>
-          )}
         </div>
         
         {/* Advanced Filters Panel (Collapsible) */}
@@ -522,7 +408,7 @@ export default function HeadInboxPage() {
               </div>
             </div>
             
-            {/* Sort and Status Row */}
+            {/* Sort Row */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200">
               {/* Sort By */}
               <div>
@@ -538,24 +424,6 @@ export default function HeadInboxPage() {
                   <option value="travel-later">Travel Date (Latest)</option>
                 </select>
               </div>
-              
-              {/* Status Filter (only for history) */}
-              {activeTab === 'history' && (
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1.5">Status</label>
-                  <select
-                    value={filterStatus}
-                    onChange={(e) => setFilterStatus(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#7A0010] focus:border-transparent bg-white"
-                  >
-                    <option value="all">All Status</option>
-                    <option value="approved_head">Approved</option>
-                    <option value="pending_comptroller">With Comptroller</option>
-                    <option value="pending_hr">With HR</option>
-                    <option value="rejected">Rejected ({rejectedCount})</option>
-                  </select>
-                </div>
-              )}
             </div>
           </div>
         )}
@@ -573,10 +441,10 @@ export default function HeadInboxPage() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
           <h3 className="mt-4 text-lg font-medium text-slate-900">
-            {searchQuery || filterStatus !== "all" ? "No matching requests" : "No requests pending"}
+            {searchQuery ? "No matching requests" : "No requests pending"}
           </h3>
           <p className="mt-1 text-sm text-slate-500">
-            {searchQuery || filterStatus !== "all" 
+            {searchQuery 
               ? "Try adjusting your search or filter criteria."
               : "When faculty submit requests, they will appear here for your approval."
             }
@@ -623,7 +491,7 @@ export default function HeadInboxPage() {
                   markAsViewed(item.id);
                 }}
                 className={
-                  isNew && activeTab === 'pending' && !viewedRequests.has(item.id)
+                  isNew && !viewedRequests.has(item.id)
                     ? "border-green-300 bg-green-50/30"
                     : ""
                 }
@@ -639,7 +507,7 @@ export default function HeadInboxPage() {
           onClose={() => setSelected(null)}
           onApproved={handleApproved}
           onRejected={handleRejected}
-          viewOnly={activeTab === 'history'}
+          viewOnly={false}
         />
       )}
     </div>

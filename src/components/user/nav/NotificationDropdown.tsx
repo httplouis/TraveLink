@@ -145,6 +145,7 @@ export default function NotificationDropdown() {
   useEffect(() => {
     let isMounted = true;
     let channel: any = null;
+    let requestsChannel: any = null;
     
     // Initial load
     loadNotifications();

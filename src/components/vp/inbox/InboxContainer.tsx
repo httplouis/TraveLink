@@ -36,7 +36,7 @@ export default function VPInboxContainer() {
         url: res.url
       });
       if (!res.ok) {
-        logger.error("API response not OK:", res.status, res.statusText);
+        logger.error("API response not OK:", { status: res.status, statusText: res.statusText });
         const errorText = await res.text();
         console.error("[VPInboxContainer] ❌ Error response body:", errorText.substring(0, 500));
         setItems([]);
