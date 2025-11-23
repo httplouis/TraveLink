@@ -357,6 +357,12 @@ export async function GET(request: NextRequest) {
         status: "active",
         // Note: Removed created_at and updated_at - columns might not exist or have defaults
       };
+      
+      // Log student account creation for debugging
+      if (isStudent) {
+        console.log(`[auth/callback] 🎓 Creating student account: ${userEmail}`);
+        console.log(`[auth/callback] Student insert data:`, JSON.stringify(insertData, null, 2));
+      }
 
       if (userDepartment) {
         const departmentName = userDepartment.trim();
@@ -413,24 +419,48 @@ export async function GET(request: NextRequest) {
         insertData.position_title = userPosition;
       }
 
-      const { error: insertError } = await supabaseAdmin
+      const { data: insertedUser, error: insertError } = await supabaseAdmin
         .from("users")
-        .insert(insertData);
+        .insert(insertData)
+        .select()
+        .single();
 
       if (insertError) {
         console.error(`[auth/callback] ❌ Failed to create user:`, insertError);
-        // Continue anyway - user can still login
+        console.error(`[auth/callback] Insert error details:`, JSON.stringify(insertError, null, 2));
+        console.error(`[auth/callback] Insert data attempted:`, JSON.stringify(insertData, null, 2));
+        
+        // CRITICAL: Don't continue if user creation fails - user won't be able to access the app
+        // Sign out and redirect to login with error
+        await supabase.auth.signOut();
+        return NextResponse.redirect(new URL(`/login?error=user_creation_failed&details=${encodeURIComponent(insertError.message)}`, baseUrl));
       } else {
-        console.log(`[auth/callback] ✅ New user created: ${userEmail}`);
+        console.log(`[auth/callback] ✅ New user created: ${userEmail}`, insertedUser?.id);
       }
     }
 
-    // Get user profile for redirect
-    const { data: profile } = await supabaseAdmin
+    // Get user profile for redirect - CRITICAL: Must exist or redirect will fail
+    const { data: profile, error: profileError } = await supabaseAdmin
       .from("users")
       .select("id, role, is_head, is_hr, is_vp, is_president, is_admin, is_comptroller")
       .eq("auth_user_id", authUser.id)
       .single();
+    
+    if (profileError || !profile) {
+      console.error(`[auth/callback] ❌ CRITICAL: User profile not found after create/update!`, profileError);
+      console.error(`[auth/callback] Auth user ID:`, authUser.id);
+      console.error(`[auth/callback] Email:`, userEmail);
+      
+      // Sign out and redirect to login - user creation/update failed
+      await supabase.auth.signOut();
+      return NextResponse.redirect(new URL(`/login?error=profile_not_found`, baseUrl));
+    }
+    
+    console.log(`[auth/callback] ✅ User profile found:`, {
+      id: profile.id,
+      role: profile.role,
+      email: userEmail
+    });
 
     // Determine redirect path based on role
     let redirectPath = "/user";
