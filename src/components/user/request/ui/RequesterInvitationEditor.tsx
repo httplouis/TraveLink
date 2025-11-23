@@ -47,6 +47,11 @@ export default function RequesterInvitationEditor({
   const [searchingUser, setSearchingUser] = React.useState<string | null>(null); // ID of slot being searched
   const [pollingInterval, setPollingInterval] = React.useState<NodeJS.Timeout | null>(null);
   const notifiedStatusRef = React.useRef<Map<string, string>>(new Map()); // Track notified status changes
+  
+  // Cooldown state (10 seconds)
+  const [lastSendTime, setLastSendTime] = React.useState<number | null>(null);
+  const [cooldownRemaining, setCooldownRemaining] = React.useState(0);
+  const COOLDOWN_DURATION = 10000; // 10 seconds in milliseconds
 
   // Auto-confirm requesters who are the current user
   React.useEffect(() => {
@@ -423,6 +428,32 @@ export default function RequesterInvitationEditor({
     }
   };
 
+  // Cooldown countdown timer
+  React.useEffect(() => {
+    if (lastSendTime === null) {
+      setCooldownRemaining(0);
+      return;
+    }
+
+    const elapsed = Date.now() - lastSendTime;
+    const remaining = Math.max(0, COOLDOWN_DURATION - elapsed);
+    setCooldownRemaining(remaining);
+
+    if (remaining > 0) {
+      const interval = setInterval(() => {
+        const newElapsed = Date.now() - lastSendTime;
+        const newRemaining = Math.max(0, COOLDOWN_DURATION - newElapsed);
+        setCooldownRemaining(newRemaining);
+        
+        if (newRemaining === 0) {
+          clearInterval(interval);
+        }
+      }, 100); // Update every 100ms for smooth countdown
+
+      return () => clearInterval(interval);
+    }
+  }, [lastSendTime, COOLDOWN_DURATION]);
+
   // Start polling when component mounts if there are sent invitations
   React.useEffect(() => {
     if (requestId && hasSentInvitations && !pollingInterval) {
@@ -447,7 +478,15 @@ export default function RequesterInvitationEditor({
       return;
     }
 
+    // Check cooldown
+    if (cooldownRemaining > 0) {
+      const secondsLeft = Math.ceil(cooldownRemaining / 1000);
+      toast.warning("Please wait", `Please wait ${secondsLeft} second${secondsLeft > 1 ? 's' : ''} before sending another invitation.`);
+      return;
+    }
+
     setSending(requester.id);
+    setLastSendTime(Date.now()); // Start cooldown
     try {
       const response = await fetch('/api/requesters/invite', {
         method: 'POST',
@@ -511,7 +550,15 @@ export default function RequesterInvitationEditor({
       return;
     }
 
+    // Check cooldown
+    if (cooldownRemaining > 0) {
+      const secondsLeft = Math.ceil(cooldownRemaining / 1000);
+      toast.warning("Please wait", `Please wait ${secondsLeft} second${secondsLeft > 1 ? 's' : ''} before sending invitations again.`);
+      return;
+    }
+
     setSendingAll(true);
+    setLastSendTime(Date.now()); // Start cooldown
     try {
       const promises = pendingInvitations
         .filter(req => req.email)
@@ -697,13 +744,19 @@ export default function RequesterInvitationEditor({
                           }
                           sendInvitation(requester);
                         }}
-                        disabled={disabled || sending === requester.id}
+                        disabled={disabled || sending === requester.id || cooldownRemaining > 0}
                         className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm transition-colors"
+                        title={cooldownRemaining > 0 ? `Please wait ${Math.ceil(cooldownRemaining / 1000)}s before sending again` : undefined}
                       >
                         {sending === requester.id ? (
                           <>
                             <Clock className="h-3.5 w-3.5 animate-spin" />
                             Sending...
+                          </>
+                        ) : cooldownRemaining > 0 ? (
+                          <>
+                            <Clock className="h-3.5 w-3.5" />
+                            Wait {Math.ceil(cooldownRemaining / 1000)}s
                           </>
                         ) : requester.invitationId ? (
                           <>
@@ -784,13 +837,19 @@ export default function RequesterInvitationEditor({
                       <button
                         type="button"
                         onClick={() => sendInvitation(requester)}
-                        disabled={sending === requester.id || !requestId}
+                        disabled={sending === requester.id || !requestId || cooldownRemaining > 0}
                         className="flex items-center gap-2 px-3 py-2 rounded-lg border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                        title={cooldownRemaining > 0 ? `Please wait ${Math.ceil(cooldownRemaining / 1000)}s before sending again` : undefined}
                       >
                         {sending === requester.id ? (
                           <>
                             <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-700 border-t-transparent" />
                             Resending...
+                          </>
+                        ) : cooldownRemaining > 0 ? (
+                          <>
+                            <Clock className="h-4 w-4" />
+                            Wait {Math.ceil(cooldownRemaining / 1000)}s
                           </>
                         ) : (
                           <>
@@ -825,13 +884,19 @@ export default function RequesterInvitationEditor({
           <button
             type="button"
             onClick={sendAllInvitations}
-            disabled={disabled || sendingAll || !requestId}
+            disabled={disabled || sendingAll || !requestId || cooldownRemaining > 0}
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#7A0010] text-white hover:bg-[#5e000d] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            title={cooldownRemaining > 0 ? `Please wait ${Math.ceil(cooldownRemaining / 1000)}s before sending again` : undefined}
           >
             {sendingAll ? (
               <>
                 <Clock className="h-4 w-4 animate-spin" />
                 Sending all...
+              </>
+            ) : cooldownRemaining > 0 ? (
+              <>
+                <Clock className="h-4 w-4" />
+                Wait {Math.ceil(cooldownRemaining / 1000)}s
               </>
             ) : (
               <>

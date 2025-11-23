@@ -222,7 +222,7 @@ export function canSubmit(
 
     // ✅ VALIDATION: All head endorsements must be confirmed before submitting (for multi-department scenarios)
     if (options?.allHeadEndorsementsConfirmed === false) {
-      errors["travelOrder.headEndorsements"] = "All department heads must endorse the request before submitting. Please wait for all head endorsements to be confirmed.";
+      errors["travelOrder.headEndorsements"] = "Please wait for all department heads to confirm their endorsements before submitting. You can check the status in the 'Head Endorsements' section below.";
     }
 
     const needsJustif =

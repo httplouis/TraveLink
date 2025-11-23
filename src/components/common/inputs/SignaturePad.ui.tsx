@@ -19,6 +19,8 @@ type Props = {
   onDraw?: () => void;
   /** Called when a save is requested (button or auto-save on pointerup) */
   onSave?: (dataUrl: string) => void;
+  /** Called specifically when user clicks the "Save signature" button (separate from auto-save) */
+  onSaveButtonClick?: (dataUrl: string) => void;
   /** Called when user clicks "Clear" */
   onClear?: () => void;
   /** Optional: handle file upload yourself */
@@ -46,6 +48,7 @@ export default function SignaturePad({
   initialImage = null,
   onDraw,
   onSave,
+  onSaveButtonClick,
   onClear,
   onUpload,
   onUseSaved,
@@ -347,7 +350,17 @@ export default function SignaturePad({
         {!hideSaveButton && (
           <button
             type="button"
-            onClick={saveNow}
+            onClick={() => {
+              const canvas = canvasRef.current;
+              if (!canvas) return;
+              const dataUrl = canvas.toDataURL("image/png");
+              // Call onSaveButtonClick if provided, otherwise call onSave
+              if (onSaveButtonClick) {
+                onSaveButtonClick(dataUrl);
+              } else {
+                onSave?.(dataUrl);
+              }
+            }}
             disabled={saveDisabled}
             className={`h-9 rounded-md px-4 text-sm font-medium text-white ${
               saveDisabled ? "bg-neutral-400" : "bg-[#7A0010] hover:opacity-95"

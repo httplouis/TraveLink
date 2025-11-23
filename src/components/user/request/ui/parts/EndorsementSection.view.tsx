@@ -3,6 +3,7 @@
 
 import * as React from "react";
 import { Upload, X, CheckCircle, Info, Mail } from "lucide-react";
+import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 
 type Props = {
   nameValue: string;
@@ -31,16 +32,57 @@ export default function EndorsementSection({
   signature,
   onSignatureChange,
 }: Props) {
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    if (!onSignatureChange) return;
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const buf = await file.arrayBuffer();
-    const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
-    const dataUrl = `data:${file.type};base64,${b64}`;
-    onSignatureChange(dataUrl);
-    e.target.value = "";
-  }
+  // Track the source of the signature
+  const signatureSourceRef = React.useRef<'saved' | 'drawn' | 'uploaded' | 'initial' | null>(signature ? 'initial' : null);
+
+  // Reset when signature prop changes from parent
+  React.useEffect(() => {
+    if (signature) {
+      signatureSourceRef.current = 'initial';
+    } else {
+      signatureSourceRef.current = null;
+    }
+  }, [signature]);
+
+  // Handle auto-save (from drawing) - show save button
+  const handleSave = React.useCallback((dataUrl: string) => {
+    // Auto-save from drawing - keep source as 'drawn' or 'uploaded' to show save button
+    onSignatureChange?.(dataUrl);
+  }, [onSignatureChange]);
+
+  // Handle manual save button click - hide save button
+  const handleSaveButtonClick = React.useCallback((dataUrl: string) => {
+    signatureSourceRef.current = 'saved';
+    onSignatureChange?.(dataUrl);
+  }, [onSignatureChange]);
+
+  // Handle clear - reset everything
+  const handleClear = React.useCallback(() => {
+    signatureSourceRef.current = null;
+    onSignatureChange?.(null);
+  }, [onSignatureChange]);
+
+  // Handle use saved - mark as saved (no save button needed)
+  const handleUseSaved = React.useCallback((dataUrl: string) => {
+    signatureSourceRef.current = 'saved';
+    onSignatureChange?.(dataUrl);
+  }, [onSignatureChange]);
+
+  // Handle draw start - mark as drawn (show save button)
+  const handleDraw = React.useCallback(() => {
+    signatureSourceRef.current = 'drawn';
+  }, []);
+
+  // Handle upload - mark as uploaded (show save button)
+  const handleUpload = React.useCallback((file: File) => {
+    signatureSourceRef.current = 'uploaded';
+    // SignaturePad will handle file reading and call onSave automatically
+  }, []);
+
+  // Determine if save button should be hidden
+  // Hide if: using saved signature OR initial signature from props
+  // Show if: user drew or uploaded new signature (source is 'drawn' or 'uploaded')
+  const shouldHideSaveButton = signatureSourceRef.current === 'saved' || signatureSourceRef.current === 'initial' || signatureSourceRef.current === null;
 
   return (
     <div className="mt-8 space-y-5 rounded-xl border-2 border-gray-200 bg-gradient-to-br from-white via-slate-50/30 to-white p-6 shadow-lg">
@@ -137,48 +179,31 @@ export default function EndorsementSection({
         <div className="space-y-3 rounded-lg border border-blue-200 bg-blue-50/30 p-4">
           <div className="flex items-center gap-2">
             <Info className="h-4 w-4 text-blue-600" />
-            <p className="text-xs font-medium text-blue-900">
+            <p className="text-sm font-semibold text-blue-900">
               {isHeadRequester
                 ? "Your E-Signature (as Department Head)"
                 : "Department Head E-Signature"}
             </p>
           </div>
+          {isHeadRequester && (
+            <p className="text-xs text-blue-700">
+              ℹ️ As the department head, please provide your signature to endorse this request. You can draw, upload, or use your saved signature from settings.
+            </p>
+          )}
 
-          {signature ? (
-            <div className="space-y-2">
-              <div className="rounded-lg border border-neutral-200 bg-white p-3">
-                <img
-                  src={signature}
-                  alt="Department head signature"
-                  className="h-20 w-full max-w-[240px] object-contain"
-                />
-              </div>
-              {onSignatureChange && (
-                <button
-                  type="button"
-                  onClick={() => onSignatureChange(null)}
-                  className="flex items-center gap-1.5 text-xs font-medium text-red-600 transition-colors hover:text-red-700"
-                >
-                  <X className="h-3.5 w-3.5" />
-                  Remove signature
-                </button>
-              )}
-            </div>
-          ) : (
-            onSignatureChange && (
-              <div className="space-y-2">
-                <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-white px-4 py-2.5 text-xs font-medium text-neutral-700 shadow-sm ring-1 ring-neutral-200 transition-all hover:bg-neutral-50 hover:shadow">
-                  <Upload className="h-4 w-4" />
-                  <span>Upload signature image</span>
-                  <input type="file" accept="image/*" className="hidden" onChange={handleUpload} />
-                </label>
-                {isHeadRequester && (
-                  <p className="text-xs text-blue-700">
-                    ℹ️ As the department head, please provide your signature to endorse this request.
-                  </p>
-                )}
-              </div>
-            )
+          {onSignatureChange && (
+            <SignaturePad
+              height={160}
+              value={signature || null}
+              onSave={handleSave}
+              onSaveButtonClick={handleSaveButtonClick}
+              onClear={handleClear}
+              onUseSaved={handleUseSaved}
+              onDraw={handleDraw}
+              onUpload={handleUpload}
+              showUseSavedButton={true}
+              hideSaveButton={shouldHideSaveButton}
+            />
           )}
         </div>
       )}

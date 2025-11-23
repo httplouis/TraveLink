@@ -25,6 +25,7 @@ const FIELD_LABELS: Record<string, string> = {
   "travelOrder.purposeOfTravel": "Purpose of Travel",
   "travelOrder.requesterSignature": "Requesting Person's Signature",
   "travelOrder.costs.justification": "Justification for Renting/Hiring",
+  "travelOrder.headEndorsements": "Head Endorsements",
   
   // Seminar Application Fields
   "seminar.applicationDate": "Application Date",

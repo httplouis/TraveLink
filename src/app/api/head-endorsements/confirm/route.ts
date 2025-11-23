@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
     // Decode token in case it was double-encoded
     const decodedToken = decodeURIComponent(token);
     
-    // Fetch invitation
+    // Fetch invitation with detailed request data
     let { data: invitation, error: inviteError } = await supabase
       .from("head_endorsement_invitations")
       .select(`
@@ -54,6 +54,8 @@ export async function GET(req: NextRequest) {
           destination,
           travel_start_date,
           travel_end_date,
+          expense_breakdown,
+          total_budget,
           requester:users!requester_id(id, name, email, profile_picture)
         )
       `)
@@ -74,6 +76,8 @@ export async function GET(req: NextRequest) {
             destination,
             travel_start_date,
             travel_end_date,
+            expense_breakdown,
+            total_budget,
             requester:users!requester_id(id, name, email, profile_picture)
           )
         `)

@@ -182,7 +182,7 @@ export default function SignatureSettings() {
               onSave={handleSave}
               onClear={() => {}}
               onUpload={handleUpload}
-              hideSaveButton={false}
+              hideSaveButton={true}
             />
           </div>
         </div>
@@ -201,7 +201,7 @@ export default function SignatureSettings() {
             onSave={handleSave}
             onClear={() => {}}
             onUpload={handleUpload}
-            hideSaveButton={false}
+            hideSaveButton={true}
           />
         </div>
       )}
