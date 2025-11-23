@@ -209,59 +209,128 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
 /* ========== Accessibility Settings ========== */
 
-/* Basic Mode (for ages 50+) - Larger fonts, more spacing */
+/* Basic Mode (for ages 50+) - Larger fonts, more spacing, but not breaking layouts */
 .accessibility-basic {
-  --font-size-base: 18px;
-  --font-size-sm: 16px;
-  --font-size-lg: 20px;
-  --font-size-xl: 24px;
-  --line-height-base: 1.75;
-  --spacing-multiplier: 1.5;
-  --button-min-height: 52px;
-  --input-min-height: 52px;
-  --touch-target-size: 48px;
+  --font-size-base: 17px; /* Slightly larger but not too much */
+  --font-size-sm: 15px;
+  --font-size-lg: 19px;
+  --font-size-xl: 22px; /* Reduced from 24px to prevent breaking */
+  --line-height-base: 1.6; /* Reduced from 1.75 to prevent excessive spacing */
+  --spacing-multiplier: 1.2; /* Reduced from 1.5 to prevent layout breaking */
+  --button-min-height: 48px; /* Reduced from 52px */
+  --input-min-height: 48px; /* Reduced from 52px */
+  --touch-target-size: 44px;
 }
 
-.accessibility-basic * {
-  font-size: calc(var(--font-size-base, 18px) * var(--spacing-multiplier, 1));
-  line-height: var(--line-height-base, 1.75);
+/* Only apply font scaling to specific elements, not everything */
+.accessibility-basic body {
+  font-size: var(--font-size-base, 17px);
+  line-height: var(--line-height-base, 1.6);
 }
 
 .accessibility-basic button,
 .accessibility-basic .btn {
-  min-height: var(--button-min-height, 52px);
-  padding: 14px 28px;
-  font-size: var(--font-size-base, 18px);
+  min-height: var(--button-min-height, 48px);
+  padding: 12px 24px; /* Reduced padding */
+  font-size: var(--font-size-base, 17px);
 }
 
 .accessibility-basic input,
 .accessibility-basic textarea,
 .accessibility-basic select {
-  min-height: var(--input-min-height, 52px);
-  padding: 14px 18px;
-  font-size: var(--font-size-base, 18px);
+  min-height: var(--input-min-height, 48px);
+  padding: 12px 16px; /* Reduced padding */
+  font-size: var(--font-size-base, 17px);
 }
 
 .accessibility-basic label {
-  font-size: var(--font-size-base, 18px);
+  font-size: var(--font-size-base, 17px);
   font-weight: 600;
-  margin-bottom: 8px;
+  margin-bottom: 6px; /* Reduced margin */
 }
 
+/* Prevent text from breaking layouts */
 .accessibility-basic .text-sm {
-  font-size: var(--font-size-sm, 16px) !important;
+  font-size: var(--font-size-sm, 15px) !important;
+  line-height: 1.5 !important;
 }
 
 .accessibility-basic .text-base {
-  font-size: var(--font-size-base, 18px) !important;
+  font-size: var(--font-size-base, 17px) !important;
+  line-height: 1.6 !important;
 }
 
 .accessibility-basic .text-lg {
-  font-size: var(--font-size-lg, 20px) !important;
+  font-size: var(--font-size-lg, 19px) !important;
+  line-height: 1.6 !important;
 }
 
 .accessibility-basic .text-xl {
-  font-size: var(--font-size-xl, 24px) !important;
+  font-size: var(--font-size-xl, 22px) !important;
+  line-height: 1.5 !important;
+}
+
+/* Prevent overflow and breaking */
+.accessibility-basic * {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Ensure containers don't break - use specific selectors */
+.accessibility-basic .container {
+  max-width: 100% !important;
+}
+
+/* Prevent text from breaking out of containers */
+.accessibility-basic p,
+.accessibility-basic span,
+.accessibility-basic div {
+  word-break: break-word;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+
+/* Ensure headings don't break layouts */
+.accessibility-basic h1,
+.accessibility-basic h2,
+.accessibility-basic h3,
+.accessibility-basic h4,
+.accessibility-basic h5,
+.accessibility-basic h6 {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  line-height: 1.4 !important; /* Tighter line height for headings */
+}
+
+/* Prevent buttons from breaking */
+.accessibility-basic button,
+.accessibility-basic .btn {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* Ensure inputs don't break */
+.accessibility-basic input,
+.accessibility-basic textarea,
+.accessibility-basic select {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Fix for grid and flex layouts */
+.accessibility-basic .grid,
+.accessibility-basic .flex {
+  min-width: 0; /* Prevents flex/grid items from overflowing */
+}
+
+/* Ensure cards and containers maintain structure */
+.accessibility-basic .rounded-lg,
+.accessibility-basic .rounded-xl,
+.accessibility-basic .card {
+  min-width: 0;
+  overflow: hidden;
 }
 
 /* Advanced Mode (default) - Normal sizing */
@@ -341,65 +410,104 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   color: var(--success-color, #008000) !important;
 }
 
-/* Dark Mode */
+/* Dark Mode - ChatGPT-inspired (softer, easier on the eyes) */
 .dark {
-  --bg-primary: #1a1a1a;
-  --bg-secondary: #2d2d2d;
-  --bg-tertiary: #3d3d3d;
-  --text-primary: #ffffff;
-  --text-secondary: #e0e0e0;
-  --text-muted: #b0b0b0;
-  --border-color: #4a4a4a;
-  --brand-color: #ff6b6b;
+  /* ChatGPT-like colors - softer grays */
+  --bg-primary: #212121; /* Slightly lighter than pure black */
+  --bg-secondary: #2f2f2f; /* Softer dark gray */
+  --bg-tertiary: #3a3a3a; /* Lighter for cards */
+  --bg-hover: #404040; /* Hover states */
+  --text-primary: #ececec; /* Soft white, not pure white */
+  --text-secondary: #d4d4d4; /* Softer gray for secondary text */
+  --text-muted: #a0a0a0; /* Muted text */
+  --border-color: #404040; /* Softer borders */
+  --brand-color: #7A0010; /* Keep brand color but adjust for dark */
+  --brand-hover: #8a1125;
 }
 
 .dark,
 .dark body {
-  background-color: var(--bg-primary, #1a1a1a) !important;
-  color: var(--text-primary, #ffffff) !important;
+  background-color: var(--bg-primary, #212121) !important;
+  color: var(--text-primary, #ececec) !important;
 }
 
 .dark .bg-white {
-  background-color: var(--bg-secondary, #2d2d2d) !important;
+  background-color: var(--bg-secondary, #2f2f2f) !important;
 }
 
 .dark .bg-gray-50,
 .dark .bg-gray-100 {
-  background-color: var(--bg-tertiary, #3d3d3d) !important;
+  background-color: var(--bg-tertiary, #3a3a3a) !important;
+}
+
+.dark .bg-gray-200 {
+  background-color: var(--bg-hover, #404040) !important;
 }
 
 .dark .text-gray-900,
 .dark .text-neutral-900 {
-  color: var(--text-primary, #ffffff) !important;
+  color: var(--text-primary, #ececec) !important;
 }
 
 .dark .text-gray-600,
 .dark .text-neutral-600 {
-  color: var(--text-secondary, #e0e0e0) !important;
+  color: var(--text-secondary, #d4d4d4) !important;
 }
 
 .dark .text-gray-500,
 .dark .text-neutral-500 {
-  color: var(--text-muted, #b0b0b0) !important;
+  color: var(--text-muted, #a0a0a0) !important;
 }
 
 .dark input,
 .dark textarea,
 .dark select {
-  background-color: var(--bg-secondary, #2d2d2d) !important;
-  color: var(--text-primary, #ffffff) !important;
-  border-color: var(--border-color, #4a4a4a) !important;
+  background-color: var(--bg-secondary, #2f2f2f) !important;
+  color: var(--text-primary, #ececec) !important;
+  border-color: var(--border-color, #404040) !important;
+}
+
+.dark input:focus,
+.dark textarea:focus,
+.dark select:focus {
+  border-color: var(--brand-color, #7A0010) !important;
+  background-color: var(--bg-tertiary, #3a3a3a) !important;
 }
 
 .dark button,
 .dark .btn {
-  background-color: var(--brand-color, #ff6b6b) !important;
+  background-color: var(--brand-color, #7A0010) !important;
   color: var(--text-primary, #ffffff) !important;
+}
+
+.dark button:hover,
+.dark .btn:hover {
+  background-color: var(--brand-hover, #8a1125) !important;
 }
 
 .dark .border-gray-200,
 .dark .border-gray-300 {
-  border-color: var(--border-color, #4a4a4a) !important;
+  border-color: var(--border-color, #404040) !important;
+}
+
+/* Dark mode cards and containers */
+.dark .bg-white,
+.dark .bg-slate-50,
+.dark .bg-slate-100 {
+  background-color: var(--bg-secondary, #2f2f2f) !important;
+}
+
+.dark .bg-slate-200 {
+  background-color: var(--bg-tertiary, #3a3a3a) !important;
+}
+
+/* Dark mode links */
+.dark a {
+  color: var(--text-secondary, #d4d4d4) !important;
+}
+
+.dark a:hover {
+  color: var(--text-primary, #ececec) !important;
 }
 
 /* High Contrast + Dark Mode */
@@ -411,6 +519,36 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   --border-color: #ffffff;
   --button-bg: #ffffff;
   --button-text: #000000;
+}
+
+/* Additional dark mode refinements for better readability (ChatGPT-inspired) */
+.dark .bg-gradient-to-r,
+.dark .bg-gradient-to-br {
+  background-image: linear-gradient(to right, var(--bg-secondary, #2f2f2f), var(--bg-tertiary, #3a3a3a)) !important;
+}
+
+.dark .shadow-lg,
+.dark .shadow-xl {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* Dark mode scrollbars (optional - for better UX) */
+.dark ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: var(--bg-primary, #212121);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: var(--bg-tertiary, #3a3a3a);
+  border-radius: 5px;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: var(--border-color, #404040);
 }
 
 /* Normal Contrast (default) - uses default colors from :root */

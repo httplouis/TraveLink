@@ -109,9 +109,107 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "This invitation has expired" }, { status: 400 });
     }
 
+    // Fetch additional request details: requesters and participants
+    const requestId = invitation.request_id;
+    let requesters: any[] = [];
+    let participants: any[] = [];
+    
+    if (requestId) {
+      // Fetch requesters from requester_invitations
+      const { data: requesterData } = await supabase
+        .from("requester_invitations")
+        .select(`
+          *,
+          user:users!user_id(id, name, email, profile_picture, department:departments(id, name, code))
+        `)
+        .eq("request_id", requestId)
+        .order("created_at", { ascending: true });
+      
+      if (requesterData) {
+        requesters = requesterData.map((req: any) => ({
+          id: req.id,
+          name: req.name || req.user?.name,
+          email: req.email || req.user?.email,
+          profile_picture: req.user?.profile_picture,
+          department: req.user?.department?.name || req.department,
+          department_code: req.user?.department?.code,
+          status: req.status,
+          signature: req.signature,
+        }));
+      }
+
+      // Fetch participants from participant_invitations
+      const { data: participantData } = await supabase
+        .from("participant_invitations")
+        .select(`
+          *,
+          user:users!user_id(id, name, email, profile_picture, department:departments(id, name, code))
+        `)
+        .eq("request_id", requestId)
+        .order("created_at", { ascending: true });
+      
+      if (participantData) {
+        participants = participantData.map((part: any) => ({
+          id: part.id,
+          name: part.name || part.user?.name,
+          email: part.email || part.user?.email,
+          profile_picture: part.user?.profile_picture,
+          department: part.user?.department?.name || part.department,
+          department_code: part.user?.department?.code,
+          status: part.status,
+        }));
+      }
+    }
+
+    // Filter requesters/participants by the department that needs endorsement
+    const departmentId = invitation.department_id;
+    const departmentName = invitation.department_name;
+    
+    const departmentRequesters = requesters.filter((req: any) => {
+      // Match by department_id if available, or by department name
+      if (departmentId && req.user?.department?.id === departmentId) return true;
+      if (departmentName && (
+        req.department === departmentName ||
+        req.user?.department?.name === departmentName ||
+        req.user?.department?.code === departmentName
+      )) return true;
+      return false;
+    });
+
+    const departmentParticipants = participants.filter((part: any) => {
+      if (departmentId && part.user?.department?.id === departmentId) return true;
+      if (departmentName && (
+        part.department === departmentName ||
+        part.user?.department?.name === departmentName ||
+        part.user?.department?.code === departmentName
+      )) return true;
+      return false;
+    });
+
+    // Parse expense_breakdown if it's a string
+    let expenseBreakdown = invitation.request?.expense_breakdown;
+    if (typeof expenseBreakdown === 'string') {
+      try {
+        expenseBreakdown = JSON.parse(expenseBreakdown);
+      } catch (e) {
+        console.warn("[GET /api/head-endorsements/confirm] Failed to parse expense_breakdown:", e);
+        expenseBreakdown = null;
+      }
+    }
+
     return NextResponse.json({
       ok: true,
-      data: invitation,
+      data: {
+        ...invitation,
+        request: {
+          ...invitation.request,
+          expense_breakdown: expenseBreakdown,
+        },
+        department_requesters: departmentRequesters,
+        department_participants: departmentParticipants,
+        all_requesters: requesters,
+        all_participants: participants,
+      },
     });
   } catch (err: any) {
     console.error("[GET /api/head-endorsements/confirm] Error:", err);

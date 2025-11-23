@@ -3,7 +3,7 @@
 
 import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
-import { CheckCircle2, XCircle, Loader2, AlertCircle, Mail, Calendar, MapPin, Building2, PenTool } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, AlertCircle, Mail, Calendar, MapPin, Building2, PenTool, Users, UserCheck, DollarSign, FileText } from "lucide-react";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 
 export default function HeadEndorsementConfirmationPage() {
@@ -25,6 +25,10 @@ export default function HeadEndorsementConfirmationPage() {
   const [invitation, setInvitation] = React.useState<any>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [action, setAction] = React.useState<'confirm' | 'decline' | null>(null);
+  const [departmentRequesters, setDepartmentRequesters] = React.useState<any[]>([]);
+  const [departmentParticipants, setDepartmentParticipants] = React.useState<any[]>([]);
+  const [expenseBreakdown, setExpenseBreakdown] = React.useState<any[]>([]);
+  const [totalBudget, setTotalBudget] = React.useState<number>(0);
 
   // Form data for confirmation
   const [headName, setHeadName] = React.useState("");
@@ -84,6 +88,24 @@ export default function HeadEndorsementConfirmationPage() {
 
       const inv = data.data;
       setInvitation(inv);
+      
+      // Set department requesters and participants
+      setDepartmentRequesters(inv.department_requesters || []);
+      setDepartmentParticipants(inv.department_participants || []);
+      
+      // Set expense breakdown
+      const breakdown = inv.request?.expense_breakdown;
+      if (Array.isArray(breakdown)) {
+        setExpenseBreakdown(breakdown);
+        const total = breakdown.reduce((sum: number, item: any) => {
+          const amount = typeof item.amount === 'number' ? item.amount : parseFloat(item.amount || 0);
+          return sum + (isNaN(amount) ? 0 : amount);
+        }, 0);
+        setTotalBudget(total);
+      } else {
+        setExpenseBreakdown([]);
+        setTotalBudget(inv.request?.total_budget || 0);
+      }
       
       // Pre-fill form if already confirmed
       if (inv.status === 'confirmed') {
@@ -283,8 +305,146 @@ export default function HeadEndorsementConfirmationPage() {
               <p className="text-sm font-medium text-gray-500">Department Requiring Endorsement</p>
               <p className="text-gray-900">{invitation.department_name || invitation.department?.name || 'N/A'}</p>
             </div>
+            
+            {request?.purpose && (
+              <div>
+                <p className="text-sm font-medium text-gray-500">Purpose</p>
+                <p className="text-gray-900">{request.purpose}</p>
+              </div>
+            )}
           </div>
         </div>
+
+        {/* Faculty Members Requiring Endorsement */}
+        {(departmentRequesters.length > 0 || departmentParticipants.length > 0) && (
+          <div className="bg-white rounded-xl shadow-lg border-2 border-blue-200 p-6 mb-6">
+            <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+              <Users className="w-5 h-5 text-blue-600" />
+              Faculty Members from {invitation.department_name || invitation.department?.name || 'Your Department'}
+            </h2>
+            
+            {departmentRequesters.length > 0 && (
+              <div className="mb-4">
+                <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                  <UserCheck className="w-4 h-4 text-blue-600" />
+                  Requesting Persons ({departmentRequesters.length})
+                </h3>
+                <div className="space-y-2">
+                  {departmentRequesters.map((req: any, idx: number) => (
+                    <div key={req.id || idx} className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                      {req.profile_picture ? (
+                        <img 
+                          src={req.profile_picture} 
+                          alt={req.name}
+                          className="w-10 h-10 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-blue-200 flex items-center justify-center">
+                          <Users className="w-5 h-5 text-blue-600" />
+                        </div>
+                      )}
+                      <div className="flex-1">
+                        <p className="font-medium text-gray-900">{req.name || 'Unknown'}</p>
+                        {req.email && (
+                          <p className="text-xs text-gray-600">{req.email}</p>
+                        )}
+                        {req.department && (
+                          <p className="text-xs text-gray-500">{req.department}</p>
+                        )}
+                      </div>
+                      {req.status === 'confirmed' && (
+                        <CheckCircle2 className="w-5 h-5 text-green-600" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {departmentParticipants.length > 0 && (
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                  <Users className="w-4 h-4 text-purple-600" />
+                  Participants ({departmentParticipants.length})
+                </h3>
+                <div className="space-y-2">
+                  {departmentParticipants.map((part: any, idx: number) => (
+                    <div key={part.id || idx} className="flex items-center gap-3 p-3 bg-purple-50 rounded-lg border border-purple-200">
+                      {part.profile_picture ? (
+                        <img 
+                          src={part.profile_picture} 
+                          alt={part.name}
+                          className="w-10 h-10 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-purple-200 flex items-center justify-center">
+                          <Users className="w-5 h-5 text-purple-600" />
+                        </div>
+                      )}
+                      <div className="flex-1">
+                        <p className="font-medium text-gray-900">{part.name || 'Unknown'}</p>
+                        {part.email && (
+                          <p className="text-xs text-gray-600">{part.email}</p>
+                        )}
+                        {part.department && (
+                          <p className="text-xs text-gray-500">{part.department}</p>
+                        )}
+                      </div>
+                      {part.status === 'confirmed' && (
+                        <CheckCircle2 className="w-5 h-5 text-green-600" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Budget Breakdown */}
+        {(expenseBreakdown.length > 0 || totalBudget > 0) && (
+          <div className="bg-white rounded-xl shadow-lg border-2 border-green-200 p-6 mb-6">
+            <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+              <DollarSign className="w-5 h-5 text-green-600" />
+              Budget Breakdown
+            </h2>
+            
+            {expenseBreakdown.length > 0 && (
+              <div className="space-y-3 mb-4">
+                {expenseBreakdown.map((expense: any, idx: number) => {
+                  const amount = typeof expense.amount === 'number' ? expense.amount : parseFloat(expense.amount || 0);
+                  return (
+                    <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <div className="flex-1">
+                        <p className="font-medium text-gray-900">{expense.item || expense.description || `Expense ${idx + 1}`}</p>
+                        {expense.description && expense.description !== expense.item && (
+                          <p className="text-xs text-gray-600 mt-1">{expense.description}</p>
+                        )}
+                        {expense.quantity && (
+                          <p className="text-xs text-gray-500 mt-1">Quantity: {expense.quantity}</p>
+                        )}
+                      </div>
+                      <p className="font-semibold text-gray-900">
+                        ₱{isNaN(amount) ? '0.00' : amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            
+            {totalBudget > 0 && (
+              <div className="pt-4 border-t-2 border-gray-300">
+                <div className="flex items-center justify-between">
+                  <p className="text-lg font-bold text-gray-900">Total Budget</p>
+                  <p className="text-xl font-bold text-green-600">
+                    ₱{totalBudget.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Confirmation Form */}
         {!isConfirmed && !isDeclined && (
