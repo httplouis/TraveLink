@@ -1,61 +1,57 @@
 "use client";
 
-import React from "react";
-import { Settings, Bell, Lock, User } from "lucide-react";
+import React, { useState } from "react";
+import SignatureSettings from "@/components/common/SignatureSettings";
+import AccessibilitySettingsModal from "@/components/common/AccessibilitySettingsModal";
+import { Settings as SettingsIcon } from "lucide-react";
 
 export default function ComptrollerSettingsPage() {
+  const [showAccessibilityModal, setShowAccessibilityModal] = useState(false);
+
   return (
-    <div className="p-8 space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
-        <p className="text-gray-600 mt-2">Manage your account and preferences</p>
+    <div className="p-6 max-w-4xl">
+      <h1 className="text-2xl font-bold text-slate-900 mb-6">Settings</h1>
+      
+      <div className="bg-white rounded-lg shadow p-6 mb-6">
+        <SignatureSettings />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Account Settings */}
-        <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="h-10 w-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-              <User className="h-5 w-5" />
-            </div>
-            <h2 className="text-xl font-bold text-gray-900">Account</h2>
+      <div className="bg-white rounded-lg shadow p-6 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900 mb-1">
+              Accessibility Settings
+            </h3>
+            <p className="text-sm text-slate-600">
+              Customize display mode, fonts, contrast, and theme for better usability
+            </p>
           </div>
-          <p className="text-gray-600 text-sm">Manage your profile information and password</p>
+          <button
+            onClick={() => setShowAccessibilityModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-[#7A0010] text-white rounded-lg hover:bg-[#8A0010] transition-colors"
+          >
+            <SettingsIcon className="h-4 w-4" />
+            <span>Open Settings</span>
+          </button>
         </div>
-
-        {/* Notifications */}
-        <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="h-10 w-10 rounded-lg bg-green-50 text-green-600 flex items-center justify-center">
-              <Bell className="h-5 w-5" />
-            </div>
-            <h2 className="text-xl font-bold text-gray-900">Notifications</h2>
-          </div>
-          <p className="text-gray-600 text-sm">Configure notification preferences</p>
-        </div>
-
-        {/* Security */}
-        <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="h-10 w-10 rounded-lg bg-red-50 text-red-600 flex items-center justify-center">
-              <Lock className="h-5 w-5" />
-            </div>
-            <h2 className="text-xl font-bold text-gray-900">Security</h2>
-          </div>
-          <p className="text-gray-600 text-sm">Manage security and privacy settings</p>
-        </div>
-
-        {/* Preferences */}
-        <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="h-10 w-10 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center">
-              <Settings className="h-5 w-5" />
-            </div>
-            <h2 className="text-xl font-bold text-gray-900">Preferences</h2>
-          </div>
-          <p className="text-gray-600 text-sm">Customize your experience</p>
-        </div>
+        <p className="text-xs text-slate-500">
+          Access accessibility settings from the Settings menu in the navigation bar.
+        </p>
       </div>
+
+      <div className="bg-white rounded-lg shadow p-6">
+        <h3 className="text-lg font-semibold text-slate-900 mb-2">
+          Account Information
+        </h3>
+        <p className="text-sm text-slate-600">
+          Additional settings coming soon.
+        </p>
+      </div>
+
+      <AccessibilitySettingsModal 
+        isOpen={showAccessibilityModal} 
+        onClose={() => setShowAccessibilityModal(false)} 
+      />
     </div>
   );
 }

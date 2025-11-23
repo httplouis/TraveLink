@@ -2,7 +2,7 @@
 
 import React from "react";
 import { motion } from "framer-motion";
-import { Eye, TrendingUp, Calendar, MapPin, Clock, DollarSign, Zap, Route } from "lucide-react";
+import { Eye, TrendingUp, Calendar, MapPin, Clock, Zap, Route } from "lucide-react";
 import StatusBadge from "./StatusBadge";
 import { PersonDisplay } from "./ProfilePicture";
 import { WowCard, WowButton } from "./Modal";
@@ -112,7 +112,7 @@ export default function RequestCard({
         </div>
         {request.total_budget && (
           <div className="flex items-center gap-2">
-            <DollarSign className="w-4 h-4 text-gray-400" />
+            <span className="text-sm font-bold text-gray-400">₱</span>
             <span>₱{request.total_budget.toLocaleString()}</span>
           </div>
         )}

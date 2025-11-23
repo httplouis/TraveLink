@@ -8,14 +8,18 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
  */
 export async function GET() {
   try {
-    const supabase = await createSupabaseServerClient(true); // Use service role
+    // Use regular client for auth (with cookies)
+    const authSupabase = await createSupabaseServerClient(false);
     
     // Get current user profile for filtering
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser();
     if (authError || !user) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
+    // Use service role for queries (bypasses RLS)
+    const supabase = await createSupabaseServerClient(true);
+    
     const { data: profile } = await supabase
       .from("users")
       .select("id, is_comptroller")

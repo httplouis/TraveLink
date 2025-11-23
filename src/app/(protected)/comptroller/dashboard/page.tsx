@@ -4,7 +4,6 @@
 import React from "react";
 import { motion } from "framer-motion";
 import { 
-  DollarSign, 
   TrendingUp, 
   CheckCircle, 
   XCircle, 
@@ -107,7 +106,7 @@ export default function ComptrollerDashboard() {
       value: `₱${stats.totalBudget.toLocaleString()}`,
       change: "+₱350k this month",
       trend: "up",
-      icon: <DollarSign className="h-6 w-6" />,
+      icon: <span className="text-2xl font-bold">₱</span>,
       color: "text-[#7A0010]",
       bgColor: "bg-red-50",
     },

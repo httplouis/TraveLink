@@ -3,7 +3,7 @@
 
 import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
-import { CheckCircle2, XCircle, Loader2, AlertCircle, Mail, Calendar, MapPin, Building2, PenTool, Users, UserCheck, DollarSign, FileText } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, AlertCircle, Mail, Calendar, MapPin, Building2, PenTool, Users, UserCheck, FileText } from "lucide-react";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 
 export default function HeadEndorsementConfirmationPage() {
@@ -405,7 +405,7 @@ export default function HeadEndorsementConfirmationPage() {
         {(expenseBreakdown.length > 0 || totalBudget > 0) && (
           <div className="bg-white rounded-xl shadow-lg border-2 border-green-200 p-6 mb-6">
             <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <DollarSign className="w-5 h-5 text-green-600" />
+              <span className="text-lg font-bold text-green-600">₱</span>
               Budget Breakdown
             </h2>
             

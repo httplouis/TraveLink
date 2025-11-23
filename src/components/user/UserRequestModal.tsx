@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { X, CheckCircle, Calendar, MapPin, DollarSign, FileText, User, Users, Building2, Car, UserCheck, Clock, History, UserCog, CheckCircle2 } from "lucide-react";
+import { X, CheckCircle, Calendar, MapPin, FileText, User, Users, Building2, Car, UserCheck, Clock, History, UserCog, CheckCircle2 } from "lucide-react";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import { useToast } from "@/components/common/ui/Toast";
 import SignConfirmationDialog from "@/components/user/request/SignConfirmationDialog";
@@ -469,7 +469,7 @@ export default function UserRequestModal({
                   </section>
                   <section className="rounded-lg bg-amber-50/50 border border-amber-100 p-3">
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-600 flex items-center gap-1.5 mb-2">
-                      <DollarSign className="h-4 w-4" />
+                      <span className="text-base font-bold">₱</span>
                       Budget
                     </p>
                     <p className="text-lg font-bold text-[#7A0010]">
@@ -723,7 +723,7 @@ export default function UserRequestModal({
                 {/* Budget Breakdown */}
                 <section className="rounded-lg bg-slate-50 border border-slate-200 p-4">
                   <div className="flex items-center gap-2 mb-3 pb-3 border-b border-slate-200">
-                    <DollarSign className="h-5 w-5 text-slate-700" />
+                    <span className="text-lg font-bold text-slate-700">₱</span>
                     <h3 className="text-sm font-semibold text-slate-900">Budget Breakdown</h3>
                   </div>
 

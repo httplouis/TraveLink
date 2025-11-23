@@ -9,7 +9,6 @@ import {
   AlertCircle, 
   Users, 
   Calendar,
-  DollarSign,
   MapPin,
   BarChart3,
   PieChart,
@@ -148,7 +147,7 @@ export default function ExecutiveDashboard({
     {
       title: 'Total Budget',
       value: `₱${(stats.total_budget / 1000000).toFixed(1)}M`,
-      icon: DollarSign,
+      icon: ({ className }: { className?: string } = {}) => <span className={`text-2xl font-bold ${className || ""}`}>₱</span>,
       color: roleColor,
       change: '+18%',
       changeType: 'positive' as const
@@ -318,7 +317,7 @@ export default function ExecutiveDashboard({
                         
                         <div className="flex items-center gap-4 mt-3 text-sm text-gray-600">
                           <div className="flex items-center gap-1">
-                            <DollarSign className="w-4 h-4" />
+                            <span className="text-sm font-bold">₱</span>
                             ₱{request.total_budget.toLocaleString()}
                           </div>
                           <div className="flex items-center gap-1">

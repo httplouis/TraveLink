@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { X, Download, MapPin, Calendar, DollarSign, User, Building2, CheckCircle, Clock } from "lucide-react";
+import { X, Download, MapPin, Calendar, User, Building2, CheckCircle, Clock } from "lucide-react";
 import RequestStatusTracker from "@/components/common/RequestStatusTracker";
 
 type Props = {
@@ -199,7 +199,7 @@ export default function ComprehensiveRequestModal({ isOpen, onClose, requestId }
 
                   {data.has_budget && (
                     <div className="flex items-start gap-3">
-                      <DollarSign className="h-5 w-5 text-gray-500 mt-0.5" />
+                      <span className="text-lg font-bold text-gray-500 mt-0.5">₱</span>
                       <div>
                         <p className="text-xs text-gray-500 uppercase">Budget</p>
                         <p className="text-sm font-medium text-gray-900">

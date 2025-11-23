@@ -7,7 +7,6 @@ import {
   X, 
   User, 
   Shield, 
-  DollarSign, 
   Users, 
   Award,
   FileCheck,
@@ -77,11 +76,16 @@ interface RequestStatusTrackerProps {
   compact?: boolean;
 }
 
+// Peso icon component
+const PesoIcon = ({ className }: { className?: string }) => (
+  <span className={`text-lg font-bold ${className || ""}`}>₱</span>
+);
+
 const STAGES: ApprovalStage[] = [
   { key: "head", label: "Department Head", icon: User, role: "Head" },
   { key: "parent_head", label: "College Dean", icon: Award, role: "Dean" },
   { key: "admin", label: "Transportation Coordinator", icon: Shield, role: "Transportation Coordinator" },
-  { key: "comptroller", label: "Comptroller", icon: DollarSign, role: "Comptroller" },
+  { key: "comptroller", label: "Comptroller", icon: PesoIcon, role: "Comptroller" },
   { key: "hr", label: "Human Resources", icon: Users, role: "HR" },
   { key: "vp", label: "Vice President", icon: Award, role: "VP" },
   { key: "vp2", label: "Second Vice President", icon: Award, role: "VP2" },

@@ -6,7 +6,6 @@ import {
   Clock, 
   CheckCircle, 
   AlertTriangle,
-  DollarSign,
   Users,
   ArrowUp,
   ArrowDown
@@ -116,7 +115,7 @@ export default function VPDashboard() {
     {
       title: "Total Budget (Month)",
       value: `₱${stats.total_budget.toLocaleString()}`,
-      icon: DollarSign,
+      icon: ({ className }: { className?: string }) => <span className={`text-2xl font-bold ${className || ""}`}>₱</span>,
       color: "bg-gradient-to-br from-blue-50 to-blue-100",
       textColor: "text-blue-700",
       iconBg: "bg-blue-500",

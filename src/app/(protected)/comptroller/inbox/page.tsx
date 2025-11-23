@@ -2,7 +2,7 @@
 "use client";
 
 import React from "react";
-import { Search, Clock, User, Building2, MapPin, Calendar, DollarSign, FileText } from "lucide-react";
+import { Search, Clock, User, Building2, MapPin, Calendar, FileText } from "lucide-react";
 import ComptrollerReviewModal from "@/components/comptroller/ComptrollerReviewModal";
 import RequestCardEnhanced from "@/components/common/RequestCardEnhanced";
 import { motion } from "framer-motion";

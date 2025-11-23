@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { DollarSign, Plus, Edit, TrendingUp, TrendingDown, Search, Filter } from 'lucide-react';
+import { Plus, Edit, TrendingUp, TrendingDown, Search, Filter } from 'lucide-react';
 import { WowCard, WowButton } from '@/components/common/Modal';
 import { formatLongDate } from '@/lib/datetime';
 
@@ -168,7 +168,7 @@ export default function ComptrollerBudgetPage() {
         {filteredBudgets.length === 0 ? (
           <WowCard>
             <div className="text-center py-12">
-              <DollarSign className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+              <span className="text-6xl font-bold text-gray-400 mx-auto mb-4 block">₱</span>
               <p className="text-gray-600 text-lg">No budgets found</p>
               <p className="text-gray-500 text-sm mt-2">
                 {searchQuery ? 'Try adjusting your search filters' : 'Add a budget to get started'}

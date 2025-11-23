@@ -3,7 +3,7 @@
 
 import React from "react";
 import { motion } from "framer-motion";
-import { CheckCircle, DollarSign, AlertCircle } from "lucide-react";
+import { CheckCircle, AlertCircle } from "lucide-react";
 import { useToast } from "@/components/common/ui/ToastProvider.ui";
 
 type Props = {
@@ -79,7 +79,7 @@ export default function PaymentConfirmationButton({
         <div className="flex items-start gap-4">
           <div className="flex-shrink-0">
             <div className="h-12 w-12 rounded-full bg-amber-500 flex items-center justify-center">
-              <DollarSign className="h-6 w-6 text-white" />
+              <span className="text-2xl font-bold text-white">₱</span>
             </div>
           </div>
           <div className="flex-1">

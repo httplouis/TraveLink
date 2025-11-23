@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { X, MapPin, Calendar, Users, Car, User, DollarSign, FileText, Edit2 } from "lucide-react";
+import { X, MapPin, Calendar, Users, Car, User, FileText, Edit2 } from "lucide-react";
 
 type CalendarRequest = {
   id: string;
@@ -197,7 +197,7 @@ export function AdminCalendarDetailsModal({
 
                       {req.total_budget > 0 && (
                         <div className="flex items-start gap-3">
-                          <DollarSign className="h-4 w-4 text-[#7A0010] mt-0.5" />
+                          <span className="text-base font-bold text-[#7A0010] mt-0.5">₱</span>
                           <div>
                             <p className="text-xs font-medium text-gray-500">Budget</p>
                             <p className="text-sm text-gray-900">

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { DollarSign, TrendingUp, AlertCircle, Info } from 'lucide-react';
+import { TrendingUp, AlertCircle, Info } from 'lucide-react';
 import { WowCard } from '@/components/common/Modal';
 import { formatLongDate } from '@/lib/datetime';
 
@@ -125,7 +125,7 @@ export default function BudgetDisplay({ departmentId, className = '' }: BudgetDi
               {budget.semester || 'Annual'} • FY {budget.fiscal_year}-{budget.fiscal_year + 1}
             </p>
           </div>
-          <DollarSign className="w-8 h-8 text-[#7a0019]" />
+          <span className="text-3xl font-bold text-[#7a0019]">₱</span>
         </div>
 
         <div className="space-y-3">

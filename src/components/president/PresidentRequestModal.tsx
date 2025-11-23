@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { X, CheckCircle2, XCircle, Users, Car, UserCog, MapPin, Calendar, DollarSign, FileText, Edit2, Check, Clock } from "lucide-react";
+import { X, CheckCircle2, XCircle, Users, Car, UserCog, MapPin, Calendar, FileText, Edit2, Check, Clock } from "lucide-react";
 import { useToast } from "@/components/common/ui/Toast";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import { NameWithProfile } from "@/components/common/ProfileHoverCard";
@@ -527,7 +527,7 @@ export default function PresidentRequestModal({
               </section>
               <section className="rounded-lg bg-amber-50/50 border border-amber-100 p-3">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-600 flex items-center gap-1.5 mb-2">
-                  <DollarSign className="h-4 w-4" />
+                  <span className="text-base font-bold">₱</span>
                   Budget
                 </p>
                 <p className="text-lg font-bold text-[#7A0010]">
@@ -916,7 +916,7 @@ export default function PresidentRequestModal({
             <section className="rounded-lg bg-slate-50 border-2 border-[#7A0010] p-4 shadow-lg">
               <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-200">
                 <div className="flex items-center gap-2">
-                  <DollarSign className="h-5 w-5 text-slate-700" />
+                  <span className="text-lg font-bold text-slate-700">₱</span>
                   <h3 className="text-sm font-semibold text-slate-900">Budget Breakdown</h3>
                 </div>
               </div>

@@ -5,7 +5,6 @@ import {
   FileText, 
   UserCheck, 
   Settings, 
-  DollarSign, 
   Users, 
   Crown, 
   CheckCircle, 

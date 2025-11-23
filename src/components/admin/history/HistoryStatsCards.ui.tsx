@@ -2,7 +2,7 @@
 "use client";
 
 import type { HistoryStats } from "@/lib/admin/history/types";
-import { CheckCircle2, Wrench, DollarSign, TrendingUp } from "lucide-react";
+import { CheckCircle2, Wrench, TrendingUp } from "lucide-react";
 
 type Props = {
   stats: HistoryStats;
@@ -27,7 +27,7 @@ export default function HistoryStatsCards({ stats }: Props) {
     {
       label: "Total Maintenance Cost",
       value: `₱${stats.totalCost.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      icon: DollarSign,
+      icon: ({ className }: { className?: string }) => <span className={`text-2xl font-bold ${className || ""}`}>₱</span>,
       color: "bg-amber-50 text-amber-700 border-amber-200",
       iconColor: "text-amber-600",
     },

@@ -43,20 +43,37 @@ export async function GET(req: NextRequest) {
     if (rejectedError) throw rejectedError;
 
     // 4. Get total budget reviewed this month (both approved and rejected)
-    const { data: budgetData, error: budgetError } = await supabase
+    // Get approved requests within month
+    const { data: approvedBudgetData, error: approvedBudgetError } = await supabase
       .from("requests")
       .select("total_budget, comptroller_edited_budget")
-      .or(
-        `comptroller_approved_at.gte.${monthStart.toISOString()},comptroller_rejected_at.gte.${monthStart.toISOString()}`
-      );
+      .not("comptroller_approved_at", "is", null)
+      .gte("comptroller_approved_at", monthStart.toISOString())
+      .lte("comptroller_approved_at", monthEnd.toISOString());
 
-    if (budgetError) throw budgetError;
+    if (approvedBudgetError) throw approvedBudgetError;
 
-    const totalBudget = budgetData?.reduce((sum, req) => {
+    // Get rejected requests within month
+    const { data: rejectedBudgetData, error: rejectedBudgetError } = await supabase
+      .from("requests")
+      .select("total_budget, comptroller_edited_budget")
+      .not("comptroller_rejected_at", "is", null)
+      .gte("comptroller_rejected_at", monthStart.toISOString())
+      .lte("comptroller_rejected_at", monthEnd.toISOString());
+
+    if (rejectedBudgetError) throw rejectedBudgetError;
+
+    // Combine and sum budgets (approved and rejected are mutually exclusive, so no duplicates)
+    const allBudgetData = [
+      ...(approvedBudgetData || []),
+      ...(rejectedBudgetData || [])
+    ];
+
+    const totalBudget = allBudgetData.reduce((sum, req) => {
       // Use edited budget if available, otherwise original
       const budget = req.comptroller_edited_budget || req.total_budget || 0;
       return sum + Number(budget);
-    }, 0) || 0;
+    }, 0);
 
     // 5. Get previous month stats for comparison
     const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);

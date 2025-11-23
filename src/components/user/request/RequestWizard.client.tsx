@@ -1100,6 +1100,46 @@ function RequestWizardContent() {
   const onChangeSchoolService = (p: any) => patchSchoolService(p);
   const onChangeSeminar = (p: any) => patchSeminar(p);
 
+  // Auto-save function for invitations (silent, returns requestId)
+  async function handleAutoSaveRequest(): Promise<string | null> {
+    try {
+      // Save to database to get a real request ID (for invitations)
+      const response = await fetch("/api/requests/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          travelOrder: data.travelOrder,
+          reason: data.reason,
+          vehicleMode: data.vehicleMode,
+          schoolService: data.schoolService,
+          seminar: data.seminar,
+          status: "draft", // Save as draft
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.ok) {
+        console.error("[handleAutoSaveRequest] API error:", result);
+        throw new Error(result.error || result.message || "Failed to save draft");
+      }
+
+      // Store the request ID in the form data (for invitations)
+      if (result.data?.id) {
+        if (data.reason === "seminar") {
+          patchSeminar({ requestId: result.data.id } as any);
+        }
+        setCurrentSubmissionId(result.data.id);
+        return result.data.id;
+      }
+
+      return null;
+    } catch (err: any) {
+      console.error("[handleAutoSaveRequest] Error saving draft:", err);
+      throw err;
+    }
+  }
+
   async function handleSaveDraft() {
     setSaving(true);
     try {

@@ -6,7 +6,6 @@ import { motion } from "framer-motion";
 import {
   Users,
   FileText,
-  DollarSign,
   Building2,
   TrendingUp,
   CheckCircle,
@@ -126,7 +125,7 @@ export default function SuperAdminAnalyticsPage() {
       title: "Budget (YTD)",
       value: `₱${(stats.budget.totalYTD / 1000000).toFixed(2)}M`,
       subtitle: `₱${(stats.budget.thisMonth / 1000).toFixed(0)}K this month`,
-      icon: DollarSign,
+      icon: ({ className }: { className?: string }) => <span className={`text-2xl font-bold ${className || ""}`}>₱</span>,
       color: "from-green-500 to-green-600",
       href: "/super-admin/analytics",
     },

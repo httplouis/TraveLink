@@ -6,7 +6,6 @@ import { motion } from "framer-motion";
 import { 
   Download, 
   TrendingUp, 
-  DollarSign, 
   CheckCircle, 
   XCircle,
   Calendar,
@@ -153,7 +152,7 @@ export default function ComptrollerReports() {
           className="bg-gradient-to-br from-[#7A0010] to-[#5A0010] rounded-2xl shadow-lg p-6 text-white"
         >
           <div className="flex items-center gap-3 mb-2">
-            <DollarSign className="h-6 w-6" />
+            <span className="text-xl font-bold">₱</span>
             <span className="text-sm font-medium opacity-90">Total Budget</span>
           </div>
           <div className="text-3xl font-bold mb-1">₱{(totalBudgetReviewed / 1000000).toFixed(2)}M</div>

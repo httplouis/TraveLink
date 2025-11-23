@@ -6,7 +6,6 @@ import {
   Clock, 
   CheckCircle, 
   Shield,
-  DollarSign,
   Users,
   Globe,
   Building2,
@@ -102,7 +101,7 @@ export default function PresidentDashboard() {
     {
       title: "Total Budget (YTD)",
       value: `₱${(stats.total_budget_ytd / 1000000).toFixed(2)}M`,
-      icon: DollarSign,
+      icon: ({ className }: { className?: string }) => <span className={`text-2xl font-bold ${className || ""}`}>₱</span>,
       color: "bg-gradient-to-br from-blue-50 to-blue-100",
       textColor: "text-blue-700",
       iconBg: "bg-blue-500",
