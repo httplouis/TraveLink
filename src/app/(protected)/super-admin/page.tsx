@@ -72,14 +72,24 @@ export default function SuperAdminDashboard() {
         requestsRes.json(),
       ]);
 
+      if (!usersRes.ok || !usersData.ok) {
+        console.error("[SuperAdminDashboard] Users stats error:", usersData.error);
+      }
+      if (!deptsRes.ok || !deptsData.ok) {
+        console.error("[SuperAdminDashboard] Departments stats error:", deptsData.error);
+      }
+      if (!requestsRes.ok || !requestsData.ok) {
+        console.error("[SuperAdminDashboard] Requests stats error:", requestsData.error);
+      }
+
       setStats({
-        totalUsers: usersData.total || 0,
-        activeUsers: usersData.active || 0,
-        totalDepartments: deptsData.total || 0,
-        pendingRequests: requestsData.pending || 0,
+        totalUsers: usersData.ok ? (usersData.total || 0) : 0,
+        activeUsers: usersData.ok ? (usersData.active || 0) : 0,
+        totalDepartments: deptsData.ok ? (deptsData.total || 0) : 0,
+        pendingRequests: requestsData.ok ? (requestsData.pending || 0) : 0,
       });
-    } catch (error) {
-      console.error("Failed to fetch stats:", error);
+    } catch (error: any) {
+      console.error("[SuperAdminDashboard] Failed to fetch stats:", error);
     } finally {
       setLoading(false);
     }

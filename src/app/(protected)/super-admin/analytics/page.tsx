@@ -70,11 +70,13 @@ export default function SuperAdminAnalyticsPage() {
     try {
       const res = await fetch("/api/super-admin/stats/system");
       const json = await res.json();
-      if (json.ok) {
+      if (json.ok && json.data) {
         setStats(json.data);
+      } else {
+        console.error("[SuperAdminAnalytics] Failed to fetch stats:", json.error || "Unknown error");
       }
-    } catch (err) {
-      console.error("Failed to fetch system stats:", err);
+    } catch (err: any) {
+      console.error("[SuperAdminAnalytics] Failed to fetch system stats:", err);
     } finally {
       setLoading(false);
     }

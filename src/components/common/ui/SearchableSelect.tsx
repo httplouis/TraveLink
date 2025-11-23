@@ -35,6 +35,7 @@ export default function SearchableSelect({
   const [dropdownPos, setDropdownPos] = React.useState({ top: 0, left: 0, width: 0 });
   const selectRef = React.useRef<HTMLDivElement>(null);
   const buttonRef = React.useRef<HTMLButtonElement>(null);
+  const dropdownRef = React.useRef<HTMLDivElement>(null);
   const [canRender, setCanRender] = React.useState(false);
   
   // Only render portal after mounting to avoid hydration mismatch
@@ -131,7 +132,11 @@ export default function SearchableSelect({
   // Close dropdown when clicking outside or pressing Escape
   React.useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (selectRef.current && !selectRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      const isInsideSelect = selectRef.current?.contains(target);
+      const isInsideDropdown = dropdownRef.current?.contains(target);
+      
+      if (!isInsideSelect && !isInsideDropdown) {
         setIsOpen(false);
         setSearchQuery("");
       }
@@ -164,6 +169,7 @@ export default function SearchableSelect({
   // Render dropdown content
   const dropdownContent = canRender && isOpen && (
     <div 
+      ref={dropdownRef}
       className="fixed bg-white border-2 border-gray-300 rounded-lg shadow-2xl max-h-80 overflow-hidden"
       style={{ 
         top: `${dropdownPos.top}px`,
@@ -173,7 +179,10 @@ export default function SearchableSelect({
         zIndex: 99999,
         boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
       }}
-      onMouseDown={(e) => e.preventDefault()}
+      onMouseDown={(e) => {
+        // Prevent the click outside handler from firing when clicking inside dropdown
+        e.stopPropagation();
+      }}
     >
       {/* Search Input */}
       <div className="p-2 border-b border-gray-200 sticky top-0 bg-white z-10">
@@ -210,7 +219,11 @@ export default function SearchableSelect({
               <button
                 key={option.value}
                 type="button"
-                onClick={() => handleSelect(option.value)}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleSelect(option.value);
+                }}
                 className={`
                   w-full px-4 py-2.5 text-left text-sm
                   hover:bg-purple-50 transition-colors

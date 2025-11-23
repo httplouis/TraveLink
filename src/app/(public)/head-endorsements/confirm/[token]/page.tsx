@@ -508,7 +508,7 @@ export default function HeadEndorsementConfirmationPage() {
                 )}
                 {signature && (
                   <p className="text-xs text-green-600 mt-1">
-                    ✓ Signature captured ({Math.round(signature.length / 1024)}KB)
+                    ✓ Signature captured
                   </p>
                 )}
               </div>

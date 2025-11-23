@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { createClient } from "@supabase/supabase-js";
 
 /**
  * PATCH /api/admin/users/[id]
@@ -13,13 +14,14 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createSupabaseServerClient(true);
+    // Use regular client for auth (with cookies)
+    const authSupabase = await createSupabaseServerClient(false);
     const { id } = await params;
     const userId = id;
     const body = await req.json();
 
     // Check if user is admin first
-    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+    const { data: { user: authUser }, error: authError } = await authSupabase.auth.getUser();
     if (authError || !authUser) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
@@ -60,6 +62,24 @@ export async function PATCH(
 
     // Remove password from body before processing
     delete body.password;
+
+    // Use service role client for queries (bypasses RLS completely)
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return NextResponse.json({
+        ok: false,
+        error: "Missing Supabase configuration"
+      }, { status: 500 });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
 
     const { data: profile } = await supabase
       .from("users")
@@ -933,8 +953,13 @@ export async function PATCH(
     });
   } catch (err: any) {
     console.error("[PATCH /api/admin/users/[id]] Unexpected error:", err);
+    // Don't expose internal errors like "supabase is not defined"
+    const errorMessage = err.message || "Internal server error";
+    const safeErrorMessage = errorMessage.includes("supabase") || errorMessage.includes("is not defined")
+      ? "An internal error occurred. Please try again."
+      : errorMessage;
     return NextResponse.json(
-      { ok: false, error: err.message || "Internal server error" },
+      { ok: false, error: safeErrorMessage },
       { status: 500 }
     );
   }
@@ -950,13 +975,14 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createSupabaseServerClient(true);
+    // Use regular client for auth (with cookies)
+    const authSupabase = await createSupabaseServerClient(false);
     const { id } = await params;
     const userId = id;
     const body = await req.json().catch(() => ({}));
 
     // Check if user is admin first
-    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+    const { data: { user: authUser }, error: authError } = await authSupabase.auth.getUser();
     if (authError || !authUser) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
@@ -994,6 +1020,24 @@ export async function DELETE(
     if (signInError) {
       return NextResponse.json({ ok: false, error: "Invalid password" }, { status: 401 });
     }
+
+    // Use service role client for queries (bypasses RLS completely)
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return NextResponse.json({
+        ok: false,
+        error: "Missing Supabase configuration"
+      }, { status: 500 });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
 
     const { data: profile } = await supabase
       .from("users")
@@ -1355,8 +1399,13 @@ export async function DELETE(
     });
   } catch (err: any) {
     console.error("[DELETE /api/admin/users/[id]] Unexpected error:", err);
+    // Don't expose internal errors like "supabase is not defined"
+    const errorMessage = err.message || "Internal server error";
+    const safeErrorMessage = errorMessage.includes("supabase") || errorMessage.includes("is not defined")
+      ? "An internal error occurred. Please try again."
+      : errorMessage;
     return NextResponse.json(
-      { ok: false, error: err.message || "Internal server error" },
+      { ok: false, error: safeErrorMessage },
       { status: 500 }
     );
   }

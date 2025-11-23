@@ -93,24 +93,37 @@ export default function SuperAdminUsersPage() {
     fetchDepartments();
 
     // Real-time subscription for users table
-    const supabase = createSupabaseClient();
-    const channel = supabase
-      .channel("super-admin-users-changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "users",
-        },
-        () => {
-          fetchUsers();
-        }
-      )
-      .subscribe();
+    let supabase: ReturnType<typeof createSupabaseClient> | null = null;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    
+    try {
+      supabase = createSupabaseClient();
+      channel = supabase
+        .channel("super-admin-users-changes")
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "users",
+          },
+          () => {
+            fetchUsers();
+          }
+        )
+        .subscribe();
+    } catch (err) {
+      console.error("[SuperAdminUsers] Error setting up real-time subscription:", err);
+    }
 
     return () => {
-      supabase.removeChannel(channel);
+      if (supabase && channel) {
+        try {
+          supabase.removeChannel(channel);
+        } catch (err) {
+          console.error("[SuperAdminUsers] Error removing channel:", err);
+        }
+      }
     };
   }, []);
 
@@ -140,8 +153,20 @@ export default function SuperAdminUsersPage() {
         throw new Error(data.error || "Failed to fetch users");
       }
 
-      setUsers(data.data || []);
+      const usersData = data.data || [];
+      setUsers(usersData);
+      
+      // Calculate stats
+      const total = usersData.length;
+      const active = usersData.filter((u: User) => u.status === "active").length;
+      const byRole: Record<string, number> = {};
+      usersData.forEach((u: User) => {
+        byRole[u.role] = (byRole[u.role] || 0) + 1;
+      });
+      
+      setStats({ total, active, byRole });
     } catch (err: any) {
+      console.error("[SuperAdminUsers] Failed to fetch users:", err);
       toast.error("Error", err.message || "Failed to load users");
     } finally {
       setLoading(false);
@@ -154,9 +179,14 @@ export default function SuperAdminUsersPage() {
       const data = await response.json();
       if (data.ok && data.departments) {
         setDepartments(data.departments);
+        console.log(`[SuperAdminUsers] Loaded ${data.departments.length} departments`);
+      } else {
+        console.error("[SuperAdminUsers] Failed to fetch departments:", data.error || "Unknown error");
+        toast.error("Error", data.error || "Failed to load departments");
       }
-    } catch (err) {
-      console.error("Failed to fetch departments:", err);
+    } catch (err: any) {
+      console.error("[SuperAdminUsers] Failed to fetch departments:", err);
+      toast.error("Error", err.message || "Failed to load departments");
     }
   };
 

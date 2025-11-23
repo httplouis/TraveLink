@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 
 /**
  * OAuth Callback Handler
@@ -251,7 +252,22 @@ export async function GET(request: NextRequest) {
     }
 
     // Get or create user profile in Supabase
-    const supabaseAdmin = await createSupabaseServerClient(true);
+    // Use service role client for admin operations (bypasses RLS)
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error("[auth/callback] ❌ Missing Supabase configuration");
+      await supabase.auth.signOut();
+      return NextResponse.redirect(new URL("/login?error=config_missing", baseUrl));
+    }
+
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
     
     // Check if user exists
     const { data: existingUser } = await supabaseAdmin

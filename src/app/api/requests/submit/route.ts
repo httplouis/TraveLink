@@ -1828,6 +1828,17 @@ export async function POST(req: Request) {
 
                       const phNow = getPhilippineTimestamp();
                       
+                      // CRITICAL FIX: Copy signature from requests.head_signature to head_endorsement_invitations.signature
+                      // When head is requester, the signature is saved in requests.head_signature (line 1217)
+                      // We need to copy it to head_endorsement_invitations.signature for auto-confirmed endorsements
+                      const { data: requestData } = await supabase
+                        .from("requests")
+                        .select("head_signature")
+                        .eq("id", data.id)
+                        .single();
+                      
+                      const headSignature = requestData?.head_signature || null;
+                      
                       if (existing && !existingError) {
                         // Update existing invitation to confirmed
                         await supabase
@@ -1839,6 +1850,7 @@ export async function POST(req: Request) {
                             confirmed_at: phNow,
                             updated_at: phNow,
                             head_user_id: headUserId || profile.id,
+                            signature: headSignature, // Copy signature from requests.head_signature
                           })
                           .eq("id", existing.id);
                       } else {
@@ -1858,6 +1870,7 @@ export async function POST(req: Request) {
                             status: 'confirmed',
                             endorsement_date: new Date().toISOString().split('T')[0],
                             confirmed_at: phNow,
+                            signature: headSignature, // Copy signature from requests.head_signature
                           });
                       }
                       
