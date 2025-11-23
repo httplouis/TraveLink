@@ -359,55 +359,170 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
 /* OpenDyslexic font fallback - loaded dynamically when needed */
 
-/* High Contrast Mode */
+/* High Contrast Mode - Maximum visibility for accessibility */
 .high-contrast {
   --bg-primary: #ffffff;
-  --bg-secondary: #f0f0f0;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f5f5f5;
   --text-primary: #000000;
-  --text-secondary: #333333;
+  --text-secondary: #000000;
   --border-color: #000000;
   --button-bg: #000000;
   --button-text: #ffffff;
+  --button-hover: #333333;
   --link-color: #0000ff;
+  --link-hover: #0000cc;
   --error-color: #ff0000;
   --success-color: #008000;
+  --warning-color: #ff8800;
+  --info-color: #0066cc;
 }
 
+/* Force high contrast on all elements */
 .high-contrast,
-.high-contrast * {
+.high-contrast body {
   background-color: var(--bg-primary, #ffffff) !important;
   color: var(--text-primary, #000000) !important;
+}
+
+/* All text should be black for maximum contrast */
+.high-contrast * {
+  color: var(--text-primary, #000000) !important;
+}
+
+/* Buttons - black background, white text, thick borders */
+.high-contrast button,
+.high-contrast .btn,
+.high-contrast [role="button"] {
+  background-color: var(--button-bg, #000000) !important;
+  color: var(--button-text, #ffffff) !important;
+  border: 3px solid var(--border-color, #000000) !important;
+  font-weight: 700 !important;
+  padding: 12px 24px !important;
+}
+
+.high-contrast button:hover,
+.high-contrast .btn:hover,
+.high-contrast [role="button"]:hover {
+  background-color: var(--button-hover, #333333) !important;
   border-color: var(--border-color, #000000) !important;
 }
 
-.high-contrast button,
-.high-contrast .btn {
-  background-color: var(--button-bg, #000000) !important;
-  color: var(--button-text, #ffffff) !important;
-  border: 2px solid var(--border-color, #000000) !important;
-}
-
+/* Links - bright blue, always underlined */
 .high-contrast a {
   color: var(--link-color, #0000ff) !important;
   text-decoration: underline !important;
+  font-weight: 600 !important;
 }
 
+.high-contrast a:hover {
+  color: var(--link-hover, #0000cc) !important;
+  text-decoration: underline !important;
+}
+
+/* Inputs - white background, black text, thick black borders */
 .high-contrast input,
 .high-contrast textarea,
 .high-contrast select {
-  border: 2px solid var(--border-color, #000000) !important;
+  border: 3px solid var(--border-color, #000000) !important;
   background-color: var(--bg-primary, #ffffff) !important;
   color: var(--text-primary, #000000) !important;
+  font-weight: 500 !important;
 }
 
+.high-contrast input:focus,
+.high-contrast textarea:focus,
+.high-contrast select:focus {
+  border: 4px solid var(--border-color, #000000) !important;
+  outline: 3px solid var(--link-color, #0000ff) !important;
+  outline-offset: 2px !important;
+}
+
+/* Cards and containers - white background, black borders */
+.high-contrast .bg-white,
+.high-contrast .bg-gray-50,
+.high-contrast .bg-gray-100,
+.high-contrast .bg-slate-50,
+.high-contrast .bg-slate-100 {
+  background-color: var(--bg-primary, #ffffff) !important;
+  border: 2px solid var(--border-color, #000000) !important;
+}
+
+/* Borders - always black and visible */
+.high-contrast .border,
+.high-contrast .border-gray-200,
+.high-contrast .border-gray-300,
+.high-contrast .border-slate-200,
+.high-contrast .border-slate-300 {
+  border-color: var(--border-color, #000000) !important;
+  border-width: 2px !important;
+}
+
+/* Error states - bright red */
 .high-contrast .text-red-600,
-.high-contrast .text-red-500 {
+.high-contrast .text-red-500,
+.high-contrast .text-red-700,
+.high-contrast [class*="error"],
+.high-contrast [class*="danger"] {
   color: var(--error-color, #ff0000) !important;
+  font-weight: 700 !important;
 }
 
+/* Success states - bright green */
 .high-contrast .text-green-600,
-.high-contrast .text-green-500 {
+.high-contrast .text-green-500,
+.high-contrast .text-green-700,
+.high-contrast [class*="success"] {
   color: var(--success-color, #008000) !important;
+  font-weight: 700 !important;
+}
+
+/* Warning states - bright orange */
+.high-contrast .text-yellow-600,
+.high-contrast .text-yellow-500,
+.high-contrast .text-orange-600,
+.high-contrast [class*="warning"] {
+  color: var(--warning-color, #ff8800) !important;
+  font-weight: 700 !important;
+}
+
+/* Info states - bright blue */
+.high-contrast .text-blue-600,
+.high-contrast .text-blue-500,
+.high-contrast [class*="info"] {
+  color: var(--info-color, #0066cc) !important;
+  font-weight: 700 !important;
+}
+
+/* Headings - extra bold for visibility */
+.high-contrast h1,
+.high-contrast h2,
+.high-contrast h3,
+.high-contrast h4,
+.high-contrast h5,
+.high-contrast h6 {
+  color: var(--text-primary, #000000) !important;
+  font-weight: 900 !important;
+  border-bottom: 2px solid var(--border-color, #000000) !important;
+  padding-bottom: 4px !important;
+}
+
+/* Labels - bold and black */
+.high-contrast label {
+  color: var(--text-primary, #000000) !important;
+  font-weight: 700 !important;
+}
+
+/* Disable any transparency or opacity */
+.high-contrast * {
+  opacity: 1 !important;
+}
+
+/* Shadows should be more visible */
+.high-contrast .shadow,
+.high-contrast .shadow-md,
+.high-contrast .shadow-lg {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -1px rgba(0, 0, 0, 0.3) !important;
 }
 
 /* Dark Mode - ChatGPT-inspired (softer, easier on the eyes) */

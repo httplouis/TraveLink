@@ -27,6 +27,7 @@ interface RequesterInvitationEditorProps {
   onStatusChange?: (allConfirmed: boolean) => void; // Callback when status changes
   requesterRole?: "faculty" | "head"; // Role type for filtering users
   currentUserEmail?: string; // Current logged-in user's email (for auto-confirm)
+  onAutoSaveRequest?: () => Promise<string | null>; // Callback to auto-save draft and return requestId
 }
 
 export default function RequesterInvitationEditor({
@@ -37,6 +38,7 @@ export default function RequesterInvitationEditor({
   onStatusChange,
   requesterRole = "faculty",
   currentUserEmail,
+  onAutoSaveRequest,
 }: RequesterInvitationEditorProps) {
   const [showLinkModal, setShowLinkModal] = React.useState(false);
   const [linkToShow, setLinkToShow] = React.useState<{ email: string; link: string } | null>(null);
@@ -473,15 +475,36 @@ export default function RequesterInvitationEditor({
       return;
     }
 
-    if (!requestId) {
-      toast.info("Save request first", "Please save the request as draft first, then you can send invitations.");
-      return;
-    }
-
     // Check cooldown
     if (cooldownRemaining > 0) {
       const secondsLeft = Math.ceil(cooldownRemaining / 1000);
       toast.warning("Please wait", `Please wait ${secondsLeft} second${secondsLeft > 1 ? 's' : ''} before sending another invitation.`);
+      return;
+    }
+
+    // Auto-save draft if requestId doesn't exist (data is already persisted)
+    let finalRequestId = requestId;
+    if (!finalRequestId && onAutoSaveRequest) {
+      try {
+        setSending(requester.id);
+        toast.info("Saving draft...", "Creating draft to enable invitation sending...");
+        
+        finalRequestId = await onAutoSaveRequest();
+        
+        if (!finalRequestId) {
+          throw new Error("Draft created but no request ID returned");
+        }
+        
+        toast.success("Draft saved", "Draft created successfully. Sending invitation...");
+      } catch (err: any) {
+        console.error('[RequesterInvitationEditor] Error auto-saving draft:', err);
+        toast.error("Failed to save draft", err.message || "Please save the request as draft first, then try sending invitations again.");
+        setSending(null);
+        return;
+      }
+    } else if (!finalRequestId) {
+      toast.info("Save request first", "Please save the request as draft first, then you can send invitations.");
+      setSending(null);
       return;
     }
 
@@ -492,7 +515,7 @@ export default function RequesterInvitationEditor({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          request_id: requestId,
+          request_id: finalRequestId,
           email: requester.email,
           requester_id: requester.user_id,
           name: requester.name,
@@ -554,6 +577,32 @@ export default function RequesterInvitationEditor({
     if (cooldownRemaining > 0) {
       const secondsLeft = Math.ceil(cooldownRemaining / 1000);
       toast.warning("Please wait", `Please wait ${secondsLeft} second${secondsLeft > 1 ? 's' : ''} before sending invitations again.`);
+      return;
+    }
+
+    // Auto-save draft if requestId doesn't exist
+    let finalRequestId = requestId;
+    if (!finalRequestId && onAutoSaveRequest) {
+      try {
+        setSendingAll(true);
+        toast.info("Saving draft...", "Creating draft to enable invitation sending...");
+        
+        finalRequestId = await onAutoSaveRequest();
+        
+        if (!finalRequestId) {
+          throw new Error("Draft created but no request ID returned");
+        }
+        
+        toast.success("Draft saved", "Draft created successfully. Sending invitations...");
+      } catch (err: any) {
+        console.error('[RequesterInvitationEditor] Error auto-saving draft:', err);
+        toast.error("Failed to save draft", err.message || "Please save the request as draft first, then try sending invitations again.");
+        setSendingAll(false);
+        return;
+      }
+    } else if (!finalRequestId) {
+      toast.info("Save request first", "Please save the request as draft first, then you can send invitations.");
+      setSendingAll(false);
       return;
     }
 

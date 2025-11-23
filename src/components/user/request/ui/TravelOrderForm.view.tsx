@@ -30,6 +30,7 @@ type ViewProps = {
   currentUserEmail?: string; // Current logged-in user's email (for auto-confirm)
   onRequestersStatusChange?: (allConfirmed: boolean) => void; // Callback when all requesters are confirmed
   onHeadEndorsementsStatusChange?: (allConfirmed: boolean) => void; // Callback when all head endorsements are confirmed
+  onAutoSaveRequest?: () => Promise<string | null>; // Callback to auto-save draft and return requestId
 };
 
 export default function TravelOrderFormView({
@@ -50,6 +51,7 @@ export default function TravelOrderFormView({
   currentUserEmail,
   onRequestersStatusChange,
   onHeadEndorsementsStatusChange,
+  onAutoSaveRequest,
 }: ViewProps) {
   const c = data?.costs || {};
 
@@ -408,6 +410,7 @@ export default function TravelOrderFormView({
 
       {/* Top half: date, requester, dept, destination, purpose */}
       <TopGridFields
+        onAutoSaveRequest={onAutoSaveRequest}
         data={data}
         errors={errors}
         onChange={onChange}
@@ -467,6 +470,7 @@ export default function TravelOrderFormView({
           requestId={requestId}
           onStatusChange={onHeadEndorsementsStatusChange}
           currentUserEmail={currentUserEmail}
+          onAutoSaveRequest={onAutoSaveRequest}
         />
       )}
 
