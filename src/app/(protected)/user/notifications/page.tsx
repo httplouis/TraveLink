@@ -6,6 +6,7 @@ import NotificationsView, {
   NotificationsTab,
 } from "@/components/user/notification/NotificationsView";
 import { formatLongDateTime } from "@/lib/datetime";
+import { createSupabaseClient } from "@/lib/supabase/client";
 
 export default function UserNotificationsPage() {
   const [items, setItems] = useState<NotificationItem[]>([]);
@@ -13,7 +14,67 @@ export default function UserNotificationsPage() {
   const [tab, setTab] = useState<NotificationsTab>("unread");
 
   useEffect(() => {
+    let isMounted = true;
+    let channel: any = null;
+    
+    // Initial load
     fetchNotifications();
+    
+    // Set up real-time subscription
+    const setupRealtime = async () => {
+      const supabase = createSupabaseClient();
+      
+      // Get current user profile ID
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      
+      const { data: profile } = await supabase
+        .from("users")
+        .select("id")
+        .eq("auth_user_id", user.id)
+        .single();
+      
+      if (!profile) return;
+      const currentUserId = profile.id;
+      
+      // Subscribe to notifications table changes
+      channel = supabase
+        .channel("user-notifications-page-changes")
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "notifications",
+          },
+          (payload: any) => {
+            if (!isMounted) return;
+            const notificationUserId = payload.new?.user_id || payload.old?.user_id;
+            if (notificationUserId === currentUserId) {
+              fetchNotifications();
+            }
+          }
+        )
+        .subscribe();
+    };
+    
+    setupRealtime();
+    
+    // Fallback polling every 30 seconds
+    const interval = setInterval(() => {
+      if (isMounted) {
+        fetchNotifications();
+      }
+    }, 30000);
+    
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      if (channel) {
+        const supabase = createSupabaseClient();
+        supabase.removeChannel(channel);
+      }
+    };
   }, []);
 
   const fetchNotifications = async () => {

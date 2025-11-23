@@ -1625,6 +1625,7 @@ function RequestWizardContent() {
               onChange={onChangeSeminar}
               errors={errors}
               onParticipantsStatusChange={setAllParticipantsConfirmed}
+              onAutoSaveRequest={handleAutoSaveRequest}
             />
           )}
 

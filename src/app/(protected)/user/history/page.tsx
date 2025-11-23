@@ -5,9 +5,10 @@ import { FileText, CheckCircle2, XCircle, History, RefreshCw } from "lucide-reac
 import FilterBar from "@/components/common/FilterBar";
 import { motion } from "framer-motion";
 import PersonDisplay from "@/components/common/PersonDisplay";
-import ComptrollerReviewModal from "@/components/comptroller/ComptrollerReviewModal";
+import RequestDetailsView from "@/components/common/RequestDetailsView";
+import { createSupabaseClient } from "@/lib/supabase/client";
 
-export default function ComptrollerHistoryPage() {
+export default function UserHistoryPage() {
   const [items, setItems] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [searchQuery, setSearchQuery] = React.useState("");
@@ -17,7 +18,7 @@ export default function ComptrollerHistoryPage() {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch("/api/comptroller/history", { cache: "no-store" });
+      const res = await fetch("/api/user/inbox/history", { cache: "no-store" });
       if (!res.ok) {
         console.warn("History API not OK:", res.status);
         setItems([]);
@@ -30,9 +31,7 @@ export default function ComptrollerHistoryPage() {
         return;
       }
       const json = await res.json();
-      if (Array.isArray(json)) {
-        setItems(json);
-      } else if (json.ok) {
+      if (json.ok) {
         setItems(json.data ?? []);
       }
     } catch (err) {
@@ -43,7 +42,55 @@ export default function ComptrollerHistoryPage() {
   }
 
   React.useEffect(() => {
+    let isMounted = true;
+    let mutateTimeout: NodeJS.Timeout | null = null;
+    let channel: any = null;
+    
+    // Initial load
     load();
+    
+    // Set up real-time subscription
+    const supabase = createSupabaseClient();
+    channel = supabase
+      .channel("user-history-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "requests",
+        },
+        (payload: any) => {
+          if (!isMounted) return;
+          // If requester_signature was added or status changed, refresh
+          if (payload.new?.requester_signature && !payload.old?.requester_signature ||
+              payload.new?.status !== payload.old?.status) {
+            if (mutateTimeout) clearTimeout(mutateTimeout);
+            mutateTimeout = setTimeout(() => {
+              if (isMounted) {
+                load();
+              }
+            }, 500);
+          }
+        }
+      )
+      .subscribe();
+    
+    // Fallback polling every 30 seconds
+    const interval = setInterval(() => {
+      if (isMounted) {
+        load();
+      }
+    }, 30000);
+    
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      if (mutateTimeout) clearTimeout(mutateTimeout);
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
   }, []);
 
   const handleClose = () => {
@@ -54,15 +101,14 @@ export default function ComptrollerHistoryPage() {
     const query = searchQuery.toLowerCase();
     const matchesSearch = 
       item.request_number?.toLowerCase().includes(query) ||
-      item.requester?.toLowerCase().includes(query) ||
-      item.department?.toLowerCase().includes(query);
+      item.requester_name?.toLowerCase().includes(query) ||
+      item.requester?.name?.toLowerCase().includes(query) ||
+      item.purpose?.toLowerCase().includes(query) ||
+      item.department?.name?.toLowerCase().includes(query);
     
     const matchesFilters = Object.entries(activeFilters).every(([key, value]) => {
       if (!value) return true;
-      if (key === 'status') {
-        if (value === 'approved') return item.decision === 'approved';
-        if (value === 'rejected') return item.decision === 'rejected';
-      }
+      if (key === 'status') return item.status === value;
       return true;
     });
     
@@ -86,9 +132,9 @@ export default function ComptrollerHistoryPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Budget Review History</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Request History</h1>
           <p className="text-gray-600 mt-1">
-            {filteredItems.length} {filteredItems.length === 1 ? 'request' : 'requests'} reviewed by Comptroller
+            {filteredItems.length} {filteredItems.length === 1 ? 'request' : 'requests'} you've signed
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -102,7 +148,7 @@ export default function ComptrollerHistoryPage() {
           </button>
           <div className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#7a0019] to-[#9a0020] text-white rounded-lg text-sm font-medium shadow-lg">
             <History className="h-4 w-4" />
-            Comptroller History
+            My History
           </div>
         </div>
       </div>
@@ -118,11 +164,13 @@ export default function ComptrollerHistoryPage() {
             options: [
               { value: "approved", label: "Approved" },
               { value: "rejected", label: "Rejected" },
+              { value: "pending_vp", label: "Pending VP" },
+              { value: "pending_president", label: "Pending President" },
             ],
           },
         ]}
         showDateFilter={true}
-        placeholder="Search history by request number, requester, or department..."
+        placeholder="Search history by request number, requester, or purpose..."
       />
 
       {/* History List */}
@@ -135,33 +183,26 @@ export default function ComptrollerHistoryPage() {
           <p className="text-gray-500">
             {searchQuery
               ? "Try adjusting your search terms"
-              : "Approved and rejected budget reviews will appear here"}
+              : "Signed requests will appear here"}
           </p>
         </div>
       ) : (
         <div className="space-y-3">
           {filteredItems.map((item) => {
-            const requester = item.requester || "Unknown";
-            const department = item.department || "—";
+            const requester = item.requester_name || item.requester?.name || "Unknown";
+            const department = item.department?.name || item.department?.code || "—";
             const requestNumber = item.request_number || "—";
-            const isApproved = item.decision === "approved";
-            const isRejected = item.decision === "rejected";
-            const actionDate = item.decision_date;
+            const travelDate = item.travel_start_date
+              ? new Date(item.travel_start_date).toLocaleDateString()
+              : "—";
+            const isApproved = item.status === "approved";
+            const isRejected = item.status === "rejected";
+            const actionDate = item.requester_signed_at;
 
             return (
               <motion.button
                 key={item.id}
-                onClick={() => {
-                  // Fetch full request details
-                  fetch(`/api/requests/${item.id}`)
-                    .then(res => res.json())
-                    .then(data => {
-                      if (data.ok) {
-                        setSelected(data.data);
-                      }
-                    })
-                    .catch(err => console.error("Failed to fetch request:", err));
-                }}
+                onClick={() => setSelected(item)}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="group flex w-full items-center justify-between rounded-xl border-2 border-gray-200 bg-white px-5 py-4 text-left shadow-sm transition-all hover:border-[#7A0010]/40 hover:shadow-md"
@@ -183,11 +224,16 @@ export default function ComptrollerHistoryPage() {
                         Rejected
                       </span>
                     )}
+                    {!isApproved && !isRejected && (
+                      <span className="flex items-center gap-1 rounded-md bg-yellow-50 px-2.5 py-0.5 text-xs font-medium text-yellow-700 border border-yellow-200">
+                        {item.status?.replace('_', ' ').toUpperCase() || 'PENDING'}
+                      </span>
+                    )}
                     {actionDate && (
                       <>
                         <span className="text-xs text-gray-400">•</span>
                         <span className="text-xs font-medium text-gray-500">
-                          {new Date(actionDate).toLocaleString('en-US', {
+                          Signed on {new Date(actionDate).toLocaleString('en-US', {
                             month: 'short',
                             day: 'numeric',
                             year: 'numeric',
@@ -200,28 +246,29 @@ export default function ComptrollerHistoryPage() {
                     )}
                   </div>
                   
-                  <div className="text-sm">
-                    <div className="font-medium text-gray-900">{requester}</div>
-                    <div className="text-gray-600">{department}</div>
-                  </div>
+                  <PersonDisplay
+                    name={requester}
+                    position={item.requester?.position_title}
+                    department={department}
+                    profilePicture={item.requester?.profile_picture || item.requester?.avatar_url}
+                    size="sm"
+                  />
 
-                  {item.budget && (
-                    <div className="mt-3 text-sm">
-                      <span className="text-gray-500">Budget: </span>
-                      <span className="font-medium text-gray-900">₱{Number(item.budget).toLocaleString()}</span>
-                      {item.edited_budget && item.edited_budget !== item.budget && (
-                        <span className="text-gray-500 ml-2">
-                          (Edited: ₱{Number(item.edited_budget).toLocaleString()})
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  {item.notes && (
+                  {item.purpose && (
                     <p className="text-sm text-gray-600 line-clamp-1 mt-2">
-                      {item.notes}
+                      {item.purpose}
                     </p>
                   )}
+
+                  <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
+                    <span>Travel Date: <span className="font-medium text-gray-700">{travelDate}</span></span>
+                    {item.destination && (
+                      <span>•</span>
+                    )}
+                    {item.destination && (
+                      <span className="line-clamp-1">Destination: <span className="font-medium text-gray-700">{item.destination}</span></span>
+                    )}
+                  </div>
                 </div>
               </motion.button>
             );
@@ -231,20 +278,24 @@ export default function ComptrollerHistoryPage() {
 
       {/* Modal */}
       {selected && (
-        <ComptrollerReviewModal
-          request={selected}
-          onClose={handleClose}
-          onApproved={() => {
-            handleClose();
-            load();
-          }}
-          onRejected={() => {
-            handleClose();
-            load();
-          }}
-          viewOnly={true}
-        />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={handleClose}>
+          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-900">Request Details</h2>
+              <button
+                onClick={handleClose}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XCircle className="h-6 w-6" />
+              </button>
+            </div>
+            <div className="p-6">
+              <RequestDetailsView request={selected} />
+            </div>
+          </div>
+        </div>
       )}
     </motion.div>
   );
 }
+

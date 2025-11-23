@@ -137,12 +137,39 @@ export default function ApproverSelectionModal({
       );
     })
     .sort((a, b) => {
-      // Sort suggested approver (defaultApproverId) to the top
+      // Priority 1: Sort suggested approver (defaultApproverId) to the VERY TOP
       if (defaultApproverId) {
         if (a.id === defaultApproverId) return -1;
         if (b.id === defaultApproverId) return 1;
       }
-      // Keep original order for others
+      
+      // Priority 2: If suggestion exists, sort by role priority (suggested role first)
+      if (suggestionReason) {
+        // Extract suggested role from reason (e.g., "HR" or "Comptroller")
+        const suggestedRole = suggestionReason.toLowerCase().includes('hr') ? 'hr' :
+                             suggestionReason.toLowerCase().includes('comptroller') ? 'comptroller' : null;
+        
+        if (suggestedRole) {
+          const aIsSuggestedRole = a.role?.toLowerCase() === suggestedRole || 
+                                   a.roleLabel?.toLowerCase().includes(suggestedRole);
+          const bIsSuggestedRole = b.role?.toLowerCase() === suggestedRole || 
+                                   b.roleLabel?.toLowerCase().includes(suggestedRole);
+          
+          if (aIsSuggestedRole && !bIsSuggestedRole) return -1;
+          if (!aIsSuggestedRole && bIsSuggestedRole) return 1;
+        }
+      }
+      
+      // Priority 3: Sort HR before Comptroller (HR is usually next after admin)
+      const aIsHR = a.role?.toLowerCase() === 'hr' || a.roleLabel?.toLowerCase().includes('hr');
+      const bIsHR = b.role?.toLowerCase() === 'hr' || b.roleLabel?.toLowerCase().includes('hr');
+      const aIsComptroller = a.role?.toLowerCase() === 'comptroller' || a.roleLabel?.toLowerCase().includes('comptroller');
+      const bIsComptroller = b.role?.toLowerCase() === 'comptroller' || b.roleLabel?.toLowerCase().includes('comptroller');
+      
+      if (aIsHR && bIsComptroller) return -1;
+      if (aIsComptroller && bIsHR) return 1;
+      
+      // Priority 4: Keep original order for others
       return 0;
     });
 

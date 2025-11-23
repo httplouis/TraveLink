@@ -1,42 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 
 export async function GET(req: NextRequest) {
   try {
-    const cookieStore = await cookies();
-
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name: string) {
-            return cookieStore.get(name)?.value;
-          },
-          set(name: string, value: string, options: any) {
-            try {
-              cookieStore.set({ name, value, ...options });
-            } catch (error) {
-              // Ignore cookie errors in API routes
-            }
-          },
-          remove(name: string, options: any) {
-            try {
-              cookieStore.set({ name, value: "", ...options });
-            } catch (error) {
-              // Ignore cookie errors in API routes
-            }
-          },
-        },
-      }
-    );
-
-    // Get authenticated user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    // Use regular client for auth (with cookies)
+    const authSupabase = await createSupabaseServerClient(false);
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser();
     if (authError || !user) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
+
+    // Use service role client for queries (bypasses RLS completely)
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return NextResponse.json({
+        ok: false,
+        error: "Missing Supabase configuration"
+      }, { status: 500 });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
 
     // Get VP user profile
     const { data: vpUser, error: profileError } = await supabase

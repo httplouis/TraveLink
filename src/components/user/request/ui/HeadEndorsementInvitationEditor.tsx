@@ -206,28 +206,25 @@ export default function HeadEndorsementInvitationEditor({
       return;
     }
 
-    // Auto-save draft if requestId doesn't exist (data is already persisted)
+    // Auto-save draft silently if requestId doesn't exist (data is already persisted)
     let finalRequestId = requestId;
     if (!finalRequestId && onAutoSaveRequest) {
       try {
         setSending(headId);
-        toast.info("Saving draft...", "Creating draft to enable invitation sending...");
-        
+        // Silent auto-save - no toast notifications since data is already persisted
         finalRequestId = await onAutoSaveRequest();
         
         if (!finalRequestId) {
           throw new Error("Draft created but no request ID returned");
         }
-        
-        toast.success("Draft saved", "Draft created successfully. Sending invitation...");
       } catch (err: any) {
         console.error('[HeadEndorsementInvitationEditor] Error auto-saving draft:', err);
-        toast.error("Failed to save draft", err.message || "Please save the request as draft first, then try sending invitations again.");
+        toast.error("Failed to send invitation", err.message || "Unable to send invitation. Please try again.");
         setSending(null);
         return;
       }
     } else if (!finalRequestId) {
-      toast.error("Save request first", "Please save the request as draft first, then you can send head endorsement invitations. The request ID is needed to link the invitations.");
+      toast.error("Unable to send", "Please ensure the request form is filled out correctly.");
       setSending(null);
       return;
     }
@@ -284,28 +281,25 @@ export default function HeadEndorsementInvitationEditor({
       return;
     }
 
-    // Auto-save draft if requestId doesn't exist
+    // Auto-save draft silently if requestId doesn't exist (data is already persisted)
     let finalRequestId = requestId;
     if (!finalRequestId && onAutoSaveRequest) {
       try {
         setSendingAll(true);
-        toast.info("Saving draft...", "Creating draft to enable invitation sending...");
-        
+        // Silent auto-save - no toast notifications since data is already persisted
         finalRequestId = await onAutoSaveRequest();
         
         if (!finalRequestId) {
           throw new Error("Draft created but no request ID returned");
         }
-        
-        toast.success("Draft saved", "Draft created successfully. Sending invitations...");
       } catch (err: any) {
         console.error('[HeadEndorsementInvitationEditor] Error auto-saving draft:', err);
-        toast.error("Failed to save draft", err.message || "Please save the request as draft first, then try sending invitations again.");
+        toast.error("Failed to send invitations", err.message || "Unable to send invitations. Please try again.");
         setSendingAll(false);
         return;
       }
     } else if (!finalRequestId) {
-      toast.error("Save request first", "Please save the request as draft first, then you can send head endorsement invitations.");
+      toast.error("Unable to send", "Please ensure the request form is filled out correctly.");
       setSendingAll(false);
       return;
     }

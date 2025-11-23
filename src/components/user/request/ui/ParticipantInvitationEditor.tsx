@@ -22,6 +22,7 @@ interface ParticipantInvitationEditorProps {
   requestId?: string; // For sending invitations
   disabled?: boolean; // Disable when request is submitted
   onStatusChange?: (allConfirmed: boolean) => void; // Callback when status changes
+  onAutoSaveRequest?: () => Promise<string | null>; // Callback to auto-save draft and return requestId
 }
 
 export default function ParticipantInvitationEditor({
@@ -30,6 +31,7 @@ export default function ParticipantInvitationEditor({
   requestId,
   disabled = false,
   onStatusChange,
+  onAutoSaveRequest,
 }: ParticipantInvitationEditorProps) {
   const [showLinkModal, setShowLinkModal] = React.useState(false);
   const [linkToShow, setLinkToShow] = React.useState<{ email: string; link: string } | null>(null);
@@ -132,9 +134,25 @@ export default function ParticipantInvitationEditor({
   const sendInvitation = async (email: string, index: number) => {
     console.log(`[ParticipantInvitationEditor] 📤 sendInvitation called for:`, email, "requestId:", requestId);
     
-    if (!requestId) {
-      console.warn(`[ParticipantInvitationEditor] ⚠️ No requestId - cannot send invitation`);
-      toast.info("Save request first", "Please save the request as draft or submit it first, then you can send invitations. The request ID is needed to link the invitations.");
+    // Auto-save draft silently if requestId doesn't exist (data is already persisted)
+    let finalRequestId = requestId;
+    if (!finalRequestId && onAutoSaveRequest) {
+      try {
+        setSending(email);
+        // Silent auto-save - no toast notifications since data is already persisted
+        finalRequestId = await onAutoSaveRequest();
+        
+        if (!finalRequestId) {
+          throw new Error("Draft created but no request ID returned");
+        }
+      } catch (err: any) {
+        console.error('[ParticipantInvitationEditor] Error auto-saving draft:', err);
+        toast.error("Failed to send invitation", err.message || "Unable to send invitation. Please try again.");
+        setSending(null);
+        return;
+      }
+    } else if (!finalRequestId) {
+      toast.error("Unable to send", "Please ensure the request form is filled out correctly.");
       return;
     }
 
@@ -145,7 +163,7 @@ export default function ParticipantInvitationEditor({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          request_id: requestId,
+          request_id: finalRequestId,
           email: email,
         }),
       });
@@ -229,10 +247,27 @@ export default function ParticipantInvitationEditor({
   };
 
   const sendAllInvitations = async () => {
-      if (!requestId) {
-        toast.info("Save request first", "Please save the request as draft or submit it first, then you can send invitations. The request ID is needed to link the invitations.");
+    // Auto-save draft silently if requestId doesn't exist (data is already persisted)
+    let finalRequestId = requestId;
+    if (!finalRequestId && onAutoSaveRequest) {
+      try {
+        setSendingAll(true);
+        // Silent auto-save - no toast notifications since data is already persisted
+        finalRequestId = await onAutoSaveRequest();
+        
+        if (!finalRequestId) {
+          throw new Error("Draft created but no request ID returned");
+        }
+      } catch (err: any) {
+        console.error('[ParticipantInvitationEditor] Error auto-saving draft:', err);
+        toast.error("Failed to send invitations", err.message || "Unable to send invitations. Please try again.");
+        setSendingAll(false);
         return;
       }
+    } else if (!finalRequestId) {
+      toast.error("Unable to send", "Please ensure the request form is filled out correctly.");
+      return;
+    }
 
     const pendingToSend = invitations.filter(inv => !inv.invitationId && inv.status === 'pending');
     if (pendingToSend.length === 0) {
@@ -253,7 +288,7 @@ export default function ParticipantInvitationEditor({
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              request_id: requestId,
+              request_id: finalRequestId,
               email: inv.email,
             }),
           });

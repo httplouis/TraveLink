@@ -541,34 +541,64 @@ export default function RequestDetailsModalUI({
     if (showApproverSelection && row?.id) {
       const loadApprovers = async () => {
         try {
-          // Fetch comptroller and HR options
-          const [comptrollerRes, hrRes] = await Promise.all([
-            fetch('/api/approvers/list?role=comptroller'),
-            fetch('/api/approvers/list?role=hr'),
-          ]);
+          // Check if requester is comptroller - if so, skip comptroller options
+          const requesterIsComptroller = (row as any).requester?.is_comptroller || 
+                                        (row as any).requester?.role === 'comptroller' ||
+                                        (row as any).requester_role === 'comptroller';
           
-          const comptrollerData = await comptrollerRes.json().catch(() => ({ ok: false, data: [] }));
+          console.log('[Admin Approve] 🔍 Checking requester comptroller status:', {
+            requester: (row as any).requester,
+            requester_role: (row as any).requester_role,
+            requesterIsComptroller,
+            requester_id: (row as any).requester_id
+          });
+          
+          // Fetch comptroller and HR options
+          const fetchPromises: Promise<Response>[] = [
+            fetch('/api/approvers/list?role=hr')
+          ];
+          
+          // Only fetch comptroller if requester is NOT comptroller
+          if (!requesterIsComptroller) {
+            console.log('[Admin Approve] ✅ Requester is NOT comptroller, fetching comptroller options');
+            fetchPromises.push(fetch('/api/approvers/list?role=comptroller'));
+          } else {
+            console.log('[Admin Approve] ⏭️ Requester IS comptroller, skipping comptroller options');
+          }
+          
+          const responses = await Promise.all(fetchPromises);
+          const hrRes = responses[0];
+          const comptrollerRes = requesterIsComptroller ? null : responses[1];
+          
           const hrData = await hrRes.json().catch(() => ({ ok: false, data: [] }));
+          const comptrollerData = comptrollerRes ? await comptrollerRes.json().catch(() => ({ ok: false, data: [] })) : { ok: false, data: [] };
           
           const options: any[] = [];
           
-          // Note: API returns { ok, data } not { ok, approvers }
-          if (comptrollerData.ok && comptrollerData.data) {
-            options.push(...comptrollerData.data.map((a: any) => ({
-              ...a,
-              role: 'comptroller',
-              roleLabel: 'Comptroller'
-            })));
-          }
-          
+          // IMPORTANT: Add HR options FIRST (so they appear at top when requester is comptroller)
           if (hrData.ok && hrData.data) {
             options.push(...hrData.data.map((a: any) => ({
               ...a,
               role: 'hr',
               roleLabel: 'HR'
             })));
+            console.log('[Admin Approve] ✅ Added', hrData.data.length, 'HR options');
           }
           
+          // Only add comptroller options if requester is NOT comptroller
+          // Add them AFTER HR so HR appears first
+          if (!requesterIsComptroller && comptrollerData.ok && comptrollerData.data) {
+            options.push(...comptrollerData.data.map((a: any) => ({
+              ...a,
+              role: 'comptroller',
+              roleLabel: 'Comptroller'
+            })));
+            console.log('[Admin Approve] ✅ Added', comptrollerData.data.length, 'Comptroller options');
+          } else if (requesterIsComptroller) {
+            console.log('[Admin Approve] ⏭️ Skipped Comptroller options (requester is comptroller)');
+          }
+          
+          console.log('[Admin Approve] 📋 Final approver options:', options.map(o => ({ name: o.name, role: o.role })));
           setApproverOptions(options);
         } catch (error) {
           console.error('[Admin Approve] Failed to load approvers:', error);
@@ -578,7 +608,7 @@ export default function RequestDetailsModalUI({
       
       loadApprovers();
     }
-  }, [showApproverSelection, row?.id]);
+  }, [showApproverSelection, row?.id, row?.requester]);
 
   // Smart suggestion: Use workflow logic to suggest next approver
   React.useEffect(() => {
@@ -590,6 +620,7 @@ export default function RequestDetailsModalUI({
             status: (row as any).status,
             requester_is_head: (row as any).requester_is_head || false,
             requester_role: (row as any).requester?.role || (row as any).requester_role,
+            requester_is_comptroller: (row as any).requester?.is_comptroller || (row as any).requester_role === 'comptroller' || false,
             has_budget: ((row as any).total_budget || 0) > 0,
             head_included: (row as any).head_included || false,
             parent_head_approved_at: (row as any).parent_head_approved_at,

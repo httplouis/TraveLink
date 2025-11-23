@@ -7,6 +7,7 @@ export interface RequestContext {
   status: string;
   requester_is_head?: boolean;
   requester_role?: string;
+  requester_is_comptroller?: boolean; // NEW: Check if requester is comptroller
   has_budget?: boolean;
   head_included?: boolean;
   parent_head_approved_at?: string | null;
@@ -36,6 +37,7 @@ export function suggestNextApprover(context: RequestContext): SuggestedApprover 
     status,
     requester_is_head = false,
     requester_role,
+    requester_is_comptroller = false,
     has_budget = false,
     head_included = false,
     parent_head_approved_at,
@@ -80,6 +82,16 @@ export function suggestNextApprover(context: RequestContext): SuggestedApprover 
 
   // After Admin Approval (pending_admin → next)
   if (status === 'pending_admin' && admin_approved_at) {
+    // If requester is comptroller, skip comptroller stage and go directly to HR
+    if (requester_is_comptroller || requester_role === 'comptroller') {
+      return {
+        role: 'hr',
+        roleLabel: 'HR',
+        reason: 'Requester is Comptroller (already approved). Next step: HR approval.',
+        priority: 'high'
+      };
+    }
+    
     if (has_budget) {
       // Has budget → Suggest Comptroller
       return {

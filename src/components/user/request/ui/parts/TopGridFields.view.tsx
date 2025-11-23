@@ -80,8 +80,6 @@ export default function TopGridFields({
       
       if (uniqueDepartments.length > 0) {
         // If there's only ONE unique department, auto-fill it
-        // If there are MULTIPLE departments, DON'T auto-fill - let the head endorsement system handle it
-        // The head endorsement system will send invitations to each department's head separately
         if (uniqueDepartments.length === 1) {
           const singleDepartment = uniqueDepartments[0];
           const currentDept = data?.department || "";
@@ -94,15 +92,26 @@ export default function TopGridFields({
             onDepartmentChange(singleDepartment);
           }
         } else {
-          // Multiple departments - don't auto-fill combined string
-          // The head endorsement system will handle multi-department scenarios
-          console.log('[TopGridFields] ⏭️ Multiple departments detected, skipping auto-fill (head endorsement system will handle):', {
+          // Multiple departments - combine them with " and " separator
+          // Example: "CCMS and College of Engineering"
+          const combinedDepartments = uniqueDepartments.join(" and ");
+          const currentDept = data?.department || "";
+          
+          console.log('[TopGridFields] 🔄 Multiple departments detected, combining:', {
             uniqueDepartments,
-            note: 'Head endorsement invitations will be sent to each department\'s head separately'
+            combinedDepartments,
+            currentDepartment: currentDept
           });
           
+          // Auto-fill the combined department string
+          if (!currentDept || currentDept !== combinedDepartments) {
+            console.log('[TopGridFields] ✅ Auto-filling combined departments:', combinedDepartments);
+            // Update department separately to trigger onDepartmentChange callback
+            onDepartmentChange(combinedDepartments);
+          }
+          
           // IMPORTANT: Clear the endorsedByHeadName field when multiple departments are detected
-          // The head endorsement system will send email invitations to each department's head
+          // The head endorsement system will send email invitations to each department's head separately
           if (data?.endorsedByHeadName) {
             console.log('[TopGridFields] 🧹 Multiple departments detected - clearing endorsedByHeadName (head endorsements will be sent via email)');
             update.endorsedByHeadName = "";

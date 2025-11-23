@@ -101,7 +101,7 @@ export async function GET() {
       // Fetch all related data in parallel using service role client
       const [requesters, departments, approvers] = await Promise.all([
         requesterIds.length > 0
-          ? supabaseServiceRole.from("users").select("id, email, name").in("id", requesterIds)
+          ? supabaseServiceRole.from("users").select("id, email, name, role, is_comptroller, is_head").in("id", requesterIds)
           : Promise.resolve({ data: [], error: null }),
         departmentIds.length > 0
           ? supabaseServiceRole.from("departments").select("id, name, code").in("id", departmentIds)

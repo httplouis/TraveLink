@@ -1245,6 +1245,32 @@ export async function POST(req: Request) {
           }
         }
         
+        // Save combined department names if there are multiple requesters from different departments
+        // This is useful for displaying "CCMS and College of Engineering" in the UI
+        const allRequesters = Array.isArray(body.travelOrder?.requesters) 
+          ? body.travelOrder.requesters 
+          : [];
+        
+        if (allRequesters.length > 0) {
+          const departments = allRequesters
+            .map((req: any) => req.department)
+            .filter((dept: any): dept is string => !!dept && dept.trim() !== "");
+          
+          const uniqueDepartments = Array.from(
+            new Set(departments.map((dept: string) => dept.trim()))
+          );
+          
+          if (uniqueDepartments.length > 1) {
+            // Multiple departments - combine them with " and " separator
+            const combinedDepartments = uniqueDepartments.join(" and ");
+            metadata.combined_departments = combinedDepartments;
+            console.log("[/api/requests/submit] 💾 Saving combined departments to workflow_metadata:", combinedDepartments);
+          } else if (uniqueDepartments.length === 1) {
+            // Single department - still save it for consistency
+            metadata.combined_departments = uniqueDepartments[0];
+          }
+        }
+        
         // Save routing information
         if (nextApproverId && nextApproverRole) {
           if (nextApproverRole === "vp") {

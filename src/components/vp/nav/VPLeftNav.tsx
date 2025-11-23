@@ -14,6 +14,7 @@ import {
   Inbox,
   LogOut,
   Settings,
+  History,
 } from "lucide-react";
 import * as React from "react";
 import { motion } from "framer-motion";
@@ -56,6 +57,7 @@ const NAV: Item[] = [
   },
 
   { type: "link", href: "/vp/inbox", label: "Inbox", Icon: Inbox },
+  { type: "link", href: "/vp/history", label: "History", Icon: History },
 
   { type: "link", href: "/vp/vehicles", label: "Vehicles", Icon: Car },
   { type: "link", href: "/vp/drivers", label: "Drivers", Icon: IdCard },

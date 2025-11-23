@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Bell, CheckCircle, XCircle, AlertCircle, Clock } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { createSupabaseClient } from "@/lib/supabase/client";
 
 type Notification = {
   id: string;
@@ -93,11 +94,94 @@ export default function PresidentNotificationDropdown() {
   };
 
   useEffect(() => {
+    let isMounted = true;
+    let channel: any = null;
+    let requestsChannel: any = null;
+    
+    // Initial load
     loadNotifications();
+    
+    // Set up real-time subscriptions
+    const setupRealtime = async () => {
+      const supabase = createSupabaseClient();
+      
+      // Get current user profile ID
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      
+      const { data: profile } = await supabase
+        .from("users")
+        .select("id")
+        .eq("auth_user_id", user.id)
+        .single();
+      
+      if (!profile) return;
+      const currentUserId = profile.id;
+      
+      // Subscribe to notifications table changes
+      channel = supabase
+        .channel("president-notifications-changes")
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "notifications",
+          },
+          (payload: any) => {
+            if (!isMounted) return;
+            const notificationUserId = payload.new?.user_id || payload.old?.user_id;
+            if (notificationUserId === currentUserId) {
+              loadNotifications();
+            }
+          }
+        )
+        .subscribe();
+      
+      // Subscribe to requests table changes (for inbox items)
+      requestsChannel = supabase
+        .channel("president-inbox-requests-changes")
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "requests",
+          },
+          (payload: any) => {
+            if (!isMounted) return;
+            const newStatus = payload.new?.status;
+            const oldStatus = payload.old?.status;
+            // Only react to changes that affect President inbox
+            if (newStatus === "pending_president" || oldStatus === "pending_president") {
+              loadNotifications();
+            }
+          }
+        )
+        .subscribe();
+    };
+    
+    setupRealtime();
+    
+    // Fallback polling every 30 seconds
     const interval = setInterval(() => {
-      loadNotifications();
+      if (isMounted) {
+        loadNotifications();
+      }
     }, 30000);
-    return () => clearInterval(interval);
+    
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      if (channel) {
+        const supabase = createSupabaseClient();
+        supabase.removeChannel(channel);
+      }
+      if (requestsChannel) {
+        const supabase = createSupabaseClient();
+        supabase.removeChannel(requestsChannel);
+      }
+    };
   }, []);
 
   useEffect(() => {

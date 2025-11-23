@@ -19,7 +19,8 @@ export async function POST(request: Request) {
       }
     );
 
-    const supabase = await createSupabaseServerClient(true); // Use service role for auth checks
+    // Use regular client to read cookies for authentication
+    const supabase = await createSupabaseServerClient(false);
     
     // Get current user
     const { data: { user }, error: authError } = await supabase.auth.getUser();

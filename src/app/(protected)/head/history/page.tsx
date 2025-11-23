@@ -1,10 +1,11 @@
 "use client";
 
 import React from "react";
-import { FileText, CheckCircle2, XCircle, History } from "lucide-react";
+import { FileText, CheckCircle2, XCircle, History, RefreshCw } from "lucide-react";
 import HeadRequestModal from "@/components/head/HeadRequestModal";
 import FilterBar from "@/components/common/FilterBar";
 import { motion } from "framer-motion";
+import PersonDisplay from "@/components/common/PersonDisplay";
 
 export default function HeadHistoryPage() {
   const [items, setItems] = React.useState<any[]>([]);
@@ -84,12 +85,22 @@ export default function HeadHistoryPage() {
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Approval History</h1>
           <p className="text-gray-600 mt-1">
-            {items.length} {items.length === 1 ? 'request' : 'requests'} reviewed by Head
+            {filteredItems.length} {filteredItems.length === 1 ? 'request' : 'requests'} reviewed by Head
           </p>
         </div>
-        <div className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#7a0019] to-[#9a0020] text-white rounded-lg text-sm font-medium shadow-lg">
-          <History className="h-4 w-4" />
-          Head History
+        <div className="flex items-center gap-3">
+          <button
+            onClick={load}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+          <div className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#7a0019] to-[#9a0020] text-white rounded-lg text-sm font-medium shadow-lg">
+            <History className="h-4 w-4" />
+            Head History
+          </div>
         </div>
       </div>
 
@@ -138,50 +149,72 @@ export default function HeadHistoryPage() {
             const actionDate = item.head_approved_at || item.head_rejected_at;
 
             return (
-              <button
+              <motion.button
                 key={item.id}
                 onClick={() => setSelected(item)}
-                className="group flex w-full items-center justify-between rounded-xl border border-gray-200 bg-white px-5 py-4 text-left shadow-sm transition-all hover:border-[#7A0010]/30 hover:shadow-lg hover:scale-[1.01]"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="group flex w-full items-center justify-between rounded-xl border-2 border-gray-200 bg-white px-5 py-4 text-left shadow-sm transition-all hover:border-[#7A0010]/40 hover:shadow-md"
               >
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2.5 mb-2">
+                  <div className="flex items-center gap-2.5 mb-3">
                     <span className="rounded-md bg-[#7A0010] px-2.5 py-0.5 text-xs font-bold text-white">
                       {requestNumber}
                     </span>
                     {isApproved && (
-                      <span className="flex items-center gap-1 rounded-md bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
-                        <CheckCircle2 className="h-3 w-3" />
+                      <span className="flex items-center gap-1 rounded-md bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-700 border border-green-200">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
                         Approved
                       </span>
                     )}
                     {isRejected && (
-                      <span className="flex items-center gap-1 rounded-md bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">
-                        <XCircle className="h-3 w-3" />
+                      <span className="flex items-center gap-1 rounded-md bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-700 border border-red-200">
+                        <XCircle className="h-3.5 w-3.5" />
                         Rejected
                       </span>
                     )}
+                    {actionDate && (
+                      <>
+                        <span className="text-xs text-gray-400">•</span>
+                        <span className="text-xs font-medium text-gray-500">
+                          {new Date(actionDate).toLocaleString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                            hour: 'numeric',
+                            minute: '2-digit',
+                            hour12: true
+                          })}
+                        </span>
+                      </>
+                    )}
                   </div>
-                  <div className="grid grid-cols-3 gap-4 text-sm">
-                    <div>
-                      <span className="text-gray-500">Requester:</span>{" "}
-                      <span className="font-medium text-gray-900">{requester}</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Department:</span>{" "}
-                      <span className="font-medium text-gray-900">{department}</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Travel Date:</span>{" "}
-                      <span className="font-medium text-gray-900">{travelDate}</span>
-                    </div>
-                  </div>
-                  {actionDate && (
-                    <div className="mt-2 text-xs text-gray-500">
-                      Actioned on {new Date(actionDate).toLocaleString()}
-                    </div>
+                  
+                  <PersonDisplay
+                    name={requester}
+                    position={item.requester?.position_title}
+                    department={department}
+                    profilePicture={item.requester?.profile_picture || item.requester?.avatar_url}
+                    size="sm"
+                  />
+
+                  {item.purpose && (
+                    <p className="text-sm text-gray-600 line-clamp-1 mt-2">
+                      {item.purpose}
+                    </p>
                   )}
+
+                  <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
+                    <span>Travel Date: <span className="font-medium text-gray-700">{travelDate}</span></span>
+                    {item.destination && (
+                      <span>•</span>
+                    )}
+                    {item.destination && (
+                      <span className="line-clamp-1">Destination: <span className="font-medium text-gray-700">{item.destination}</span></span>
+                    )}
+                  </div>
                 </div>
-              </button>
+              </motion.button>
             );
           })}
         </div>

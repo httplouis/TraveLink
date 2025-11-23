@@ -176,7 +176,7 @@ export default function NotificationDropdown() {
       const currentUserId = profile.id;
       console.log("[NotificationDropdown] Current user ID:", currentUserId);
       
-      // Subscribe to all notification changes (we'll filter by user_id in the handler)
+      // Subscribe to notifications table changes
       channel = supabase
         .channel("user-notifications-changes")
         .on(
@@ -204,12 +204,38 @@ export default function NotificationDropdown() {
             // Reload notifications when there's a change
             if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
               loadNotifications();
+              loadInboxCount();
             }
           }
         )
         .subscribe((status: string) => {
           console.log("[NotificationDropdown] Real-time subscription status:", status);
         });
+      
+      // Subscribe to requests table changes (for inbox items)
+      requestsChannel = supabase
+        .channel("user-inbox-requests-changes")
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "requests",
+          },
+          (payload: any) => {
+            if (!isMounted) return;
+            const newStatus = payload.new?.status;
+            const isRepresentative = payload.new?.is_representative;
+            // Only react to changes that affect user inbox (representative submissions)
+            if (isRepresentative && (newStatus === "pending_requester_signature" || 
+                payload.eventType === "INSERT")) {
+              console.log("[NotificationDropdown] 🔔 Real-time inbox request change");
+              loadNotifications();
+              loadInboxCount();
+            }
+          }
+        )
+        .subscribe();
     };
     
     setupRealtime();
@@ -225,9 +251,12 @@ export default function NotificationDropdown() {
     return () => {
       isMounted = false;
       clearInterval(interval);
+      const supabase = createSupabaseClient();
       if (channel) {
-        const supabase = createSupabaseClient();
         supabase.removeChannel(channel);
+      }
+      if (requestsChannel) {
+        supabase.removeChannel(requestsChannel);
       }
     };
   }, []);

@@ -44,11 +44,13 @@ export default function SeminarApplicationForm({
   onChange,
   errors,
   onParticipantsStatusChange,
+  onAutoSaveRequest,
 }: {
   data: any;
   onChange: (patch: any) => void;
   errors: Errors;
   onParticipantsStatusChange?: (allConfirmed: boolean) => void; // Callback when all participants are confirmed
+  onAutoSaveRequest?: () => Promise<string | null>; // Callback to auto-save draft and return requestId
 }) {
   const selectedType =
     (data?.typeOfTraining?.[0] as (typeof TRAINING_TYPES)[number]) ?? "";
@@ -354,6 +356,7 @@ export default function SeminarApplicationForm({
             }}
             requestId={data?.requestId}
             disabled={data?.isSubmitted}
+            onAutoSaveRequest={onAutoSaveRequest}
             onStatusChange={(allConfirmed: boolean) => {
               if (data?.allParticipantsConfirmed !== allConfirmed) {
                 onChange({ allParticipantsConfirmed: allConfirmed });
