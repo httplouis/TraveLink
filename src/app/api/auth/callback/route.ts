@@ -25,12 +25,22 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(error)}`, baseUrl));
   }
 
-  if (!code) {
-    return NextResponse.redirect(new URL("/login?error=no_code", baseUrl));
-  }
-
   try {
     const cookieStore = await cookies();
+    
+    // CRITICAL: Read all cookies first to ensure code verifier is available
+    // This helps with PKCE flow - the code verifier must be in cookies
+    const initialCookies = cookieStore.getAll();
+    console.log("[auth/callback] 📦 All cookies received:", {
+      count: initialCookies.length,
+      names: initialCookies.map(c => c.name),
+      supabaseCookies: initialCookies.filter(c => 
+        c.name.includes('supabase') || 
+        c.name.includes('sb-') || 
+        c.name.includes('code') ||
+        c.name.includes('verifier')
+      ).map(c => ({ name: c.name, hasValue: !!c.value }))
+    });
     
     // Create Supabase client with proper cookie settings for production
     const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
@@ -40,7 +50,13 @@ export async function GET(request: NextRequest) {
       {
         cookies: {
           get(name: string) {
-            return cookieStore.get(name)?.value;
+            const cookie = cookieStore.get(name);
+            const value = cookie?.value;
+            // Log code verifier cookie access for debugging
+            if (name.includes('code') || name.includes('verifier') || name.includes('pkce')) {
+              console.log(`[auth/callback] 🔑 Reading cookie: ${name} = ${value ? 'present' : 'missing'}`);
+            }
+            return value;
           },
           set(name: string, value: string, options: any) {
             // Don't override httpOnly - let Supabase handle it
@@ -67,12 +83,48 @@ export async function GET(request: NextRequest) {
       }
     );
 
-    // Exchange code for session
-    // Supabase OAuth redirects here with a code after Microsoft authentication
-    console.log("[auth/callback] 🔄 Exchanging code for session...");
-    console.log("[auth/callback] Code received:", code ? `${code.substring(0, 10)}...` : "none");
+    // CRITICAL FIX: Check if session already exists first
+    // Supabase OAuth might have already set the session in cookies
+    let { data: { session }, error: sessionError } = await supabase.auth.getSession();
     
-    const { data: { session }, error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
+    // If no session exists and we have a code, try to exchange it
+    if (!session && code) {
+      console.log("[auth/callback] 🔄 No existing session found, exchanging code for session...");
+      console.log("[auth/callback] Code received:", code ? `${code.substring(0, 10)}...` : "none");
+      
+      // Log all cookies to debug PKCE issue
+      const exchangeCookies = cookieStore.getAll();
+      console.log("[auth/callback] Available cookies:", {
+        count: exchangeCookies.length,
+        names: exchangeCookies.map(c => c.name).join(', '),
+        supabaseCookies: exchangeCookies.filter(c => c.name.includes('supabase') || c.name.includes('sb-')).map(c => c.name)
+      });
+      
+      const exchangeResult = await supabase.auth.exchangeCodeForSession(code);
+      session = exchangeResult.data?.session || null;
+      sessionError = exchangeResult.error || null;
+      
+      if (sessionError) {
+        console.error("[auth/callback] ❌ Code exchange error:", sessionError);
+        console.error("[auth/callback] Error details:", JSON.stringify(sessionError, null, 2));
+        
+        // Check if it's a PKCE error
+        if (sessionError.message?.includes("code verifier") || sessionError.message?.includes("non-empty")) {
+          console.error("[auth/callback] 🔴 PKCE ERROR: Code verifier cookie missing!");
+          console.error("[auth/callback] This usually means the cookie was lost during redirect.");
+          console.error("[auth/callback] Possible causes:");
+          console.error("[auth/callback] 1. Cookie domain mismatch");
+          console.error("[auth/callback] 2. SameSite cookie restrictions");
+          console.error("[auth/callback] 3. Cookie path mismatch");
+          console.error("[auth/callback] 4. Cookie expired or cleared");
+        }
+      }
+    } else if (session) {
+      console.log("[auth/callback] ✅ Session already exists in cookies");
+    } else if (!code) {
+      console.error("[auth/callback] ❌ No code and no existing session");
+      return NextResponse.redirect(new URL("/login?error=no_code", baseUrl));
+    }
 
     if (sessionError || !session) {
       console.error("[auth/callback] ❌ Session exchange failed!");
@@ -100,12 +152,12 @@ export async function GET(request: NextRequest) {
     }
     console.log("[auth/callback] ✅ Session verified, cookies should be set");
     
-    // Log cookies for debugging
-    const allCookies = cookieStore.getAll();
+    // Log cookies for debugging after session verification
+    const verifiedCookies = cookieStore.getAll();
     console.log("[auth/callback] Cookies in store:", {
-      count: allCookies.length,
-      names: allCookies.map(c => c.name).join(', '),
-      hasSupabaseCookies: allCookies.some(c => c.name.includes('supabase') || c.name.includes('sb-'))
+      count: verifiedCookies.length,
+      names: verifiedCookies.map(c => c.name).join(', '),
+      hasSupabaseCookies: verifiedCookies.some(c => c.name.includes('supabase') || c.name.includes('sb-'))
     });
 
     const authUser = session.user;

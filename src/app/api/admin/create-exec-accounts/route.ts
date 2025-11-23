@@ -1,6 +1,8 @@
 // src/app/api/admin/create-exec-accounts/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 
 /**
  * POST /api/admin/create-exec-accounts
@@ -34,6 +36,37 @@ export async function POST(req: NextRequest) {
         { ok: false, error: "Only super-admin can create accounts" },
         { status: 403 }
       );
+    }
+
+    // Verify password is required for bulk account creation
+    const body = await req.json().catch(() => ({}));
+    if (!body.password) {
+      return NextResponse.json({ ok: false, error: "Password confirmation required" }, { status: 400 });
+    }
+
+    // Verify password by attempting to sign in
+    const cookieStore = await cookies();
+    const supabaseAnon = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return cookieStore.get(name)?.value;
+          },
+          set() {},
+          remove() {},
+        },
+      }
+    );
+
+    const { error: signInError } = await supabaseAnon.auth.signInWithPassword({
+      email: authUser.email!,
+      password: body.password,
+    });
+
+    if (signInError) {
+      return NextResponse.json({ ok: false, error: "Invalid password" }, { status: 401 });
     }
 
     // Account definitions

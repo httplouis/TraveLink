@@ -6,15 +6,35 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
  * Lightweight endpoint to get the count of pending requests for HR
  * Includes workflow_metadata filtering for specific HR assignments
  */
+import { createClient } from "@supabase/supabase-js";
+
 export async function GET() {
   try {
-    const supabase = await createSupabaseServerClient(true); // Use service role
-    
-    // Get current user profile for filtering
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    // Use regular client for auth (with cookies)
+    const authSupabase = await createSupabaseServerClient(false);
+
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser();
     if (authError || !user) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
+
+    // Use service role client for queries (bypasses RLS completely)
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return NextResponse.json({
+        ok: false,
+        error: "Missing Supabase configuration"
+      }, { status: 500 });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
 
     const { data: profile } = await supabase
       .from("users")

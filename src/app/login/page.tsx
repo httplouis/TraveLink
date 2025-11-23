@@ -54,6 +54,41 @@ function LoginPageContent() {
     }
   }, []);
 
+  // Check for OAuth errors in URL (e.g., consent_required)
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
+    const error = searchParams?.get('error');
+    if (error) {
+      if (error === 'consent_required') {
+        setErr('Please grant permissions to sign in with Microsoft. Click "Sign in with Microsoft" again and make sure to click "Accept" on the permission screen.');
+      } else {
+        const errorDesc = searchParams?.get('error_description');
+        if (errorDesc) {
+          // Decode URL-encoded error description
+          try {
+            const decoded = decodeURIComponent(errorDesc);
+            if (decoded.includes('AADSTS65004')) {
+              setErr('You need to grant permissions to sign in. Please try again and click "Accept" when asked for permissions.');
+            } else {
+              setErr(`Login error: ${decoded.substring(0, 100)}`);
+            }
+          } catch (e) {
+            setErr(`Login error: ${error}`);
+          }
+        } else {
+          setErr(`Login error: ${error}`);
+        }
+      }
+      
+      // Clear error from URL
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.delete('error');
+      newUrl.searchParams.delete('error_description');
+      window.history.replaceState({}, '', newUrl.toString());
+    }
+  }, [searchParams]);
+
   // Check if user already logged in via Supabase session
   // Only redirect if there's a nextUrl (came from middleware redirect)
   React.useEffect(() => {
@@ -75,25 +110,28 @@ function LoginPageContent() {
     try {
       const supabase = createSupabaseClient();
       
-      // Get redirect URL - always use current origin to ensure correct URL
-      // In production (Vercel), window.location.origin will be the Vercel URL
-      // In local dev, it will be localhost:3000
-      const baseUrl = window.location.origin;
-      const redirectTo = `${baseUrl}/api/auth/callback`;
+      // CRITICAL FIX: Always use current origin for redirectTo
+      // Supabase needs the redirect URL to match exactly what the browser sees
+      // Using window.location.origin ensures the cookie domain matches
+      const redirectTo = `${window.location.origin}/api/auth/callback`;
       
       console.log("[login] OAuth redirect URL:", redirectTo);
-      console.log("[login] Current origin:", baseUrl);
+      console.log("[login] Current origin:", window.location.origin);
       console.log("[login] NEXT_PUBLIC_APP_URL:", process.env.NEXT_PUBLIC_APP_URL || "not set");
+      console.log("[login] Full URL:", window.location.href);
       
       // Sign in with Microsoft OAuth
+      // Note: Supabase will handle PKCE flow automatically
+      // The code verifier is stored in a cookie that persists across redirects
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'azure',
         options: {
           redirectTo,
           scopes: 'openid profile email User.Read',
           queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
+            // Removed 'prompt: consent' - let Azure use default behavior
+            // This prevents forcing consent screen every time
+            // Azure will only show consent if needed (first time or permissions changed)
           },
         },
       });

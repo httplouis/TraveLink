@@ -9,28 +9,34 @@ import { createClient } from "@supabase/supabase-js";
  */
 export async function GET() {
   try {
-    // Create a direct Supabase client with service role key to bypass RLS
-    const supabaseServiceRole = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false
-        }
-      }
-    );
+    // Use regular client for auth (with cookies)
+    const authSupabase = await createSupabaseServerClient(false);
 
-    const supabase = await createSupabaseServerClient(true); // Use service role for auth checks
-    
-    // Get authenticated user to check HR status and get profile ID for filtering
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser();
     if (authError || !user) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
+    // Use service role client for queries (bypasses RLS completely)
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return NextResponse.json({
+        ok: false,
+        error: "Missing Supabase configuration"
+      }, { status: 500 });
+    }
+
+    const supabaseServiceRole = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+
     // Get user profile to check HR status and get profile ID
-    const { data: profile } = await supabase
+    const { data: profile } = await supabaseServiceRole
       .from("users")
       .select("id, name, email, is_hr")
       .eq("auth_user_id", user.id)

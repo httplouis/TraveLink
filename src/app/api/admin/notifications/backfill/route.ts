@@ -5,11 +5,13 @@
  * This fixes the issue where existing requests don't have notifications
  */
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createNotification } from "@/lib/notifications/helpers";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     const supabase = await createSupabaseServerClient(true);
     
@@ -28,6 +30,37 @@ export async function POST(request: Request) {
 
     if (!profile || (!profile.is_admin && profile.role !== "admin")) {
       return NextResponse.json({ ok: false, error: "Admin access required" }, { status: 403 });
+    }
+
+    // Verify password is required for bulk operations
+    const body = await request.json().catch(() => ({}));
+    if (!body.password) {
+      return NextResponse.json({ ok: false, error: "Password confirmation required" }, { status: 400 });
+    }
+
+    // Verify password by attempting to sign in
+    const cookieStore = await cookies();
+    const supabaseAnon = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return cookieStore.get(name)?.value;
+          },
+          set() {},
+          remove() {},
+        },
+      }
+    );
+
+    const { error: signInError } = await supabaseAnon.auth.signInWithPassword({
+      email: user.email!,
+      password: body.password,
+    });
+
+    if (signInError) {
+      return NextResponse.json({ ok: false, error: "Invalid password" }, { status: 401 });
     }
 
     console.log("[POST /api/admin/notifications/backfill] Starting backfill...");
