@@ -165,6 +165,15 @@ export default function SubmissionsView() {
       // Only log debug info if data exists
       logger.debug('=== FULL API RESPONSE DEBUG ===');
       logger.debug('COMPLETE DATA', json.data);
+      logger.debug('REQUESTER DATA FROM API', {
+        hasRequester: !!json.data?.requester,
+        requester: json.data?.requester,
+        requesterKeys: json.data?.requester ? Object.keys(json.data.requester) : [],
+        profilePicture: json.data?.requester?.profile_picture,
+        avatarUrl: json.data?.requester?.avatar_url,
+        requesterId: json.data?.requester?.id,
+        requesterName: json.data?.requester?.name
+      });
       logger.debug('ALL SIGNATURES', {
         requester_signature: json.data?.requester_signature ? 'EXISTS (' + json.data.requester_signature.substring(0, 50) + '...)' : 'NULL',
         head_signature: json.data?.head_signature ? 'EXISTS (' + json.data.head_signature.substring(0, 50) + '...)' : 'NULL',
@@ -385,73 +394,71 @@ export default function SubmissionsView() {
       <Modal
         isOpen={showDetailsModal}
         onClose={() => setShowDetailsModal(false)}
-        size="lg"
+        size="xl"
         showCloseButton={true}
       >
         {loadingDetails ? (
-          <div className="p-6 space-y-6">
-            {/* Skeleton Header */}
-            <div className="bg-gradient-to-r from-gray-300 to-gray-400 rounded-xl p-6 animate-pulse">
-              <div className="flex items-start justify-between">
+          <div className="px-6 pb-6 space-y-6">
+            {/* Skeleton Header - matches RequestDetailsView dark red header */}
+            <div className="bg-gradient-to-r from-[#7A0010] to-[#8B0012] rounded-t-2xl p-6 animate-pulse">
+              <div className="flex items-start justify-between mb-4">
                 <div className="flex-1">
-                  <div className="h-8 bg-white/30 rounded w-48 mb-2"></div>
-                  <div className="h-6 bg-white/20 rounded w-96 mb-4"></div>
-                  <div className="flex gap-4">
-                    <div className="h-4 bg-white/20 rounded w-32"></div>
-                    <div className="h-4 bg-white/20 rounded w-40"></div>
+                  <div className="h-10 bg-white/20 rounded w-48 mb-3"></div>
+                  <div className="h-6 bg-white/15 rounded w-32 mb-4"></div>
+                  <div className="flex gap-3 flex-wrap">
+                    <div className="h-6 bg-white/20 rounded-full w-40"></div>
+                    <div className="h-6 bg-white/20 rounded-full w-36"></div>
                   </div>
                 </div>
-                <div className="h-8 bg-white/30 rounded w-24"></div>
+                <div className="h-8 bg-white/20 rounded-full w-32"></div>
               </div>
             </div>
             
-            {/* Skeleton Content */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2 space-y-6">
-                {/* Skeleton Details Card */}
-                <div className="bg-gray-100 rounded-xl p-6 animate-pulse">
-                  <div className="h-6 bg-gray-300 rounded w-32 mb-4"></div>
-                  <div className="space-y-3">
-                    <div className="h-4 bg-gray-300 rounded w-full"></div>
-                    <div className="h-4 bg-gray-300 rounded w-3/4"></div>
-                    <div className="h-4 bg-gray-300 rounded w-1/2"></div>
-                  </div>
-                </div>
-                
-                {/* Skeleton Timeline */}
-                <div className="bg-gray-100 rounded-xl p-6 animate-pulse">
-                  <div className="h-6 bg-gray-300 rounded w-40 mb-4"></div>
-                  <div className="space-y-4">
-                    {[1, 2, 3].map(i => (
-                      <div key={i} className="flex gap-4">
-                        <div className="w-8 h-8 bg-gray-300 rounded-full"></div>
-                        <div className="flex-1">
-                          <div className="h-4 bg-gray-300 rounded w-48 mb-2"></div>
-                          <div className="h-3 bg-gray-300 rounded w-32"></div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+            {/* Skeleton Content - matches RequestDetailsView layout */}
+            <div className="px-6 space-y-6">
+              {/* Tabs skeleton */}
+              <div className="flex gap-4 border-b border-gray-200 pb-2">
+                <div className="h-6 bg-gray-200 rounded w-24"></div>
+                <div className="h-6 bg-gray-200 rounded w-24"></div>
               </div>
               
-              {/* Skeleton Sidebar */}
-              <div className="space-y-6">
-                <div className="bg-gray-100 rounded-xl p-6 animate-pulse">
-                  <div className="h-6 bg-gray-300 rounded w-32 mb-4"></div>
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-12 h-12 bg-gray-300 rounded-full"></div>
-                    <div>
-                      <div className="h-4 bg-gray-300 rounded w-32 mb-1"></div>
-                      <div className="h-3 bg-gray-300 rounded w-24"></div>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Left column - Timeline */}
+                <div className="lg:col-span-2 space-y-6">
+                  {/* Timeline skeleton */}
+                  <div className="bg-white rounded-xl border border-gray-200 p-6 animate-pulse">
+                    <div className="h-6 bg-gray-200 rounded w-40 mb-4"></div>
+                    <div className="space-y-6">
+                      {[1, 2, 3, 4].map(i => (
+                        <div key={i} className="flex gap-4">
+                          <div className="w-10 h-10 bg-gray-200 rounded-full flex-shrink-0"></div>
+                          <div className="flex-1">
+                            <div className="h-5 bg-gray-200 rounded w-48 mb-2"></div>
+                            <div className="h-4 bg-gray-200 rounded w-32 mb-2"></div>
+                            <div className="h-3 bg-gray-200 rounded w-40"></div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
                 
-                <div className="bg-gray-100 rounded-xl p-6 animate-pulse">
-                  <div className="h-6 bg-gray-300 rounded w-40 mb-4"></div>
-                  <div className="space-y-3">
-                    <div className="h-16 bg-gray-300 rounded"></div>
+                {/* Right column - Requested By */}
+                <div className="space-y-6">
+                  <div className="bg-white rounded-xl border border-gray-200 p-6 animate-pulse">
+                    <div className="h-6 bg-gray-200 rounded w-32 mb-4"></div>
+                    <div className="space-y-4">
+                      {[1, 2].map(i => (
+                        <div key={i} className="flex items-start gap-4 p-4 border border-gray-200 rounded-lg">
+                          <div className="w-12 h-12 bg-gray-200 rounded-full flex-shrink-0"></div>
+                          <div className="flex-1">
+                            <div className="h-5 bg-gray-200 rounded w-40 mb-2"></div>
+                            <div className="h-4 bg-gray-200 rounded w-24 mb-2"></div>
+                            <div className="h-3 bg-gray-200 rounded w-32"></div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -524,15 +531,64 @@ export default function SubmissionsView() {
                 return seminarData;
               })(),
               
-              requester: {
-                id: fullRequestData?.requester?.id || 'current-user',
-                name: fullRequestData?.requester?.name || selectedRequest.requester_name || 'Unknown User',
-                profile_picture: fullRequestData?.requester?.profile_picture || undefined,
-                department: fullRequestData?.requester?.department?.name || selectedRequest.department?.name || 'No Department',
-                position: fullRequestData?.requester?.position_title || (fullRequestData?.requester_is_head ? 'Department Head' : 'Faculty/Staff'),
-                email: fullRequestData?.requester?.email || undefined,
-                phone: fullRequestData?.requester?.phone_number || undefined
-              },
+              requester: (() => {
+                // Determine role display: "Head" if is_head, otherwise use position_title or default
+                const requesterIsHead = fullRequestData?.requester_is_head || fullRequestData?.requester?.is_head || fullRequestData?.requester?.role === 'head' || false;
+                const requesterRole = requesterIsHead 
+                  ? 'Head' 
+                  : (fullRequestData?.requester?.position_title && !fullRequestData?.requester?.position_title.toLowerCase().includes('student'))
+                    ? fullRequestData.requester.position_title
+                    : 'Faculty/Staff';
+                
+                // Get requester ID from multiple sources - prioritize requester.id from tracking API
+                const requesterId = fullRequestData?.requester?.id 
+                  || (fullRequestData as any)?.requester_id 
+                  || undefined;
+                
+                // Debug log to see what we're getting
+                console.log('[SubmissionsViewClean] 🔍 Requester data check:', {
+                  hasRequester: !!fullRequestData?.requester,
+                  requesterId: fullRequestData?.requester?.id,
+                  requesterIdFromTop: (fullRequestData as any)?.requester_id,
+                  profilePicture: fullRequestData?.requester?.profile_picture,
+                  avatarUrl: fullRequestData?.requester?.avatar_url,
+                  name: fullRequestData?.requester?.name,
+                  fullRequesterObject: fullRequestData?.requester,
+                  fullRequestDataKeys: fullRequestData ? Object.keys(fullRequestData) : []
+                });
+                
+                // Try multiple sources for profile picture
+                const profilePicture = 
+                  fullRequestData?.requester?.profile_picture || 
+                  fullRequestData?.requester?.avatar_url || 
+                  (fullRequestData as any)?.requester_profile_picture ||
+                  (fullRequestData as any)?.requester_avatar_url ||
+                  undefined;
+                
+                const avatarUrl = 
+                  fullRequestData?.requester?.avatar_url || 
+                  fullRequestData?.requester?.profile_picture || 
+                  (fullRequestData as any)?.requester_avatar_url ||
+                  (fullRequestData as any)?.requester_profile_picture ||
+                  undefined;
+                
+                console.log('[SubmissionsViewClean] 🖼️ Profile picture resolution:', {
+                  profilePicture,
+                  avatarUrl,
+                  finalSrc: profilePicture || avatarUrl || null
+                });
+                
+                return {
+                  id: requesterId || undefined, // Don't use 'current-user' fallback - let it be undefined if not found
+                  name: fullRequestData?.requester?.name || fullRequestData?.requester?.full_name || selectedRequest.requester_name || 'Unknown User',
+                  profile_picture: profilePicture,
+                  avatar_url: avatarUrl,
+                  department: fullRequestData?.requester?.department?.name || fullRequestData?.requester?.department || selectedRequest.department?.name || 'No Department',
+                  position: requesterRole,
+                  email: fullRequestData?.requester?.email || undefined,
+                  phone: fullRequestData?.requester?.phone_number || undefined
+                };
+              })(),
               
               department: selectedRequest.department ? {
                 id: 'dept-1',
@@ -599,11 +655,13 @@ export default function SubmissionsView() {
                   role: 'Requester',
                   status: 'approved',
                   approver: {
-                    id: 'current-user',
-                    name: selectedRequest.requester_name || 'Unknown User',
-                    profile_picture: undefined,
-                    department: selectedRequest.department?.name || 'No Department',
-                    position: requesterIsHead ? 'Department Head' : 'Faculty/Staff'
+                    id: fullRequestData?.requester?.id || 'current-user',
+                    name: fullRequestData?.requester?.name || selectedRequest.requester_name || 'Unknown User',
+                    profile_picture: fullRequestData?.requester?.profile_picture || undefined,
+                    department: fullRequestData?.requester?.department?.name || fullRequestData?.requester?.department || selectedRequest.department?.name || 'No Department',
+                    position: requesterIsHead ? 'Head' : (fullRequestData?.requester?.position_title && !fullRequestData?.requester?.position_title.toLowerCase().includes('student')) ? fullRequestData.requester.position_title : 'Faculty/Staff',
+                    email: fullRequestData?.requester?.email,
+                    phone: fullRequestData?.requester?.phone_number
                   },
                   signature: fullRequestData?.requester_signature || null,
                   approved_at: selectedRequest.created_at
@@ -643,10 +701,12 @@ export default function SubmissionsView() {
                 role: 'Admin',
                 status: fullRequestData?.admin_processed_at ? 'approved' : 'pending',
                 approver: fullRequestData?.admin_processed_at ? {
-                  id: 'admin',
-                  name: fullRequestData?.admin_processed_by || 'Administrator',
-                  position: 'Administrative Officer',
-                  department: 'Administration'
+                  id: fullRequestData?.admin_approver?.id || 'admin',
+                  name: fullRequestData?.admin_approver?.name || fullRequestData?.admin_processed_by || 'Administrator',
+                  profile_picture: fullRequestData?.admin_approver?.profile_picture || undefined,
+                  position: fullRequestData?.admin_approver?.position_title || 'Administrative Officer',
+                  department: fullRequestData?.admin_approver?.department?.name || 'Administration',
+                  email: fullRequestData?.admin_approver?.email || undefined
                 } : undefined,
                 signature: fullRequestData?.admin_signature || null,
                 approved_at: fullRequestData?.admin_processed_at || null
@@ -659,11 +719,13 @@ export default function SubmissionsView() {
                   label: 'Comptroller',
                   role: 'Comptroller',
                   status: fullRequestData?.comptroller_approved_at ? 'approved' : 'pending',
-                  approver: fullRequestData?.comptroller_approved_at ? {
-                    id: 'comptroller',
-                    name: fullRequestData?.comptroller_approved_by || 'Comptroller',
-                    position: 'University Comptroller',
-                    department: 'Finance'
+                  approver: fullRequestData?.comptroller_approved_at && fullRequestData?.comptroller_approver ? {
+                    id: fullRequestData?.comptroller_approver?.id || 'comptroller',
+                    name: fullRequestData?.comptroller_approver?.name || fullRequestData?.comptroller_approved_by || 'Comptroller',
+                    profile_picture: fullRequestData?.comptroller_approver?.profile_picture || undefined,
+                    position: fullRequestData?.comptroller_approver?.position_title || 'University Comptroller',
+                    department: fullRequestData?.comptroller_approver?.department?.name || 'Finance',
+                    email: fullRequestData?.comptroller_approver?.email || undefined
                   } : undefined,
                   signature: fullRequestData?.comptroller_signature || null,
                   approved_at: fullRequestData?.comptroller_approved_at || null
@@ -675,12 +737,14 @@ export default function SubmissionsView() {
                 id: 'hr',
                 label: 'Human Resources',
                 role: 'HR',
-                status: fullRequestData?.hr_signature ? 'approved' : 'pending',
-                approver: fullRequestData?.hr_signature ? {
-                  id: 'hr',
-                  name: fullRequestData?.hr_approved_by || 'HR Manager',
-                  position: 'HR Manager',
-                  department: 'Human Resources'
+                status: fullRequestData?.hr_approved_at ? 'approved' : 'pending',
+                approver: fullRequestData?.hr_approved_at && fullRequestData?.hr_approver ? {
+                  id: fullRequestData?.hr_approver?.id || 'hr',
+                  name: fullRequestData?.hr_approver?.name || fullRequestData?.hr_approved_by || 'HR Manager',
+                  profile_picture: fullRequestData?.hr_approver?.profile_picture || undefined,
+                  position: fullRequestData?.hr_approver?.position_title || 'HR Manager',
+                  department: fullRequestData?.hr_approver?.department?.name || 'Human Resources',
+                  email: fullRequestData?.hr_approver?.email || undefined
                 } : undefined,
                 signature: fullRequestData?.hr_signature || null,
                 approved_at: fullRequestData?.hr_approved_at || null
@@ -691,12 +755,14 @@ export default function SubmissionsView() {
                 id: 'vp',
                 label: 'Vice President',
                 role: 'VP',
-                status: fullRequestData?.vp_signature ? 'approved' : 'pending',
-                approver: fullRequestData?.vp_signature ? {
-                  id: 'vp',
-                  name: fullRequestData?.vp_approved_by || 'Vice President',
-                  position: 'Vice President for Academic Affairs',
-                  department: 'Executive'
+                status: fullRequestData?.vp_approved_at ? 'approved' : 'pending',
+                approver: fullRequestData?.vp_approved_at && fullRequestData?.vp_approver ? {
+                  id: fullRequestData?.vp_approver?.id || 'vp',
+                  name: fullRequestData?.vp_approver?.name || fullRequestData?.vp_approved_by || 'Vice President',
+                  profile_picture: fullRequestData?.vp_approver?.profile_picture || undefined,
+                  position: fullRequestData?.vp_approver?.position_title || 'Vice President for Academic Affairs',
+                  department: fullRequestData?.vp_approver?.department?.name || 'Executive',
+                  email: fullRequestData?.vp_approver?.email || undefined
                 } : undefined,
                 signature: fullRequestData?.vp_signature || null,
                 approved_at: fullRequestData?.vp_approved_at || null
@@ -708,12 +774,14 @@ export default function SubmissionsView() {
                   id: 'president',
                   label: 'University President',
                   role: 'President',
-                  status: fullRequestData?.president_signature ? 'approved' : 'pending',
-                  approver: fullRequestData?.president_signature ? {
-                    id: 'president',
-                    name: fullRequestData?.president_approved_by || 'University President',
-                    position: 'University President',
-                    department: 'Executive'
+                  status: fullRequestData?.president_approved_at ? 'approved' : 'pending',
+                  approver: fullRequestData?.president_approved_at && fullRequestData?.president_approver ? {
+                    id: fullRequestData?.president_approver?.id || 'president',
+                    name: fullRequestData?.president_approver?.name || fullRequestData?.president_approved_by || 'University President',
+                    profile_picture: fullRequestData?.president_approver?.profile_picture || undefined,
+                    position: fullRequestData?.president_approver?.position_title || 'University President',
+                    department: fullRequestData?.president_approver?.department?.name || 'Executive',
+                    email: fullRequestData?.president_approver?.email || undefined
                   } : undefined,
                   signature: fullRequestData?.president_signature || null,
                   approved_at: fullRequestData?.president_approved_at || null
@@ -723,23 +791,207 @@ export default function SubmissionsView() {
               return signatures;
             })(),
               
-              // Mock timeline for now - replace with real data from API
-              timeline: [
-                {
-                  id: '1',
+              // Build timeline from history data (for approved/completed requests)
+              timeline: (() => {
+                const history = fullRequestData?.history || [];
+                const timeline: any[] = [];
+                
+                // 1. Request Submitted
+                // Determine role display: "Head" if is_head, otherwise use position_title or default
+                const requesterIsHead = fullRequestData?.requester_is_head || fullRequestData?.requester?.is_head || false;
+                const requesterRole = requesterIsHead 
+                  ? 'Head' 
+                  : (fullRequestData?.requester?.position_title && !fullRequestData?.requester?.position_title.toLowerCase().includes('student'))
+                    ? fullRequestData.requester.position_title
+                    : 'Faculty/Staff';
+                
+                timeline.push({
+                  id: 'submitted',
                   type: 'submitted',
                   title: 'Request Submitted',
                   description: `Travel request ${selectedRequest.request_number} was submitted for approval`,
                   actor: {
-                    id: 'current-user',
-                    name: selectedRequest.requester_name || 'Unknown User',
-                    profile_picture: undefined,
-                    department: selectedRequest.department?.name || 'No Department',
-                    position: 'Faculty/Staff'
+                    id: fullRequestData?.requester?.id || 'current-user',
+                    name: fullRequestData?.requester?.name || selectedRequest.requester_name || 'Unknown User',
+                    profile_picture: fullRequestData?.requester?.profile_picture || undefined,
+                    department: fullRequestData?.requester?.department?.name || selectedRequest.department?.name || 'No Department',
+                    position: requesterRole
                   },
                   timestamp: selectedRequest.created_at
+                });
+                
+                // 2. Build from history entries (if available)
+                if (Array.isArray(history) && history.length > 0) {
+                  history.forEach((entry: any) => {
+                    // Format action title to be user-friendly
+                    let formattedTitle = entry.action || 'Action';
+                    if (formattedTitle.includes('_')) {
+                      // Convert snake_case to Title Case
+                      formattedTitle = formattedTitle
+                        .split('_')
+                        .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                        .join(' ');
+                    } else {
+                      // Capitalize first letter
+                      formattedTitle = formattedTitle.charAt(0).toUpperCase() + formattedTitle.slice(1);
+                    }
+                    
+                    // Map common actions to user-friendly titles
+                    const actionMap: Record<string, string> = {
+                      'created': 'Request Created',
+                      'admin_approved': 'Administrator Approved',
+                      'admin_processed': 'Administrator Processed',
+                      'head_approved': 'Department Head Approved',
+                      'parent_head_approved': 'Parent Department Head Approved',
+                      'comptroller_approved': 'Comptroller Approved',
+                      'hr_approved': 'Human Resources Approved',
+                      'vp_approved': 'Vice President Approved',
+                      'president_approved': 'University President Approved',
+                      'exec_approved': 'Executive Approved',
+                      'rejected': 'Request Rejected',
+                      'returned': 'Request Returned',
+                      'dispatched': 'Request Dispatched',
+                      'completed': 'Request Completed'
+                    };
+                    
+                    formattedTitle = actionMap[entry.action?.toLowerCase()] || formattedTitle;
+                    
+                    // Build description - prioritize comments/notes, avoid duplicating title
+                    let description = entry.comments || entry.notes || '';
+                    if (!description && entry.actor?.name) {
+                      // Only add "by [name]" if there's no comments/notes
+                      description = `Approved by ${entry.actor.name}`;
+                    }
+                    
+                    timeline.push({
+                      id: entry.id || `history-${entry.created_at}`,
+                      type: entry.action?.toLowerCase().includes('approved') ? 'approved' : 
+                            entry.action?.toLowerCase().includes('rejected') ? 'rejected' :
+                            entry.action?.toLowerCase().includes('returned') ? 'returned' : 'action',
+                      title: formattedTitle,
+                      description: description,
+                      actor: entry.actor ? {
+                        id: entry.actor.id || entry.actor_id,
+                        name: entry.actor.name || entry.actor.email || 'Unknown',
+                        profile_picture: entry.actor.profile_picture || undefined,
+                        department: entry.actor.department?.name || undefined,
+                        position: entry.actor.position_title || undefined
+                      } : undefined,
+                      timestamp: entry.created_at,
+                      metadata: {
+                        stage: entry.actor_role,
+                        comments: entry.comments,
+                        signature: entry.signature || null
+                      }
+                    });
+                  });
+                } else {
+                  // Fallback: Build timeline from approval timestamps if history is not available
+                  if (fullRequestData?.head_approved_at) {
+                    timeline.push({
+                      id: 'head-approved',
+                      type: 'approved',
+                      title: 'Department Head Approved',
+                      description: fullRequestData?.head_comments || 'Department head approved the request',
+                      actor: fullRequestData?.head_approver ? {
+                        id: fullRequestData.head_approver.id,
+                        name: fullRequestData.head_approver.name,
+                        profile_picture: fullRequestData.head_approver.profile_picture,
+                        department: fullRequestData.head_approver.department?.name,
+                        position: fullRequestData.head_approver.position_title
+                      } : undefined,
+                      timestamp: fullRequestData.head_approved_at
+                    });
+                  }
+                  
+                  if (fullRequestData?.admin_processed_at) {
+                    timeline.push({
+                      id: 'admin-approved',
+                      type: 'approved',
+                      title: 'Administrator Approved',
+                      description: fullRequestData?.admin_comments || 'Administrator processed the request',
+                      actor: fullRequestData?.admin_approver ? {
+                        id: fullRequestData.admin_approver.id,
+                        name: fullRequestData.admin_approver.name,
+                        profile_picture: fullRequestData.admin_approver.profile_picture,
+                        department: fullRequestData.admin_approver.department?.name,
+                        position: fullRequestData.admin_approver.position_title
+                      } : undefined,
+                      timestamp: fullRequestData.admin_processed_at
+                    });
+                  }
+                  
+                  if (fullRequestData?.comptroller_approved_at) {
+                    timeline.push({
+                      id: 'comptroller-approved',
+                      type: 'approved',
+                      title: 'Comptroller Approved',
+                      description: fullRequestData?.comptroller_comments || 'Comptroller approved the request',
+                      actor: fullRequestData?.comptroller_approver ? {
+                        id: fullRequestData.comptroller_approver.id,
+                        name: fullRequestData.comptroller_approver.name,
+                        profile_picture: fullRequestData.comptroller_approver.profile_picture,
+                        department: fullRequestData.comptroller_approver.department?.name,
+                        position: fullRequestData.comptroller_approver.position_title
+                      } : undefined,
+                      timestamp: fullRequestData.comptroller_approved_at
+                    });
+                  }
+                  
+                  if (fullRequestData?.hr_approved_at) {
+                    timeline.push({
+                      id: 'hr-approved',
+                      type: 'approved',
+                      title: 'Human Resources Approved',
+                      description: fullRequestData?.hr_comments || 'HR approved the request',
+                      actor: fullRequestData?.hr_approver ? {
+                        id: fullRequestData.hr_approver.id,
+                        name: fullRequestData.hr_approver.name,
+                        profile_picture: fullRequestData.hr_approver.profile_picture,
+                        department: fullRequestData.hr_approver.department?.name,
+                        position: fullRequestData.hr_approver.position_title
+                      } : undefined,
+                      timestamp: fullRequestData.hr_approved_at
+                    });
+                  }
+                  
+                  if (fullRequestData?.vp_approved_at) {
+                    timeline.push({
+                      id: 'vp-approved',
+                      type: 'approved',
+                      title: 'Vice President Approved',
+                      description: fullRequestData?.vp_comments || 'Vice President approved the request',
+                      actor: fullRequestData?.vp_approver ? {
+                        id: fullRequestData.vp_approver.id,
+                        name: fullRequestData.vp_approver.name,
+                        profile_picture: fullRequestData.vp_approver.profile_picture,
+                        department: fullRequestData.vp_approver.department?.name,
+                        position: fullRequestData.vp_approver.position_title
+                      } : undefined,
+                      timestamp: fullRequestData.vp_approved_at
+                    });
+                  }
+                  
+                  if (fullRequestData?.president_approved_at) {
+                    timeline.push({
+                      id: 'president-approved',
+                      type: 'approved',
+                      title: 'University President Approved',
+                      description: fullRequestData?.president_comments || 'University President approved the request',
+                      actor: fullRequestData?.president_approver ? {
+                        id: fullRequestData.president_approver.id,
+                        name: fullRequestData.president_approver.name,
+                        profile_picture: fullRequestData.president_approver.profile_picture,
+                        department: fullRequestData.president_approver.department?.name,
+                        position: fullRequestData.president_approver.position_title
+                      } : undefined,
+                      timestamp: fullRequestData.president_approved_at
+                    });
+                  }
                 }
-              ],
+                
+                return timeline;
+              })(),
               
               smart_skips_applied: [],
               efficiency_boost: undefined,

@@ -7,12 +7,15 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createSupabaseServerClient(true);
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    // First authenticate user with anon key + cookies
+    const supabaseAnon = await createSupabaseServerClient(false);
+    const { data: { user }, error: authError } = await supabaseAnon.auth.getUser();
     if (authError || !user) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
+
+    // Then use service role for database operations
+    const supabase = await createSupabaseServerClient(true);
 
     const { id: requestId } = await params;
 

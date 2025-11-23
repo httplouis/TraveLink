@@ -93,6 +93,41 @@ export async function GET(
       }
     };
 
+    // Fetch full user object (for approvers)
+    const fetchUserObject = async (userId: string | null) => {
+      if (!userId) return null;
+      try {
+        const { data, error } = await supabase
+        .from("users")
+        .select("id, name, email, profile_picture, phone_number, position_title, department_id")
+        .eq("id", userId)
+        .single();
+        if (error) {
+          console.error('[fetchUserObject] Error:', error);
+          return null;
+        }
+        // Fetch department if exists
+        if (data?.department_id) {
+          try {
+            const { data: dept, error: deptError } = await supabase
+              .from("departments")
+              .select("id, name, code")
+              .eq("id", data.department_id)
+              .single();
+            if (dept && !deptError) {
+              data.department = dept;
+            }
+          } catch (e) {
+            console.warn('[fetchUserObject] Error fetching department:', e);
+          }
+        }
+        return data;
+      } catch (err) {
+        console.error('[fetchUserObject] Exception:', err);
+        return null;
+      }
+    };
+
     const fetchDepartment = async (deptId: string | null) => {
       if (!deptId) {
         console.log('[Tracking API] No department ID provided');
@@ -163,10 +198,10 @@ export async function GET(
       if (!userId) return null;
       try {
         const { data, error } = await supabase
-        .from("users")
-          .select("name, full_name, department_id, departments:department_id(id, name, code)")
-        .eq("id", userId)
-        .single();
+          .from("users")
+          .select("id, name, full_name, email, profile_picture, avatar_url, position_title, phone_number, department_id, departments:department_id(id, name, code), role, is_head")
+          .eq("id", userId)
+          .single();
         
         if (error) {
           console.error('[fetchRequesterData] Error:', error);
@@ -178,7 +213,19 @@ export async function GET(
           data.full_name = data.name;
         }
         
-      console.log('[Tracking API] Requester data:', data);
+      console.log('[Tracking API] Requester data:', {
+        id: data?.id,
+        name: data?.name,
+        full_name: data?.full_name,
+        email: data?.email,
+        profile_picture: data?.profile_picture,
+        avatar_url: data?.avatar_url,
+        position_title: data?.position_title,
+        role: data?.role,
+        is_head: data?.is_head,
+        hasProfilePicture: !!data?.profile_picture,
+        hasAvatarUrl: !!data?.avatar_url
+      });
       return data || null;
       } catch (err) {
         console.error('[fetchRequesterData] Exception:', err);
@@ -316,6 +363,59 @@ export async function GET(
       requesterTracking = [];
     }
 
+    // Get head endorsement invitations (for multi-department requests)
+    let headEndorsements = [];
+    try {
+      const { data: headEndorsementInvitations, error: headEndorsementError } = await supabase
+        .from("head_endorsement_invitations")
+        .select(`
+          *,
+          head:users!head_user_id(id, name, email, profile_picture),
+          department:departments!department_id(id, name, code)
+        `)
+        .eq("request_id", requestId)
+        .order("created_at", { ascending: true });
+      
+      if (headEndorsementError) {
+        console.error('[Tracking API] Error fetching head endorsement invitations:', headEndorsementError);
+      } else {
+        headEndorsements = (headEndorsementInvitations || []).map((endorsement: any) => ({
+          id: endorsement.id,
+          request_id: endorsement.request_id,
+          head_user_id: endorsement.head_user_id,
+          head_email: endorsement.head_email,
+          head_name: endorsement.head_name,
+          department_id: endorsement.department_id,
+          department_name: endorsement.department_name,
+          status: endorsement.status,
+          signature: endorsement.signature,
+          confirmed_at: endorsement.confirmed_at,
+          declined_at: endorsement.declined_at,
+          declined_reason: endorsement.declined_reason,
+          endorsement_date: endorsement.endorsement_date,
+          comments: endorsement.comments,
+          invited_at: endorsement.invited_at,
+          created_at: endorsement.created_at,
+          updated_at: endorsement.updated_at,
+          head: endorsement.head || (endorsement.head_email ? {
+            id: endorsement.head_user_id,
+            name: endorsement.head_name,
+            email: endorsement.head_email,
+            profile_picture: null
+          } : null),
+          department: endorsement.department || (endorsement.department_name ? {
+            id: endorsement.department_id,
+            name: endorsement.department_name,
+            code: null
+          } : null)
+        }));
+        console.log(`[Tracking API] ✅ Fetched ${headEndorsements.length} head endorsement(s) for request ${requestId}`);
+      }
+    } catch (err) {
+      console.error('[Tracking API] Exception fetching head endorsements:', err);
+      headEndorsements = [];
+    }
+
     // Build tracking data
     const trackingData = {
       request_number: request.request_number,
@@ -329,7 +429,30 @@ export async function GET(
       travel_start_date: request.travel_start_date,
       travel_end_date: request.travel_end_date,
       
-      requester: { full_name: requesterName },
+      requester: requesterData ? {
+        id: requesterData.id,
+        name: requesterData.full_name || requesterData.name,
+        full_name: requesterData.full_name || requesterData.name,
+        email: requesterData.email,
+        profile_picture: requesterData.profile_picture || requesterData.avatar_url || null,
+        avatar_url: requesterData.avatar_url || requesterData.profile_picture || null,
+        position_title: requesterData.position_title,
+        phone_number: requesterData.phone_number,
+        role: requesterData.role,
+        is_head: requesterData.is_head,
+        department: requesterData.departments ? (Array.isArray(requesterData.departments) ? requesterData.departments[0] : requesterData.departments) : null
+      } : { full_name: requesterName },
+      
+      // Debug: Log the requester object being returned
+      _debug_requester: requesterData ? {
+        hasProfilePicture: !!requesterData.profile_picture,
+        hasAvatarUrl: !!requesterData.avatar_url,
+        profilePictureValue: requesterData.profile_picture,
+        avatarUrlValue: requesterData.avatar_url,
+        finalProfilePicture: requesterData.profile_picture || requesterData.avatar_url || null,
+        finalAvatarUrl: requesterData.avatar_url || requesterData.profile_picture || null
+      } : null,
+      requester_id: request.requester_id, // Include requester_id at top level for easy access
       requester_name: requesterName || request.requester_name,
       requester_signature: request.requester_signature,
       department: finalDepartment,
@@ -375,6 +498,7 @@ export async function GET(
       
       admin_processed_at: request.admin_processed_at,
       admin_processed_by: adminProcessorName,
+      admin_approver: request.admin_processed_by ? await fetchUserObject(request.admin_processed_by) : null,
       admin_signature: request.admin_signature,
       admin_comments: request.admin_comments,
       assigned_vehicle: assignedVehicle ? {
@@ -393,33 +517,39 @@ export async function GET(
       
       comptroller_approved_at: request.comptroller_approved_at,
       comptroller_approved_by: comptrollerApproverName,
+      comptroller_approver: request.comptroller_approved_by ? await fetchUserObject(request.comptroller_approved_by) : null,
       comptroller_signature: request.comptroller_signature,
       comptroller_comments: request.comptroller_comments,
       comptroller_edited_budget: request.comptroller_edited_budget,
       
       hr_approved_at: request.hr_approved_at,
       hr_approved_by: hrApproverName,
+      hr_approver: request.hr_approved_by ? await fetchUserObject(request.hr_approved_by) : null,
       hr_signature: request.hr_signature,
       hr_comments: request.hr_comments,
       
       vp_approved_at: request.vp_approved_at,
       vp_approved_by: vpApproverName,
+      vp_approver: request.vp_approved_by ? await fetchUserObject(request.vp_approved_by) : null,
       vp_signature: request.vp_signature,
       vp_comments: request.vp_comments,
       
       vp2_approved_at: request.vp2_approved_at,
       vp2_approved_by: vp2ApproverName,
+      vp2_approver: request.vp2_approved_by ? await fetchUserObject(request.vp2_approved_by) : null,
       vp2_signature: request.vp2_signature,
       vp2_comments: request.vp2_comments,
       both_vps_approved: request.both_vps_approved || false,
       
       president_approved_at: request.president_approved_at,
       president_approved_by: presidentApproverName,
+      president_approver: request.president_approved_by ? await fetchUserObject(request.president_approved_by) : null,
       president_signature: request.president_signature,
       president_comments: request.president_comments,
       
       exec_approved_at: request.exec_approved_at,
       exec_approved_by: execApproverName,
+      exec_approver: request.exec_approved_by ? await fetchUserObject(request.exec_approved_by) : null,
       exec_signature: request.exec_signature,
       exec_comments: request.exec_comments,
       
@@ -437,6 +567,9 @@ export async function GET(
       // Requester-level tracking (multiple requesters from different departments)
       requester_tracking: requesterTracking || [],
       has_multiple_requesters: (requesterTracking || []).length > 0,
+      
+      // Head endorsement invitations (for multi-department requests)
+      head_endorsements: headEndorsements || [],
       
       // Seminar data (if seminar application)
       request_type: request.request_type,

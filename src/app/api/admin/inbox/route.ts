@@ -123,6 +123,69 @@ export async function GET() {
         return [u.id, approverWithDept];
       }));
 
+      // Fetch head endorsement invitations for all requests
+      const requestIds = allRequests.map((r: any) => r.id);
+      let headEndorsementsMap = new Map();
+      
+      if (requestIds.length > 0) {
+        try {
+          const { data: headEndorsements, error: headEndorsementsError } = await supabaseServiceRole
+            .from("head_endorsement_invitations")
+            .select(`
+              *,
+              head:users!head_user_id(id, name, email, profile_picture),
+              department:departments!department_id(id, name, code)
+            `)
+            .in("request_id", requestIds)
+            .order("created_at", { ascending: true });
+          
+          if (headEndorsementsError) {
+            console.warn("[Admin Inbox API] ⚠️ Error fetching head endorsements:", headEndorsementsError);
+          } else if (headEndorsements) {
+            // Group endorsements by request_id
+            headEndorsements.forEach((endorsement: any) => {
+              const requestId = endorsement.request_id;
+              if (!headEndorsementsMap.has(requestId)) {
+                headEndorsementsMap.set(requestId, []);
+              }
+              headEndorsementsMap.get(requestId).push({
+                id: endorsement.id,
+                request_id: endorsement.request_id,
+                head_user_id: endorsement.head_user_id,
+                head_email: endorsement.head_email,
+                head_name: endorsement.head_name,
+                department_id: endorsement.department_id,
+                department_name: endorsement.department_name,
+                status: endorsement.status,
+                signature: endorsement.signature,
+                confirmed_at: endorsement.confirmed_at,
+                declined_at: endorsement.declined_at,
+                declined_reason: endorsement.declined_reason,
+                endorsement_date: endorsement.endorsement_date,
+                comments: endorsement.comments,
+                invited_at: endorsement.invited_at,
+                created_at: endorsement.created_at,
+                updated_at: endorsement.updated_at,
+                head: endorsement.head || (endorsement.head_email ? {
+                  id: endorsement.head_user_id,
+                  name: endorsement.head_name,
+                  email: endorsement.head_email,
+                  profile_picture: null
+                } : null),
+                department: endorsement.department || (endorsement.department_name ? {
+                  id: endorsement.department_id,
+                  name: endorsement.department_name,
+                  code: null
+                } : null)
+              });
+            });
+            console.log(`[Admin Inbox API] ✅ Fetched ${headEndorsements.length} head endorsement(s) for ${headEndorsementsMap.size} request(s)`);
+          }
+        } catch (headEndorsementsErr: any) {
+          console.error("[Admin Inbox API] ⚠️ Exception fetching head endorsements:", headEndorsementsErr);
+        }
+      }
+
       // Attach related data to requests
       allRequests.forEach((req: any) => {
         req.requester = req.requester_id ? requesterMap.get(req.requester_id) : null;
@@ -136,6 +199,9 @@ export async function GET() {
         req.vp2_approver = req.vp2_approved_by ? approverMap.get(req.vp2_approved_by) : null;
         req.president_approver = req.president_approved_by ? approverMap.get(req.president_approved_by) : null;
         req.exec_approver = req.exec_approved_by ? approverMap.get(req.exec_approved_by) : null;
+        
+        // Attach head endorsements
+        req.head_endorsements = headEndorsementsMap.get(req.id) || [];
         
         // Attach department info to approvers if they have department_id
         if (req.head_approver?.department_id) {

@@ -367,16 +367,16 @@ export default function PresidentRequestModal({
             )}
           </div>
           <div className="flex items-center gap-3">
-            <span className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 ${
-              t.status === 'pending_exec' || t.status === 'pending_president' ? 'bg-amber-100 text-amber-700' :
-              t.status === 'approved' ? 'bg-green-100 text-green-700' :
-              t.status === 'rejected' ? 'bg-red-100 text-red-700' :
-              'bg-slate-100 text-slate-700'
+            <span className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 backdrop-blur-sm ${
+              t.status === 'pending_exec' || t.status === 'pending_president' ? 'bg-amber-300/90 text-amber-900 border border-amber-400' :
+              t.status === 'approved' ? 'bg-green-300/90 text-green-900 border border-green-400' :
+              t.status === 'rejected' ? 'bg-red-300/90 text-red-900 border border-red-400' :
+              'bg-white/20 text-white border border-white/30'
             }`}>
               {t.status === 'pending_exec' || t.status === 'pending_president' ? 'Pending Review' :
                t.status === 'approved' ? 'Approved' :
                t.status === 'rejected' ? 'Rejected' :
-               t.status || 'Pending'}
+               t.status?.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || 'Pending'}
             </span>
             <button
               onClick={onClose}
@@ -1163,8 +1163,11 @@ export default function PresidentRequestModal({
                   onChange={(e) => setNotes(e.target.value)}
                   rows={4}
                   className="w-full px-4 py-3 border-2 border-[#7A0010]/20 rounded-xl focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] resize-none text-sm"
-                  placeholder="Add your comments here..."
+                  placeholder="Add your comments here (minimum 10 characters)..."
                 />
+                <p className="text-xs text-slate-500 mt-1">
+                  Minimum 10 characters required
+                </p>
               </div>
             )}
 
@@ -1183,29 +1186,33 @@ export default function PresidentRequestModal({
 
         {/* Actions */}
         {!viewOnly && (
-          <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex gap-3 flex-shrink-0">
-            <button
-              onClick={handleApprove}
-              disabled={submitting || !presidentSignature}
-              className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <CheckCircle2 className="h-5 w-5" />
-              {submitting ? "Approving..." : "Approve Request"}
-            </button>
+          <div className="sticky bottom-0 bg-white border-t-2 border-slate-200 px-6 py-4 flex items-center justify-between flex-shrink-0 shadow-lg">
             <button
               onClick={handleReject}
               disabled={submitting || !notes.trim()}
-              className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white font-medium py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center justify-center gap-1.5 px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-medium text-sm rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <XCircle className="h-5 w-5" />
-              {submitting ? "Rejecting..." : "Reject Request"}
+              <XCircle className="h-4 w-4" />
+              {submitting ? "Rejecting..." : "Reject"}
             </button>
-            <button
-              onClick={onClose}
-              className="px-6 py-3 border border-gray-300 hover:bg-gray-100 text-gray-700 font-medium rounded-lg transition-colors"
-            >
-              Cancel
-            </button>
+            
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onClose}
+                className="px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium text-sm rounded-md transition-colors"
+              >
+                Cancel
+              </button>
+
+              <button
+                onClick={handleApprove}
+                disabled={submitting || !presidentSignature || !notes.trim() || notes.trim().length < 10}
+                className="flex items-center justify-center gap-2 px-6 py-2.5 bg-[#7A0010] hover:bg-[#5e000d] text-white font-semibold text-sm rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                {submitting ? "Approving..." : "Approve Request"}
+              </button>
+            </div>
           </div>
         )}
 

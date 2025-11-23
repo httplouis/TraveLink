@@ -23,6 +23,7 @@ export function canSubmit(
     isRepresentativeSubmission?: boolean;
     currentUserName?: string;
     requestingPersonName?: string;
+    isHeadRequester?: boolean; // True if current user is head and is the requesting person
     allRequestersConfirmed?: boolean; // For multiple requesters
     allParticipantsConfirmed?: boolean; // For seminar participants
     allHeadEndorsementsConfirmed?: boolean; // For head endorsements (multi-department)
@@ -208,8 +209,20 @@ export function canSubmit(
 
     // ✅ REQUIRED: Requester signature must be saved (and not blank)
     // BUT: Skip if this is a representative submission (requester will sign later via inbox)
-    if (!isRepresentative && !hasSignature(to.requesterSignature)) {
-      errors["travelOrder.requesterSignature"] = "Requesting person's signature is required";
+    // For head requesters, check endorsedByHeadSignature instead of requesterSignature
+    const isHeadRequester = options?.isHeadRequester ?? false;
+    if (!isRepresentative) {
+      if (isHeadRequester) {
+        // Head requester should provide signature in endorsedByHeadSignature
+        if (!hasSignature(to.endorsedByHeadSignature)) {
+          errors["travelOrder.endorsedByHeadSignature"] = "Your signature as department head is required";
+        }
+      } else {
+        // Regular requester should provide signature in requesterSignature
+        if (!hasSignature(to.requesterSignature)) {
+          errors["travelOrder.requesterSignature"] = "Requesting person's signature is required";
+        }
+      }
     }
 
     // Note: Head signature is NOT required for initial submission

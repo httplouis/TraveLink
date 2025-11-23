@@ -78,6 +78,27 @@ export function suggestNextApprover(context: RequestContext): SuggestedApprover 
     };
   }
 
+  // When Admin is reviewing (pending_admin → suggest next before approval)
+  if (status === 'pending_admin' && !admin_approved_at) {
+    if (has_budget) {
+      // Has budget → Suggest Comptroller
+      return {
+        role: 'comptroller',
+        roleLabel: 'Comptroller',
+        reason: 'Request has budget. Next step: Comptroller review for budget verification.',
+        priority: 'high'
+      };
+    } else {
+      // No budget → Suggest HR
+      return {
+        role: 'hr',
+        roleLabel: 'HR',
+        reason: 'Request has no budget. Next step: HR approval.',
+        priority: 'high'
+      };
+    }
+  }
+
   // After Admin Approval (pending_admin → next)
   if (status === 'pending_admin' && admin_approved_at) {
     if (has_budget) {

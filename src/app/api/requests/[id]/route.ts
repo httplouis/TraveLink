@@ -106,10 +106,10 @@ export async function GET(
     try {
       // Use service role client to bypass RLS completely
       // Use maybeSingle() instead of single() to handle 0 rows gracefully
-      // Include budget_history in the select
+      // Note: budget_history column doesn't exist in the database, so we don't select it
       const { data, error } = await supabaseServiceRole
         .from("requests")
-        .select("*, budget_history")
+        .select("*")
         .eq("id", requestId)
         .maybeSingle(); // Changed from .single() to .maybeSingle()
 
@@ -231,7 +231,7 @@ export async function GET(
     // Fetch approvers (simplified - only fetch if IDs exist)
     const approverFields = [
       'head_approved_by', 'parent_head_approved_by', 'vp_approved_by',
-      'admin_approved_by', 'comptroller_approved_by', 'hr_approved_by',
+      'admin_processed_by', 'comptroller_approved_by', 'hr_approved_by',
       'vp2_approved_by', 'president_approved_by', 'exec_approved_by'
     ];
 
@@ -245,7 +245,10 @@ export async function GET(
                   .eq("id", approverId)
                   .single();
           if (approver && !approverError) {
-            const approverKey = field.replace('_approved_by', '_approver');
+            // Handle both _approved_by and _processed_by patterns
+            const approverKey = field.includes('_processed_by') 
+              ? field.replace('_processed_by', '_approver')
+              : field.replace('_approved_by', '_approver');
             relatedData[approverKey] = approver;
             // Fetch department if exists
             if (approver.department_id) {
@@ -528,9 +531,142 @@ export async function GET(
       fullRequest.attachments = [];
     }
 
+    // Fetch additional requesters from requester_invitations (for multi-department requests)
+    try {
+      console.log(`[GET /api/requests/${requestId}] Fetching additional requesters...`);
+      
+      // Initialize additional_requesters to empty array first
+      if (!fullRequest.additional_requesters) {
+        fullRequest.additional_requesters = [];
+      }
+      
+      // Fetch requester invitations
+      const { data: requesterInvitations, error: requesterInvitationsError } = await supabaseServiceRole
+        .from("requester_invitations")
+        .select("*")
+        .eq("request_id", requestId)
+        .order("created_at", { ascending: true });
+      
+      if (requesterInvitationsError) {
+        console.warn(`[GET /api/requests/${requestId}] Error fetching requester invitations:`, requesterInvitationsError);
+        fullRequest.additional_requesters = [];
+      } else if (requesterInvitations && requesterInvitations.length > 0) {
+        console.log(`[GET /api/requests/${requestId}] Found ${requesterInvitations.length} requester invitation(s)`);
+        
+        // Enrich with user and department data
+        const enrichedRequesters = await Promise.allSettled(
+          requesterInvitations.map(async (inv: any) => {
+            try {
+              const requester: any = {
+                id: inv.id,
+                request_id: inv.request_id,
+                user_id: inv.user_id,
+                email: inv.email,
+                name: inv.name,
+                department: inv.department,
+                department_id: inv.department_id,
+                status: inv.status,
+                confirmed_at: inv.confirmed_at,
+                declined_at: inv.declined_at,
+                declined_reason: inv.declined_reason,
+                signature: inv.signature || null,
+                created_at: inv.created_at,
+                updated_at: inv.updated_at,
+              };
+              
+              // Fetch user details if user_id exists
+              if (inv.user_id) {
+                try {
+                  const { data: user } = await supabaseServiceRole
+                    .from("users")
+                    .select("id, name, email, profile_picture, position_title, department_id")
+                    .eq("id", inv.user_id)
+                    .maybeSingle();
+                  
+                  if (user) {
+                    requester.user = {
+                      id: user.id,
+                      name: user.name || inv.name,
+                      email: user.email || inv.email,
+                      profile_picture: user.profile_picture || null,
+                      position_title: user.position_title || null,
+                    };
+                    requester.user_id = user.id;
+                  }
+                } catch (userErr: any) {
+                  console.warn(`[GET /api/requests/${requestId}] Error fetching user ${inv.user_id}:`, userErr);
+                }
+              }
+              
+              // Fetch department details
+              if (inv.department_id) {
+                try {
+                  const { data: department } = await supabaseServiceRole
+                    .from("departments")
+                    .select("id, name, code")
+                    .eq("id", inv.department_id)
+                    .maybeSingle();
+                  
+                  if (department) {
+                    requester.department_info = {
+                      id: department.id,
+                      name: department.name,
+                      code: department.code,
+                    };
+                  }
+                } catch (deptErr: any) {
+                  console.warn(`[GET /api/requests/${requestId}] Error fetching department ${inv.department_id}:`, deptErr);
+                }
+              }
+              
+              return requester;
+            } catch (invErr: any) {
+              console.error(`[GET /api/requests/${requestId}] Error processing requester invitation ${inv.id}:`, invErr);
+              return {
+                id: inv.id,
+                request_id: inv.request_id,
+                email: inv.email,
+                name: inv.name,
+                department: inv.department,
+                department_id: inv.department_id,
+                status: inv.status,
+                signature: inv.signature || null,
+              };
+            }
+          })
+        );
+        
+        // Filter out rejected promises and extract values
+        const successfulRequesters = enrichedRequesters
+          .filter((result): result is PromiseFulfilledResult<any> => result.status === 'fulfilled')
+          .map(result => result.value);
+        
+        fullRequest.additional_requesters = successfulRequesters;
+        console.log(`[GET /api/requests/${requestId}] ✅ Enriched ${successfulRequesters.length} additional requester(s)`);
+      } else {
+        console.log(`[GET /api/requests/${requestId}] No additional requesters found`);
+        fullRequest.additional_requesters = [];
+      }
+    } catch (e: any) {
+      console.error(`[GET /api/requests/${requestId}] Exception fetching additional requesters:`, {
+        message: e?.message,
+        stack: e?.stack,
+        name: e?.name
+      });
+      // Ensure additional_requesters is always an array, even on error
+      if (!fullRequest.additional_requesters) {
+        fullRequest.additional_requesters = [];
+      }
+    }
+
     // Fetch head endorsement invitations (for multi-department requests)
     try {
       console.log(`[GET /api/requests/${requestId}] Fetching head endorsement invitations...`);
+      
+      // Initialize head_endorsements to empty array first
+      if (!fullRequest.head_endorsements) {
+        fullRequest.head_endorsements = [];
+      }
       
       // First, fetch the invitations
       const { data: headEndorsements, error: headEndorsementsError } = await supabaseServiceRole
@@ -541,130 +677,189 @@ export async function GET(
       
       if (headEndorsementsError) {
         console.warn(`[GET /api/requests/${requestId}] Error fetching head endorsements:`, headEndorsementsError);
+        fullRequest.head_endorsements = [];
       } else if (headEndorsements && headEndorsements.length > 0) {
         console.log(`[GET /api/requests/${requestId}] Found ${headEndorsements.length} raw head endorsement(s)`);
         
-        // Enrich with user and department data
-        const enrichedEndorsements = await Promise.all(
+        // Enrich with user and department data - wrap each in try-catch to prevent one failure from breaking all
+        const enrichedEndorsements = await Promise.allSettled(
           headEndorsements.map(async (inv: any) => {
-            const endorsement: any = {
-              id: inv.id,
-              request_id: inv.request_id,
-              head_user_id: inv.head_user_id,
-              head_email: inv.head_email,
-              head_name: inv.head_name,
-              department_id: inv.department_id,
-              status: inv.status,
-              confirmed_at: inv.confirmed_at,
-              declined_at: inv.declined_at,
-              declined_reason: inv.declined_reason,
-              endorsement_date: inv.endorsement_date,
-              signature: inv.signature, // Include signature field
-              comments: inv.comments,
-              invited_at: inv.invited_at,
-              created_at: inv.created_at,
-              updated_at: inv.updated_at,
-            };
-            
-            // Debug logging for signature
-            console.log(`[GET /api/requests/${requestId}] Endorsement ${inv.id}:`, {
-              head_name: inv.head_name,
-              head_email: inv.head_email,
-              status: inv.status,
-              has_signature: !!inv.signature,
-              signature_length: inv.signature ? inv.signature.length : 0,
-              signature_preview: inv.signature ? inv.signature.substring(0, 50) + "..." : "NULL",
-            });
-            
-            // Fetch head user details if head_user_id exists
-            if (inv.head_user_id) {
-              const { data: headUser } = await supabaseServiceRole
-                .from("users")
-                .select("id, name, email, profile_picture")
-                .eq("id", inv.head_user_id)
-                .maybeSingle();
+            try {
+              const endorsement: any = {
+                id: inv.id,
+                request_id: inv.request_id,
+                head_user_id: inv.head_user_id,
+                head_email: inv.head_email,
+                head_name: inv.head_name,
+                department_id: inv.department_id,
+                status: inv.status,
+                confirmed_at: inv.confirmed_at,
+                declined_at: inv.declined_at,
+                declined_reason: inv.declined_reason,
+                endorsement_date: inv.endorsement_date,
+                signature: inv.signature || null, // Include signature field, ensure it's not undefined
+                comments: inv.comments || null,
+                invited_at: inv.invited_at,
+                created_at: inv.created_at,
+                updated_at: inv.updated_at,
+              };
               
-              if (headUser) {
-                endorsement.head = {
-                  id: headUser.id,
-                  name: headUser.name || inv.head_name,
-                  email: headUser.email || inv.head_email,
-                  profile_picture: headUser.profile_picture,
-                };
-              } else {
-                // Fallback to invitation data
-                endorsement.head = {
-                  id: inv.head_user_id,
-                  name: inv.head_name,
-                  email: inv.head_email,
-                  profile_picture: null,
-                };
+              // Fetch head user details if head_user_id exists
+              if (inv.head_user_id) {
+                try {
+                  const { data: headUser } = await supabaseServiceRole
+                    .from("users")
+                    .select("id, name, email, profile_picture")
+                    .eq("id", inv.head_user_id)
+                    .maybeSingle();
+                  
+                  if (headUser) {
+                    endorsement.head = {
+                      id: headUser.id,
+                      name: headUser.name || inv.head_name,
+                      email: headUser.email || inv.head_email,
+                      profile_picture: headUser.profile_picture || null,
+                    };
+                  } else {
+                    // Fallback to invitation data
+                    endorsement.head = {
+                      id: inv.head_user_id,
+                      name: inv.head_name,
+                      email: inv.head_email,
+                      profile_picture: null,
+                    };
+                  }
+                } catch (userErr: any) {
+                  console.warn(`[GET /api/requests/${requestId}] Error fetching head user ${inv.head_user_id}:`, userErr);
+                  endorsement.head = {
+                    id: inv.head_user_id,
+                    name: inv.head_name,
+                    email: inv.head_email,
+                    profile_picture: null,
+                  };
+                }
+              } else if (inv.head_email) {
+                // Try to find user by email
+                try {
+                  const { data: headUser } = await supabaseServiceRole
+                    .from("users")
+                    .select("id, name, email, profile_picture")
+                    .eq("email", inv.head_email.toLowerCase())
+                    .maybeSingle();
+                  
+                  if (headUser) {
+                    endorsement.head = {
+                      id: headUser.id,
+                      name: headUser.name || inv.head_name,
+                      email: headUser.email || inv.head_email,
+                      profile_picture: headUser.profile_picture || null,
+                    };
+                    endorsement.head_user_id = headUser.id;
+                  } else {
+                    // Fallback to invitation data
+                    endorsement.head = {
+                      id: null,
+                      name: inv.head_name,
+                      email: inv.head_email,
+                      profile_picture: null,
+                    };
+                  }
+                } catch (emailErr: any) {
+                  console.warn(`[GET /api/requests/${requestId}] Error fetching head user by email ${inv.head_email}:`, emailErr);
+                  endorsement.head = {
+                    id: null,
+                    name: inv.head_name,
+                    email: inv.head_email,
+                    profile_picture: null,
+                  };
+                }
               }
-            } else if (inv.head_email) {
-              // Try to find user by email
-              const { data: headUser } = await supabaseServiceRole
-                .from("users")
-                .select("id, name, email, profile_picture")
-                .eq("email", inv.head_email.toLowerCase())
-                .maybeSingle();
               
-              if (headUser) {
-                endorsement.head = {
-                  id: headUser.id,
-                  name: headUser.name || inv.head_name,
-                  email: headUser.email || inv.head_email,
-                  profile_picture: headUser.profile_picture,
-                };
-                endorsement.head_user_id = headUser.id;
-              } else {
-                // Fallback to invitation data
-                endorsement.head = {
-                  id: null,
-                  name: inv.head_name,
-                  email: inv.head_email,
-                  profile_picture: null,
-                };
+              // Fetch department details
+              if (inv.department_id) {
+                try {
+                  const { data: department } = await supabaseServiceRole
+                    .from("departments")
+                    .select("id, name, code")
+                    .eq("id", inv.department_id)
+                    .maybeSingle();
+                  
+                  if (department) {
+                    endorsement.department = {
+                      id: department.id,
+                      name: department.name,
+                      code: department.code,
+                    };
+                    endorsement.department_name = department.name;
+                    endorsement.department_code = department.code;
+                  }
+                } catch (deptErr: any) {
+                  console.warn(`[GET /api/requests/${requestId}] Error fetching department ${inv.department_id}:`, deptErr);
+                }
               }
+              
+              return endorsement;
+            } catch (invErr: any) {
+              console.error(`[GET /api/requests/${requestId}] Error processing endorsement ${inv.id}:`, invErr);
+              // Return a minimal endorsement object if processing fails
+              return {
+                id: inv.id,
+                request_id: inv.request_id,
+                head_user_id: inv.head_user_id,
+                head_email: inv.head_email,
+                head_name: inv.head_name,
+                department_id: inv.department_id,
+                status: inv.status,
+                confirmed_at: inv.confirmed_at,
+                signature: inv.signature || null,
+                comments: inv.comments || null,
+              };
             }
-            
-            // Fetch department details
-            if (inv.department_id) {
-              const { data: department } = await supabaseServiceRole
-                .from("departments")
-                .select("id, name, code")
-                .eq("id", inv.department_id)
-                .maybeSingle();
-              
-              if (department) {
-                endorsement.department = {
-                  id: department.id,
-                  name: department.name,
-                  code: department.code,
-                };
-                endorsement.department_name = department.name;
-                endorsement.department_code = department.code;
-              }
-            }
-            
-            return endorsement;
           })
         );
         
-        fullRequest.head_endorsements = enrichedEndorsements;
-        console.log(`[GET /api/requests/${requestId}] ✅ Enriched ${enrichedEndorsements.length} head endorsement(s)`);
+        // Filter out rejected promises and extract values
+        const successfulEndorsements = enrichedEndorsements
+          .filter((result): result is PromiseFulfilledResult<any> => result.status === 'fulfilled')
+          .map(result => result.value);
+        
+        fullRequest.head_endorsements = successfulEndorsements;
+        console.log(`[GET /api/requests/${requestId}] ✅ Enriched ${successfulEndorsements.length} head endorsement(s)`);
       } else {
         console.log(`[GET /api/requests/${requestId}] No head endorsements found`);
         fullRequest.head_endorsements = [];
       }
-    } catch (e) {
-      console.error(`[GET /api/requests/${requestId}] Exception fetching head endorsements:`, e);
-      fullRequest.head_endorsements = [];
+    } catch (e: any) {
+      console.error(`[GET /api/requests/${requestId}] Exception fetching head endorsements:`, {
+        message: e?.message,
+        stack: e?.stack,
+        name: e?.name
+      });
+      // Ensure head_endorsements is always an array, even on error
+      if (!fullRequest.head_endorsements) {
+        fullRequest.head_endorsements = [];
+      }
     }
 
     // Step 7: Clean up and serialize response
     console.log(`[GET /api/requests/[id]] Step 7: Serializing response...`);
     try {
-      // Remove any functions or circular references
+      // Ensure all array fields are initialized
+      if (!Array.isArray(fullRequest.head_endorsements)) {
+        fullRequest.head_endorsements = [];
+      }
+      if (!Array.isArray(fullRequest.additional_requesters)) {
+        fullRequest.additional_requesters = [];
+      }
+      if (!Array.isArray(fullRequest.attachments)) {
+        fullRequest.attachments = [];
+      }
+      if (!Array.isArray(fullRequest.expense_breakdown)) {
+        fullRequest.expense_breakdown = fullRequest.expense_breakdown || null;
+      }
+      
+      // Use a safer serialization approach with better circular reference handling
+      const seen = new WeakSet();
       const cleanData = JSON.parse(JSON.stringify(fullRequest, (key, value) => {
         // Remove functions
         if (typeof value === 'function') {
@@ -673,6 +868,21 @@ export async function GET(
         // Remove undefined values
         if (value === undefined) {
           return null;
+        }
+        // Handle circular references
+        if (typeof value === 'object' && value !== null) {
+          if (seen.has(value)) {
+            return null; // Circular reference detected
+          }
+          seen.add(value);
+        }
+        // Handle BigInt (if any)
+        if (typeof value === 'bigint') {
+          return value.toString();
+        }
+        // Handle Date objects
+        if (value instanceof Date) {
+          return value.toISOString();
         }
         return value;
       }));
@@ -688,8 +898,24 @@ export async function GET(
       // Try to return at least basic request data
       try {
         console.log(`[GET /api/requests/${requestId}] Step 7: Attempting fallback serialization...`);
-        const basicData = JSON.parse(JSON.stringify(request, (key, value) => {
+        // Create a minimal safe object
+        const safeRequest: any = {
+          id: request.id,
+          request_number: request.request_number,
+          status: request.status,
+          requester_id: request.requester_id,
+          department_id: request.department_id,
+          total_budget: request.total_budget,
+          expense_breakdown: request.expense_breakdown,
+          head_endorsements: [],
+          additional_requesters: [],
+          attachments: [],
+        };
+        
+        const basicData = JSON.parse(JSON.stringify(safeRequest, (key, value) => {
           if (typeof value === 'function' || value === undefined) return null;
+          if (typeof value === 'bigint') return value.toString();
+          if (value instanceof Date) return value.toISOString();
           return value;
         }));
         console.log(`[GET /api/requests/${requestId}] Step 7: ✅ Fallback serialization successful`);
@@ -709,7 +935,13 @@ export async function GET(
     console.error("[GET /api/requests/[id]] Error code:", err?.code);
     console.error("[GET /api/requests/[id]] Error stack:", err?.stack);
     console.error("[GET /api/requests/[id]] Error cause:", err?.cause);
-    console.error("[GET /api/requests/[id]] Full error object:", JSON.stringify(err, Object.getOwnPropertyNames(err)));
+    
+    // Safely stringify error object
+    try {
+      console.error("[GET /api/requests/[id]] Full error object:", JSON.stringify(err, Object.getOwnPropertyNames(err)));
+    } catch (stringifyErr) {
+      console.error("[GET /api/requests/[id]] Could not stringify error object:", stringifyErr);
+    }
     
     // Try to return at least the basic request data if we can get it
     if (requestId) {

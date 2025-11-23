@@ -4,24 +4,18 @@
 import "@/app/globals.css";
 import "@/app/styles/admin/admin.css";
 
+import Link from "next/link";
+import Image from "next/image";
 import AdminLeftNav from "@/components/admin/nav/AdminLeftNav";
 import Breadcrumbs from "@/components/admin/nav/Breadcrumbs";
-import ProfileMenu from "@/components/admin/nav/ProfileMenu";
+import AdminProfileDropdown from "@/components/admin/nav/AdminProfileDropdown";
 import NotificationBell from "@/components/admin/nav/NotificationBell";
 import PageTitle from "@/components/common/PageTitle";
-import { Search, LogOut } from "lucide-react";
+import { Search } from "lucide-react";
 import ProfileContainer from "@/components/admin/profile/containers/ProfileContainer";
 import ChatbotWidget from "@/components/ai/ChatbotWidget";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const handleLogout = async () => {
-    try {
-      await fetch("/api/auth/logout", { method: "POST" });
-      window.location.href = "/login";
-    } catch (error) {
-      console.error("Logout failed:", error);
-    }
-  };
 
   return (
     <>
@@ -70,13 +64,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           
           {/* Left brand chip */}
           <div className="absolute left-6 hidden items-center gap-3 md:flex z-10">
-            <div className="h-9 w-9 rounded-xl flex items-center justify-center font-bold text-sm" style={{backgroundColor: '#5c000c'}}>
-              TL
-            </div>
-            <div>
-              <div className="text-sm font-bold tracking-wide">Travelink</div>
-              <div className="text-[10px] text-white font-medium opacity-80">Admin Portal</div>
-            </div>
+            <Link href="/admin" className="flex items-center gap-3 group">
+              <div className="relative h-10 w-10 rounded-lg bg-white p-1.5 shadow-md transition-transform group-hover:scale-105">
+                <Image
+                  src="/travelink.png"
+                  alt="Travelink Logo"
+                  width={32}
+                  height={32}
+                  className="h-full w-full object-contain"
+                  priority
+                />
+              </div>
+              <div className="text-xl font-bold tracking-tight">Travelink</div>
+            </Link>
           </div>
 
           {/* Centered search */}
@@ -102,17 +102,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           {/* Right actions */}
           <div className="absolute right-6 flex items-center gap-3 z-10" suppressHydrationWarning>
             <NotificationBell variant="onMaroon" />
-            <ProfileMenu />
-            <button
-              onClick={handleLogout}
-              className="inline-flex h-9 items-center gap-2 rounded-full border border-white/60 bg-red-600 px-3 text-sm text-white shadow-inner transition hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500/70"
-              aria-label="Logout"
-              title="Logout"
-              suppressHydrationWarning
-            >
-              <LogOut className="h-4 w-4" />
-              <span className="hidden sm:inline">Logout</span>
-            </button>
+            <AdminProfileDropdown />
           </div>
         </div>
 

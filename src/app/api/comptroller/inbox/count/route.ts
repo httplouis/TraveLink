@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 
 /**
  * GET /api/comptroller/inbox/count
  * Lightweight endpoint to get the count of pending requests for Comptroller
  * Includes workflow_metadata filtering for specific comptroller assignments
+ * Also shows to Financial Analysts in the same department when a Comptroller is assigned
  */
 export async function GET() {
   try {
-    const supabase = await createSupabaseServerClient(true); // Use service role
+    const supabase = await createSupabaseServerClient(false); // Use authenticated client for auth
     
     // Get current user profile for filtering
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -16,9 +18,21 @@ export async function GET() {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const { data: profile } = await supabase
+    // Use service role client for queries
+    const supabaseServiceRole = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    );
+
+    const { data: profile } = await supabaseServiceRole
       .from("users")
-      .select("id, is_comptroller")
+      .select("id, is_comptroller, department_id, position_title")
       .eq("auth_user_id", user.id)
       .single();
 
@@ -27,7 +41,7 @@ export async function GET() {
     }
 
     // Fetch all pending comptroller requests
-    const { data: allRequests, error } = await supabase
+    const { data: allRequests, error } = await supabaseServiceRole
       .from("requests")
       .select("id, status, workflow_metadata")
       .eq("status", "pending_comptroller")
@@ -38,8 +52,13 @@ export async function GET() {
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
 
+    const profileIdStr = String(profile.id).trim();
+    const currentUserDeptId = profile.department_id;
+    const isFinancialAnalyst = profile.position_title?.toLowerCase().includes("financial analyst");
+
     // Filter by workflow_metadata if specific comptroller is assigned
-    const filteredRequests = (allRequests || []).filter((req: any) => {
+    // Also include Financial Analysts in the same department
+    const filteredPromises = (allRequests || []).map(async (req: any) => {
       const workflowMetadata = req.workflow_metadata || {};
       let nextComptrollerId = null;
       let nextApproverId = null;
@@ -62,16 +81,40 @@ export async function GET() {
 
       const nextComptrollerIdStr = nextComptrollerId ? String(nextComptrollerId).trim() : null;
       const nextApproverIdStr = nextApproverId ? String(nextApproverId).trim() : null;
-      const profileIdStr = String(profile.id).trim();
       
       const isAssignedViaUniversalId = nextApproverIdStr === profileIdStr && nextApproverRole === "comptroller";
 
+      // If assigned to specific comptroller
       if (nextComptrollerIdStr || isAssignedViaUniversalId) {
-        return (nextComptrollerIdStr === profileIdStr) || isAssignedViaUniversalId;
+        // Show to the assigned comptroller
+        if (nextComptrollerIdStr === profileIdStr || isAssignedViaUniversalId) {
+          return true;
+        }
+        
+        // Also show to Financial Analysts in the same department as the assigned comptroller
+        if (currentUserDeptId && isFinancialAnalyst) {
+          const assignedId = nextComptrollerIdStr || nextApproverIdStr;
+          if (assignedId) {
+            const { data: assignedComptroller } = await supabaseServiceRole
+              .from("users")
+              .select("department_id")
+              .eq("id", assignedId)
+              .single();
+            
+            if (assignedComptroller?.department_id === currentUserDeptId) {
+              return true;
+            }
+          }
+        }
+        
+        return false;
       }
 
       return true; // No specific assignment - show to all comptrollers
     });
+
+    const filterResults = await Promise.all(filteredPromises);
+    const filteredRequests = (allRequests || []).filter((_, index) => filterResults[index]);
 
     return NextResponse.json({ ok: true, count: filteredRequests.length });
   } catch (err) {

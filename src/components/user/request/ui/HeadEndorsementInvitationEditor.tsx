@@ -449,7 +449,7 @@ export default function HeadEndorsementInvitationEditor({
                 {!head.invitationId && head.head_email && !disabled && (
                   <button
                     onClick={() => sendInvitation(head.id)}
-                    disabled={!requestId || sending === head.id || cooldownRemaining > 0}
+                    disabled={sending === head.id || cooldownRemaining > 0}
                     className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     title={cooldownRemaining > 0 ? `Please wait ${Math.ceil(cooldownRemaining / 1000)}s before sending again` : undefined}
                   >
@@ -490,31 +490,29 @@ export default function HeadEndorsementInvitationEditor({
               {pendingInvitations.length} head endorsement invitation{pendingInvitations.length > 1 ? 's' : ''} not yet sent
             </p>
           </div>
-          {requestId && (
-            <button
-              onClick={sendAllInvitations}
-              disabled={sendingAll || pendingInvitations.filter(h => h.head_email).length === 0 || cooldownRemaining > 0}
-              className="flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              title={cooldownRemaining > 0 ? `Please wait ${Math.ceil(cooldownRemaining / 1000)}s before sending again` : undefined}
-            >
-              {sendingAll ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  Sending...
-                </>
-              ) : cooldownRemaining > 0 ? (
-                <>
-                  <Clock className="w-4 h-4" />
-                  Wait {Math.ceil(cooldownRemaining / 1000)}s
-                </>
-              ) : (
-                <>
-                  <Send className="w-4 h-4" />
-                  Send All Invitations ({pendingInvitations.filter(h => h.head_email).length})
-                </>
-              )}
-            </button>
-          )}
+          <button
+            onClick={sendAllInvitations}
+            disabled={sendingAll || pendingInvitations.filter(h => h.head_email).length === 0 || cooldownRemaining > 0}
+            className="flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            title={cooldownRemaining > 0 ? `Please wait ${Math.ceil(cooldownRemaining / 1000)}s before sending again` : undefined}
+          >
+            {sendingAll ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                Sending...
+              </>
+            ) : cooldownRemaining > 0 ? (
+              <>
+                <Clock className="w-4 h-4" />
+                Wait {Math.ceil(cooldownRemaining / 1000)}s
+              </>
+            ) : (
+              <>
+                <Send className="w-4 h-4" />
+                Send All Invitations ({pendingInvitations.filter(h => h.head_email).length})
+              </>
+            )}
+          </button>
         </div>
       )}
 

@@ -72,9 +72,20 @@ export async function GET(request: NextRequest) {
       });
       
       // IMPORTANT: Show ALL pending_comptroller requests to ALL comptrollers
-      // Only filter if a specific comptroller is assigned (which should be rare)
+      // If a specific comptroller is assigned, also show to Financial Analysts in the same department
       if (comptrollerId) {
-        data = allRequests.filter((req: any) => {
+        // Fetch current user's department for department-based filtering
+        const { data: currentUser } = await supabaseServiceRole
+          .from("users")
+          .select("id, department_id, position_title")
+          .eq("id", comptrollerId)
+          .single();
+
+        const currentUserDeptId = currentUser?.department_id;
+        const isFinancialAnalyst = currentUser?.position_title?.toLowerCase().includes("financial analyst");
+
+        // Use map + Promise.all pattern for async filtering
+        const filteredPromises = allRequests.map(async (req: any) => {
           const workflowMetadata = req.workflow_metadata || {};
           let nextComptrollerId = null;
           let nextApproverId = null;
@@ -99,25 +110,64 @@ export async function GET(request: NextRequest) {
           const nextApproverIdStr = nextApproverId ? String(nextApproverId).trim() : null;
           const comptrollerIdStr = String(comptrollerId).trim();
           
-          // If request is explicitly assigned to a specific comptroller, only show to that comptroller
+          // If request is explicitly assigned to a specific comptroller
           if (nextComptrollerIdStr) {
-            return nextComptrollerIdStr === comptrollerIdStr;
+            // Show to the assigned comptroller
+            if (nextComptrollerIdStr === comptrollerIdStr) {
+              return true;
+            }
+            
+            // Also show to Financial Analysts in the same department as the assigned comptroller
+            if (currentUserDeptId && isFinancialAnalyst) {
+              const { data: assignedComptroller } = await supabaseServiceRole
+                .from("users")
+                .select("department_id")
+                .eq("id", nextComptrollerIdStr)
+                .single();
+              
+              if (assignedComptroller?.department_id === currentUserDeptId) {
+                return true;
+              }
+            }
+            
+            return false;
           }
           
-          // If next_approver_id is set and role is comptroller, check if it matches
+          // If next_approver_id is set and role is comptroller
           if (nextApproverIdStr && nextApproverRole === "comptroller") {
-            return nextApproverIdStr === comptrollerIdStr;
+            // Show to the assigned approver
+            if (nextApproverIdStr === comptrollerIdStr) {
+              return true;
+            }
+            
+            // Also show to Financial Analysts in the same department as the assigned approver
+            if (currentUserDeptId && isFinancialAnalyst) {
+              const { data: assignedApprover } = await supabaseServiceRole
+                .from("users")
+                .select("department_id")
+                .eq("id", nextApproverIdStr)
+                .single();
+              
+              if (assignedApprover?.department_id === currentUserDeptId) {
+                return true;
+              }
+            }
+            
+            return false;
           }
 
           // No specific assignment - show to ALL comptrollers (default behavior)
           return true;
         });
+        
+        const filterResults = await Promise.all(filteredPromises);
+        data = allRequests?.filter((_, index) => filterResults[index]) || [];
       }
       // If no comptrollerId provided, show all pending_comptroller requests (data = allRequests)
       
       console.log("[API /requests/list] Filtered pending_comptroller requests:", {
-        filteredCount: data.length,
-        totalCount: allRequests.length
+        filteredCount: data?.length || 0,
+        totalCount: allRequests?.length || 0
       });
     }
 

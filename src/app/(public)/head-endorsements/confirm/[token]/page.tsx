@@ -5,10 +5,12 @@ import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
 import { CheckCircle2, XCircle, Loader2, AlertCircle, Mail, Calendar, MapPin, Building2, PenTool, Users, UserCheck, DollarSign, FileText } from "lucide-react";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
+import { useToast } from "@/components/common/ui/Toast";
 
 export default function HeadEndorsementConfirmationPage() {
   const params = useParams();
   const router = useRouter();
+  const toast = useToast();
   
   let token = (params?.token as string) || "";
   
@@ -198,11 +200,26 @@ export default function HeadEndorsementConfirmationPage() {
 
       console.log("[head-endorsement-confirm] ✅ Confirmation successful:", data);
       
+      // Show success toast
+      if (finalAction === "confirm") {
+        toast.success(
+          "Endorsement Confirmed",
+          "Your endorsement has been successfully recorded. The requester will be notified."
+        );
+      } else {
+        toast.success(
+          "Endorsement Declined",
+          "The requester has been notified of your decision."
+        );
+      }
+      
       setTimeout(() => {
         router.push('/head-endorsements/confirm/success');
       }, 500);
     } catch (err: any) {
-      setError(err.message || "Failed to submit response");
+      const errorMessage = err.message || "Failed to submit response";
+      setError(errorMessage);
+      toast.error("Submission Failed", errorMessage);
       setSubmitting(false);
     }
   };
@@ -508,7 +525,7 @@ export default function HeadEndorsementConfirmationPage() {
                 )}
                 {signature && (
                   <p className="text-xs text-green-600 mt-1">
-                    ✓ Signature captured ({Math.round(signature.length / 1024)}KB)
+                    ✓ Signature captured
                   </p>
                 )}
               </div>

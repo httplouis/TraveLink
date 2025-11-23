@@ -15,6 +15,7 @@ import {
   Inbox,
   LogOut,
   Settings,
+  History,
 } from "lucide-react";
 import * as React from "react";
 import { supabase } from "@/lib/supabaseClient";
@@ -54,6 +55,7 @@ const NAV: Item[] = [
       { href: "/user/request", label: "New request", Icon: PlusSquare, exact: true },
       { href: "/user/drafts", label: "Drafts", Icon: FileClock },
       { href: "/user/submissions", label: "Submissions", Icon: ListChecks },
+      { href: "/user/request/history", label: "History", Icon: History },
     ],
   },
 

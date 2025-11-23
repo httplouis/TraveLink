@@ -2121,18 +2121,22 @@ export default function RequestDetailsModalUI({
             setSignOpen(true); // Return to signature modal
           }}
           onSelect={(approverId, approverRole) => {
-            setSelectedApproverId(approverId);
-            setSelectedApproverRole(approverRole);
+            // Handle single or multiple approvers - take first if array
+            const singleApproverId = Array.isArray(approverId) ? approverId[0] || null : approverId;
+            const singleApproverRole = Array.isArray(approverRole) ? (approverRole[0] || '') : approverRole;
+            setSelectedApproverId(singleApproverId);
+            setSelectedApproverRole(singleApproverRole);
             setShowApproverSelection(false);
             proceedWithApproval();
           }}
           title="Select Next Approver"
-          description={`Request ${row?.request_number || row?.id} - Choose where to send this request after approval`}
+          description={`Request ${(row as any)?.request_number || row?.id} - Choose where to send this request after approval`}
           options={approverOptions}
           currentRole="admin"
           allowReturnToRequester={false}
           defaultApproverId={defaultApproverId}
           defaultApproverName={defaultApproverName}
+          suggestionReason={suggestionReason}
           allowAllUsers={true}
           fetchAllUsers={async () => {
             try {

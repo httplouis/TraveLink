@@ -45,7 +45,7 @@ export async function GET() {
       .from("requests")
       .select(`
         *,
-        requester:users!requester_id(id, name, email),
+        requester:users!requester_id(id, name, email, profile_picture, avatar_url, position_title),
         department:departments!department_id(id, name, code)
       `)
       .eq("department_id", profile.department_id)

@@ -19,7 +19,7 @@ const sizeClasses = {
   sm: 'max-w-md',
   md: 'max-w-2xl',
   lg: 'max-w-4xl',
-  xl: 'max-w-6xl',
+  xl: 'max-w-7xl',
   full: 'max-w-full mx-4'
 };
 
@@ -87,7 +87,7 @@ export default function WowModal({
   return (
     <AnimatePresence mode="wait">
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-24">
           {/* Backdrop */}
           <motion.div
             variants={overlayVariants}
@@ -106,7 +106,8 @@ export default function WowModal({
             animate="visible"
             exit="exit"
             transition={springConfig}
-            className={`relative bg-white rounded-2xl shadow-2xl border border-gray-200 max-h-[85vh] overflow-hidden ${sizeClasses[size]} ${className}`}
+            className={`relative bg-white rounded-2xl shadow-2xl border border-gray-200 ${size === 'full' ? 'max-h-[95vh] w-[95vw]' : size === 'xl' ? 'max-h-[90vh]' : 'max-h-[85vh]'} overflow-hidden ${sizeClasses[size]} ${className}`}
+            style={{ marginTop: '2rem' }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -129,8 +130,8 @@ export default function WowModal({
             )}
 
             {/* Content */}
-            <div className="overflow-y-auto max-h-[calc(85vh-80px)] bg-gray-50">
-              <div className="bg-white">
+            <div className={`overflow-y-auto ${size === 'full' ? 'max-h-[calc(95vh-80px)]' : size === 'xl' ? 'max-h-[calc(90vh-80px)]' : 'max-h-[calc(85vh-80px)]'} bg-gray-50`}>
+              <div className="bg-white pt-6">
                 {children}
               </div>
             </div>

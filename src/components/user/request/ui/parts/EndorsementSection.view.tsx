@@ -80,9 +80,16 @@ export default function EndorsementSection({
   }, []);
 
   // Determine if save button should be hidden
-  // Hide if: using saved signature OR initial signature from props
-  // Show if: user drew or uploaded new signature (source is 'drawn' or 'uploaded')
-  const shouldHideSaveButton = signatureSourceRef.current === 'saved' || signatureSourceRef.current === 'initial' || signatureSourceRef.current === null;
+  // Hide if:
+  //   - Using saved signature (from button click or "Use Saved")
+  //   - Initial signature from props
+  //   - No signature at all
+  // Show if: user drew or uploaded new signature (source is 'drawn' or 'uploaded') AND signature exists
+  const shouldHideSaveButton = 
+    !signature || // No signature - hide button
+    signatureSourceRef.current === 'saved' || // Saved via button click - hide button
+    signatureSourceRef.current === 'initial' || // Initial from props - hide button
+    (signature && signatureSourceRef.current !== 'drawn' && signatureSourceRef.current !== 'uploaded'); // Signature exists but not from drawing/uploading - hide button
 
   return (
     <div className="mt-8 space-y-5 rounded-xl border-2 border-gray-200 bg-gradient-to-br from-white via-slate-50/30 to-white p-6 shadow-lg">

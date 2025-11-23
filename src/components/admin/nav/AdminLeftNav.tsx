@@ -214,17 +214,6 @@ export default function AdminLeftNav() {
             <CollapseToggle collapsed={collapsed} onClick={() => setCollapsed((v) => !v)} />
           </div>
 
-          {!collapsed && (
-            <div className="mt-3 flex items-center gap-2.5 px-1">
-              <div className="h-8 w-8 rounded-md flex items-center justify-center font-bold text-white text-[11px]" style={{backgroundColor: DARKER_MAROON, fontFamily: 'Inter, system-ui, -apple-system, sans-serif'}}>
-                TL
-              </div>
-              <div>
-                <div className="text-[11px] font-bold text-white tracking-wide" style={{fontFamily: 'Inter, system-ui, -apple-system, sans-serif', letterSpacing: '0.03em'}}>TRAVILINK</div>
-                <div className="text-[9px] text-white font-medium opacity-80" style={{fontFamily: 'Inter, system-ui, -apple-system, sans-serif'}}>Admin Portal</div>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Menu */}

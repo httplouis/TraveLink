@@ -46,7 +46,7 @@ export default function AccessibilitySettingsModal({ isOpen, onClose }: Accessib
           {/* Mode Selection */}
           <SettingSection
             title="Display Mode"
-            description="Choose between Basic mode (larger fonts, more spacing) for ages 50+ or Advanced mode (compact, aesthetic) for regular users"
+            description="Choose between Basic mode with larger fonts and increased spacing, or Advanced mode with standard sizing for optimal screen space utilization"
             icon={<Eye className="h-5 w-5" />}
             isOpen={activeSection === "mode"}
             onToggle={() => toggleSection("mode")}
@@ -55,14 +55,14 @@ export default function AccessibilitySettingsModal({ isOpen, onClose }: Accessib
               <ModeOption
                 value="basic"
                 label="Basic Mode"
-                description="Larger fonts, increased spacing, optimized for users 50+"
+                description="Enhanced readability with larger fonts and increased spacing for improved visibility"
                 selected={settings.mode === "basic"}
                 onSelect={() => updateSettings({ mode: "basic" })}
               />
               <ModeOption
                 value="advanced"
                 label="Advanced Mode"
-                description="Compact design with smaller fonts, aesthetic look for regular users"
+                description="Standard font sizing and compact layout for efficient screen space usage"
                 selected={settings.mode === "advanced"}
                 onSelect={() => updateSettings({ mode: "advanced" })}
               />

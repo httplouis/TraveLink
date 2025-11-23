@@ -116,6 +116,7 @@ export interface RequestData {
     name: string;
     code?: string;
   };
+  department_id?: string; // For compatibility with API responses
   
   participants?: Array<{
     id: string;
@@ -123,6 +124,33 @@ export interface RequestData {
     profile_picture?: string;
     department?: string;
     position?: string;
+  }>;
+  
+  // Additional requesters from other departments (from requester_invitations)
+  additional_requesters?: Array<{
+    id: string;
+    request_id: string;
+    user_id?: string | null;
+    email: string;
+    name: string;
+    department?: string;
+    department_id?: string;
+    status: 'pending' | 'confirmed' | 'declined';
+    confirmed_at?: string | null;
+    declined_at?: string | null;
+    signature?: string | null;
+    user?: {
+      id: string;
+      name: string;
+      email: string;
+      profile_picture?: string;
+      position_title?: string;
+    };
+    department_info?: {
+      id: string;
+      name: string;
+      code?: string;
+    };
   }>;
   
   signatures: any[]; // Will be typed properly based on SignatureStageRail
@@ -278,12 +306,24 @@ export default function RequestDetailsView({
   const [uploadingAttachments, setUploadingAttachments] = useState(false);
   const [currentAttachments, setCurrentAttachments] = useState<any[]>(request.attachments || []);
 
-  // Fetch confirmed requesters
+  // Fetch confirmed requesters - but also check if they're already in the request object
   useEffect(() => {
     if (request?.id) {
-      fetchConfirmedRequesters();
+      // If additional_requesters is already in the request object, use it
+      const req = request as any;
+      if (req.additional_requesters && Array.isArray(req.additional_requesters)) {
+        const confirmed = req.additional_requesters.filter((r: any) => r.status === 'confirmed');
+        console.log('[RequestDetailsView] Using additional_requesters from request object:', {
+          total: req.additional_requesters.length,
+          confirmed: confirmed.length
+        });
+        setConfirmedRequesters(confirmed);
+      } else {
+        // Otherwise, fetch from API
+        fetchConfirmedRequesters();
+      }
     }
-  }, [request?.id]);
+  }, [request?.id, (request as any)?.additional_requesters]);
 
   // Fetch routing person (who the request was sent to)
   useEffect(() => {
@@ -919,11 +959,53 @@ export default function RequestDetailsView({
                     }
                     return null;
                   })()}
-                  {request.head_endorsements && Array.isArray(request.head_endorsements) && request.head_endorsements.length > 0 && (
-                    <div className="bg-white rounded-lg border border-gray-200 p-6">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Department Head Endorsements</h3>
-                      <div className="space-y-4">
-                        {request.head_endorsements.map((endorsement: any, index: number) => {
+                  {request.head_endorsements && Array.isArray(request.head_endorsements) && request.head_endorsements.length > 0 && (() => {
+                    // Filter out the main requester's department head endorsement (already shown above in legacy section)
+                    // This prevents duplicate display of Belson when he's both requester and head
+                    // Check by both department AND requester email/user_id to be more precise
+                    const mainDeptId = request.department?.id || request.department_id;
+                    const requesterEmail = request.requester?.email?.toLowerCase();
+                    const requesterId = request.requester?.id;
+                    
+                    const additionalHeadEndorsements = request.head_endorsements.filter((endorsement: any) => {
+                      const endorsementDeptId = endorsement.department_id || endorsement.department?.id;
+                      const endorsementEmail = endorsement.head_email?.toLowerCase();
+                      const endorsementUserId = endorsement.head_user_id;
+                      
+                      // Exclude if the head is the main requester (regardless of department)
+                      // This prevents showing Belson's own endorsement when he's the requester
+                      const isMainRequester = (
+                        (requesterEmail && endorsementEmail && requesterEmail === endorsementEmail) ||
+                        (requesterId && endorsementUserId && requesterId === endorsementUserId) ||
+                        (requesterEmail && endorsement.head?.email?.toLowerCase() === requesterEmail) ||
+                        (requesterId && endorsement.head?.id === requesterId)
+                      );
+                      
+                      // Exclude if same department AND same person as requester
+                      // OR if it's the same person regardless of department (to prevent triple display)
+                      if (isMainRequester) {
+                        console.log('[RequestDetailsView] 🚫 Filtering out main requester from head endorsements:', {
+                          headName: endorsement.head_name,
+                          headEmail: endorsementEmail,
+                          requesterEmail,
+                          isMainRequester
+                        });
+                        return false;
+                      }
+                      
+                      return true;
+                    });
+
+                    // Only show if there are additional endorsements (other departments)
+                    if (additionalHeadEndorsements.length === 0) {
+                      return null;
+                    }
+
+                    return (
+                      <div className="bg-white rounded-lg border border-gray-200 p-6">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-4">Additional Department Head Endorsements</h3>
+                        <div className="space-y-4">
+                          {additionalHeadEndorsements.map((endorsement: any, index: number) => {
                           // Debug logging for each endorsement
                           console.log(`[RequestDetailsView] Endorsement ${index}:`, {
                             id: endorsement.id,
@@ -978,11 +1060,11 @@ export default function RequestDetailsView({
                                     <div className="mt-2 space-y-2">
                                       <p className="text-xs text-green-700 flex items-center gap-1">
                                         <span className="font-semibold">✓ Confirmed</span>
-                                        <span>on {formatDate(endorsement.confirmed_at)}</span>
+                                        <span>on {formatLongDateTime(endorsement.confirmed_at)}</span>
                                       </p>
                                       {endorsement.endorsement_date && (
                                         <p className="text-xs text-gray-600">
-                                          Endorsement Date: {formatDate(endorsement.endorsement_date)}
+                                          Endorsement Date: {formatLongDateTime(endorsement.endorsement_date)}
                                         </p>
                                       )}
                                     </div>
@@ -995,7 +1077,7 @@ export default function RequestDetailsView({
                                     <p className="text-xs text-red-700 mt-2 flex items-center gap-1">
                                       <span>✗ Declined</span>
                                       {endorsement.declined_at && (
-                                        <span>on {formatDate(endorsement.declined_at)}</span>
+                                        <span>on {formatLongDateTime(endorsement.declined_at)}</span>
                                       )}
                                     </p>
                                   ) : null}
@@ -1057,9 +1139,10 @@ export default function RequestDetailsView({
                           </div>
                           );
                         })}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   {/* Budget Breakdown - Show expense breakdown if available */}
                   {request.expense_breakdown && Array.isArray(request.expense_breakdown) && request.expense_breakdown.length > 0 && (
@@ -1884,28 +1967,51 @@ export default function RequestDetailsView({
                     />
                   </div>
 
-                  {/* Additional Timeline Events (if available) */}
+                  {/* Activity History Timeline (for approved/completed requests) */}
                   {request.timeline && request.timeline.length > 0 && (
                     <div className="bg-white rounded-xl p-6 border border-gray-200">
                       <h4 className="text-lg font-semibold text-gray-900 mb-4">Activity History</h4>
                       <div className="space-y-4">
                         {request.timeline.map((event: any, index: number) => (
                           <motion.div
-                            key={index}
+                            key={event.id || index}
                             initial={{ opacity: 0, x: -20 }}
                             animate={{ opacity: 1, x: 0 }}
                             transition={{ delay: index * 0.1 }}
                             className="flex gap-4 pb-4 border-b border-gray-100 last:border-0 last:pb-0"
                           >
-                            <div className="flex-shrink-0 w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                              <Clock className="w-5 h-5 text-blue-600" />
+                            <div className="flex-shrink-0">
+                              {event.actor?.profile_picture ? (
+                                <ProfilePicture
+                                  src={event.actor.profile_picture}
+                                  name={event.actor.name || 'Unknown'}
+                                  size="sm"
+                                />
+                              ) : (
+                                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                                  <Clock className="w-5 h-5 text-blue-600" />
+                                </div>
+                              )}
                             </div>
-                            <div className="flex-1">
+                            <div className="flex-1 min-w-0">
                               <p className="font-medium text-gray-900">{event.title || event.action}</p>
-                              <p className="text-sm text-gray-600 mt-1">{event.description || event.comments}</p>
-                              {event.created_at && (
+                              {event.actor && (
+                                <p className="text-sm text-gray-600 mt-1">
+                                  by <span className="font-medium">{event.actor.name}</span>
+                                  {event.actor.position && (
+                                    <span className="text-gray-500"> • {event.actor.position}</span>
+                                  )}
+                                  {event.actor.department && (
+                                    <span className="text-gray-500"> • {event.actor.department}</span>
+                                  )}
+                                </p>
+                              )}
+                              {event.description && (
+                                <p className="text-sm text-gray-600 mt-1">{event.description}</p>
+                              )}
+                              {(event.timestamp || event.created_at) && (
                                 <p className="text-xs text-gray-500 mt-1">
-                                  {formatLongDateTime(event.created_at)}
+                                  {formatLongDateTime(event.timestamp || event.created_at)}
                                 </p>
                               )}
                             </div>
@@ -1951,11 +2057,24 @@ export default function RequestDetailsView({
                       {/* Profile Picture */}
                       <div className="flex-shrink-0 relative z-10">
                         <div className="p-1 bg-white rounded-full shadow-md">
-                          <ProfilePicture
-                            src={request.requester?.profile_picture || null}
-                            name={request.requester?.name || 'Unknown'}
-                            size="lg"
-                          />
+                          {(() => {
+                            const profilePic = request.requester?.profile_picture || request.requester?.avatar_url || null;
+                            console.log('[RequestDetailsView] 🖼️ Main requester profile picture check:', {
+                              name: request.requester?.name,
+                              id: request.requester?.id,
+                              profile_picture: request.requester?.profile_picture,
+                              avatar_url: request.requester?.avatar_url,
+                              finalSrc: profilePic,
+                              hasRequester: !!request.requester
+                            });
+                            return (
+                              <ProfilePicture
+                                src={profilePic}
+                                name={request.requester?.name || 'Unknown'}
+                                size="lg"
+                              />
+                            );
+                          })()}
                         </div>
                       </div>
                       
@@ -1966,11 +2085,21 @@ export default function RequestDetailsView({
                           <h4 className="text-lg font-bold text-gray-900 leading-tight break-words">
                             {request.requester?.name || 'Unknown'}
                           </h4>
-                          {request.requester?.position && (
-                            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 border border-blue-200 w-fit">
-                              {request.requester.position}
-                            </span>
-                          )}
+                          {(() => {
+                            // Determine role display: "Head" if is_head, "Faculty" if faculty/staff, otherwise use position
+                            const isHead = request.requesterIsHead || request.requester?.position?.toLowerCase().includes('head');
+                            const displayRole = isHead 
+                              ? 'Head' 
+                              : (request.requester?.position && !request.requester.position.toLowerCase().includes('student'))
+                                ? request.requester.position
+                                : 'Faculty';
+                            
+                            return (
+                              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 border border-blue-200 w-fit">
+                                {displayRole}
+                              </span>
+                            );
+                          })()}
                         </div>
                         
                         {/* Email */}
@@ -2029,30 +2158,40 @@ export default function RequestDetailsView({
                 (() => {
                   // Filter out main requester completely - they're already shown in the main requester card above
                   const mainRequesterEmail = request.requester?.email?.toLowerCase()?.trim();
-                  const mainRequesterId = String(request.requester?.id || '');
+                  // Only use ID if it's a valid UUID, not a fallback string like 'current-user'
+                  const mainRequesterId = request.requester?.id && request.requester.id !== 'current-user' 
+                    ? String(request.requester.id) 
+                    : '';
+                  const mainRequesterName = String(request.requester?.name || '').toLowerCase().trim();
                   
                   console.log('[RequestDetailsView] 🔍 Filtering confirmed requesters:', {
                     totalBeforeFilter: confirmedRequesters.length,
                     mainRequesterEmail,
                     mainRequesterId,
+                    mainRequesterName,
                     allRequesters: confirmedRequesters.map((r: any) => ({
                       name: r.name,
                       email: r.email,
                       user_id: String(r.user_id || ''),
-                      invitation_id: r.id
+                      invitation_id: r.id,
+                      hasProfilePicture: !!r.profile_picture
                     }))
                   });
                   
-                  const filtered = confirmedRequesters.filter((requester: any) => {
+                  // First, filter out main requester by any matching criteria
+                  let filtered = confirmedRequesters.filter((requester: any) => {
                     const requesterEmail = String(requester.email || '').toLowerCase().trim();
                     const requesterUserId = String(requester.user_id || '');
+                    const requesterName = String(requester.name || '').toLowerCase().trim();
                     
                     // Check if this is the main requester by comparing:
                     // 1. Email (case-insensitive, trimmed)
                     // 2. user_id matches requester_id
+                    // 3. Name matches (to catch duplicates with same name)
                     const emailMatches = mainRequesterEmail && requesterEmail && requesterEmail === mainRequesterEmail;
                     const userIdMatches = mainRequesterId && requesterUserId && requesterUserId === mainRequesterId;
-                    const isMainRequester = emailMatches || userIdMatches;
+                    const nameMatches = mainRequesterName && requesterName && requesterName === mainRequesterName;
+                    const isMainRequester = emailMatches || userIdMatches || nameMatches;
                     
                     if (isMainRequester) {
                       console.log('[RequestDetailsView] 🚫 FILTERING OUT - Main requester duplicate:', {
@@ -2061,19 +2200,55 @@ export default function RequestDetailsView({
                         requesterUserId,
                         mainRequesterId,
                         emailMatches,
-                        userIdMatches
+                        userIdMatches,
+                        nameMatches
                       });
                       return false;
                     }
                     
-                    console.log('[RequestDetailsView] ✅ KEEPING - Additional requester:', {
-                      name: requester.name,
-                      email: requester.email,
-                      requesterUserId,
-                      mainRequesterId
-                    });
                     return true;
                   });
+                  
+                  // Second, if there are still duplicates by name, keep only the one with profile picture
+                  // Group by name and keep only the one with profile picture
+                  const nameGroups = new Map<string, any[]>();
+                  filtered.forEach((requester: any) => {
+                    const requesterName = String(requester.name || '').toLowerCase().trim();
+                    if (requesterName) {
+                      if (!nameGroups.has(requesterName)) {
+                        nameGroups.set(requesterName, []);
+                      }
+                      nameGroups.get(requesterName)!.push(requester);
+                    }
+                  });
+                  
+                  // For each name group, keep only the one with profile picture (or first one if none have profile picture)
+                  const finalFiltered: any[] = [];
+                  nameGroups.forEach((group, name) => {
+                    if (group.length === 1) {
+                      finalFiltered.push(group[0]);
+                    } else {
+                      // Multiple entries with same name - keep only the one with profile picture
+                      const withProfilePicture = group.find((r: any) => r.profile_picture);
+                      if (withProfilePicture) {
+                        console.log('[RequestDetailsView] ✅ KEEPING - Duplicate name, keeping one with profile picture:', {
+                          name: withProfilePicture.name,
+                          hasProfilePicture: !!withProfilePicture.profile_picture,
+                          filteredOut: group.length - 1
+                        });
+                        finalFiltered.push(withProfilePicture);
+                      } else {
+                        // None have profile picture, keep first one
+                        console.log('[RequestDetailsView] ⚠️ KEEPING - Duplicate name, none have profile picture, keeping first:', {
+                          name: group[0].name,
+                          total: group.length
+                        });
+                        finalFiltered.push(group[0]);
+                      }
+                    }
+                  });
+                  
+                  filtered = finalFiltered;
                   
                   console.log('[RequestDetailsView] 📊 Filter results:', {
                     before: confirmedRequesters.length,
@@ -2123,11 +2298,21 @@ export default function RequestDetailsView({
                             {requester.name || requester.email || 'Unknown Requester'}
                           </h4>
                           <div className="flex flex-wrap items-center gap-2">
-                            {requester.position_title && (
-                              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-800 border border-gray-200">
-                                {requester.position_title}
-                              </span>
-                            )}
+                            {(() => {
+                              // Determine role display: "Head" if is_head, "Faculty" if faculty/staff, otherwise use position_title
+                              const isHead = requester.is_head === true || requester.role === 'head';
+                              const displayRole = isHead 
+                                ? 'Head' 
+                                : (requester.role === 'faculty' || requester.role === 'staff' || !requester.role || requester.email?.includes('@student.mseuf.edu.ph'))
+                                  ? 'Faculty'
+                                  : requester.position_title || null;
+                              
+                              return displayRole ? (
+                                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-800 border border-gray-200">
+                                  {displayRole}
+                                </span>
+                              ) : null;
+                            })()}
                             <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-green-100 border border-green-300 rounded-full shadow-sm">
                               <CheckCircle2 className="w-4 h-4 text-green-600" />
                               <span className="text-xs font-bold text-green-700">Confirmed</span>

@@ -91,13 +91,34 @@ export function AccessibilitySettingsProvider({ children }: { children: ReactNod
     // Apply font mode
     if (settings.fontMode === "dyslexia") {
       root.classList.add("font-dyslexia");
-      // Load OpenDyslexic font from CDN
+      // Load OpenDyslexic font from CDN (multiple methods for reliability)
       if (!document.getElementById("opendyslexic-font")) {
+        // Method 1: Load CSS from CDN
         const link = document.createElement("link");
         link.id = "opendyslexic-font";
         link.rel = "stylesheet";
         link.href = "https://cdn.jsdelivr.net/npm/opendyslexic@1.0.0/opendyslexic.css";
+        link.crossOrigin = "anonymous";
         document.head.appendChild(link);
+        
+        // Method 2: Also preload the font files for better performance and reliability
+        const preloadRegular = document.createElement("link");
+        preloadRegular.rel = "preload";
+        preloadRegular.as = "font";
+        preloadRegular.type = "font/woff2";
+        preloadRegular.href = "https://cdn.jsdelivr.net/npm/opendyslexic@1.0.0/OpenDyslexic-Regular.woff2";
+        preloadRegular.crossOrigin = "anonymous";
+        document.head.appendChild(preloadRegular);
+        
+        const preloadBold = document.createElement("link");
+        preloadBold.rel = "preload";
+        preloadBold.as = "font";
+        preloadBold.type = "font/woff2";
+        preloadBold.href = "https://cdn.jsdelivr.net/npm/opendyslexic@1.0.0/OpenDyslexic-Bold.woff2";
+        preloadBold.crossOrigin = "anonymous";
+        document.head.appendChild(preloadBold);
+        
+        console.log("[AccessibilitySettings] OpenDyslexic font loading initiated");
       }
     } else {
       root.classList.remove("font-dyslexia");

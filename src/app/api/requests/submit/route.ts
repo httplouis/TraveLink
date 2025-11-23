@@ -1209,9 +1209,11 @@ export async function POST(req: Request) {
       // Apply dual-signature logic for self-requesting (head/comptroller/hr/exec)
       // If requesting person is head, auto-approve head stage
       ...(requestingPersonIsHead && requestedStatus !== "draft" && (() => {
+        // For head requesters, check endorsedByHeadSignature first (head's own signature)
+        // Then fall back to requesterSignature if not available
         const signature = isSeminar 
           ? (seminar.requesterSignature || null)
-          : (travelOrder.requesterSignature || null);
+          : (travelOrder.endorsedByHeadSignature || travelOrder.requesterSignature || null);
         if (signature && finalRequesterId) {
           return {
             head_signature: signature,
@@ -1828,6 +1830,13 @@ export async function POST(req: Request) {
 
                       const phNow = getPhilippineTimestamp();
                       
+                      // Get signature from request (head_signature) if head is requester
+                      let headSignature = null;
+                      if (data.head_signature) {
+                        headSignature = data.head_signature;
+                        console.log(`[/api/requests/submit] ✅ Found head signature in request for ${headName}`);
+                      }
+                      
                       if (existing && !existingError) {
                         // Update existing invitation to confirmed
                         await supabase
@@ -1836,6 +1845,7 @@ export async function POST(req: Request) {
                             status: 'confirmed',
                             head_name: headName || profile.name,
                             endorsement_date: new Date().toISOString().split('T')[0],
+                            signature: headSignature, // Copy signature from request
                             confirmed_at: phNow,
                             updated_at: phNow,
                             head_user_id: headUserId || profile.id,
@@ -1857,6 +1867,7 @@ export async function POST(req: Request) {
                             expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
                             status: 'confirmed',
                             endorsement_date: new Date().toISOString().split('T')[0],
+                            signature: headSignature, // Copy signature from request
                             confirmed_at: phNow,
                           });
                       }

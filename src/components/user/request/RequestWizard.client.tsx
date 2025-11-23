@@ -234,11 +234,36 @@ function RequestWizardContent() {
 
   // Pre-fill requesting person with current user's name - ALWAYS update when user loads
   // Also pre-fill department if requesting person is current user
+  // BUT: Don't auto-fill if there are requesters and the requesting person is not in the requesters list
   React.useEffect(() => {
     if (currentUser && currentUser.name && !userLoading) {
-      // Only update if empty OR different from current user
-      if (!data.travelOrder?.requestingPerson || data.travelOrder.requestingPerson !== currentUser.name) {
+      const hasRequesters = Array.isArray(data.travelOrder?.requesters) && data.travelOrder.requesters.length > 0;
+      
+      // If there are requesters, check if requesting person matches any requester
+      if (hasRequesters) {
+        const requestingPersonInRequesters = data.travelOrder.requesters.some((req: any) => {
+          const reqName = (req.name || req.email || "").toLowerCase().trim();
+          const currentName = currentUser.name.toLowerCase().trim();
+          return reqName === currentName;
+        });
+        
+        // If requesting person is not in requesters, clear it (don't auto-fill)
+        if (!requestingPersonInRequesters && data.travelOrder?.requestingPerson) {
+          patchTravelOrder({ requestingPerson: "" });
+          return;
+        }
+      }
+      
+      // Only update if empty AND there are no requesters (to prevent auto-fill when requesters are removed)
+      // If there are requesters, don't auto-fill - let the requesters array control the requesting person
+      if (!hasRequesters && (!data.travelOrder?.requestingPerson || data.travelOrder.requestingPerson !== currentUser.name)) {
         patchTravelOrder({ requestingPerson: currentUser.name });
+      } else if (hasRequesters && !data.travelOrder?.requestingPerson) {
+        // If there are requesters but no requesting person, set it to first requester
+        const firstRequester = data.travelOrder.requesters[0];
+        if (firstRequester?.name) {
+          patchTravelOrder({ requestingPerson: firstRequester.name });
+        }
       }
       
       // Also pre-fill department if requesting person matches current user
@@ -1149,6 +1174,44 @@ function RequestWizardContent() {
     }
   }
 
+  // Auto-save function for invitations (when requestId is needed but doesn't exist)
+  const handleAutoSaveRequest = async (): Promise<string | null> => {
+    try {
+      const response = await fetch("/api/requests/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          travelOrder: data.travelOrder,
+          reason: data.reason,
+          vehicleMode: data.vehicleMode,
+          schoolService: data.schoolService,
+          seminar: data.seminar,
+          status: "draft", // Save as draft
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.ok) {
+        throw new Error(result.error || result.message || "Failed to create draft");
+      }
+
+      // Store the request ID in the form data (for invitations)
+      if (result.data?.id) {
+        if (data.reason === "seminar") {
+          patchSeminar({ requestId: result.data.id } as any);
+        }
+        setCurrentSubmissionId(result.data.id);
+        return result.data.id;
+      }
+
+      return null;
+    } catch (err: any) {
+      console.error("[handleAutoSaveRequest] Error auto-saving draft:", err);
+      throw err;
+    }
+  };
+
   function scrollToFirstError(errs: Record<string, string>) {
     const firstKey = Object.keys(errs)[0];
     if (!firstKey) return;
@@ -1208,6 +1271,7 @@ function RequestWizardContent() {
       isRepresentativeSubmission,
       currentUserName: currentUser?.name,
       requestingPersonName: data.travelOrder?.requestingPerson,
+      isHeadRequester: isHeadRequester,
     });
     console.log('  - Validation result:', { ok: v.ok, errors: Object.keys(v.errors) });
 
@@ -1464,6 +1528,7 @@ function RequestWizardContent() {
     isRepresentativeSubmission,
     currentUserName: currentUser?.name,
     requestingPersonName: data.travelOrder?.requestingPerson,
+    isHeadRequester: isHeadRequester,
     allRequestersConfirmed: hasMultipleRequesters ? requestersAllConfirmed : undefined,
     allParticipantsConfirmed: hasParticipants ? participantsAllConfirmed : undefined,
     allHeadEndorsementsConfirmed: hasMultipleDepts ? allHeadEndorsementsConfirmed : undefined,

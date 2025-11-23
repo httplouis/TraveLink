@@ -1,28 +1,16 @@
 // src/app/(protected)/comptroller/layout.tsx
 "use client";
 
-import { LogOut } from "lucide-react";
 import ChatbotWidget from "@/components/ai/ChatbotWidget";
 import ComptrollerLeftNav from "@/components/comptroller/nav/ComptrollerLeftNav";
 import ComptrollerTopBar from "@/components/comptroller/nav/ComptrollerTopBar";
 import ToastProvider from "@/components/common/ui/ToastProvider.ui";
-import { useRouter } from "next/navigation";
 
 export default function ComptrollerLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const router = useRouter();
-
-  const handleLogout = async () => {
-    try {
-      await fetch("/api/auth/logout", { method: "POST" });
-      router.push("/login");
-    } catch (error) {
-      console.error("Logout failed:", error);
-    }
-  };
 
   return (
     <ToastProvider>
@@ -32,17 +20,6 @@ export default function ComptrollerLayout({
           {/* Navigation */}
           <div className="flex-1 overflow-y-auto px-4 py-4">
             <ComptrollerLeftNav />
-          </div>
-
-          {/* Logout Button */}
-          <div className="flex-shrink-0 p-4 border-t border-gray-200">
-            <button
-              onClick={handleLogout}
-              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors text-sm font-medium"
-            >
-              <LogOut className="h-5 w-5" />
-              <span>Logout</span>
-            </button>
           </div>
         </aside>
 

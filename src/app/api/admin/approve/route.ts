@@ -6,6 +6,15 @@ import { sendDriverTravelNotification } from "@/lib/sms/sms-service";
 
 export async function POST(request: Request) {
   try {
+    // Use authenticated client for reading user session (cookies)
+    const authSupabase = await createSupabaseServerClient(false);
+    
+    // Get current user
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
+
     // Create a direct Supabase client with service role key to bypass RLS
     // This ensures we can fetch and update requests regardless of RLS policies
     const supabaseServiceRole = createClient(
@@ -18,14 +27,6 @@ export async function POST(request: Request) {
         }
       }
     );
-
-    const supabase = await createSupabaseServerClient(true); // Use service role for auth checks
-    
-    // Get current user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-    }
 
     // Get user profile (try users table first, fallback to auth user)
     // Use service role client to bypass RLS

@@ -346,18 +346,104 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   --touch-target-size: 44px;
 }
 
-/* Dyslexia-Friendly Font */
+/* Dyslexia-Friendly Font - Styled to mimic Dyslexie Font characteristics */
+/* Note: Dyslexie Font is commercial and requires a license. 
+   This uses OpenDyslexic (free alternative) styled to look similar to Dyslexie Font. */
+
+/* Pre-load font faces for better performance */
+@font-face {
+  font-family: 'OpenDyslexic';
+  src: url('https://cdn.jsdelivr.net/npm/opendyslexic@1.0.0/OpenDyslexic-Regular.woff2') format('woff2'),
+       url('https://cdn.jsdelivr.net/npm/opendyslexic@1.0.0/OpenDyslexic-Regular.woff') format('woff'),
+       url('https://cdn.jsdelivr.net/npm/opendyslexic@1.0.0/OpenDyslexic-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'OpenDyslexic';
+  src: url('https://cdn.jsdelivr.net/npm/opendyslexic@1.0.0/OpenDyslexic-Bold.woff2') format('woff2'),
+       url('https://cdn.jsdelivr.net/npm/opendyslexic@1.0.0/OpenDyslexic-Bold.woff') format('woff'),
+       url('https://cdn.jsdelivr.net/npm/opendyslexic@1.0.0/OpenDyslexic-Bold.ttf') format('truetype');
+  font-weight: bold;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Enhanced dyslexia-friendly styling (mimicking Dyslexie Font characteristics) */
 .font-dyslexia {
   font-family: 'OpenDyslexic', 'Comic Sans MS', 'Arial', sans-serif !important;
+  /* Dyslexie Font-like spacing - generous spacing between letters and words */
+  letter-spacing: 0.12em !important; /* More space between letters (like Dyslexie) */
+  word-spacing: 0.25em !important; /* More space between words (like Dyslexie) */
+  line-height: 2.0 !important; /* Generous line height for better readability */
+  font-size: 1.15em !important; /* Slightly larger base size (Dyslexie is often larger) */
+  font-weight: 500 !important; /* Medium weight for better letter distinction */
 }
 
 .font-dyslexia * {
   font-family: 'OpenDyslexic', 'Comic Sans MS', 'Arial', sans-serif !important;
-  letter-spacing: 0.05em;
-  word-spacing: 0.1em;
+  letter-spacing: 0.12em !important;
+  word-spacing: 0.25em !important;
+  line-height: 2.0 !important;
 }
 
-/* OpenDyslexic font fallback - loaded dynamically when needed */
+/* Headings - even more spacing and bolder (like Dyslexie Font headings) */
+.font-dyslexia h1,
+.font-dyslexia h2,
+.font-dyslexia h3,
+.font-dyslexia h4,
+.font-dyslexia h5,
+.font-dyslexia h6 {
+  font-family: 'OpenDyslexic', 'Comic Sans MS', 'Arial', sans-serif !important;
+  letter-spacing: 0.15em !important; /* Extra spacing for headings */
+  word-spacing: 0.3em !important;
+  line-height: 2.1 !important;
+  font-weight: bold !important; /* Bold headings for maximum distinction */
+}
+
+/* Body text - optimized for readability */
+.font-dyslexia p,
+.font-dyslexia span,
+.font-dyslexia div,
+.font-dyslexia li {
+  letter-spacing: 0.12em !important;
+  word-spacing: 0.25em !important;
+  line-height: 2.0 !important;
+}
+
+/* Buttons and inputs - maintain readability */
+.font-dyslexia button,
+.font-dyslexia .btn,
+.font-dyslexia input,
+.font-dyslexia textarea,
+.font-dyslexia select {
+  font-family: 'OpenDyslexic', 'Comic Sans MS', 'Arial', sans-serif !important;
+  letter-spacing: 0.12em !important;
+  word-spacing: 0.25em !important;
+  line-height: 1.9 !important;
+  font-weight: 500 !important;
+}
+
+/* Enhanced font rendering to emphasize letter shapes (like Dyslexie) */
+.font-dyslexia,
+.font-dyslexia * {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  /* Emphasize the unique letter shapes */
+  font-feature-settings: "liga" 1, "kern" 1;
+  text-transform: none !important; /* Preserve original letter shapes */
+}
+
+/* Additional styling to mimic Dyslexie Font's visual characteristics */
+.font-dyslexia {
+  /* Slight text shadow to make letters "pop" more (like Dyslexie's heavier bottoms) */
+  text-shadow: 0 0.5px 0 rgba(0, 0, 0, 0.1);
+  /* Prevent text from being too thin */
+  font-stretch: normal;
+}
 
 /* High Contrast Mode - Maximum visibility for accessibility */
 .high-contrast {

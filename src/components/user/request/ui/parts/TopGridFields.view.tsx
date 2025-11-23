@@ -65,8 +65,12 @@ export default function TopGridFields({
     const update: any = { requesters };
     
     // Also update requestingPerson to first requester's name (for backward compatibility)
+    // BUT: If all requesters are removed, clear requestingPerson to prevent auto-re-add
     if (requesters.length > 0 && requesters[0].name) {
       update.requestingPerson = requesters[0].name;
+    } else if (requesters.length === 0) {
+      // Clear requestingPerson when all requesters are removed to prevent auto-re-add
+      update.requestingPerson = "";
       
       // Auto-fill department: collect all unique departments from all requesters
       const departments = requesters

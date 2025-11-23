@@ -400,6 +400,29 @@ export async function POST(req: NextRequest) {
         }
       }
       
+      // If still no signature, check if head is the requester and get signature from request
+      if (!finalSignature && invitation.request_id) {
+        const { data: requestData, error: requestError } = await supabase
+          .from("requests")
+          .select("head_signature, head_approved_by, requester_id")
+          .eq("id", invitation.request_id)
+          .maybeSingle();
+        
+        if (!requestError && requestData) {
+          // Check if this head is the requester (head_approved_by matches requester_id)
+          // OR if head_user_id matches head_approved_by
+          const isHeadRequester = (
+            (requestData.head_approved_by && invitation.head_user_id && requestData.head_approved_by === invitation.head_user_id) ||
+            (requestData.requester_id && invitation.head_user_id && requestData.requester_id === invitation.head_user_id)
+          );
+          
+          if (isHeadRequester && requestData.head_signature) {
+            finalSignature = requestData.head_signature;
+            console.log("[POST /api/head-endorsements/confirm] ✅ Using head signature from request (head is requester)");
+          }
+        }
+      }
+      
       if (!finalSignature) {
         console.error("[POST /api/head-endorsements/confirm] ❌ CRITICAL: No signature available (neither from body nor from user profile)");
         // Don't fail - allow confirmation without signature, but log it

@@ -16,16 +16,24 @@ import { AlertCircle } from "lucide-react";
 type Request = {
   id: string;
   request_number: string;
-  title: string;
+  file_code?: string;
+  title?: string;
   purpose: string;
+  destination?: string;
   total_budget: number;
   comptroller_edited_budget?: number;
   travel_start_date: string;
+  travel_end_date?: string;
   created_at: string;
   status: string;
+  request_type?: string;
+  requester_name?: string;
   requester?: {
+    id: string;
     name: string;
     email: string;
+    profile_picture?: string;
+    position_title?: string;
   };
   department?: {
     code: string;
@@ -46,13 +54,16 @@ export default function ComptrollerInboxPage() {
   }, []);
 
   React.useEffect(() => {
+    let isMounted = true;
+    let mutateTimeout: NodeJS.Timeout | null = null;
+    let channel: any = null;
+    let pollingInterval: NodeJS.Timeout | null = null;
+    
     // Initial load
     loadRequests();
     
     // Real-time updates using Supabase Realtime
     const supabase = createSupabaseClient();
-    let mutateTimeout: NodeJS.Timeout | null = null;
-    let channel: any = null;
     
     channel = supabase
       .channel("comptroller-inbox-changes")
@@ -64,30 +75,50 @@ export default function ComptrollerInboxPage() {
           table: "requests",
         },
         (payload: any) => {
-          // Debounce: only trigger refetch after 500ms
-          if (mutateTimeout) clearTimeout(mutateTimeout);
-          mutateTimeout = setTimeout(() => {
-            loadRequests(); // Silent refresh
-          }, 500);
+          if (!isMounted) return;
+          
+          const newStatus = (payload.new as any)?.status;
+          const oldStatus = (payload.old as any)?.status;
+          
+          // Only react to changes that affect comptroller inbox statuses
+          const comptrollerStatuses = ['pending_comptroller', 'pending_hr', 'approved', 'rejected', 'returned'];
+          if (comptrollerStatuses.includes(newStatus) || comptrollerStatuses.includes(oldStatus)) {
+            console.log("[Comptroller Inbox] 🔄 Real-time change detected:", payload.eventType, newStatus);
+            
+            // Debounce: only trigger refetch after 500ms
+            if (mutateTimeout) clearTimeout(mutateTimeout);
+            mutateTimeout = setTimeout(() => {
+              if (isMounted && !showModal) { // Don't refresh if modal is open
+                loadRequests(); // Silent refresh - updates state only, no page reload
+              }
+            }, 500);
+          }
         }
       )
       .subscribe((status: string) => {
         console.log("[Comptroller Inbox] Realtime subscription status:", status);
+        // If subscription closes, try to reconnect
+        if (status === 'CLOSED' && isMounted) {
+          console.log("[Comptroller Inbox] ⚠️ Subscription closed, will reconnect on next effect run");
+        }
       });
 
-    // Fallback polling every 30 seconds
-    const interval = setInterval(() => {
-      loadRequests();
+    // Fallback polling every 30 seconds (silent refresh, only if not in modal)
+    pollingInterval = setInterval(() => {
+      if (isMounted && !showModal) {
+        loadRequests();
+      }
     }, 30000);
 
     return () => {
-      clearInterval(interval);
+      isMounted = false;
+      if (pollingInterval) clearInterval(pollingInterval);
       if (mutateTimeout) clearTimeout(mutateTimeout);
       if (channel) {
         supabase.removeChannel(channel);
       }
     };
-  }, []);
+  }, [showModal]); // Add showModal as dependency to prevent refreshes when modal is open
 
   const loadRequests = async () => {
     const logger = createLogger("ComptrollerInbox");
@@ -114,7 +145,7 @@ export default function ComptrollerInboxPage() {
       logger.debug("Fetching requests from:", url);
       const res = await fetch(url, { cache: "no-store" });
       if (!res.ok) {
-        logger.error("API response not OK:", res.status, res.statusText);
+        logger.error(`API response not OK: ${res.status} ${res.statusText}`, undefined);
         setRequests([]);
         return;
       }
@@ -295,7 +326,7 @@ export default function ComptrollerInboxPage() {
                   status: req.status,
                   created_at: req.created_at,
                   total_budget: req.total_budget,
-                  request_type: req.request_type,
+                  request_type: (req.request_type === "travel_order" || req.request_type === "seminar") ? req.request_type : undefined,
                   requester_name: req.requester_name || req.requester?.name,
                   requester: {
                     name: req.requester_name || req.requester?.name || "Unknown",

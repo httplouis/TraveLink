@@ -65,6 +65,7 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
   const [preferredDriverName, setPreferredDriverName] = React.useState<string>("");
   const [preferredVehicleName, setPreferredVehicleName] = React.useState<string>("");
   const [totalCost, setTotalCost] = React.useState(0);
+  const [originalExpenses, setOriginalExpenses] = React.useState<Array<{ item: string; amount: number; description?: string; justification?: string }>>([]);
 
   React.useEffect(() => {
     loadFullRequest();
@@ -102,6 +103,10 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
           if (validExpenses.length > 0) {
             console.log("[ComptrollerReviewModal] ✅ Setting expenses from expense_breakdown in useEffect:", validExpenses);
             setEditedExpenses(validExpenses);
+            // Store original expenses if not already stored
+            if (originalExpenses.length === 0) {
+              setOriginalExpenses(validExpenses.map(exp => ({ ...exp })));
+            }
             const total = validExpenses.reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0);
             setTotalCost(total || budgetToUse);
             return;
@@ -117,6 +122,10 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
         ];
         console.log("[ComptrollerReviewModal] ✅ Setting default expenses in useEffect:", expenses);
         setEditedExpenses(expenses);
+        // Store original expenses if not already stored
+        if (originalExpenses.length === 0) {
+          setOriginalExpenses(expenses.map(exp => ({ ...exp })));
+        }
         setTotalCost(budgetToUse);
       }
     }
@@ -219,6 +228,10 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
         if (validExpenses.length > 0) {
           console.log("[ComptrollerReviewModal] Setting expenses from expense_breakdown:", validExpenses);
           setEditedExpenses(validExpenses);
+          // Store original expenses if not already stored
+          if (originalExpenses.length === 0) {
+            setOriginalExpenses(validExpenses.map(exp => ({ ...exp })));
+          }
           const total = validExpenses.reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0);
           setTotalCost(total || budgetToUse);
           console.log("[ComptrollerReviewModal] Set expenses from expense_breakdown:", validExpenses.length, "items, total:", total);
@@ -231,6 +244,10 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
               { item: "Other", amount: budgetToUse - Math.round(budgetToUse * 0.3) - Math.round(budgetToUse * 0.4), description: "Miscellaneous" }
             ];
             setEditedExpenses(defaultExpenses);
+            // Store original expenses if not already stored
+            if (originalExpenses.length === 0) {
+              setOriginalExpenses(defaultExpenses.map(exp => ({ ...exp })));
+            }
             setTotalCost(budgetToUse);
             console.log("[ComptrollerReviewModal] Created default expense breakdown from total_budget:", defaultExpenses);
           } else {
@@ -280,6 +297,10 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
           
           console.log("[ComptrollerReviewModal] Created expense breakdown from total_budget:", expenses);
           setEditedExpenses(expenses);
+          // Store original expenses if not already stored
+          if (originalExpenses.length === 0) {
+            setOriginalExpenses(expenses.map(exp => ({ ...exp })));
+          }
           setTotalCost(budgetToUse);
           console.log("[ComptrollerReviewModal] ✅ Set editedExpenses:", expenses.length, "items");
         } else {
@@ -375,6 +396,10 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
         if (validExpenses.length > 0) {
           console.log("[ComptrollerReviewModal] ✅ Setting expenses from expense_breakdown:", validExpenses);
           setEditedExpenses(validExpenses);
+          // Store original expenses if not already stored
+          if (originalExpenses.length === 0) {
+            setOriginalExpenses(validExpenses.map(exp => ({ ...exp })));
+          }
           const total = validExpenses.reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0);
           setTotalCost(total || budgetToUse);
         } else if (budgetToUse > 0) {
@@ -386,6 +411,10 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
           ];
           console.log("[ComptrollerReviewModal] ✅ Setting default expenses:", defaultExpenses);
           setEditedExpenses(defaultExpenses);
+          // Store original expenses if not already stored
+          if (originalExpenses.length === 0) {
+            setOriginalExpenses(defaultExpenses.map(exp => ({ ...exp })));
+          }
           setTotalCost(budgetToUse);
         }
       } else if (budgetToUse > 0) {
@@ -398,6 +427,10 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
         ];
         console.log("[ComptrollerReviewModal] ✅ Setting default expenses from budget:", expenses);
         setEditedExpenses(expenses);
+        // Store original expenses if not already stored
+        if (originalExpenses.length === 0) {
+          setOriginalExpenses(expenses.map(exp => ({ ...exp })));
+        }
         setTotalCost(budgetToUse);
       }
     } finally {
@@ -785,6 +818,148 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
               )}
             </section>
 
+            {/* Additional Requesters (from other departments) */}
+            {t?.additional_requesters && Array.isArray(t.additional_requesters) && t.additional_requesters.length > 0 && (
+              <section className="rounded-lg bg-white p-5 border border-slate-200 shadow-sm">
+                <p className="text-xs font-medium uppercase tracking-wider text-slate-500 mb-3">
+                  Additional Requesters ({t.additional_requesters.length})
+                </p>
+                <div className="space-y-3">
+                  {t.additional_requesters.map((req: any, idx: number) => (
+                    <div key={req.id || idx} className="flex items-start gap-3 pb-3 border-b border-slate-100 last:border-0 last:pb-0">
+                      {req.user?.profile_picture ? (
+                        <img 
+                          src={req.user.profile_picture} 
+                          alt={req.name || "Requester"}
+                          className="h-10 w-10 rounded-full object-cover border-2 border-slate-200 flex-shrink-0"
+                        />
+                      ) : (
+                        <div className="h-10 w-10 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-semibold text-sm flex-shrink-0">
+                          {(req.name || req.email || "U").charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-slate-900">
+                          {req.name || req.user?.name || req.email || "Unknown Requester"}
+                        </p>
+                        <p className="text-xs text-slate-600 mt-0.5">
+                          {req.department_info?.name || req.department || "No department"}
+                        </p>
+                        {req.user?.position_title && (
+                          <p className="text-xs text-slate-500 mt-0.5">{req.user.position_title}</p>
+                        )}
+                        {req.status === 'confirmed' && req.signature && (
+                          <div className="mt-2 flex items-center gap-1.5 text-xs text-green-600">
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            <span>Confirmed with signature</span>
+                          </div>
+                        )}
+                        {req.status === 'pending' && (
+                          <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-600">
+                            <Clock className="h-3.5 w-3.5" />
+                            <span>Pending confirmation</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Head Endorsements from Other Departments */}
+            {t?.head_endorsements && Array.isArray(t.head_endorsements) && t.head_endorsements.length > 0 && (() => {
+              // Filter out the main requester's department head endorsement
+              const mainDeptId = t?.department_id || t?.requester?.department_id;
+              const additionalEndorsements = t.head_endorsements.filter((end: any) => {
+                const endDeptId = end.department_id || end.department?.id;
+                return endDeptId !== mainDeptId;
+              });
+
+              if (additionalEndorsements.length === 0) return null;
+
+              return (
+                <section className="rounded-lg bg-white p-5 border border-slate-200 shadow-sm">
+                  <p className="text-xs font-medium uppercase tracking-wider text-slate-500 mb-3">
+                    Department Head Endorsements ({additionalEndorsements.length})
+                  </p>
+                  <div className="space-y-3">
+                    {additionalEndorsements.map((end: any, idx: number) => (
+                      <div key={end.id || idx} className="pb-3 border-b border-slate-100 last:border-0 last:pb-0">
+                        <div className="flex items-start gap-3 mb-2">
+                          {end.head?.profile_picture ? (
+                            <img 
+                              src={end.head.profile_picture} 
+                              alt={end.head_name || "Head"}
+                              className="h-10 w-10 rounded-full object-cover border-2 border-slate-200 flex-shrink-0"
+                            />
+                          ) : (
+                            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-semibold text-sm flex-shrink-0">
+                              {(end.head_name || end.head?.name || "H").charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-slate-900">
+                              {end.head_name || end.head?.name || "Unknown Head"}
+                            </p>
+                            <p className="text-xs text-slate-600 mt-0.5">
+                              {end.department_name || end.department?.name || "Unknown Department"}
+                            </p>
+                          </div>
+                          {end.status === 'confirmed' && (
+                            <div className="flex items-center gap-1.5 text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                              <span>Confirmed</span>
+                            </div>
+                          )}
+                          {end.status === 'pending' && (
+                            <div className="flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded">
+                              <Clock className="h-3.5 w-3.5" />
+                              <span>Pending</span>
+                            </div>
+                          )}
+                          {end.status === 'declined' && (
+                            <div className="flex items-center gap-1.5 text-xs text-red-600 bg-red-50 px-2 py-1 rounded">
+                              <XCircle className="h-3.5 w-3.5" />
+                              <span>Declined</span>
+                            </div>
+                          )}
+                        </div>
+                        {end.signature && (
+                          <div className="mt-2 pt-2 border-t border-slate-100">
+                            <p className="text-xs text-slate-500 mb-1">Signature:</p>
+                            <img 
+                              src={end.signature} 
+                              alt="Head signature"
+                              className="h-12 border border-slate-200 rounded bg-slate-50"
+                            />
+                          </div>
+                        )}
+                        {end.comments && (
+                          <div className="mt-2 pt-2 border-t border-slate-100">
+                            <p className="text-xs text-slate-500 mb-1">Comments:</p>
+                            <p className="text-xs text-slate-700">{end.comments}</p>
+                          </div>
+                        )}
+                        {end.confirmed_at && (
+                          <p className="text-xs text-slate-500 mt-2">
+                            Confirmed: {new Date(end.confirmed_at).toLocaleString('en-US', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              hour12: true,
+                            })}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              );
+            })()}
+
             {/* Service Preferences */}
             <section className="rounded-lg bg-white p-5 border border-slate-200 shadow-sm">
               <p className="text-xs font-medium uppercase tracking-wider text-slate-500 mb-3">
@@ -1019,48 +1194,81 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
               </section>
             )}
 
-            {/* Requester Signature - Same style as Previous Approvals */}
+            {/* Requester Signature - Check for requester signature OR head signature (if requester is head) */}
             <section className="rounded-lg bg-slate-50 border border-slate-200 p-4">
               <p className="text-xs font-semibold uppercase text-slate-700 mb-3">
                 Requester's Signature
               </p>
-              {(t?.requester_signature) ? (
-                <div className="bg-white rounded-lg border border-slate-200 p-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm font-medium text-slate-900">
-                      Requester Signed
+              {(() => {
+                // Check for requester signature first
+                let signature = t?.requester_signature;
+                let signatureName = t?.requester_name || "Requester";
+                let signatureDate = t?.requester_signed_at || t?.created_at;
+                let signatureRole = "Requester";
+                
+                // If no requester signature, check if head approved (requester might be head)
+                if (!signature) {
+                  // Check parent head signature first (SVP, etc.)
+                  if (t?.parent_head_signature) {
+                    signature = t.parent_head_signature;
+                    signatureName = t?.parent_head_approver?.name || t?.requester_name || "Parent Head";
+                    signatureDate = t?.parent_head_approved_at;
+                    signatureRole = "Parent Head";
+                  } 
+                  // Then check direct head signature
+                  else if (t?.head_signature) {
+                    signature = t.head_signature;
+                    signatureName = t?.head_approver?.name || t?.requester_name || "Department Head";
+                    signatureDate = t?.head_approved_at;
+                    signatureRole = "Department Head";
+                  }
+                  // Then check VP signature if VP is head
+                  else if (t?.vp_approver?.is_head && t?.vp_signature) {
+                    signature = t.vp_signature;
+                    signatureName = t?.vp_approver?.name || "VP (as Head)";
+                    signatureDate = t?.vp_approved_at;
+                    signatureRole = "VP (as Head)";
+                  }
+                }
+                
+                return signature ? (
+                  <div className="bg-white rounded-lg border border-slate-200 p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-medium text-slate-900">
+                        {signatureRole === "Requester" ? "Requester Signed" : `${signatureRole} Signed`}
+                      </p>
+                      {signatureDate && (
+                        <span className="text-xs text-green-600 font-medium">
+                          {new Date(signatureDate).toLocaleString('en-US', { 
+                            year: 'numeric', 
+                            month: 'short', 
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: true,
+                            timeZone: 'Asia/Manila'
+                          })}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-600">
+                      By: {signatureName}
                     </p>
-                    {(t.requester_signed_at || t.created_at) && (
-                      <span className="text-xs text-green-600 font-medium">
-                        {new Date(t.requester_signed_at || t.created_at).toLocaleString('en-US', { 
-                          year: 'numeric', 
-                          month: 'short', 
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          hour12: true,
-                          timeZone: 'Asia/Manila'
-                        })}
-                      </span>
-                    )}
+                    <div className="mt-2 pt-2 border-t border-slate-100">
+                      <img
+                        src={signature}
+                        alt={`${signatureRole} signature`}
+                        className="h-16 w-full object-contain"
+                      />
+                    </div>
                   </div>
-                  <p className="text-xs text-slate-600">
-                    By: {t.requester_name || "Requester"}
-                  </p>
-                  <div className="mt-2 pt-2 border-t border-slate-100">
-                    <img
-                      src={t.requester_signature}
-                      alt="Requester signature"
-                      className="h-16 w-full object-contain"
-                    />
+                ) : (
+                  <div className="flex items-center justify-center gap-2 text-sm text-slate-600 bg-white rounded-lg border border-slate-200 p-4">
+                    <FileText className="h-4 w-4" />
+                    <span>No signature provided by requester</span>
                   </div>
-                </div>
-              ) : (
-                <div className="flex items-center justify-center gap-2 text-sm text-slate-600 bg-white rounded-lg border border-slate-200 p-4">
-                  <FileText className="h-4 w-4" />
-                  <span>No signature provided by requester</span>
-                </div>
-              )}
+                );
+              })()}
             </section>
 
             {/* Previous Approvals */}
@@ -1216,7 +1424,13 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                 </div>
                 {!editingBudget && (fullRequest?.total_budget || fullRequest?.comptroller_edited_budget || editedExpenses.length > 0) && (
                   <button
-                    onClick={() => setEditingBudget(true)}
+                    onClick={() => {
+                      // Store original expenses when starting to edit (if not already stored)
+                      if (originalExpenses.length === 0 && editedExpenses.length > 0) {
+                        setOriginalExpenses(editedExpenses.map(exp => ({ ...exp })));
+                      }
+                      setEditingBudget(true);
+                    }}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-[#7A0010] text-white hover:bg-[#5e000d] rounded-lg transition-colors text-xs font-semibold shadow-sm"
                   >
                     <Edit2 className="h-4 w-4" />
@@ -1250,39 +1464,63 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                             : label;
                           
                           // ALWAYS show items - don't filter out 0 amounts, show them all
+                          // Find original value for this expense item
+                          const originalExpense = originalExpenses.find(orig => 
+                            orig.item === expense.item || 
+                            (orig.description && orig.description === expense.description)
+                          );
+                          const originalAmount = originalExpense?.amount || 0;
+                          const hasChanged = editingBudget && originalAmount > 0 && expense.amount !== originalAmount;
+                          
                           return (
                             <div key={index} className="border-b border-slate-100 last:border-0 pb-3 last:pb-0">
                               <div className="flex items-center justify-between mb-2">
-                                <span className="text-sm text-slate-600 font-medium">{displayLabel}</span>
+                                <div className="flex-1">
+                                  <span className="text-sm text-slate-600 font-medium">{displayLabel}</span>
+                                  {editingBudget && originalAmount > 0 && (
+                                    <p className="text-xs text-slate-400 mt-0.5">
+                                      Original: {peso(originalAmount)}
+                                    </p>
+                                  )}
+                                </div>
                                 {editingBudget ? (
-                                  <input
-                                    type="text"
-                                    inputMode="numeric"
-                                    value={expense.amount === 0 ? '' : expense.amount || ''}
-                                    onChange={(e) => {
-                                      // Only allow numbers and decimal point
-                                      const value = e.target.value.replace(/[^0-9.]/g, '');
-                                      // Prevent multiple decimal points
-                                      const parts = value.split('.');
-                                      const cleanedValue = parts.length > 2 
-                                        ? parts[0] + '.' + parts.slice(1).join('')
-                                        : value;
-                                      handleExpenseEdit(index, cleanedValue);
-                                    }}
-                                    onBlur={(e) => {
-                                      // On blur, ensure we have a valid number (default to 0 if empty)
-                                      const value = e.target.value.trim();
-                                      if (value === '' || value === '0') {
-                                        setEditedExpenses(prev => {
-                                          const updated = [...prev];
-                                          updated[index] = { ...updated[index], amount: 0 };
-                                          return updated;
-                                        });
-                                      }
-                                    }}
-                                    className="w-32 px-3 py-1.5 border-2 border-[#7A0010]/20 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] text-sm"
-                                    placeholder="0"
-                                  />
+                                  <div className="flex items-center gap-2">
+                                    {hasChanged && (
+                                      <span className="text-xs text-slate-400 line-through">
+                                        {peso(originalAmount)}
+                                      </span>
+                                    )}
+                                    <input
+                                      type="text"
+                                      inputMode="numeric"
+                                      value={expense.amount === 0 ? '' : expense.amount || ''}
+                                      onChange={(e) => {
+                                        // Only allow numbers and decimal point
+                                        const value = e.target.value.replace(/[^0-9.]/g, '');
+                                        // Prevent multiple decimal points
+                                        const parts = value.split('.');
+                                        const cleanedValue = parts.length > 2 
+                                          ? parts[0] + '.' + parts.slice(1).join('')
+                                          : value;
+                                        handleExpenseEdit(index, cleanedValue);
+                                      }}
+                                      onBlur={(e) => {
+                                        // On blur, ensure we have a valid number (default to 0 if empty)
+                                        const value = e.target.value.trim();
+                                        if (value === '' || value === '0') {
+                                          setEditedExpenses(prev => {
+                                            const updated = [...prev];
+                                            updated[index] = { ...updated[index], amount: 0 };
+                                            return updated;
+                                          });
+                                        }
+                                      }}
+                                      className={`w-32 px-3 py-1.5 border-2 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] text-sm ${
+                                        hasChanged ? 'border-amber-300 bg-amber-50' : 'border-[#7A0010]/20'
+                                      }`}
+                                      placeholder="0"
+                                    />
+                                  </div>
                                 ) : (
                                   <span className="text-sm font-semibold text-slate-900">{peso(expense.amount || 0)}</span>
                                 )}
@@ -1367,7 +1605,22 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                   )}
 
                   {editingBudget && (
-                    <div className="mt-4">
+                    <div className="mt-4 space-y-2">
+                      {/* Reset to Original Button */}
+                      {originalExpenses.length > 0 && (
+                        <button
+                          onClick={() => {
+                            setEditedExpenses(originalExpenses.map(exp => ({ ...exp })));
+                            const originalTotal = originalExpenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
+                            setTotalCost(originalTotal);
+                            toast.info("Budget Reset", "Budget reset to original values");
+                          }}
+                          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors text-sm font-medium"
+                        >
+                          <XCircle className="h-4 w-4" />
+                          Reset to Original Budget
+                        </button>
+                      )}
                       <div className="flex gap-2">
                         <button
                           onClick={async () => {
@@ -1422,31 +1675,36 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                           }
                         }}
                         disabled={submitting}
-                        className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="flex items-center justify-center gap-2 px-6 py-2.5 bg-[#7A0010] hover:bg-[#5e000d] text-white font-semibold text-sm rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
                       >
-                        <Check className="h-4 w-4" />
+                        <CheckCircle2 className="h-4 w-4" />
                         {submitting ? "Saving..." : "Save Budget Changes"}
                       </button>
                       <button
                         onClick={() => {
                           // Cancel editing - revert to original
-                          const originalExpenses = (fullRequest || request).expense_breakdown;
-                          if (originalExpenses && Array.isArray(originalExpenses)) {
-                            setEditedExpenses(
-                              originalExpenses.map((exp: any) => ({
-                                item: exp.item || exp.description || "Travel Expenses",
-                                amount: exp.amount || 0,
-                                description: exp.description || null,
-                                justification: exp.justification || exp.budget_justification || null
-                              }))
-                            );
+                          if (originalExpenses.length > 0) {
+                            setEditedExpenses(originalExpenses.map(exp => ({ ...exp })));
+                            const originalTotal = originalExpenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
+                            setTotalCost(originalTotal);
+                          } else {
+                            const expenseBreakdown = (fullRequest || request).expense_breakdown;
+                            if (expenseBreakdown && Array.isArray(expenseBreakdown)) {
+                              setEditedExpenses(
+                                expenseBreakdown.map((exp: any) => ({
+                                  item: exp.item || exp.description || "Travel Expenses",
+                                  amount: exp.amount || 0,
+                                  description: exp.description || null,
+                                  justification: exp.justification || exp.budget_justification || null
+                                }))
+                              );
+                            }
                           }
                           setEditingBudget(false);
                         }}
                         disabled={submitting}
-                        className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors flex items-center justify-center gap-2 text-sm font-medium disabled:opacity-50"
+                        className="px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium text-sm rounded-md transition-colors"
                       >
-                        <XCircle className="h-4 w-4" />
                         Cancel
                       </button>
                       </div>
@@ -1591,29 +1849,33 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
         </div>
 
         {/* Actions */}
-        <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex gap-3 flex-shrink-0">
+        <div className="sticky bottom-0 bg-white border-t-2 border-slate-200 px-6 py-4 flex items-center justify-between flex-shrink-0 shadow-lg">
           <button
             onClick={handleReject}
             disabled={submitting || !comptrollerNotes.trim()}
-            className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white font-medium py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center justify-center gap-1.5 px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-medium text-sm rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <XCircle className="h-5 w-5" />
-            {submitting ? "Rejecting..." : "Reject & Return to User"}
+            <XCircle className="h-4 w-4" />
+            {submitting ? "Rejecting..." : "Reject"}
           </button>
-          <button
-            onClick={doApprove}
-            disabled={submitting || !signature}
-            className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Check className="h-5 w-5" />
-            {submitting ? "Approving..." : "Approve & Send"}
-          </button>
-          <button
-            onClick={onClose}
-            className="px-6 py-3 border border-gray-300 hover:bg-gray-100 text-gray-700 font-medium rounded-lg transition-colors"
-          >
-            Cancel
-          </button>
+          
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium text-sm rounded-md transition-colors"
+            >
+              Cancel
+            </button>
+
+            <button
+              onClick={doApprove}
+              disabled={submitting || !signature}
+              className="flex items-center justify-center gap-2 px-6 py-2.5 bg-[#7A0010] hover:bg-[#5e000d] text-white font-semibold text-sm rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              {submitting ? "Approving..." : "Approve Request"}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1623,7 +1885,10 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
           isOpen={showApproverSelection}
           onClose={() => setShowApproverSelection(false)}
           onSelect={(approverId, approverRole) => {
-            proceedWithApproval(approverId, approverRole);
+            // Handle both single and multiple selection
+            const id = Array.isArray(approverId) ? approverId[0] : approverId;
+            const role = Array.isArray(approverRole) ? approverRole[0] : approverRole;
+            proceedWithApproval(id || null, role || null);
           }}
           title="Select Next Approver"
           description="Choose where to send this request after approval."
