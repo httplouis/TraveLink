@@ -16,8 +16,14 @@ export async function GET(request: Request) {
     // Get current authenticated user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     
-    if (authError || !user) {
-      return NextResponse.json({ ok: false, error: "Not authenticated" }, { status: 401 });
+    if (authError) {
+      console.error("[GET /api/profile] Auth error:", authError.message, authError.status);
+      return NextResponse.json({ ok: false, error: `Not authenticated: ${authError.message}` }, { status: 401 });
+    }
+    
+    if (!user) {
+      console.error("[GET /api/profile] No user found after auth check");
+      return NextResponse.json({ ok: false, error: "Not authenticated: No user found" }, { status: 401 });
     }
     
     // Fetch user profile from database
