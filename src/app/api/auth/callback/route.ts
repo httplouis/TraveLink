@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
     const cookieStore = await cookies();
     
     // Create Supabase client with proper cookie settings for production
-    const isProduction = process.env.NODE_ENV === 'production';
+    const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -91,6 +91,22 @@ export async function GET(request: NextRequest) {
     console.log("[auth/callback] ✅ Session created successfully");
     console.log("[auth/callback] User ID:", session.user.id);
     console.log("[auth/callback] User email:", session.user.email);
+    
+    // CRITICAL: Verify session is accessible and cookies are set
+    const { data: { session: verifySession }, error: sessionVerifyError } = await supabase.auth.getSession();
+    if (sessionVerifyError || !verifySession) {
+      console.error("[auth/callback] ❌ Session verification failed after exchange!", sessionVerifyError);
+      return NextResponse.redirect(new URL("/login?error=session_verification_failed", baseUrl));
+    }
+    console.log("[auth/callback] ✅ Session verified, cookies should be set");
+    
+    // Log cookies for debugging
+    const allCookies = cookieStore.getAll();
+    console.log("[auth/callback] Cookies in store:", {
+      count: allCookies.length,
+      names: allCookies.map(c => c.name).join(', '),
+      hasSupabaseCookies: allCookies.some(c => c.name.includes('supabase') || c.name.includes('sb-'))
+    });
 
     const authUser = session.user;
     const userEmail = authUser.email;
@@ -518,7 +534,17 @@ export async function GET(request: NextRequest) {
     console.log(`[auth/callback] 🚀 Redirecting to: ${redirectUrl.toString()}`);
     console.log(`[auth/callback] Base URL used: ${baseUrl}`);
     
-    return NextResponse.redirect(redirectUrl);
+    // Create redirect response
+    const response = NextResponse.redirect(redirectUrl);
+    
+    // Log final cookie check
+    const finalCookies = cookieStore.getAll();
+    console.log("[auth/callback] Final cookies before redirect:", {
+      count: finalCookies.length,
+      names: finalCookies.map(c => c.name).join(', ')
+    });
+    
+    return response;
 
   } catch (error: any) {
     console.error("[auth/callback] Unexpected error:", error);
