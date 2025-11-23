@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
     if (userIds.length > 0) {
       const { data: users, error: usersError } = await supabase
         .from("users")
-        .select("id, name, email, department, department_id, profile_picture, position_title")
+        .select("id, name, email, department, department_id, profile_picture, position_title, role")
         .in("id", userIds);
 
       if (!usersError && users) {
@@ -95,6 +95,7 @@ export async function GET(req: NextRequest) {
         declined_reason: inv.declined_reason,
         profile_picture: user?.profile_picture || null, // Include profile picture
         position_title: user?.position_title || null, // Include position
+        role: user?.role || null, // Include role to determine if faculty/staff
       };
     });
 

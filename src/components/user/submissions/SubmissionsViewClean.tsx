@@ -589,8 +589,6 @@ export default function SubmissionsView() {
               // Additional form fields
               destination_geo: fullRequestData?.destination_geo || null,
               vehicle_mode: fullRequestData?.vehicle_mode || null,
-              preferred_driver_name: fullRequestData?.preferred_driver_name || fullRequestData?.preferred_driver || null,
-              preferred_vehicle_name: fullRequestData?.preferred_vehicle_name || fullRequestData?.preferred_vehicle || null,
               pickup_preference: fullRequestData?.pickup_preference || null,
               pickup_location_lat: fullRequestData?.pickup_location_lat || null,
               pickup_location_lng: fullRequestData?.pickup_location_lng || null,

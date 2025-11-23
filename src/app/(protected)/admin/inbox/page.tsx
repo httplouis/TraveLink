@@ -360,6 +360,15 @@ export default function AdminInboxPage() {
       const hasBudget = fullRequestData.has_budget || false;
       const requiresPresidentApproval = requesterIsHead || ((totalBudget || 0) > 50000);
       
+      // For head requesters: use head signature as fallback (dual-signature logic)
+      // If requester is head, check head signature as fallback (same signature)
+      const requesterSignature = requesterIsHead
+        ? (fullRequestData.requester_signature || 
+           fullRequestData.head_signature || 
+           fullRequestData.parent_head_signature || 
+           null)
+        : (fullRequestData.requester_signature || null);
+
       const signatures: any[] = [
         {
           id: 'requester',
@@ -373,7 +382,7 @@ export default function AdminInboxPage() {
             department: fullRequestData.requester?.department || fullRequestData.department?.name || 'No Department',
             position: requesterIsHead ? 'Department Head' : 'Faculty/Staff'
           },
-          signature: fullRequestData.requester_signature || null,
+          signature: requesterSignature,
           approved_at: fullRequestData.created_at
         },
       ];
@@ -565,6 +574,25 @@ export default function AdminInboxPage() {
         preferred_driver_id: fullRequestData.preferred_driver_id,
         preferred_vehicle_note: fullRequestData.preferred_vehicle_note,
         preferred_driver_note: fullRequestData.preferred_driver_note,
+        assigned_vehicle_id: fullRequestData.assigned_vehicle_id || null,
+        assigned_driver_id: fullRequestData.assigned_driver_id || null,
+        assigned_vehicle: fullRequestData.assigned_vehicle ? {
+          id: fullRequestData.assigned_vehicle?.id || fullRequestData.assigned_vehicle_id || '',
+          name: fullRequestData.assigned_vehicle?.name || fullRequestData.assigned_vehicle?.vehicle_name || fullRequestData.assigned_vehicle_name || 'Unknown Vehicle',
+          plate_number: fullRequestData.assigned_vehicle?.plate_number || fullRequestData.assigned_vehicle?.plate_no || null,
+          type: fullRequestData.assigned_vehicle?.type || fullRequestData.assigned_vehicle?.vehicle_type || null,
+          capacity: fullRequestData.assigned_vehicle?.capacity || null
+        } : null,
+        assigned_driver: fullRequestData.assigned_driver ? {
+          id: fullRequestData.assigned_driver?.id || fullRequestData.assigned_driver_id || '',
+          name: fullRequestData.assigned_driver?.name || fullRequestData.assigned_driver?.full_name || fullRequestData.assigned_driver_name || 'Unknown Driver',
+          email: fullRequestData.assigned_driver?.email || null,
+          phone: fullRequestData.assigned_driver?.phone || fullRequestData.assigned_driver?.phone_number || null,
+          profile_picture: fullRequestData.assigned_driver?.profile_picture || null
+        } : null,
+        assigned_vehicle_name: fullRequestData.assigned_vehicle_name || fullRequestData.assigned_vehicle?.name || fullRequestData.assigned_vehicle?.vehicle_name || null,
+        assigned_driver_name: fullRequestData.assigned_driver_name || fullRequestData.assigned_driver?.name || fullRequestData.assigned_driver?.full_name || null,
+        driver_contact_number: fullRequestData.driver_contact_number || fullRequestData.assigned_driver?.phone || fullRequestData.assigned_driver?.phone_number || null,
         request_type: (fullRequestData.request_type === "seminar" ? "seminar" : "travel_order") as "travel_order" | "seminar" | undefined,
         seminar_data: seminarData,
         requester: {
@@ -576,7 +604,18 @@ export default function AdminInboxPage() {
           position: fullRequestData.requester?.position || (fullRequestData.requester_is_head ? 'Department Head' : 'Faculty/Staff'),
           phone: fullRequestData.requester?.phone || fullRequestData.requester?.phone_number
         },
-        requester_signature: fullRequestData.requester_signature || null,
+        // For head requesters: use head signature as fallback (dual-signature logic)
+        requester_signature: (() => {
+          const requesterIsHead = fullRequestData.requester_is_head || false;
+          // If requester is head, check head signature as fallback (same signature)
+          if (requesterIsHead) {
+            return fullRequestData.requester_signature || 
+                   fullRequestData.head_signature || 
+                   fullRequestData.parent_head_signature || 
+                   null;
+          }
+          return fullRequestData.requester_signature || null;
+        })(),
         participants: fullRequestData.participants || [],
         head_endorsements: fullRequestData.head_endorsements || [], // All head endorsements
         head_approver: fullRequestData.parent_head_approver || fullRequestData.head_approver || null,

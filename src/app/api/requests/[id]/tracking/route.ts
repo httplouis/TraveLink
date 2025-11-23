@@ -126,7 +126,7 @@ export async function GET(
       // Driver data is in users table, not drivers table
       const { data, error } = await supabase
         .from("users")
-          .select("name, id, full_name, email, phone_number, profile_picture")
+          .select("name, id, name_full, email, phone_number, profile_picture")
         .eq("id", driverId)
         .single();
       
@@ -137,8 +137,8 @@ export async function GET(
         
         return data ? {
           id: data.id,
-          name: data.name || data.full_name || 'Unknown Driver',
-          full_name: data.name || data.full_name || 'Unknown Driver',
+          name: data.name || data.name_full || 'Unknown Driver',
+          full_name: data.name || data.name_full || 'Unknown Driver',
           email: data.email || null,
           phone: data.phone_number || null,
           phone_number: data.phone_number || null,
@@ -583,6 +583,22 @@ export async function GET(
       comptroller_skipped: request.comptroller_skipped || false,
       admin_skip_reason: request.admin_skip_reason || null,
       comptroller_skip_reason: request.comptroller_skip_reason || null,
+      
+      // Attachments
+      attachments: (() => {
+        // Parse attachments if it's a string (JSONB from database)
+        let attachments = request.attachments || [];
+        if (typeof attachments === 'string') {
+          try {
+            attachments = JSON.parse(attachments);
+          } catch (e) {
+            console.warn('[Tracking API] Failed to parse attachments:', e);
+            attachments = [];
+          }
+        }
+        // Ensure it's an array
+        return Array.isArray(attachments) ? attachments : [];
+      })(),
     };
 
     // Parse seminar_data if it's a string

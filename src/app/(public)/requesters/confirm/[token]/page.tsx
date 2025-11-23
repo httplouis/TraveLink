@@ -331,16 +331,33 @@ export default function RequesterConfirmationPage() {
                 {request?.pickup_location && (
                   <p className="text-sm text-gray-600">
                     <span className="font-medium">Pickup:</span> {request.pickup_location}
+                    {request?.pickup_time && ` at ${new Date(request.pickup_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`}
                   </p>
                 )}
                 {request?.dropoff_location && (
                   <p className="text-sm text-gray-600">
                     <span className="font-medium">Dropoff:</span> {request.dropoff_location}
+                    {request?.dropoff_time && ` at ${new Date(request.dropoff_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`}
                   </p>
                 )}
                 {request?.vehicle_mode === 'owned' && request?.own_vehicle_details && (
                   <p className="text-sm text-gray-600">
                     <span className="font-medium">Vehicle:</span> {request.own_vehicle_details}
+                  </p>
+                )}
+                {request?.preferred_driver_name && (
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">Preferred Driver:</span> {request.preferred_driver_name}
+                  </p>
+                )}
+                {request?.preferred_vehicle_name && (
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">Preferred Vehicle:</span> {request.preferred_vehicle_name}
+                  </p>
+                )}
+                {request?.total_budget && request.total_budget > 0 && (
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">Total Budget:</span> ₱{request.total_budget.toLocaleString()}
                   </p>
                 )}
               </div>
@@ -352,6 +369,9 @@ export default function RequesterConfirmationPage() {
                   <div>
                     <p className="text-sm text-gray-600">
                       Requested by: <span className="font-medium">{request.requester.name}</span>
+                      {request.requester.department && (
+                        <span className="text-gray-500"> • {request.requester.department}</span>
+                      )}
                     </p>
                   </div>
                 </div>
@@ -493,11 +513,13 @@ export default function RequesterConfirmationPage() {
                 {request?.pickup_location && (
                   <p className="text-sm text-gray-600">
                     <span className="font-medium">Pickup:</span> {request.pickup_location}
+                    {request?.pickup_time && ` at ${new Date(request.pickup_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`}
                   </p>
                 )}
                 {request?.dropoff_location && (
                   <p className="text-sm text-gray-600">
                     <span className="font-medium">Dropoff:</span> {request.dropoff_location}
+                    {request?.dropoff_time && ` at ${new Date(request.dropoff_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`}
                   </p>
                 )}
                 {request?.vehicle_mode === 'owned' && request?.own_vehicle_details && (
@@ -505,19 +527,37 @@ export default function RequesterConfirmationPage() {
                     <span className="font-medium">Vehicle:</span> {request.own_vehicle_details}
                   </p>
                 )}
+                {request?.preferred_driver_name && (
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">Preferred Driver:</span> {request.preferred_driver_name}
+                  </p>
+                )}
+                {request?.preferred_vehicle_name && (
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">Preferred Vehicle:</span> {request.preferred_vehicle_name}
+                  </p>
+                )}
+                {request?.total_budget && request.total_budget > 0 && (
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">Total Budget:</span> ₱{request.total_budget.toLocaleString()}
+                  </p>
+                )}
               </div>
             </div>
 
-            {request?.requester && (
-              <div className="flex items-start gap-3">
-                <User className="h-5 w-5 text-gray-400 mt-0.5" />
-                <div>
-                  <p className="text-sm text-gray-600">
-                    Requested by: <span className="font-medium">{request.requester.name}</span>
-                  </p>
+              {request?.requester && (
+                <div className="flex items-start gap-3">
+                  <User className="h-5 w-5 text-gray-400 mt-0.5" />
+                  <div>
+                    <p className="text-sm text-gray-600">
+                      Requested by: <span className="font-medium">{request.requester.name}</span>
+                      {request.requester.department && (
+                        <span className="text-gray-500"> • {request.requester.department}</span>
+                      )}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
           </div>
         </div>
 

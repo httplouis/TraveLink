@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import * as React from 'react';
 import { motion } from 'framer-motion';
 import { 
   MapPin, 
@@ -28,6 +29,7 @@ import SignatureStageRail from './SignatureStageRail';
 import RequestStatusTracker from './RequestStatusTracker';
 import { formatLongDate, formatLongDateTime } from '@/lib/datetime';
 import FileAttachmentSection from '@/components/user/request/ui/parts/FileAttachmentSection.view';
+import { createSupabaseClient } from '@/lib/supabase/client';
 
 export interface RequestData {
   id: string;
@@ -278,12 +280,143 @@ export default function RequestDetailsView({
   const [uploadingAttachments, setUploadingAttachments] = useState(false);
   const [currentAttachments, setCurrentAttachments] = useState<any[]>(request.attachments || []);
 
-  // Fetch confirmed requesters
-  useEffect(() => {
-    if (request?.id) {
-      fetchConfirmedRequesters();
+  // Define fetchConfirmedRequesters BEFORE using it in useEffect
+  const fetchConfirmedRequesters = React.useCallback(async () => {
+    if (!request?.id) return;
+    
+    try {
+      setLoadingRequesters(true);
+      console.log('[RequestDetailsView] 🔍 Fetching confirmed requesters for request:', request.id);
+      const response = await fetch(`/api/requesters/status?request_id=${request.id}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' }
+      });
+      const data = await response.json();
+      
+      console.log('[RequestDetailsView] 📊 Requester status response:', {
+        ok: data.ok,
+        count: data.data?.length || 0,
+        data: data.data
+      });
+      
+      if (data.ok && data.data) {
+        console.log('[RequestDetailsView] 📋 All invitations received for request:', request.id, {
+          totalInvitations: data.data.length,
+          invitations: data.data.map((r: any) => ({
+            email: r.email,
+            name: r.name,
+            status: r.status,
+            hasSignature: !!r.signature,
+            confirmed_at: r.confirmed_at
+          }))
+        });
+        
+        // Include ALL confirmed requesters
+        // Note: We include ALL confirmed requesters, even if they're the main requester
+        // The UI will handle displaying them appropriately
+        const confirmed = data.data.filter((req: any) => {
+          // Only include if status is confirmed
+          if (req.status !== 'confirmed') {
+            console.log('[RequestDetailsView] ⏭️ Skipping requester (not confirmed):', {
+              email: req.email,
+              name: req.name,
+              status: req.status
+            });
+            return false;
+          }
+          
+          console.log('[RequestDetailsView] ✅ Including confirmed requester:', {
+            name: req.name || req.email,
+            email: req.email,
+            hasSignature: !!req.signature,
+            confirmed_at: req.confirmed_at,
+            requestId: request.id
+          });
+          return true;
+        });
+        
+        // Log detailed info for debugging
+        console.log('[RequestDetailsView] 🔍 Detailed confirmed requesters check:', {
+          totalInvitations: data.data.length,
+          confirmedCount: confirmed.length,
+          mainRequesterEmail: request.requester?.email,
+          mainRequesterId: request.requester?.id,
+          confirmedEmails: confirmed.map((r: any) => r.email),
+          confirmedNames: confirmed.map((r: any) => r.name),
+          allInvitationEmails: data.data.map((r: any) => ({ email: r.email, status: r.status }))
+        });
+        
+        console.log('[RequestDetailsView] ✅ Final confirmed requesters:', {
+          count: confirmed.length,
+          requesters: confirmed.map((r: any) => ({
+            name: r.name || r.email,
+            email: r.email,
+            hasSignature: !!r.signature
+          })),
+          note: confirmed.length === 0 ? 'No confirmed requesters found. If you expected someone to appear, check if they were invited and confirmed for this request.' : ''
+        });
+        setConfirmedRequesters(confirmed);
+      } else {
+        console.error('[RequestDetailsView] ❌ Failed to fetch requesters:', data.error);
+        setConfirmedRequesters([]);
+      }
+    } catch (err) {
+      console.error('[RequestDetailsView] Error fetching confirmed requesters:', err);
+      setConfirmedRequesters([]);
+    } finally {
+      setLoadingRequesters(false);
     }
   }, [request?.id]);
+
+  // Fetch confirmed requesters and set up real-time subscription
+  useEffect(() => {
+    if (!request?.id) return;
+    
+    // Initial fetch
+    fetchConfirmedRequesters();
+    
+    // Set up real-time subscription for requester_invitations
+    const supabase = createSupabaseClient();
+    const channel = supabase
+      .channel(`requester-invitations-${request.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Listen to INSERT, UPDATE, DELETE
+          schema: 'public',
+          table: 'requester_invitations',
+          filter: `request_id=eq.${request.id}`, // Only listen to changes for this request
+        },
+        (payload) => {
+          console.log('[RequestDetailsView] 🔔 Real-time change detected for requester_invitations:', {
+            event: payload.eventType,
+            new: payload.new,
+            old: payload.old,
+            requestId: request.id
+          });
+          
+          // Debounce refetch to avoid too many calls
+          setTimeout(() => {
+            console.log('[RequestDetailsView] 🔄 Refetching confirmed requesters after real-time update');
+            fetchConfirmedRequesters();
+          }, 300);
+        }
+      )
+      .subscribe((status) => {
+        console.log('[RequestDetailsView] 📡 Real-time subscription status:', status);
+        if (status === 'SUBSCRIBED') {
+          console.log('[RequestDetailsView] ✅ Successfully subscribed to requester_invitations changes');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('[RequestDetailsView] ❌ Channel error - falling back to polling');
+        }
+      });
+    
+    // Cleanup subscription on unmount
+    return () => {
+      console.log('[RequestDetailsView] 🧹 Cleaning up real-time subscription');
+      supabase.removeChannel(channel);
+    };
+  }, [request?.id, fetchConfirmedRequesters]);
 
   // Fetch routing person (who the request was sent to)
   useEffect(() => {
@@ -440,91 +573,6 @@ export default function RequestDetailsView({
       setRoutingPerson(null);
     } finally {
       setLoadingRoutingPerson(false);
-    }
-  };
-
-  const fetchConfirmedRequesters = async () => {
-    try {
-      setLoadingRequesters(true);
-      console.log('[RequestDetailsView] 🔍 Fetching confirmed requesters for request:', request.id);
-      const response = await fetch(`/api/requesters/status?request_id=${request.id}`, {
-        cache: 'no-store',
-        headers: { 'Cache-Control': 'no-cache' }
-      });
-      const data = await response.json();
-      
-      console.log('[RequestDetailsView] 📊 Requester status response:', {
-        ok: data.ok,
-        count: data.data?.length || 0,
-        data: data.data
-      });
-      
-      if (data.ok && data.data) {
-        console.log('[RequestDetailsView] 📋 All invitations received for request:', request.id, {
-          totalInvitations: data.data.length,
-          invitations: data.data.map((r: any) => ({
-            email: r.email,
-            name: r.name,
-            status: r.status,
-            hasSignature: !!r.signature,
-            confirmed_at: r.confirmed_at
-          }))
-        });
-        
-        // Include ALL confirmed requesters
-        // Note: We include ALL confirmed requesters, even if they're the main requester
-        // The UI will handle displaying them appropriately
-        const confirmed = data.data.filter((req: any) => {
-          // Only include if status is confirmed
-          if (req.status !== 'confirmed') {
-            console.log('[RequestDetailsView] ⏭️ Skipping requester (not confirmed):', {
-              email: req.email,
-              name: req.name,
-              status: req.status
-            });
-            return false;
-          }
-          
-          console.log('[RequestDetailsView] ✅ Including confirmed requester:', {
-            name: req.name || req.email,
-            email: req.email,
-            hasSignature: !!req.signature,
-            confirmed_at: req.confirmed_at,
-            requestId: request.id
-          });
-          return true;
-        });
-        
-        // Log detailed info for debugging
-        console.log('[RequestDetailsView] 🔍 Detailed confirmed requesters check:', {
-          totalInvitations: data.data.length,
-          confirmedCount: confirmed.length,
-          mainRequesterEmail: request.requester?.email,
-          mainRequesterId: request.requester?.id,
-          confirmedEmails: confirmed.map((r: any) => r.email),
-          confirmedNames: confirmed.map((r: any) => r.name),
-          allInvitationEmails: data.data.map((r: any) => ({ email: r.email, status: r.status }))
-        });
-        
-        console.log('[RequestDetailsView] ✅ Final confirmed requesters:', {
-          count: confirmed.length,
-          requesters: confirmed.map((r: any) => ({
-            name: r.name || r.email,
-            email: r.email,
-            hasSignature: !!r.signature
-          })),
-          note: confirmed.length === 0 ? 'No confirmed requesters found. If you expected someone to appear, check if they were invited and confirmed for this request.' : ''
-        });
-        setConfirmedRequesters(confirmed);
-      } else {
-        console.error('[RequestDetailsView] ❌ Failed to fetch requesters:', data.error);
-        setConfirmedRequesters([]);
-      }
-    } catch (err) {
-      console.error('[RequestDetailsView] Error fetching confirmed requesters:', err);
-      setConfirmedRequesters([]);
-    } finally {
-      setLoadingRequesters(false);
     }
   };
 
@@ -1931,9 +1979,21 @@ export default function RequestDetailsView({
                 });
                 
                 // Get requester signature from signatures array or direct field
-                // Get requester signature from signatures array or direct field
+                // For head requesters: use head signature as fallback (dual-signature logic)
                 const requesterSignatureStage = request.signatures?.find((s: any) => s.id === 'requester' || s.role === 'Requester');
-                const requesterSignature = request.requester_signature || requesterSignatureStage?.signature || null;
+                const requesterIsHead = request.requesterIsHead || false;
+                
+                // If requester is head, check head signature as fallback (same signature)
+                // The head_signature should be the same as requester_signature (dual-signature)
+                // Check both head_signature and parent_head_signature as fallbacks
+                const headSignature = (request as any).head_signature || (request as any).parent_head_signature || null;
+                
+                const requesterSignature = requesterIsHead
+                  ? (request.requester_signature || 
+                     requesterSignatureStage?.signature || 
+                     headSignature ||
+                     null)
+                  : (request.requester_signature || requesterSignatureStage?.signature || null);
                 
                 return (
                   <motion.div
@@ -2126,11 +2186,32 @@ export default function RequestDetailsView({
                             {requester.name || requester.email || 'Unknown Requester'}
                           </h4>
                           <div className="flex flex-wrap items-center gap-2">
-                            {requester.position_title && (
-                              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-800 border border-gray-200">
-                                {requester.position_title}
-                              </span>
-                            )}
+                            {(() => {
+                              // Show position_title if available
+                              if (requester.position_title) {
+                                return (
+                                  <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-800 border border-gray-200">
+                                    {requester.position_title}
+                                  </span>
+                                );
+                              }
+                              
+                              // If no position_title, check if user is faculty/staff in TraviLink
+                              // Even if they have student email, show Faculty/Staff if that's their role
+                              const userRole = (requester as any).role;
+                              const isFacultyOrStaff = userRole === 'faculty' || userRole === 'staff';
+                              
+                              if (isFacultyOrStaff) {
+                                return (
+                                  <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-800 border border-gray-200">
+                                    Faculty/Staff
+                                  </span>
+                                );
+                              }
+                              
+                              // Don't show anything if no position_title and not faculty/staff
+                              return null;
+                            })()}
                             <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-green-100 border border-green-300 rounded-full shadow-sm">
                               <CheckCircle2 className="w-4 h-4 text-green-600" />
                               <span className="text-xs font-bold text-green-700">Confirmed</span>
