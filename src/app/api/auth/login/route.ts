@@ -4,6 +4,9 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
+// Login route must be dynamic (uses cookies, auth)
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     const { email, password, clearSession } = await request.json();
@@ -369,6 +372,16 @@ export async function POST(request: NextRequest) {
 
   } catch (error: any) {
     console.error('[/api/auth/login] Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    // Return a more user-friendly error message
+    const errorMessage = error?.message || 'An unexpected error occurred during login. Please try again.';
+    console.error('[/api/auth/login] Error details:', {
+      message: errorMessage,
+      name: error?.name,
+      stack: error?.stack?.substring(0, 200)
+    });
+    return NextResponse.json({ 
+      error: errorMessage,
+      success: false 
+    }, { status: 500 });
   }
 }
