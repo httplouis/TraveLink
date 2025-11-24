@@ -328,6 +328,9 @@ export default function DraftsPage() {
                 </div>
               </motion.div>
             ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </PageBody>
