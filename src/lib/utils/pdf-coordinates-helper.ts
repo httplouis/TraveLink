@@ -73,7 +73,7 @@ export const PDF_COORDINATES = {
     HR: {
       sig: { x: 85, top: 565, w: 200, h: 40 },
       name: { x: 85, top: 575, w: 200, h: 12 },
-      date: { x: 345, top: 575, w: 120, h: 12 }, // Date on the right side
+      date: { x: 400, top: 575, w: 120, h: 12 }, // Date on the right side
       comments: { x: 85, top: 590, w: 200, h: 20 }, // Comments below name
     },
     
@@ -81,7 +81,7 @@ export const PDF_COORDINATES = {
     VP: {
       sig: { x: 85, top: 640, w: 200, h: 40 },
       name: { x: 85, top: 620, w: 200, h: 12 },
-      date: { x: 350, top: 625, w: 120, h: 12 }, // Date on the right side
+      date: { x: 400, top: 625, w: 120, h: 12 }, // Date on the right side
       comments: { x: 85, top: 635, w: 200, h: 20 }, // Comments below name
     },
     
@@ -89,7 +89,7 @@ export const PDF_COORDINATES = {
     VP2: {
       sig: { x: 85, top: 680, w: 200, h: 40 },
       name: { x: 85, top: 725, w: 200, h: 12 },
-      date: { x: 350, top: 690, w: 120, h: 12 }, // Date on the right side
+      date: { x: 380, top: 690, w: 120, h: 12 }, // Date on the right side
       comments: { x: 85, top: 740, w: 200, h: 20 }, // Comments below name
     },
     
@@ -97,7 +97,7 @@ export const PDF_COORDINATES = {
     PRESIDENT: {
       sig: { x: 85, top: 675, w: 200, h: 40 },
       name: { x: 85, top: 690, w: 200, h: 12 },
-      date: { x: 350, top: 680, w: 120, h: 12 }, // Date on the right side
+      date: { x: 400, top: 680, w: 120, h: 12 }, // Date on the right side
       comments: { x: 85, top: 705, w: 200, h: 20 }, // Comments below name
     },
     
