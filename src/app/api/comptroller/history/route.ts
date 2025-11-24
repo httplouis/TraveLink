@@ -50,9 +50,7 @@ export async function GET(req: NextRequest) {
           name
         )
       `)
-      .or("comptroller_approved_at.not.is.null,comptroller_rejected_at.not.is.null")
-      .order("comptroller_approved_at", { ascending: false, nullsFirst: false })
-      .order("comptroller_rejected_at", { ascending: false, nullsFirst: false });
+      .or("comptroller_approved_at.not.is.null,comptroller_rejected_at.not.is.null");
 
     if (error) throw error;
 
@@ -71,12 +69,18 @@ export async function GET(req: NextRequest) {
       const deptCode = req.department && typeof req.department === 'object' && 'code' in req.department 
         ? (req.department as any).code 
         : "Unknown";
+      
+      const deptName = req.department && typeof req.department === 'object' && 'name' in req.department 
+        ? (req.department as any).name 
+        : null;
 
       return {
         id: req.id,
         request_number: req.request_number || req.id,
         requester: requesterName,
+        requester_name: requesterName,
         department: deptCode,
+        department_name: deptName || deptCode,
         budget: req.total_budget || 0,
         edited_budget: req.comptroller_edited_budget,
         decision,
@@ -84,6 +88,13 @@ export async function GET(req: NextRequest) {
         notes: notes || "",
       };
     }) || [];
+
+    // Sort by decision date (most recent first)
+    history.sort((a, b) => {
+      const dateA = new Date(a.decision_date || 0).getTime();
+      const dateB = new Date(b.decision_date || 0).getTime();
+      return dateB - dateA;
+    });
 
     return NextResponse.json({ ok: true, data: history });
 

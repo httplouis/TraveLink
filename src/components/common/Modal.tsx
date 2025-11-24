@@ -13,6 +13,7 @@ interface WowModalProps {
   showCloseButton?: boolean;
   closeOnOverlayClick?: boolean;
   className?: string;
+  headerActions?: ReactNode;
 }
 
 const sizeClasses = {
@@ -62,7 +63,8 @@ export default function WowModal({
   children,
   showCloseButton = true,
   closeOnOverlayClick = true,
-  className = ''
+  className = '',
+  headerActions
 }: WowModalProps) {
   // Handle escape key
   useEffect(() => {
@@ -110,21 +112,24 @@ export default function WowModal({
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            {(title || showCloseButton) && (
+            {(title || showCloseButton || headerActions) && (
               <div className="flex items-center justify-between p-6 border-b border-gray-200">
                 <h2 className="text-xl font-semibold text-gray-900">
                   {title}
                 </h2>
-                {showCloseButton && (
-                  <motion.button
-                    onClick={onClose}
-                    className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors"
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                  >
-                    <X className="w-5 h-5" />
-                  </motion.button>
-                )}
+                <div className="flex items-center gap-3">
+                  {headerActions}
+                  {showCloseButton && (
+                    <motion.button
+                      onClick={onClose}
+                      className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors"
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                    >
+                      <X className="w-5 h-5" />
+                    </motion.button>
+                  )}
+                </div>
               </div>
             )}
 

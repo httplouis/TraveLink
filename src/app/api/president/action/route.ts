@@ -317,6 +317,7 @@ export async function POST(request: Request) {
                   requesterPhone: request.requester_contact_number || "",
                   travelDate: request.travel_start_date,
                   destination: request.destination || "",
+                  purpose: request.purpose || "",
                   pickupLocation: request.pickup_location || undefined,
                   pickupTime: request.pickup_time || undefined,
                   pickupPreference: request.pickup_preference as 'pickup' | 'self' | 'gymnasium' | undefined,

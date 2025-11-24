@@ -17,7 +17,10 @@ export default function ComptrollerHistoryPage() {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch("/api/comptroller/history", { cache: "no-store" });
+      const res = await fetch("/api/comptroller/history", { 
+        cache: "no-store",
+        credentials: 'include'
+      });
       if (!res.ok) {
         console.warn("History API not OK:", res.status);
         setItems([]);
@@ -30,10 +33,12 @@ export default function ComptrollerHistoryPage() {
         return;
       }
       const json = await res.json();
-      if (Array.isArray(json)) {
+      if (json.ok && json.data) {
+        setItems(Array.isArray(json.data) ? json.data : []);
+      } else if (Array.isArray(json)) {
         setItems(json);
-      } else if (json.ok) {
-        setItems(json.data ?? []);
+      } else {
+        setItems([]);
       }
     } catch (err) {
       console.error("Failed to load history:", err);
@@ -51,22 +56,27 @@ export default function ComptrollerHistoryPage() {
   };
 
   const filteredItems = items.filter((item) => {
-    const query = searchQuery.toLowerCase();
-    const matchesSearch = 
-      item.request_number?.toLowerCase().includes(query) ||
-      item.requester?.toLowerCase().includes(query) ||
-      item.department?.toLowerCase().includes(query);
+    const query = searchQuery.toLowerCase().trim();
+    if (query) {
+      const matchesSearch = 
+        item.request_number?.toLowerCase().includes(query) ||
+        item.requester?.toLowerCase().includes(query) ||
+        item.requester_name?.toLowerCase().includes(query) ||
+        item.department?.toLowerCase().includes(query) ||
+        item.department_name?.toLowerCase().includes(query);
+      if (!matchesSearch) return false;
+    }
     
     const matchesFilters = Object.entries(activeFilters).every(([key, value]) => {
       if (!value) return true;
       if (key === 'status') {
-        if (value === 'approved') return item.decision === 'approved';
-        if (value === 'rejected') return item.decision === 'rejected';
+        if (value === 'approved') return item.decision === 'approved' || item.status === 'approved';
+        if (value === 'rejected') return item.decision === 'rejected' || item.status === 'rejected';
       }
       return true;
     });
     
-    return matchesSearch && matchesFilters;
+    return matchesFilters;
   });
 
   if (loading) {
@@ -153,14 +163,26 @@ export default function ComptrollerHistoryPage() {
                 key={item.id}
                 onClick={() => {
                   // Fetch full request details
-                  fetch(`/api/requests/${item.id}`)
-                    .then(res => res.json())
+                  fetch(`/api/requests/${item.id}`, {
+                    credentials: 'include',
+                    cache: 'no-store'
+                  })
+                    .then(res => {
+                      if (!res.ok) {
+                        throw new Error(`Failed to fetch: ${res.status}`);
+                      }
+                      return res.json();
+                    })
                     .then(data => {
-                      if (data.ok) {
+                      if (data.ok && data.data) {
                         setSelected(data.data);
+                      } else {
+                        console.error("Invalid response format:", data);
                       }
                     })
-                    .catch(err => console.error("Failed to fetch request:", err));
+                    .catch(err => {
+                      console.error("Failed to fetch request:", err);
+                    });
                 }}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -193,33 +215,34 @@ export default function ComptrollerHistoryPage() {
                             year: 'numeric',
                             hour: 'numeric',
                             minute: '2-digit',
-                            hour12: true
+                            hour12: true,
+                            timeZone: 'Asia/Manila'
                           })}
                         </span>
                       </>
                     )}
                   </div>
                   
-                  <div className="text-sm">
-                    <div className="font-medium text-gray-900">{requester}</div>
-                    <div className="text-gray-600">{department}</div>
+                  <div className="text-sm mt-2">
+                    <div className="font-semibold text-gray-900">{requester}</div>
+                    <div className="text-gray-600 mt-0.5">{item.department_name || department}</div>
                   </div>
 
-                  {item.budget && (
+                  {item.budget !== undefined && item.budget !== null && (
                     <div className="mt-3 text-sm">
                       <span className="text-gray-500">Budget: </span>
-                      <span className="font-medium text-gray-900">₱{Number(item.budget).toLocaleString()}</span>
-                      {item.edited_budget && item.edited_budget !== item.budget && (
+                      <span className="font-semibold text-gray-900">₱{Number(item.budget).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      {item.edited_budget && Number(item.edited_budget) !== Number(item.budget) && (
                         <span className="text-gray-500 ml-2">
-                          (Edited: ₱{Number(item.edited_budget).toLocaleString()})
+                          (Edited: ₱{Number(item.edited_budget).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                         </span>
                       )}
                     </div>
                   )}
 
-                  {item.notes && (
-                    <p className="text-sm text-gray-600 line-clamp-1 mt-2">
-                      {item.notes}
+                  {item.notes && item.notes.trim() && (
+                    <p className="text-sm text-gray-600 line-clamp-2 mt-2 italic">
+                      "{item.notes}"
                     </p>
                   )}
                 </div>

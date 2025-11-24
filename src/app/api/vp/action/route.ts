@@ -165,10 +165,19 @@ export async function POST(request: Request) {
       const requesterRole = requester?.role || "faculty";
       const headIncluded = finalRequest.head_included || false;
 
+      // Check workflow_metadata for multiple assigned VPs
+      const workflowMetadata: any = finalRequest.workflow_metadata || {};
+      const assignedVpIds = Array.isArray(workflowMetadata?.assigned_vp_ids) ? workflowMetadata.assigned_vp_ids : [];
+      const vpApprovals = workflowMetadata?.vp_approvals || []; // Track which VPs have approved
+      
+      // Check if this VP is assigned (for multi-VP system)
+      const isAssignedVP = assignedVpIds.length > 0 && assignedVpIds.some((id: any) => String(id) === String(vpUser.id));
+      
       // Check if this VP has already approved
       const alreadyApprovedByThisVP = 
         (finalRequest.vp_approved_by === vpUser.id) || 
-        (finalRequest.vp2_approved_by === vpUser.id);
+        (finalRequest.vp2_approved_by === vpUser.id) ||
+        (vpApprovals.some((approval: any) => approval.vp_id === vpUser.id));
       
       if (alreadyApprovedByThisVP) {
         return NextResponse.json({ 
@@ -214,6 +223,20 @@ export async function POST(request: Request) {
         updateData.vp_comments = notes || null;
         // Set both_vps_approved = true since one VP signature is sufficient
         updateData.both_vps_approved = true;
+        
+        // Track VP approval in workflow_metadata for multi-VP system
+        const updatedWorkflowMetadata = { ...workflowMetadata };
+        if (!updatedWorkflowMetadata.vp_approvals) {
+          updatedWorkflowMetadata.vp_approvals = [];
+        }
+        updatedWorkflowMetadata.vp_approvals.push({
+          vp_id: vpUser.id,
+          vp_name: vpUser.name,
+          approved_at: now,
+          signature: signature || null,
+          comments: notes || null
+        });
+        updateData.workflow_metadata = updatedWorkflowMetadata;
         
         // NEW RULE: Only one VP signature is sufficient (even for multiple departments)
         // Request proceeds to President after any VP approval
@@ -384,6 +407,7 @@ export async function POST(request: Request) {
                         requesterPhone: finalRequest.requester_contact_number || "",
                         travelDate: finalRequest.travel_start_date,
                         destination: finalRequest.destination || "",
+                        purpose: finalRequest.purpose || "",
                         pickupLocation: finalRequest.pickup_location || undefined,
                         pickupTime: finalRequest.pickup_time || undefined,
                         pickupPreference: finalRequest.pickup_preference as 'pickup' | 'self' | 'gymnasium' | undefined,
@@ -420,6 +444,20 @@ export async function POST(request: Request) {
         updateData.vp2_signature = signature || null;
         updateData.vp2_comments = notes || null;
         updateData.both_vps_approved = true;
+        
+        // Track second VP approval in workflow_metadata for multi-VP system
+        const updatedWorkflowMetadata = { ...workflowMetadata };
+        if (!updatedWorkflowMetadata.vp_approvals) {
+          updatedWorkflowMetadata.vp_approvals = [];
+        }
+        updatedWorkflowMetadata.vp_approvals.push({
+          vp_id: vpUser.id,
+          vp_name: vpUser.name,
+          approved_at: now,
+          signature: signature || null,
+          comments: notes || null
+        });
+        updateData.workflow_metadata = updatedWorkflowMetadata;
         
         // Use selected approver or default to President
         if (returnReason) {
@@ -542,47 +580,50 @@ export async function POST(request: Request) {
       updateData.exec_level = requesterIsHead ? "president" : "vp";
       updateData.updated_at = now;
 
-      // Update workflow_metadata with routing information
-      const workflowMetadata: any = finalRequest.workflow_metadata || {};
+      // Update workflow_metadata with routing information (preserve vp_approvals if they exist)
+      const updatedWorkflowMetadataForRouting = { 
+        ...workflowMetadata,
+        vp_approvals: workflowMetadata.vp_approvals || [] // Preserve existing VP approvals
+      };
       if (finalNextApproverRole) {
-        workflowMetadata.next_approver_role = finalNextApproverRole;
+        updatedWorkflowMetadataForRouting.next_approver_role = finalNextApproverRole;
         
         // For roles where ALL users in that role should see it (admin, comptroller, hr),
         // DON'T set next_approver_id - this allows all users in that role to see it
         // For roles where a specific user is assigned (president, vp, head), set the ID
         if (finalNextApproverRole === "president") {
-          workflowMetadata.next_approver_id = nextApproverId;
-          workflowMetadata.next_president_id = nextApproverId;
+          updatedWorkflowMetadataForRouting.next_approver_id = nextApproverId;
+          updatedWorkflowMetadataForRouting.next_president_id = nextApproverId;
         } else if (finalNextApproverRole === "admin") {
           // Don't set next_approver_id or next_admin_id - allow all admins to see it
           // Explicitly clear any existing next_approver_id to ensure all admins can see it
-          workflowMetadata.next_approver_id = null;
-          workflowMetadata.next_admin_id = null;
+          updatedWorkflowMetadataForRouting.next_approver_id = null;
+          updatedWorkflowMetadataForRouting.next_admin_id = null;
         } else if (finalNextApproverRole === "vp") {
-          workflowMetadata.next_approver_id = nextApproverId;
-          workflowMetadata.next_vp_id = nextApproverId;
+          updatedWorkflowMetadataForRouting.next_approver_id = nextApproverId;
+          updatedWorkflowMetadataForRouting.next_vp_id = nextApproverId;
         } else if (finalNextApproverRole === "hr") {
           // Don't set next_approver_id or next_hr_id - allow all HRs to see it
           // Explicitly clear any existing next_approver_id to ensure all HRs can see it
-          workflowMetadata.next_approver_id = null;
-          workflowMetadata.next_hr_id = null;
+          updatedWorkflowMetadataForRouting.next_approver_id = null;
+          updatedWorkflowMetadataForRouting.next_hr_id = null;
         } else if (finalNextApproverRole === "comptroller") {
           // Don't set next_approver_id or next_comptroller_id - allow all comptrollers to see it
           // Explicitly clear any existing next_approver_id to ensure all comptrollers can see it
-          workflowMetadata.next_approver_id = null;
-          workflowMetadata.next_comptroller_id = null;
+          updatedWorkflowMetadataForRouting.next_approver_id = null;
+          updatedWorkflowMetadataForRouting.next_comptroller_id = null;
         } else if (finalNextApproverRole === "head") {
-          workflowMetadata.next_approver_id = nextApproverId;
-          workflowMetadata.next_head_id = nextApproverId;
+          updatedWorkflowMetadataForRouting.next_approver_id = nextApproverId;
+          updatedWorkflowMetadataForRouting.next_head_id = nextApproverId;
         } else if (nextApproverId && finalNextApproverRole !== "admin" && finalNextApproverRole !== "comptroller" && finalNextApproverRole !== "hr") {
           // For other roles (not admin/comptroller/hr), set next_approver_id if provided
-          workflowMetadata.next_approver_id = nextApproverId;
+          updatedWorkflowMetadataForRouting.next_approver_id = nextApproverId;
         }
       }
       if (returnReason) {
-        workflowMetadata.return_reason = returnReason;
+        updatedWorkflowMetadataForRouting.return_reason = returnReason;
       }
-      updateData.workflow_metadata = workflowMetadata;
+      updateData.workflow_metadata = updatedWorkflowMetadataForRouting;
 
       // If fully approved, set final approval timestamp
       if (newStatus === "approved") {

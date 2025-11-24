@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { X, CheckCircle2, XCircle, Users, Car, UserCog, MapPin, Calendar, FileText, Clock } from "lucide-react";
+import { X, Check, CheckCircle2, XCircle, Users, Car, UserCog, MapPin, Calendar, FileText, Clock, Paperclip, ExternalLink } from "lucide-react";
 import { useToast } from "@/components/common/ui/Toast";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import { NameWithProfile } from "@/components/common/ProfileHoverCard";
@@ -38,9 +38,13 @@ export default function VPRequestModal({
   const [totalCost, setTotalCost] = useState(0);
   const [preferredDriverName, setPreferredDriverName] = useState<string>("");
   const [preferredVehicleName, setPreferredVehicleName] = useState<string>("");
+  const [showApprovalModal, setShowApprovalModal] = useState(false);
   const [showApproverSelection, setShowApproverSelection] = useState(false);
   const [approverOptions, setApproverOptions] = useState<any[]>([]);
   const [loadingApprovers, setLoadingApprovers] = useState(false);
+  const [additionalRequesters, setAdditionalRequesters] = React.useState<any[]>([]);
+  const [loadingRequesters, setLoadingRequesters] = React.useState(false);
+  const [mainRequesterSignature, setMainRequesterSignature] = React.useState<string | null>(null);
 
   const [fullRequest, setFullRequest] = React.useState<any>(null);
   const t = fullRequest || request;
@@ -308,6 +312,80 @@ export default function VPRequestModal({
     }
   };
 
+  const loadAdditionalRequesters = React.useCallback(async () => {
+    try {
+      setLoadingRequesters(true);
+      const t = fullRequest || request;
+      
+      // Check for additional_requesters, requester_tracking, requester_invitations, or head_endorsements
+      const requesters = t?.additional_requesters || t?.requester_tracking || t?.requester_invitations || [];
+      
+      if (Array.isArray(requesters) && requesters.length > 0) {
+        // If requesters have IDs, fetch full details
+        const requesterPromises = requesters.map(async (req: any) => {
+          if (req.user_id || req.id) {
+            try {
+              const res = await fetch(`/api/users/${req.user_id || req.id}`);
+              if (res.ok) {
+                const json = await res.json();
+                if (json.ok && json.data) {
+                  return {
+                    ...req,
+                    ...json.data,
+                    name: json.data.name || req.name,
+                    email: json.data.email || req.email,
+                    department: json.data.department?.name || json.data.department?.code || req.department,
+                    signature: req.signature || json.data.signature,
+                    confirmed_at: req.confirmed_at || req.created_at
+                  };
+                }
+              }
+            } catch (err) {
+              console.error("[VPRequestModal] Error loading requester:", err);
+            }
+          }
+          return req;
+        });
+        
+        const loadedRequesters = await Promise.all(requesterPromises);
+        
+        // Find main requester's signature from requester_invitations
+        const mainRequester = loadedRequesters.find(r => {
+          if (!r) return false;
+          return (r.user_id === t?.requester_id) || 
+                 (r.user_id === request?.requester_id) ||
+                 (r.id === t?.requester_id) ||
+                 (r.id === request?.requester_id) ||
+                 (r.email === t?.requester?.email) ||
+                 (r.email === request?.requester?.email);
+        });
+        
+        if (mainRequester?.signature) {
+          console.log("[VPRequestModal] ✅ Found main requester signature from requester_invitations:", {
+            name: mainRequester.name,
+            email: mainRequester.email,
+            signatureLength: mainRequester.signature?.length || 0
+          });
+          setMainRequesterSignature(mainRequester.signature);
+        }
+        
+        // Filter out the main requester - check both id and user_id
+        setAdditionalRequesters(loadedRequesters.filter(r => {
+          if (!r) return false;
+          const isMainRequester = (r.user_id === t?.requester_id) || (r.id === t?.requester_id);
+          return !isMainRequester;
+        }));
+      } else {
+        setAdditionalRequesters([]);
+      }
+    } catch (err) {
+      console.error("[VPRequestModal] Error loading additional requesters:", err);
+      setAdditionalRequesters([]);
+    } finally {
+      setLoadingRequesters(false);
+    }
+  }, [fullRequest, request]);
+
   useEffect(() => {
     async function loadData() {
       try {
@@ -360,21 +438,40 @@ export default function VPRequestModal({
     loadData();
   }, [request.id, viewOnly]);
 
+  React.useEffect(() => {
+    if (fullRequest || request) {
+      loadAdditionalRequesters();
+    }
+  }, [fullRequest, request, loadAdditionalRequesters]);
+
   // Check if other VP has already signed
   const otherVPApproved = request.vp_approved_by && request.vp_approved_by !== request.vp2_approved_by;
   const isSecondVP = !!request.vp_approved_by && !request.vp2_approved_by;
   const firstVPName = request.vp_approver?.name || "First VP";
 
-  const handleApprove = async () => {
+  const doApprove = async () => {
+    console.log("[VP] ========== APPROVE BUTTON CLICKED ==========");
+    // Open approval modal instead of directly proceeding
+    setShowApprovalModal(true);
+  };
+
+  const handleApprovalSubmit = async () => {
+    console.log("[VP] ========== APPROVAL SUBMITTED ==========");
+    console.log("[VP] Has signature:", !!vpSignature);
+    
     if (!vpSignature) {
+      console.log("[VP] No signature - showing error toast");
       toast.error("Signature Required", "Please provide your signature");
       return;
     }
-
+    
     if (!notes.trim() || notes.trim().length < 10) {
       toast.error("Notes Required", "Notes are required and must be at least 10 characters long");
       return;
     }
+    
+    // Close approval modal
+    setShowApprovalModal(false);
 
     // Check if other VP has already signed
     const otherVPApproved = request.vp_approved_by && request.vp_approved_by !== request.vp2_approved_by;
@@ -532,8 +629,8 @@ export default function VPRequestModal({
   };
 
   const handleReject = async () => {
-    if (!notes.trim()) {
-      toast.error("Reason Required", "Please provide a reason for rejection");
+    if (!notes.trim() || notes.trim().length < 10) {
+      toast.error("Reason Required", "Please provide a reason for rejection (minimum 10 characters)");
       return;
     }
 
@@ -624,9 +721,8 @@ export default function VPRequestModal({
         </div>
 
         {/* Body */}
-        <div className="grid gap-8 px-6 py-6 lg:grid-cols-[1.1fr_0.9fr] overflow-y-auto flex-1">
-          {/* LEFT */}
-          <div className="space-y-5">
+        <div className="px-6 py-6 overflow-y-auto flex-1">
+          <div className="max-w-4xl mx-auto space-y-5">
             {/* Requester Information */}
             <section className="rounded-lg bg-white p-5 border border-slate-200 shadow-sm">
               <p className="text-xs font-medium uppercase tracking-wider text-slate-500 mb-3">
@@ -680,6 +776,58 @@ export default function VPRequestModal({
                     <p className="text-xs text-slate-500 mt-0.5">Role: {t.requester.role}</p>
                   )}
                 </div>
+                {(() => {
+                  // Check if requester is also the head approver - if so, use head_signature
+                  const requesterId = t?.requester_id || request?.requester_id;
+                  const headApprovedBy = t?.head_approved_by || request?.head_approved_by;
+                  const isRequesterAlsoHead = requesterId && headApprovedBy && requesterId === headApprovedBy;
+                  
+                  // Check multiple possible locations for the signature
+                  let signatureFromInvitations = null;
+                  if (fullRequest?.requester_invitations && Array.isArray(fullRequest.requester_invitations)) {
+                    const mainRequesterInvitation = fullRequest.requester_invitations.find((inv: any) => {
+                      return (inv.user_id === requesterId) || 
+                             (inv.id === requesterId) ||
+                             (inv.email === t?.requester?.email) ||
+                             (inv.email === request?.requester?.email);
+                    });
+                    signatureFromInvitations = mainRequesterInvitation?.signature || null;
+                  }
+                  
+                  // Priority: 
+                  // 1. If requester is also head, use head_signature
+                  // 2. signatureFromInvitations 
+                  // 3. mainRequesterSignature 
+                  // 4. fullRequest.requester_signature
+                  // 5. Other fallbacks
+                  const signature = (isRequesterAlsoHead && (fullRequest?.head_signature || request?.head_signature || t?.head_signature))
+                    || signatureFromInvitations
+                    || mainRequesterSignature
+                    || (fullRequest?.requester_signature)
+                    || (request?.requester_signature)
+                    || (t?.requester_signature)
+                    || (fullRequest?.requester?.signature)
+                    || (request?.requester?.signature)
+                    || (t?.requester?.signature)
+                    || (fullRequest as any)?.signature
+                    || (request as any)?.signature
+                    || (t as any)?.signature;
+                  
+                  return signature ? (
+                    <div className="flex flex-col items-end gap-1">
+                      <p className="text-xs text-slate-500 font-medium">Signature</p>
+                      <img
+                        src={signature}
+                        alt={`${t?.requester_name || request?.requester_name || "Requester"}'s signature`}
+                        className="h-16 w-32 rounded border border-slate-300 bg-white object-contain p-1"
+                        onError={(e) => {
+                          console.error("[VPRequestModal] Failed to load requester signature image");
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
+                    </div>
+                  ) : null;
+                })()}
               </div>
               
               {t.created_at && (
@@ -699,6 +847,90 @@ export default function VPRequestModal({
                 </div>
               )}
             </section>
+
+            {/* Additional Requesters Section */}
+            {additionalRequesters.length > 0 && (
+              <section className="rounded-lg bg-blue-50/50 border border-blue-200 p-5 shadow-sm">
+                <p className="text-xs font-medium uppercase tracking-wider text-blue-700 mb-3 flex items-center gap-2">
+                  <Users className="h-4 w-4" />
+                  Additional Requesters ({additionalRequesters.length})
+                </p>
+                <div className="space-y-3">
+                  {loadingRequesters ? (
+                    <div className="text-center py-4">
+                      <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-500 border-t-transparent mx-auto"></div>
+                      <p className="text-xs text-blue-600 mt-2">Loading requesters...</p>
+                    </div>
+                  ) : (
+                    additionalRequesters.map((requester: any, index: number) => (
+                      <div
+                        key={requester.id || requester.user_id || index}
+                        className="bg-white rounded-lg border border-blue-100 p-4"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-3 flex-1">
+                            {(requester.profile_picture || requester.avatar_url) ? (
+                              <img 
+                                src={requester.profile_picture || requester.avatar_url} 
+                                alt={requester.name || "Requester"}
+                                className="h-10 w-10 rounded-full object-cover border-2 border-blue-200 flex-shrink-0"
+                                onError={(e) => {
+                                  const target = e.target as HTMLImageElement;
+                                  target.style.display = 'none';
+                                  const parent = target.parentElement;
+                                  if (parent && !parent.querySelector('.fallback-avatar-additional')) {
+                                    const fallback = document.createElement('div');
+                                    fallback.className = 'h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0 fallback-avatar-additional';
+                                    fallback.textContent = (requester.name || "U").charAt(0).toUpperCase();
+                                    parent.appendChild(fallback);
+                                  }
+                                }}
+                              />
+                            ) : (
+                              <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                                {(requester.name || "U").charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                            <div className="flex-1">
+                              <p className="font-semibold text-slate-900 text-sm">{requester.name || 'Unknown'}</p>
+                              {requester.department && (
+                                <p className="text-xs text-slate-600 mt-1">{requester.department}</p>
+                              )}
+                              {requester.email && (
+                                <p className="text-xs text-slate-500 mt-0.5">{requester.email}</p>
+                              )}
+                              {requester.confirmed_at && (
+                                <div className="mt-2 flex items-center gap-2 text-xs text-green-600">
+                                  <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                                  Confirmed {new Date(requester.confirmed_at).toLocaleString('en-US', {
+                                    year: 'numeric',
+                                    month: '2-digit',
+                                    day: '2-digit',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    hour12: true
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          {requester.signature && (
+                            <div className="flex flex-col items-end gap-1">
+                              <p className="text-xs text-slate-500 font-medium">Signature</p>
+                              <img
+                                src={requester.signature}
+                                alt={`${requester.name}'s signature`}
+                                className="h-16 w-32 rounded border border-slate-300 bg-white object-contain p-1"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </section>
+            )}
 
             {/* Service Preferences */}
             <section className="rounded-lg bg-white p-5 border border-slate-200 shadow-sm">
@@ -929,6 +1161,88 @@ export default function VPRequestModal({
                     </p>
                   </div>
                 )}
+              </section>
+            )}
+
+            {/* Admin Assignment Details */}
+            {(t?.assigned_driver_id || t?.assigned_vehicle_id || t?.admin_notes || t?.admin_comments) && (
+              <section className="rounded-lg bg-gradient-to-br from-indigo-50 to-purple-50 border-2 border-indigo-200 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Users className="h-5 w-5 text-indigo-600" />
+                  <p className="text-xs font-bold uppercase tracking-wide text-indigo-700">
+                    Admin Assignment & Notes
+                  </p>
+                </div>
+                <div className="space-y-3">
+                  {t?.assigned_driver_id && (
+                    <div className="flex items-start gap-2 bg-white rounded-lg px-3 py-2 border border-indigo-100">
+                      <Users className="h-4 w-4 text-indigo-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-xs text-indigo-700 font-medium mb-0.5">Assigned Driver</p>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {t?.assigned_driver_name || t?.assigned_driver?.name || 'Loading...'}
+                        </p>
+                        {t?.driver_contact_number && (
+                          <p className="text-xs text-slate-600 mt-0.5">Contact: {t.driver_contact_number}</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {t?.assigned_vehicle_id && (
+                    <div className="flex items-start gap-2 bg-white rounded-lg px-3 py-2 border border-indigo-100">
+                      <Car className="h-4 w-4 text-indigo-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-xs text-indigo-700 font-medium mb-0.5">Assigned Vehicle</p>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {t?.assigned_vehicle_name || t?.assigned_vehicle?.name || t?.assigned_vehicle?.vehicle_name || (t?.assigned_vehicle?.model && t?.assigned_vehicle?.plate_number ? `${t.assigned_vehicle.model} (${t.assigned_vehicle.plate_number})` : null) || t?.assigned_vehicle?.plate_number || 'Not assigned'}
+                        </p>
+                        {t?.assigned_vehicle?.plate_number && (
+                          <p className="text-xs text-slate-600 mt-0.5">Plate: {t.assigned_vehicle.plate_number}</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {t?.admin_notes && (
+                    <div className="bg-white rounded-lg px-3 py-2 border border-indigo-100">
+                      <p className="text-xs text-indigo-700 font-medium mb-1">Admin Notes</p>
+                      <p className="text-sm text-slate-700 whitespace-pre-wrap">{t.admin_notes}</p>
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
+
+            {/* Attachments */}
+            {t?.attachments && Array.isArray(t.attachments) && t.attachments.length > 0 && (
+              <section className="rounded-lg bg-gradient-to-br from-emerald-50 to-teal-50 border-2 border-emerald-200 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <FileText className="h-5 w-5 text-emerald-600" />
+                  <p className="text-xs font-bold uppercase tracking-wide text-emerald-700">
+                    Attached Documents ({t.attachments.length})
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {t.attachments.map((attachment: any, idx: number) => (
+                    <a
+                      key={attachment.id || idx}
+                      href={attachment.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 bg-white rounded-lg px-3 py-2 border border-emerald-100 hover:border-emerald-300 hover:shadow-sm transition-all"
+                    >
+                      <FileText className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-900 truncate">{attachment.name || `Document ${idx + 1}`}</p>
+                        {attachment.size && (
+                          <p className="text-xs text-slate-600">{(attachment.size / 1024).toFixed(2)} KB</p>
+                        )}
+                      </div>
+                      <svg className="h-4 w-4 text-emerald-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    </a>
+                  ))}
+                </div>
               </section>
             )}
 
@@ -1330,207 +1644,26 @@ export default function VPRequestModal({
                 </div>
               </section>
             )}
-          </div>
 
-          {/* RIGHT */}
-          <div className="space-y-5 rounded-xl border-2 border-[#7A0010]/20 bg-gradient-to-br from-white to-red-50/30 p-6 shadow-lg">
-            <div className="flex items-center gap-3 pb-4 border-b-2 border-[#7A0010]/10">
-              {(vpProfile?.profile_picture || vpProfile?.avatar_url || vpProfile?.avatarUrl) ? (
-                <img 
-                  src={vpProfile.profile_picture || vpProfile.avatar_url || vpProfile.avatarUrl} 
-                  alt={vpProfile?.name || "VP"}
-                  className="h-14 w-14 rounded-full object-cover border-2 border-[#7A0010] shadow-lg flex-shrink-0"
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement;
-                    target.style.display = 'none';
-                    const parent = target.parentElement;
-                    if (parent && !parent.querySelector('.fallback-avatar-vp')) {
-                      const fallback = document.createElement('div');
-                      fallback.className = 'h-14 w-14 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-xl shadow-lg flex-shrink-0 fallback-avatar-vp';
-                      fallback.textContent = (vpProfile?.name || 'VP').charAt(0).toUpperCase();
-                      parent.appendChild(fallback);
-                    }
-                  }}
-                />
-              ) : (
-                <div className="h-14 w-14 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-xl shadow-lg flex-shrink-0">
-                  {(vpProfile?.name || 'VP').charAt(0).toUpperCase()}
-                </div>
-              )}
-              <div className="flex-1">
-                <p className="text-xs font-bold uppercase tracking-wider text-[#7A0010]/70">
-                  Vice President Review
-                </p>
-                <div className="text-base font-bold text-slate-900 mt-1">
-                  {vpProfile?.name || vpProfile?.email || "Loading..."}
-                </div>
-                {vpProfile?.department && (
-                  <p className="text-xs text-slate-600 mt-0.5 font-medium">
-                    {typeof vpProfile.department === 'string' 
-                      ? vpProfile.department 
-                      : (vpProfile.department.name || vpProfile.department.code)}
-                  </p>
-                )}
-                {vpProfile?.position_title && (
-                  <p className="text-xs text-slate-500 mt-0.5">{vpProfile.position_title}</p>
-                )}
-              </div>
-            </div>
-
-            {(() => {
-              // Check if current VP has already signed
-              const currentVPId = vpProfile?.id;
-              
-              // Check if this VP has signed (either as first or second VP)
-              const hasCurrentVPSigned = currentVPId && (
-                (String(t.vp_approved_by) === String(currentVPId) && t.vp_signature) ||
-                (String(t.vp2_approved_by) === String(currentVPId) && t.vp2_signature)
-              );
-              
-              // If there's already a signature and we're viewing (not editing), show read-only
-              const hasAnySignature = !!(t.vp_signature || t.vp2_signature);
-              
-              // Show read-only if: current VP has signed, OR viewOnly mode with any signature
-              const shouldShowReadOnly = hasCurrentVPSigned || (viewOnly && hasAnySignature);
-              
-              const currentVPSignature = String(currentVPId) === String(t.vp_approved_by) ? t.vp_signature 
-                : String(currentVPId) === String(t.vp2_approved_by) ? t.vp2_signature 
-                : null;
-              const currentVPApprovedAt = String(currentVPId) === String(t.vp_approved_by) ? t.vp_approved_at 
-                : String(currentVPId) === String(t.vp2_approved_by) ? t.vp2_approved_at 
-                : null;
-
-              // Show read-only signature if: current VP has signed, OR viewOnly mode with any signature
-              return shouldShowReadOnly ? (
-                // View-only: Show saved signature
-                <div>
-                  <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
-                    VP Signature
-                  </label>
-                  <div className="rounded-xl bg-slate-50 p-4 border-2 border-slate-200">
-                    {currentVPSignature || t.vp_signature || t.vp2_signature ? (
-                      <>
-                        <img 
-                          src={currentVPSignature || t.vp_signature || t.vp2_signature} 
-                          alt="VP Signature" 
-                          className="max-h-40 mx-auto"
-                        />
-                        {(currentVPApprovedAt || t.vp_approved_at || t.vp2_approved_at) && (
-                          <p className="text-xs text-slate-500 text-center mt-2">
-                            Signed on {new Date(currentVPApprovedAt || t.vp_approved_at || t.vp2_approved_at).toLocaleString('en-US', { 
-                              year: 'numeric', 
-                              month: 'short', 
-                              day: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                              hour12: true,
-                              timeZone: 'Asia/Manila'
-                            })}
-                          </p>
-                        )}
-                      </>
-                    ) : (
-                      <p className="text-sm text-slate-500 text-center py-8">
-                        No signature available
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                // Edit mode: Signature pad (only if VP hasn't signed yet)
-                <div>
-                  <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
-                    Your Signature <span className="text-red-500">*</span>
-                  </label>
-                  <div className="rounded-xl bg-white p-3 border-2 border-[#7A0010]/20 shadow-sm">
-                    <SignaturePad
-                      height={160}
-                      value={vpSignature || null}
-                      onSave={(dataUrl) => {
-                        setVpSignature(dataUrl);
-                      }}
-                      onClear={() => {
-                        setVpSignature("");
-                      }}
-                      onUseSaved={(dataUrl) => {
-                        setVpSignature(dataUrl);
-                      }}
-                      showUseSavedButton={true}
-                      hideSaveButton
-                    />
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* VP Notes/Comments - Only show if VP hasn't signed yet */}
-            {(() => {
-              const currentVPId = vpProfile?.id;
-              const hasCurrentVPSigned = currentVPId && (
-                (String(t.vp_approved_by) === String(currentVPId) && t.vp_signature) ||
-                (String(t.vp2_approved_by) === String(currentVPId) && t.vp2_signature)
-              );
-              
-              const hasAnySignature = !!(t.vp_signature || t.vp2_signature);
-              const shouldHideInputs = hasCurrentVPSigned || (viewOnly && hasAnySignature);
-              
-              return !viewOnly && !shouldHideInputs ? (
-                <div className="mt-6">
-                  <label htmlFor="vp-notes" className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
-                    VP Notes/Comments
-                  </label>
-                  
-                  {/* Quick Fill Buttons */}
-                  <div className="mb-2 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setNotes("Okay, approved.")}
-                      className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-                    >
-                      ✓ Budget Approved
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setNotes("Request approved. Proceed with the travel order.")}
-                      className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-                      >
-                      ✓ Approved
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setNotes("Request requires revision. Please review and resubmit with corrected amounts.")}
-                      className="px-3 py-1.5 text-xs font-medium bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
-                    >
-                      ✗ Needs Revision
-                    </button>
-                  </div>
-                  
-                  <textarea
-                    id="vp-notes"
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    rows={4}
-                    className="w-full px-4 py-2 border-2 border-slate-200 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] text-sm resize-y"
-                    placeholder="Add any notes or comments for this request..."
-                  />
-                </div>
-              ) : null;
-            })()}
-
-            {viewOnly && t.vp_comments && (
-              <div>
-                <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
-                  VP Comments
+            {/* VP Notes/Comments Input */}
+            {!viewOnly && (
+              <section className="rounded-lg bg-white p-5 border border-slate-200 shadow-sm">
+                <label className="mb-3 block text-xs font-bold text-slate-700 uppercase tracking-wide">
+                  Your Notes/Comments
                 </label>
-                <div className="rounded-xl bg-slate-50 p-4 border-2 border-slate-200">
-                  <p className="text-sm text-slate-700">{t.vp_comments}</p>
-                </div>
-              </div>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={3}
+                  className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] resize-none text-sm"
+                  placeholder="Add your comments or reasons for approval/rejection..."
+                />
+              </section>
             )}
           </div>
         </div>
 
-        {/* Footer Buttons */}
+        {/* Actions */}
         {(() => {
           const currentVPId = vpProfile?.id;
           const hasCurrentVPSigned = currentVPId && (
@@ -1542,31 +1675,29 @@ export default function VPRequestModal({
           const shouldHideButtons = hasCurrentVPSigned || (viewOnly && hasAnySignature);
           
           return !viewOnly && !shouldHideButtons ? (
-            <div className="flex justify-between gap-2 p-4 border-t border-slate-200 bg-white rounded-b-lg shadow-md">
+            <div className="sticky bottom-0 bg-white border-t-2 border-gray-200 px-6 py-4 flex gap-3 flex-shrink-0 shadow-lg">
               <button
                 onClick={handleReject}
-                disabled={submitting || !notes.trim()}
-                className="flex items-center justify-center gap-2 px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                disabled={submitting}
+                className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-semibold py-3 px-6 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg transform hover:scale-[1.02] active:scale-[0.98]"
               >
-                <XCircle className="h-4 w-4" />
-                Reject
+                <XCircle className="h-5 w-5" />
+                {submitting ? "Rejecting..." : "Reject & Return to User"}
               </button>
-              <div className="flex gap-2">
-                <button
-                  onClick={onClose}
-                  className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 font-medium rounded-lg transition-colors text-sm"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleApprove}
-                  disabled={submitting || !vpSignature || !notes.trim() || notes.trim().length < 10}
-                  className="flex items-center justify-center gap-2 px-6 py-2.5 bg-[#7A0010] hover:bg-[#5e000d] text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm shadow-md"
-                >
-                  <CheckCircle2 className="h-5 w-5" />
-                  {submitting ? "Approving..." : "Approve Request"}
-                </button>
-              </div>
+              <button
+                onClick={doApprove}
+                disabled={submitting}
+                className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 active:bg-green-800 text-white font-semibold py-3 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg transform hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <Check className="h-5 w-5" />
+                {submitting ? "Approving..." : "Approve & Send"}
+              </button>
+              <button
+                onClick={onClose}
+                className="px-6 py-3 border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 font-semibold rounded-lg transition-all transform hover:scale-[1.02] active:scale-[0.98]"
+              >
+                Cancel
+              </button>
             </div>
           ) : null;
         })()}

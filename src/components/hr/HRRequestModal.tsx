@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { X, CheckCircle2, XCircle, Users, Car, UserCog, MapPin, Calendar, FileText, Check, Clock } from "lucide-react";
+import { X, CheckCircle2, XCircle, Users, Car, UserCog, MapPin, Calendar, FileText, Check, Clock, Paperclip, ExternalLink } from "lucide-react";
 import { useToast } from "@/components/common/ui/Toast";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import { NameWithProfile } from "@/components/common/ProfileHoverCard";
@@ -38,6 +38,7 @@ export default function HRRequestModal({
   const [totalCost, setTotalCost] = useState(0);
   const [preferredDriverName, setPreferredDriverName] = useState<string>("");
   const [preferredVehicleName, setPreferredVehicleName] = useState<string>("");
+  const [showApprovalModal, setShowApprovalModal] = useState(false);
   const [showVPSelection, setShowVPSelection] = useState(false);
   const [vpOptions, setVPOptions] = useState<any[]>([]);
   const [selectedApproverId, setSelectedApproverId] = useState<string | null>(null);
@@ -45,6 +46,10 @@ export default function HRRequestModal({
   const [defaultApproverId, setDefaultApproverId] = useState<string | undefined>(undefined);
   const [defaultApproverName, setDefaultApproverName] = useState<string | undefined>(undefined);
   const [suggestionReason, setSuggestionReason] = useState<string | undefined>(undefined);
+  const [additionalRequesters, setAdditionalRequesters] = React.useState<any[]>([]);
+  const [loadingRequesters, setLoadingRequesters] = React.useState(false);
+  const [mainRequesterSignature, setMainRequesterSignature] = React.useState<string | null>(null);
+  const [loadingApprovers, setLoadingApprovers] = React.useState(false);
 
   const [fullRequest, setFullRequest] = React.useState<any>(null);
   const t = fullRequest || request;
@@ -291,6 +296,80 @@ export default function HRRequestModal({
     }
   };
 
+  const loadAdditionalRequesters = React.useCallback(async () => {
+    try {
+      setLoadingRequesters(true);
+      const t = fullRequest || request;
+      
+      // Check for additional_requesters, requester_tracking, requester_invitations, or head_endorsements
+      const requesters = t?.additional_requesters || t?.requester_tracking || t?.requester_invitations || [];
+      
+      if (Array.isArray(requesters) && requesters.length > 0) {
+        // If requesters have IDs, fetch full details
+        const requesterPromises = requesters.map(async (req: any) => {
+          if (req.user_id || req.id) {
+            try {
+              const res = await fetch(`/api/users/${req.user_id || req.id}`);
+              if (res.ok) {
+                const json = await res.json();
+                if (json.ok && json.data) {
+                  return {
+                    ...req,
+                    ...json.data,
+                    name: json.data.name || req.name,
+                    email: json.data.email || req.email,
+                    department: json.data.department?.name || json.data.department?.code || req.department,
+                    signature: req.signature || json.data.signature,
+                    confirmed_at: req.confirmed_at || req.created_at
+                  };
+                }
+              }
+            } catch (err) {
+              console.error("[HRRequestModal] Error loading requester:", err);
+            }
+          }
+          return req;
+        });
+        
+        const loadedRequesters = await Promise.all(requesterPromises);
+        
+        // Find main requester's signature from requester_invitations
+        const mainRequester = loadedRequesters.find(r => {
+          if (!r) return false;
+          return (r.user_id === t?.requester_id) || 
+                 (r.user_id === request?.requester_id) ||
+                 (r.id === t?.requester_id) ||
+                 (r.id === request?.requester_id) ||
+                 (r.email === t?.requester?.email) ||
+                 (r.email === request?.requester?.email);
+        });
+        
+        if (mainRequester?.signature) {
+          console.log("[HRRequestModal] ✅ Found main requester signature from requester_invitations:", {
+            name: mainRequester.name,
+            email: mainRequester.email,
+            signatureLength: mainRequester.signature?.length || 0
+          });
+          setMainRequesterSignature(mainRequester.signature);
+        }
+        
+        // Filter out the main requester - check both id and user_id
+        setAdditionalRequesters(loadedRequesters.filter(r => {
+          if (!r) return false;
+          const isMainRequester = (r.user_id === t?.requester_id) || (r.id === t?.requester_id);
+          return !isMainRequester;
+        }));
+      } else {
+        setAdditionalRequesters([]);
+      }
+    } catch (err) {
+      console.error("[HRRequestModal] Error loading additional requesters:", err);
+      setAdditionalRequesters([]);
+    } finally {
+      setLoadingRequesters(false);
+    }
+  }, [fullRequest, request]);
+
   // Load HR profile and full request details
   useEffect(() => {
     async function loadData() {
@@ -328,16 +407,35 @@ export default function HRRequestModal({
     loadData();
   }, [request.id]);
 
-  const handleApprove = async () => {
+  React.useEffect(() => {
+    if (fullRequest || request) {
+      loadAdditionalRequesters();
+    }
+  }, [fullRequest, request, loadAdditionalRequesters]);
+
+  const doApprove = async () => {
+    console.log("[HR] ========== APPROVE BUTTON CLICKED ==========");
+    // Open approval modal instead of directly proceeding
+    setShowApprovalModal(true);
+  };
+
+  const handleApprovalSubmit = async () => {
+    console.log("[HR] ========== APPROVAL SUBMITTED ==========");
+    console.log("[HR] Has signature:", !!hrSignature);
+    
     if (!hrSignature) {
+      console.log("[HR] No signature - showing error toast");
       toast.error("Signature Required", "Please provide your signature");
       return;
     }
-
+    
     if (!notes.trim() || notes.trim().length < 10) {
       toast.error("Notes Required", "Notes are required and must be at least 10 characters long");
       return;
     }
+    
+    // Set loading state (keep modal open while loading)
+    setLoadingApprovers(true);
 
     // Fetch VPs and Presidents for selection
     try {
@@ -431,20 +529,42 @@ export default function HRRequestModal({
         }
         
         setVPOptions(options);
+        setLoadingApprovers(false);
+        setShowApprovalModal(false);
         setShowVPSelection(true);
         return;
       }
     } catch (err) {
       console.error("[HR] Error fetching approvers:", err);
+      setLoadingApprovers(false);
+    } finally {
+      setLoadingApprovers(false);
     }
 
     // If no approvers found, proceed with default
+    setLoadingApprovers(false);
+    setShowApprovalModal(false);
     proceedWithApproval(null);
   };
 
-  const proceedWithApproval = async (selectedApproverId: string | null = null, selectedRole: string | null = null) => {
+  const proceedWithApproval = async (selectedApproverId: string | string[] | null = null, selectedRole: string | string[] | null = null) => {
     setSubmitting(true);
     try {
+      // Handle multiple VP selection
+      const vpIds = Array.isArray(selectedApproverId) 
+        ? selectedApproverId.filter((id, idx) => {
+            const role = Array.isArray(selectedRole) ? selectedRole[idx] : selectedRole;
+            return role === 'vp' || !role;
+          })
+        : (selectedApproverId && (selectedRole === 'vp' || !selectedRole) ? [selectedApproverId] : []);
+      
+      const presidentIds = Array.isArray(selectedApproverId)
+        ? selectedApproverId.filter((id, idx) => {
+            const role = Array.isArray(selectedRole) ? selectedRole[idx] : selectedRole;
+            return role === 'president';
+          })
+        : (selectedApproverId && selectedRole === 'president' ? [selectedApproverId] : []);
+
       const res = await fetch("/api/hr/action", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -453,9 +573,10 @@ export default function HRRequestModal({
           action: "approve",
           signature: hrSignature,
           notes: notes.trim(),
-          next_vp_id: selectedApproverId && (selectedRole === 'vp' || !selectedRole) ? selectedApproverId : null,
-          next_president_id: selectedApproverId && selectedRole === 'president' ? selectedApproverId : null,
-          next_approver_role: selectedRole || 'vp',
+          next_vp_ids: vpIds.length > 0 ? vpIds : null, // Multiple VP IDs
+          next_vp_id: vpIds.length === 1 ? vpIds[0] : null, // Single VP ID for backward compatibility
+          next_president_id: presidentIds.length > 0 ? presidentIds[0] : null,
+          next_approver_role: Array.isArray(selectedRole) ? selectedRole[0] : (selectedRole || 'vp'),
         }),
       });
 
@@ -491,8 +612,8 @@ export default function HRRequestModal({
   };
 
   const handleReject = async () => {
-    if (!notes.trim()) {
-      toast.error("Reason Required", "Please provide a reason for rejection");
+    if (!notes.trim() || notes.trim().length < 10) {
+      toast.error("Reason Required", "Please provide a reason for rejection (minimum 10 characters)");
       return;
     }
 
@@ -544,7 +665,7 @@ export default function HRRequestModal({
   return (
     <>
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 pt-20 pb-8">
-        <div className="relative w-full max-w-5xl max-h-[85vh] rounded-3xl bg-white shadow-2xl transform transition-all duration-300 scale-100 flex flex-col overflow-hidden">
+        <div className="relative w-full max-w-7xl max-h-[90vh] rounded-3xl bg-white shadow-2xl transform transition-all duration-300 scale-100 flex flex-col overflow-hidden">
           {/* Header */}
           <div className="flex items-center justify-between border-b bg-[#7A0010] px-6 py-4 rounded-t-3xl flex-shrink-0">
             <div>
@@ -569,7 +690,7 @@ export default function HRRequestModal({
                  t.status === 'pending_exec' ? 'Pending Executive' :
                  t.status === 'approved' ? 'Approved' :
                  t.status === 'rejected' ? 'Rejected' :
-                 t.status?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Pending'}
+                 t.status?.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || 'Pending'}
               </span>
               <button
                 onClick={onClose}
@@ -580,105 +701,117 @@ export default function HRRequestModal({
             </div>
           </div>
 
-          {/* Body - Same structure as VPRequestModal */}
-          <div className="grid gap-8 px-6 py-6 lg:grid-cols-[1.1fr_0.9fr] overflow-y-auto flex-1">
-            {/* LEFT - Same sections as VPRequestModal */}
-            <div className="space-y-5">
+          {/* Body */}
+          <div className="px-6 py-6 overflow-y-auto flex-1">
+            <div className="max-w-4xl mx-auto space-y-5">
               {/* Requester Information */}
               <section className="rounded-lg bg-white p-5 border border-slate-200 shadow-sm">
                 <p className="text-xs font-medium uppercase tracking-wider text-slate-500 mb-3">
                   Requesting Person
                 </p>
                 
-                {isRepresentative && submittedBy ? (
-                  <div className="space-y-3">
-                    <div className="flex items-start gap-3">
-                      {(t.requester?.profile_picture || t.requester?.avatar_url) ? (
-                        <img 
-                          src={t.requester.profile_picture || t.requester.avatar_url} 
-                          alt={t.requester_name || "Requester"}
-                          className="h-12 w-12 rounded-full object-cover border-2 border-slate-200 flex-shrink-0"
-                        />
-                      ) : (
-                        <div className="h-12 w-12 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
-                          {(t.requester_name || "U").charAt(0).toUpperCase()}
-                        </div>
-                      )}
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <p className="text-base font-semibold text-slate-900">
-                            <NameWithProfile
-                              name={t.requester_name || t.requester?.name || "Unknown Requester"}
-                              profile={{
-                                id: t.requester?.id || '',
-                                name: t.requester_name || t.requester?.name || '',
-                                email: t.requester?.email,
-                                department: t.department?.name || t.department?.code,
-                                position: t.requester?.position_title,
-                                profile_picture: t.requester?.profile_picture,
-                              }}
-                            />
-                          </p>
-                          <span className="text-[10px] font-medium uppercase tracking-wider text-slate-500 bg-slate-50 px-2 py-1 rounded border border-slate-200">
-                            On behalf
-                          </span>
-                        </div>
-                        <p className="text-sm text-slate-600">
-                          {t.department?.name || t.department?.code || "No department indicated"}
-                        </p>
-                      </div>
+                <div className="flex items-start gap-3">
+                  {(t?.requester?.profile_picture || t?.requester?.avatar_url) ? (
+                    <img 
+                      src={t.requester.profile_picture || t.requester.avatar_url} 
+                      alt={t?.requester_name || "Requester"}
+                      className="h-12 w-12 rounded-full object-cover border-2 border-slate-200 flex-shrink-0"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = 'none';
+                        const parent = target.parentElement;
+                        if (parent && !parent.querySelector('.fallback-avatar')) {
+                          const fallback = document.createElement('div');
+                          fallback.className = 'h-12 w-12 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-lg flex-shrink-0 fallback-avatar';
+                          fallback.textContent = (t?.requester_name || "U").charAt(0).toUpperCase();
+                          parent.appendChild(fallback);
+                        }
+                      }}
+                    />
+                  ) : (
+                    <div className="h-12 w-12 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
+                      {(t?.requester_name || "U").charAt(0).toUpperCase()}
                     </div>
-                    <div className="pl-[64px] border-l-2 border-slate-200 ml-3 pt-2">
-                      <p className="text-xs text-slate-500 mb-1.5 font-medium">Submitted by</p>
-                      <div className="flex items-center gap-2">
-                        <div className="h-8 w-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 text-xs font-bold">
-                          {submittedBy.charAt(0).toUpperCase()}
-                        </div>
-                        <p className="text-sm font-medium text-slate-900">{submittedBy}</p>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-start gap-3">
-                    {(t.requester?.profile_picture || t.requester?.avatar_url) ? (
-                      <img 
-                        src={t.requester.profile_picture || t.requester.avatar_url} 
-                        alt={t.requester_name || "Requester"}
-                        className="h-12 w-12 rounded-full object-cover border-2 border-slate-200 flex-shrink-0"
+                  )}
+                  <div className="flex-1">
+                    <p className="text-base font-semibold text-slate-900 mb-1">
+                      <NameWithProfile
+                        name={t?.requester_name || t?.requester?.name || t?.requester?.email || "Unknown Requester"}
+                        profile={{
+                          id: t?.requester?.id || '',
+                          name: t?.requester_name || t?.requester?.name || '',
+                          email: t?.requester?.email,
+                          department: t?.department?.name || t?.department?.code,
+                          position: t?.requester?.position_title,
+                          profile_picture: t?.requester?.profile_picture,
+                        }}
                       />
-                    ) : (
-                      <div className="h-12 w-12 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
-                        {(t.requester_name || "U").charAt(0).toUpperCase()}
-                      </div>
+                    </p>
+                    <p className="text-sm text-slate-600">
+                      {t?.department?.name || t?.department?.code || "No department indicated"}
+                    </p>
+                    {t?.requester?.position_title && (
+                      <p className="text-xs text-slate-500 mt-0.5">{t.requester.position_title}</p>
                     )}
-                    <div className="flex-1">
-                      <p className="text-base font-semibold text-slate-900 mb-1">
-                        <NameWithProfile
-                          name={t.requester_name || t.requester?.name || t.requester?.email || "Unknown Requester"}
-                          profile={{
-                            id: t.requester?.id || '',
-                            name: t.requester_name || t.requester?.name || '',
-                            email: t.requester?.email,
-                            department: t.department?.name || t.department?.code,
-                            position: t.requester?.position_title,
-                            profile_picture: t.requester?.profile_picture,
+                    {t?.requester?.role && (
+                      <p className="text-xs text-slate-500 mt-0.5">Role: {t.requester.role}</p>
+                    )}
+                  </div>
+                  {(() => {
+                    // Check if requester is also the head approver - if so, use head_signature
+                    const requesterId = t?.requester_id || request?.requester_id;
+                    const headApprovedBy = t?.head_approved_by || request?.head_approved_by;
+                    const isRequesterAlsoHead = requesterId && headApprovedBy && requesterId === headApprovedBy;
+                    
+                    // Check multiple possible locations for the signature
+                    let signatureFromInvitations = null;
+                    if (fullRequest?.requester_invitations && Array.isArray(fullRequest.requester_invitations)) {
+                      const mainRequesterInvitation = fullRequest.requester_invitations.find((inv: any) => {
+                        return (inv.user_id === requesterId) || 
+                               (inv.id === requesterId) ||
+                               (inv.email === t?.requester?.email) ||
+                               (inv.email === request?.requester?.email);
+                      });
+                      signatureFromInvitations = mainRequesterInvitation?.signature || null;
+                    }
+                    
+                    // Priority: 
+                    // 1. If requester is also head, use head_signature
+                    // 2. signatureFromInvitations 
+                    // 3. mainRequesterSignature 
+                    // 4. fullRequest.requester_signature
+                    // 5. Other fallbacks
+                    const signature = (isRequesterAlsoHead && (fullRequest?.head_signature || request?.head_signature || t?.head_signature))
+                      || signatureFromInvitations
+                      || mainRequesterSignature
+                      || (fullRequest?.requester_signature)
+                      || (request?.requester_signature)
+                      || (t?.requester_signature)
+                      || (fullRequest?.requester?.signature)
+                      || (request?.requester?.signature)
+                      || (t?.requester?.signature)
+                      || (fullRequest as any)?.signature
+                      || (request as any)?.signature
+                      || (t as any)?.signature;
+                    
+                    return signature ? (
+                      <div className="flex flex-col items-end gap-1">
+                        <p className="text-xs text-slate-500 font-medium">Signature</p>
+                        <img
+                          src={signature}
+                          alt={`${t?.requester_name || request?.requester_name || "Requester"}'s signature`}
+                          className="h-16 w-32 rounded border border-slate-300 bg-white object-contain p-1"
+                          onError={(e) => {
+                            console.error("[HRRequestModal] Failed to load requester signature image");
+                            e.currentTarget.style.display = 'none';
                           }}
                         />
-                      </p>
-                      <p className="text-sm text-slate-600">
-                        {t.department?.name || t.department?.code || "No department indicated"}
-                      </p>
-                      {t.requester?.position_title && (
-                        <p className="text-xs text-slate-500 mt-0.5">{t.requester.position_title}</p>
-                      )}
-                      {t.requester?.role && (
-                        <p className="text-xs text-slate-500 mt-0.5">Role: {t.requester.role}</p>
-                      )}
-                    </div>
-                  </div>
-                )}
+                      </div>
+                    ) : null;
+                  })()}
+                </div>
                 
-                {t.created_at && (
+                {t?.created_at && (
                   <div className="mt-4 pt-4 border-t border-slate-100">
                     <p className="text-xs text-slate-500 flex items-center gap-1.5">
                       <Calendar className="h-3.5 w-3.5" />
@@ -694,7 +827,105 @@ export default function HRRequestModal({
                     </p>
                   </div>
                 )}
+                
+                {isRepresentative && submittedBy ? (
+                  <div className="mt-4 pt-4 border-t border-slate-100">
+                    <div className="pl-[64px] border-l-2 border-slate-200 ml-3 pt-2">
+                      <p className="text-xs text-slate-500 mb-1.5 font-medium">Submitted by</p>
+                      <div className="flex items-center gap-2">
+                        <div className="h-8 w-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 text-xs font-bold">
+                          {submittedBy.charAt(0).toUpperCase()}
+                        </div>
+                        <p className="text-sm font-medium text-slate-900">{submittedBy}</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
               </section>
+
+              {/* Additional Requesters Section */}
+              {additionalRequesters.length > 0 && (
+                <section className="rounded-lg bg-blue-50/50 border border-blue-200 p-5 shadow-sm">
+                <p className="text-xs font-medium uppercase tracking-wider text-blue-700 mb-3 flex items-center gap-2">
+                  <Users className="h-4 w-4" />
+                  Additional Requesters ({additionalRequesters.length})
+                </p>
+                <div className="space-y-3">
+                  {loadingRequesters ? (
+                    <div className="text-center py-4">
+                      <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-500 border-t-transparent mx-auto"></div>
+                      <p className="text-xs text-blue-600 mt-2">Loading requesters...</p>
+                    </div>
+                  ) : (
+                    additionalRequesters.map((requester: any, index: number) => (
+                      <div
+                        key={requester.id || requester.user_id || index}
+                        className="bg-white rounded-lg border border-blue-100 p-4"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-3 flex-1">
+                            {(requester.profile_picture || requester.avatar_url) ? (
+                              <img 
+                                src={requester.profile_picture || requester.avatar_url} 
+                                alt={requester.name || "Requester"}
+                                className="h-10 w-10 rounded-full object-cover border-2 border-blue-200 flex-shrink-0"
+                                onError={(e) => {
+                                  const target = e.target as HTMLImageElement;
+                                  target.style.display = 'none';
+                                  const parent = target.parentElement;
+                                  if (parent && !parent.querySelector('.fallback-avatar-additional')) {
+                                    const fallback = document.createElement('div');
+                                    fallback.className = 'h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0 fallback-avatar-additional';
+                                    fallback.textContent = (requester.name || "U").charAt(0).toUpperCase();
+                                    parent.appendChild(fallback);
+                                  }
+                                }}
+                              />
+                            ) : (
+                              <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                                {(requester.name || "U").charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                            <div className="flex-1">
+                              <p className="font-semibold text-slate-900 text-sm">{requester.name || 'Unknown'}</p>
+                              {requester.department && (
+                                <p className="text-xs text-slate-600 mt-1">{requester.department}</p>
+                              )}
+                              {requester.email && (
+                                <p className="text-xs text-slate-500 mt-0.5">{requester.email}</p>
+                              )}
+                              {requester.confirmed_at && (
+                                <div className="mt-2 flex items-center gap-2 text-xs text-green-600">
+                                  <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                                  Confirmed {new Date(requester.confirmed_at).toLocaleString('en-US', {
+                                    year: 'numeric',
+                                    month: '2-digit',
+                                    day: '2-digit',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    hour12: true
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          {requester.signature && (
+                            <div className="flex flex-col items-end gap-1">
+                              <p className="text-xs text-slate-500 font-medium">Signature</p>
+                              <img
+                                src={requester.signature}
+                                alt={`${requester.name}'s signature`}
+                                className="h-16 w-32 rounded border border-slate-300 bg-white object-contain p-1"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </section>
+            )}
 
               {/* Service Preferences - Same as VPRequestModal */}
               <section className="rounded-lg bg-white p-5 border border-slate-200 shadow-sm">
@@ -760,9 +991,9 @@ export default function HRRequestModal({
                     Travel Dates
                   </p>
                   <p className="text-sm text-slate-800 font-medium">
-                    {t.travel_start_date && t.travel_end_date
-                      ? `${new Date(t.travel_start_date).toLocaleDateString()} – ${new Date(t.travel_end_date).toLocaleDateString()}`
-                      : "—"}
+                  {t.travel_start_date && t.travel_end_date
+                    ? `${new Date(t.travel_start_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} – ${new Date(t.travel_end_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`
+                    : "—"}
                   </p>
                 </section>
                 <section className="rounded-lg bg-amber-50/50 border border-amber-100 p-3">
@@ -928,49 +1159,87 @@ export default function HRRequestModal({
                 </section>
               )}
 
-              {/* Requester Signature - Same style as Previous Approvals */}
-              <section className="rounded-lg bg-slate-50 border border-slate-200 p-4 shadow-sm">
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-600 mb-4">
-                  Requester's Signature
-                </p>
-                {(t.requester_signature) ? (
-                  <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
-                    <div className="flex items-center justify-between mb-3">
-                      <p className="text-sm font-semibold text-slate-800">
-                        Requester Signed
-                      </p>
-                      {(t.requester_signed_at || t.created_at) && (
-                        <span className="text-xs text-slate-500 font-medium">
-                          {new Date(t.requester_signed_at || t.created_at).toLocaleString('en-US', { 
-                            year: 'numeric', 
-                            month: 'short', 
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            hour12: true,
-                            timeZone: 'Asia/Manila'
-                          })}
-                        </span>
-                      )}
+            {/* Admin Assignment Details */}
+            {(t?.assigned_driver_id || t?.assigned_vehicle_id || t?.admin_notes || t?.admin_comments) && (
+              <section className="rounded-lg bg-gradient-to-br from-indigo-50 to-purple-50 border-2 border-indigo-200 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Users className="h-5 w-5 text-indigo-600" />
+                  <p className="text-xs font-bold uppercase tracking-wide text-indigo-700">
+                    Admin Assignment & Notes
+                  </p>
+                </div>
+                <div className="space-y-3">
+                  {t?.assigned_driver_id && (
+                    <div className="flex items-start gap-2 bg-white rounded-lg px-3 py-2 border border-indigo-100">
+                      <Users className="h-4 w-4 text-indigo-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-xs text-indigo-700 font-medium mb-0.5">Assigned Driver</p>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {t?.assigned_driver_name || t?.assigned_driver?.name || 'Loading...'}
+                        </p>
+                        {t?.driver_contact_number && (
+                          <p className="text-xs text-slate-600 mt-0.5">Contact: {t.driver_contact_number}</p>
+                        )}
+                      </div>
                     </div>
-                    <p className="text-xs text-slate-600 mb-3">
-                      By: <span className="font-medium text-slate-700">{t.requester_name || "Requester"}</span>
-                    </p>
-                    <div className="mt-3 pt-3 border-t border-slate-200">
-                      <img
-                        src={t.requester_signature}
-                        alt="Requester signature"
-                        className="h-20 w-full object-contain bg-slate-50 rounded p-2"
-                      />
+                  )}
+                  {t?.assigned_vehicle_id && (
+                    <div className="flex items-start gap-2 bg-white rounded-lg px-3 py-2 border border-indigo-100">
+                      <Car className="h-4 w-4 text-indigo-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-xs text-indigo-700 font-medium mb-0.5">Assigned Vehicle</p>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {t?.assigned_vehicle_name || t?.assigned_vehicle?.name || t?.assigned_vehicle?.vehicle_name || (t?.assigned_vehicle?.model && t?.assigned_vehicle?.plate_number ? `${t.assigned_vehicle.model} (${t.assigned_vehicle.plate_number})` : null) || t?.assigned_vehicle?.plate_number || 'Not assigned'}
+                        </p>
+                        {t?.assigned_vehicle?.plate_number && (
+                          <p className="text-xs text-slate-600 mt-0.5">Plate: {t.assigned_vehicle.plate_number}</p>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-center gap-2 text-sm text-slate-500 bg-white rounded-lg border border-slate-200 p-4">
-                    <FileText className="h-4 w-4 text-slate-400" />
-                    <span>No signature provided by requester</span>
-                  </div>
-                )}
+                  )}
+                  {t?.admin_notes && (
+                    <div className="bg-white rounded-lg px-3 py-2 border border-indigo-100">
+                      <p className="text-xs text-indigo-700 font-medium mb-1">Admin Notes</p>
+                      <p className="text-sm text-slate-700 whitespace-pre-wrap">{t.admin_notes}</p>
+                    </div>
+                  )}
+                </div>
               </section>
+            )}
+
+            {/* Attachments */}
+            {t?.attachments && Array.isArray(t.attachments) && t.attachments.length > 0 && (
+              <section className="rounded-lg bg-gradient-to-br from-emerald-50 to-teal-50 border-2 border-emerald-200 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <FileText className="h-5 w-5 text-emerald-600" />
+                  <p className="text-xs font-bold uppercase tracking-wide text-emerald-700">
+                    Attached Documents ({t.attachments.length})
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {t.attachments.map((attachment: any, idx: number) => (
+                    <a
+                      key={attachment.id || idx}
+                      href={attachment.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 bg-white rounded-lg px-3 py-2 border border-emerald-100 hover:border-emerald-300 hover:shadow-sm transition-all"
+                    >
+                      <FileText className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-900 truncate">{attachment.name || `Document ${idx + 1}`}</p>
+                        {attachment.size && (
+                          <p className="text-xs text-slate-600">{(attachment.size / 1024).toFixed(2)} KB</p>
+                        )}
+                      </div>
+                      <svg className="h-4 w-4 text-emerald-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    </a>
+                  ))}
+                </div>
+              </section>
+            )}
 
               {/* Previous Approvals - Show ALL signatures from all approvers */}
               <section className="rounded-lg bg-slate-50 border border-slate-200 p-4">
@@ -1235,7 +1504,7 @@ export default function HRRequestModal({
                 )}
               </section>
 
-              {/* Cost Justification - Same as VPRequestModal */}
+              {/* Cost Justification */}
               {t.cost_justification && (
                 <section className="rounded-lg bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 p-4">
                   <h3 className="text-sm font-bold text-amber-900 flex items-center gap-2 mb-3">
@@ -1247,193 +1516,35 @@ export default function HRRequestModal({
                   </div>
                 </section>
               )}
-            </div>
 
-            {/* RIGHT - HR Signature Section */}
-            <div className="space-y-5 rounded-xl border-2 border-[#7A0010]/20 bg-gradient-to-br from-white to-red-50/30 p-6 shadow-lg">
-              <div className="flex items-center gap-3 pb-4 border-b-2 border-[#7A0010]/10">
-                {(hrProfile?.profile_picture || hrProfile?.avatar_url) ? (
-                  <img 
-                    src={hrProfile.profile_picture || hrProfile.avatar_url} 
-                    alt={hrProfile?.name || "HR"}
-                    className="h-14 w-14 rounded-full object-cover border-2 border-[#7A0010] shadow-lg flex-shrink-0"
-                  />
-                ) : (
-                  <div className="h-14 w-14 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-xl shadow-lg flex-shrink-0">
-                    {(hrProfile?.name || 'HR').charAt(0).toUpperCase()}
-                  </div>
-                )}
-                <div className="flex-1">
-                  <p className="text-xs font-bold uppercase tracking-wider text-[#7A0010]/70">
-                    HR Review
-                  </p>
-                  <div className="text-base font-bold text-slate-900 mt-1">
-                    {hrProfile?.name || hrProfile?.email || "Loading..."}
-                  </div>
-                  {hrProfile?.department && (
-                    <p className="text-xs text-slate-600 mt-0.5 font-medium">
-                      {hrProfile.department.name || hrProfile.department.code}
-                    </p>
-                  )}
-                  {hrProfile?.position_title && (
-                    <p className="text-xs text-slate-500 mt-0.5">{hrProfile.position_title}</p>
-                  )}
-                </div>
-              </div>
-
-              {readOnly ? (
-                <div>
-                  <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
-                    HR Signature
-                  </label>
-                  <div className="rounded-xl bg-slate-50 p-4 border-2 border-slate-200">
-                    {t.hr_signature ? (
-                      <>
-                        <img 
-                          src={t.hr_signature} 
-                          alt="HR Signature" 
-                          className="max-h-40 mx-auto"
-                        />
-                        {t.hr_approved_at && (
-                          <p className="text-xs text-slate-500 text-center mt-2">
-                            Signed on {new Date(t.hr_approved_at).toLocaleString('en-US', { 
-                              year: 'numeric', 
-                              month: 'short', 
-                              day: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                              hour12: true,
-                              timeZone: 'Asia/Manila'
-                            })}
-                          </p>
-                        )}
-                      </>
-                    ) : (
-                      <p className="text-sm text-slate-500 text-center py-8">
-                        No signature available
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div>
-                  <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
-                    Your Signature <span className="text-red-500">*</span>
-                  </label>
-                  <div className="rounded-xl bg-white p-3 border-2 border-[#7A0010]/20 shadow-sm">
-                    <SignaturePad
-                      height={160}
-                      value={hrSignature || null}
-                      onSave={(dataUrl) => {
-                        setHrSignature(dataUrl);
-                      }}
-                      onClear={() => {
-                        setHrSignature("");
-                      }}
-                      onUseSaved={(dataUrl) => {
-                        setHrSignature(dataUrl);
-                      }}
-                      showUseSavedButton={true}
-                      hideSaveButton
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* HR Notes/Comments */}
-              {!readOnly && (
-                <div>
-                  <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
-                    HR Notes/Comments <span className="text-red-500">*</span>
-                  </label>
-                  
-                  {/* Quick Fill Buttons */}
-                  <div className="mb-2 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setNotes("Okay, approved.")}
-                      className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-                    >
-                      ✓ Okay, approved
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setNotes("Request approved. Proceed to VP for final review.")}
-                      className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-                    >
-                      ✓ Approved
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setNotes("Request approved. All HR requirements are met.")}
-                      className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-                    >
-                      ✓ Fully Approved
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setNotes("Request rejected. Please review and resubmit with corrections.")}
-                      className="px-3 py-1.5 text-xs font-medium bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
-                    >
-                      ✗ Rejected
-                    </button>
-                  </div>
-                  
-                  <textarea
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    rows={4}
-                    className="w-full px-4 py-3 border-2 border-[#7A0010]/20 rounded-xl focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] resize-none text-sm"
-                    placeholder="Add your comments here (minimum 10 characters)..."
-                  />
-                  <p className="text-xs text-slate-500 mt-1">
-                    Minimum 10 characters required
-                  </p>
-                </div>
-              )}
-
-              {readOnly && t.hr_comments && (
-                <div>
-                  <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
-                    HR Comments
-                  </label>
-                  <div className="rounded-xl bg-slate-50 p-4 border-2 border-slate-200">
-                    <p className="text-sm text-slate-700">{t.hr_comments}</p>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
 
           {/* Actions */}
           {!readOnly && (
-            <div className="sticky bottom-0 bg-white border-t-2 border-slate-200 px-6 py-4 flex items-center justify-between flex-shrink-0 shadow-lg">
+            <div className="sticky bottom-0 bg-gradient-to-r from-gray-50 to-white border-t-2 border-gray-200 px-6 py-4 flex gap-3 flex-shrink-0 shadow-lg">
               <button
                 onClick={handleReject}
-                disabled={submitting || !notes.trim()}
-                className="flex items-center justify-center gap-1.5 px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-medium text-sm rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={submitting}
+                className="flex items-center justify-center gap-2 bg-white border-2 border-red-500 text-red-600 hover:bg-red-50 hover:border-red-600 font-semibold py-3 px-6 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
               >
-                <XCircle className="h-4 w-4" />
-                {submitting ? "Rejecting..." : "Reject"}
+                <XCircle className="h-5 w-5" />
+                {submitting ? "Rejecting..." : "Reject & Return"}
               </button>
-              
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={onClose}
-                  className="px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium text-sm rounded-md transition-colors"
-                >
-                  Cancel
-                </button>
-
-                <button
-                  onClick={handleApprove}
-                  disabled={submitting || !hrSignature || !notes.trim() || notes.trim().length < 10}
-                  className="flex items-center justify-center gap-2 px-6 py-2.5 bg-[#7A0010] hover:bg-[#5e000d] text-white font-semibold text-sm rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                >
-                  <CheckCircle2 className="h-4 w-4" />
-                  {submitting ? "Approving..." : "Approve Request"}
-                </button>
-              </div>
+              <button
+                onClick={doApprove}
+                disabled={submitting}
+                className="flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-bold py-3.5 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transform hover:scale-[1.01]"
+              >
+                <Check className="h-5 w-5" />
+                {submitting ? "Approving..." : "Approve & Send"}
+              </button>
+              <button
+                onClick={onClose}
+                className="px-6 py-3 border border-gray-300 hover:bg-gray-100 text-gray-700 font-medium rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
             </div>
           )}
 
@@ -1450,18 +1561,200 @@ export default function HRRequestModal({
         </div>
       </div>
 
+      {/* Approval Modal */}
+      {showApprovalModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="relative w-full max-w-2xl rounded-2xl bg-white shadow-2xl transform transition-all duration-300 scale-100 flex flex-col max-h-[90vh] overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b bg-[#7A0010] px-6 py-4 rounded-t-2xl flex-shrink-0">
+              <div>
+                <h3 className="text-lg font-semibold text-white">HR Review & Approval</h3>
+                <p className="text-sm text-white/80">Sign and add notes to approve this request</p>
+              </div>
+              <button
+                onClick={() => setShowApprovalModal(false)}
+                className="rounded-full p-1 text-white/80 hover:bg-white/10 transition-colors"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="overflow-y-auto flex-1 p-6 space-y-5 relative">
+              {/* Loading Overlay */}
+              {loadingApprovers && (
+                <div className="absolute inset-0 bg-white/90 backdrop-blur-sm z-10 flex flex-col items-center justify-center rounded-b-2xl">
+                  <div className="animate-spin h-12 w-12 border-4 border-[#7A0010] border-t-transparent rounded-full mb-4"></div>
+                  <p className="text-sm font-semibold text-[#7A0010]">Loading approvers...</p>
+                  <p className="text-xs text-gray-600 mt-1">Preparing selection options</p>
+                </div>
+              )}
+              {/* HR Profile */}
+              <div className="flex items-center gap-3 pb-4 border-b-2 border-[#7A0010]/10">
+                {(hrProfile?.profile_picture || hrProfile?.avatar_url) ? (
+                  <img 
+                    src={hrProfile.profile_picture || hrProfile.avatar_url} 
+                    alt={hrProfile?.name || "HR"}
+                    className="h-14 w-14 rounded-full object-cover border-2 border-[#7A0010] shadow-lg flex-shrink-0"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = 'none';
+                      const parent = target.parentElement;
+                      if (parent && !parent.querySelector('.fallback-avatar-hr-modal')) {
+                        const fallback = document.createElement('div');
+                        fallback.className = 'h-14 w-14 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-xl shadow-lg flex-shrink-0 fallback-avatar-hr-modal';
+                        fallback.textContent = (hrProfile?.name || 'H').charAt(0).toUpperCase();
+                        parent.appendChild(fallback);
+                      }
+                    }}
+                  />
+                ) : (
+                  <div className="h-14 w-14 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-xl shadow-lg flex-shrink-0">
+                    {(hrProfile?.name || 'H').charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div className="flex-1">
+                  <p className="text-xs font-bold uppercase tracking-wider text-[#7A0010]/70">
+                    HR Review
+                  </p>
+                  <div className="text-base font-bold text-slate-900 mt-1">
+                    {hrProfile?.name || hrProfile?.email || (hrProfile ? "HR" : "Loading...")}
+                  </div>
+                  {hrProfile?.department && (
+                    <p className="text-xs text-slate-600 mt-0.5 font-medium">
+                      {hrProfile.department.name || hrProfile.department.code}
+                    </p>
+                  )}
+                  {hrProfile?.position_title && (
+                    <p className="text-xs text-slate-500 mt-0.5">{hrProfile.position_title}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* HR Signature */}
+              <div>
+                <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
+                  Your Signature <span className="text-red-500">*</span>
+                </label>
+                <div className="rounded-xl bg-white p-3 border-2 border-[#7A0010]/20 shadow-sm">
+                  <SignaturePad
+                    height={160}
+                    value={hrSignature || null}
+                    onSave={(dataUrl) => {
+                      setHrSignature(dataUrl);
+                    }}
+                    onClear={() => {
+                      setHrSignature("");
+                    }}
+                    onUseSaved={(dataUrl) => {
+                      setHrSignature(dataUrl);
+                    }}
+                    showUseSavedButton={true}
+                    hideSaveButton
+                  />
+                </div>
+              </div>
+
+              {/* HR Notes */}
+              <div>
+                <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
+                  HR Notes/Comments <span className="text-red-500">*</span>
+                </label>
+                
+                {/* Quick Fill Buttons */}
+                <div className="mb-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNotes("Okay, approved.")}
+                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+                  >
+                    ✓ Okay, approved
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNotes("Request approved. Proceed to VP for final review.")}
+                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+                  >
+                    ✓ Approved
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNotes("Request approved. All HR requirements are met.")}
+                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+                  >
+                    ✓ Fully Approved
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNotes("Request rejected. Please review and resubmit with corrections.")}
+                    className="px-3 py-1.5 text-xs font-medium bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
+                  >
+                    ✗ Rejected
+                  </button>
+                </div>
+                
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={4}
+                  className="w-full px-4 py-3 border-2 border-[#7A0010]/20 rounded-xl focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] resize-none text-sm"
+                  placeholder="Add your comments here (minimum 10 characters)..."
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Minimum 10 characters required
+                </p>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="border-t border-gray-200 px-6 py-4 flex gap-3 flex-shrink-0 bg-gray-50">
+              <button
+                onClick={() => setShowApprovalModal(false)}
+                className="px-6 py-2 border border-gray-300 hover:bg-gray-100 text-gray-700 font-medium rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleApprovalSubmit}
+                disabled={submitting || loadingApprovers || !hrSignature || !notes.trim() || notes.trim().length < 10}
+                className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loadingApprovers ? (
+                  <>
+                    <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div>
+                    Loading...
+                  </>
+                ) : (
+                  <>
+                    <Check className="h-5 w-5" />
+                    {submitting ? "Processing..." : "Confirm Approval"}
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* VP Selection Modal */}
       {showVPSelection && (
         <ApproverSelectionModal
           isOpen={showVPSelection}
           onClose={() => setShowVPSelection(false)}
           onSelect={(approverId, role) => {
-            setSelectedApproverId(approverId);
-            setSelectedApproverRole(role);
-            proceedWithApproval(approverId, role);
+            // Handle multiple selection
+            if (Array.isArray(approverId) && Array.isArray(role)) {
+              // Multiple VPs selected
+              proceedWithApproval(approverId, role);
+            } else {
+              // Single selection (backward compatibility)
+              setSelectedApproverId(Array.isArray(approverId) ? approverId[0] : approverId);
+              setSelectedApproverRole(Array.isArray(role) ? role[0] : role);
+              proceedWithApproval(approverId, role);
+            }
           }}
           title="Select Next Approver"
-          description={`Request ${request.request_number || request.id} - Choose VP or President to approve this request`}
+          description={`Request ${request.request_number || request.id} - Select one or more VPs based on departments involved. Each VP can approve independently.`}
           options={vpOptions}
           currentRole="hr"
           allowReturnToRequester={false}
@@ -1469,6 +1762,7 @@ export default function HRRequestModal({
           defaultApproverName={defaultApproverName}
           suggestionReason={suggestionReason}
           allowAllUsers={true}
+          allowMultiple={true}
           fetchAllUsers={async () => {
             try {
               const allUsersRes = await fetch("/api/users/all");

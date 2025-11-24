@@ -130,7 +130,7 @@ export async function POST(request: Request) {
     // Get request details before update (to check if approved and if SMS already sent)
     const { data: requestBeforeUpdate } = await supabase
       .from("requests")
-      .select("status, assigned_driver_id, sms_notification_sent, requester_id, requester_name, requester_contact_number, travel_start_date, destination, pickup_location, pickup_time, pickup_preference, request_number")
+      .select("status, assigned_driver_id, sms_notification_sent, requester_id, requester_name, requester_contact_number, travel_start_date, destination, purpose, pickup_location, pickup_time, pickup_preference, request_number")
       .eq("id", requestId)
       .single();
 
@@ -180,6 +180,7 @@ export async function POST(request: Request) {
             requesterPhone: requestBeforeUpdate.requester_contact_number || "",
             travelDate: requestBeforeUpdate.travel_start_date,
             destination: requestBeforeUpdate.destination || "",
+            purpose: requestBeforeUpdate.purpose || "",
             pickupLocation: requestBeforeUpdate.pickup_location || undefined,
             pickupTime: requestBeforeUpdate.pickup_time || undefined,
             pickupPreference: requestBeforeUpdate.pickup_preference as 'pickup' | 'self' | 'gymnasium' | undefined,

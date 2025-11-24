@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { X, CheckCircle2, XCircle, Users, Car, UserCog, MapPin, Calendar, FileText, Edit2, Check, Clock } from "lucide-react";
+import { X, CheckCircle2, XCircle, Users, Car, UserCog, MapPin, Calendar, FileText, Edit2, Check, Clock, Paperclip, ExternalLink, User } from "lucide-react";
 import { useToast } from "@/components/common/ui/Toast";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import { NameWithProfile } from "@/components/common/ProfileHoverCard";
@@ -39,6 +39,10 @@ export default function PresidentRequestModal({
   const [fullRequest, setFullRequest] = useState<any>(null);
   const [preferredDriverName, setPreferredDriverName] = useState<string>("");
   const [preferredVehicleName, setPreferredVehicleName] = useState<string>("");
+  const [additionalRequesters, setAdditionalRequesters] = React.useState<any[]>([]);
+  const [loadingRequesters, setLoadingRequesters] = React.useState(false);
+  const [mainRequesterSignature, setMainRequesterSignature] = React.useState<string | null>(null);
+  const [showApprovalModal, setShowApprovalModal] = React.useState(false);
 
   const t = fullRequest || request;
 
@@ -230,6 +234,74 @@ export default function PresidentRequestModal({
     }
   };
 
+  const loadAdditionalRequesters = React.useCallback(async () => {
+    try {
+      setLoadingRequesters(true);
+      const t = fullRequest || request;
+      
+      // Prioritize requester_invitations from fullRequest, then fallback to other sources
+      const requesters = t?.requester_invitations || t?.additional_requesters || t?.requester_tracking || [];
+      
+      if (Array.isArray(requesters) && requesters.length > 0) {
+        // Find main requester signature first
+        const mainRequesterInvitation = requesters.find((inv: any) => {
+          return (inv.user_id === t?.requester_id) || 
+                 (inv.user_id === request?.requester_id) ||
+                 (inv.id === t?.requester_id) ||
+                 (inv.email === t?.requester?.email) ||
+                 (inv.email === request?.requester?.email);
+        });
+        if (mainRequesterInvitation?.signature) {
+          setMainRequesterSignature(mainRequesterInvitation.signature);
+        }
+        
+        // If requesters have IDs, fetch full details
+        const requesterPromises = requesters.map(async (req: any) => {
+          // For requester_invitations, use user_id if available, otherwise use the invitation data as-is
+          if (req.user_id) {
+            try {
+              const res = await fetch(`/api/users/${req.user_id}`);
+              if (res.ok) {
+                const json = await res.json();
+                if (json.ok && json.data) {
+                  return {
+                    ...req,
+                    ...json.data,
+                    name: req.name || json.data.name,
+                    email: req.email || json.data.email,
+                    department: req.department || json.data.department?.name || json.data.department?.code,
+                    signature: req.signature || json.data.signature,
+                    confirmed_at: req.confirmed_at || req.created_at,
+                    profile_picture: req.profile_picture || json.data.profile_picture || json.data.avatar_url
+                  };
+                }
+              }
+            } catch (err) {
+              console.error("[PresidentRequestModal] Error loading requester:", err);
+            }
+          }
+          return req;
+        });
+        
+        const loadedRequesters = await Promise.all(requesterPromises);
+        // Filter out the main requester
+        setAdditionalRequesters(loadedRequesters.filter(r => {
+          if (!r) return false;
+          const rId = r.user_id || r.id;
+          const mainId = t?.requester_id || request?.requester_id;
+          return rId !== mainId;
+        }));
+      } else {
+        setAdditionalRequesters([]);
+      }
+    } catch (err) {
+      console.error("[PresidentRequestModal] Error loading additional requesters:", err);
+      setAdditionalRequesters([]);
+    } finally {
+      setLoadingRequesters(false);
+    }
+  }, [fullRequest, request]);
+
   useEffect(() => {
     async function loadData() {
       // Load current President info
@@ -249,9 +321,24 @@ export default function PresidentRequestModal({
     loadData();
   }, [request.id]);
 
-  const handleApprove = async () => {
+  React.useEffect(() => {
+    if (fullRequest || request) {
+      loadAdditionalRequesters();
+    }
+  }, [fullRequest, request, loadAdditionalRequesters]);
+
+  const doApprove = () => {
+    setShowApprovalModal(true);
+  };
+
+  const handleApprovalSubmit = async () => {
     if (!presidentSignature) {
       toast.error("Signature Required", "Please provide your signature");
+      return;
+    }
+
+    if (!notes.trim() || notes.trim().length < 10) {
+      toast.error("Notes Required", "Please provide notes (minimum 10 characters)");
       return;
     }
 
@@ -287,6 +374,7 @@ export default function PresidentRequestModal({
 
       if (data.ok) {
         toast.success("Request Approved", "Request has been fully approved. The process is complete.");
+        setShowApprovalModal(false);
         setTimeout(() => {
           onApproved(request.id);
           onClose();
@@ -303,8 +391,8 @@ export default function PresidentRequestModal({
 
 
   const handleReject = async () => {
-    if (!notes.trim()) {
-      toast.error("Reason Required", "Please provide a reason for rejection");
+    if (!notes.trim() || notes.trim().length < 10) {
+      toast.error("Reason Required", "Please provide a reason for rejection (minimum 10 characters)");
       return;
     }
 
@@ -387,10 +475,9 @@ export default function PresidentRequestModal({
           </div>
         </div>
 
-        {/* Body - Same structure as VPRequestModal */}
-        <div className="grid gap-8 px-6 py-6 lg:grid-cols-[1.1fr_0.9fr] overflow-y-auto flex-1">
-          {/* LEFT - Same sections as VPRequestModal */}
-          <div className="space-y-5">
+        {/* Body - Single column layout */}
+        <div className="px-6 py-6 overflow-y-auto flex-1">
+          <div className="space-y-5 max-w-4xl mx-auto">
             {/* Requester Information */}
             <section className="rounded-lg bg-white p-5 border border-slate-200 shadow-sm">
               <p className="text-xs font-medium uppercase tracking-wider text-slate-500 mb-3">
@@ -444,6 +531,52 @@ export default function PresidentRequestModal({
                     <p className="text-xs text-slate-500 mt-0.5">Role: {t.requester.role}</p>
                   )}
                 </div>
+                {(() => {
+                  // Check if requester is also the head approver - if so, use head_signature
+                  const requesterId = t?.requester_id || request?.requester_id;
+                  const headApprovedBy = t?.head_approved_by || request?.head_approved_by;
+                  const isRequesterAlsoHead = requesterId && headApprovedBy && requesterId === headApprovedBy;
+                  
+                  // Check multiple possible locations for the signature
+                  let signatureFromInvitations = null;
+                  if (fullRequest?.requester_invitations && Array.isArray(fullRequest.requester_invitations)) {
+                    const mainRequesterInvitation = fullRequest.requester_invitations.find((inv: any) => {
+                      return (inv.user_id === requesterId) || 
+                             (inv.id === requesterId) ||
+                             (inv.email === t?.requester?.email) ||
+                             (inv.email === request?.requester?.email);
+                    });
+                    signatureFromInvitations = mainRequesterInvitation?.signature || null;
+                  }
+                  
+                  const signature = (isRequesterAlsoHead && (fullRequest?.head_signature || request?.head_signature || t?.head_signature))
+                    || signatureFromInvitations
+                    || mainRequesterSignature
+                    || (fullRequest?.requester_signature)
+                    || (request?.requester_signature)
+                    || (t?.requester_signature)
+                    || (fullRequest?.requester?.signature)
+                    || (request?.requester?.signature)
+                    || (t?.requester?.signature)
+                    || (fullRequest as any)?.signature
+                    || (request as any)?.signature
+                    || (t as any)?.signature;
+                  
+                  return signature ? (
+                    <div className="flex flex-col items-end gap-1">
+                      <p className="text-xs text-slate-500 font-medium">Signature</p>
+                      <img
+                        src={signature}
+                        alt={`${t?.requester_name || request?.requester_name || "Requester"}'s signature`}
+                        className="h-16 w-32 rounded border border-slate-300 bg-white object-contain p-1"
+                        onError={(e) => {
+                          console.error("[PresidentRequestModal] Failed to load requester signature");
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
+                    </div>
+                  ) : null;
+                })()}
               </div>
               
               {t.created_at && (
@@ -455,6 +588,81 @@ export default function PresidentRequestModal({
                 </div>
               )}
             </section>
+
+            {/* Additional Requesters Section */}
+            {additionalRequesters.length > 0 && (
+              <section className="rounded-lg bg-blue-50/50 border border-blue-200 p-5 shadow-sm">
+                <p className="text-xs font-medium uppercase tracking-wider text-blue-700 mb-3 flex items-center gap-2">
+                  <Users className="h-4 w-4" />
+                  Additional Requesters ({additionalRequesters.length})
+                </p>
+                <div className="space-y-3">
+                  {loadingRequesters ? (
+                    <div className="text-center py-4">
+                      <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                      <p className="text-xs text-gray-500 mt-2">Loading requesters...</p>
+                    </div>
+                  ) : (
+                    additionalRequesters.map((req, idx) => (
+                      <div key={idx} className="bg-white rounded-lg p-3 border border-blue-100">
+                        <div className="flex items-start gap-3">
+                          {(req.profile_picture || req.avatar_url) ? (
+                            <img 
+                              src={req.profile_picture || req.avatar_url} 
+                              alt={req.name || "Requester"}
+                              className="h-10 w-10 rounded-full object-cover border-2 border-blue-200 flex-shrink-0"
+                              onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                target.style.display = 'none';
+                              }}
+                            />
+                          ) : (
+                            <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                              <User className="h-5 w-5 text-blue-600" />
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-gray-900 truncate">
+                              {req.name || "Unknown Requester"}
+                            </p>
+                            {req.email && (
+                              <p className="text-xs text-gray-500 truncate">{req.email}</p>
+                            )}
+                            {req.department && (
+                              <p className="text-xs text-blue-600 font-medium mt-1">
+                                {req.department}
+                              </p>
+                            )}
+                            {req.confirmed_at && (
+                              <p className="text-xs text-gray-400 mt-1">
+                                Confirmed: {new Date(req.confirmed_at).toLocaleString('en-US', { 
+                                  year: 'numeric', 
+                                  month: 'short', 
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                  hour12: true,
+                                  timeZone: 'Asia/Manila'
+                                })}
+                              </p>
+                            )}
+                          </div>
+                          {req.signature && (
+                            <div className="flex-shrink-0">
+                              <img 
+                                src={req.signature} 
+                                alt="Signature" 
+                                className="h-8 w-20 object-contain border border-gray-200 rounded"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </section>
+            )}
 
             {/* Service Preferences */}
             <section className="rounded-lg bg-white p-5 border border-slate-200 shadow-sm">
@@ -685,6 +893,88 @@ export default function PresidentRequestModal({
                     </p>
                   </div>
                 )}
+              </section>
+            )}
+
+            {/* Admin Assignment Details */}
+            {(t?.assigned_driver_id || t?.assigned_vehicle_id || t?.admin_notes || t?.admin_comments) && (
+              <section className="rounded-lg bg-gradient-to-br from-indigo-50 to-purple-50 border-2 border-indigo-200 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Users className="h-5 w-5 text-indigo-600" />
+                  <p className="text-xs font-bold uppercase tracking-wide text-indigo-700">
+                    Admin Assignment & Notes
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {t?.assigned_driver_id && (
+                    <div className="flex items-start gap-2 bg-white rounded-lg px-3 py-2 border border-indigo-100">
+                      <Users className="h-4 w-4 text-indigo-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-xs text-indigo-700 font-medium mb-0.5">Assigned Driver</p>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {t?.assigned_driver_name || t?.assigned_driver?.name || 'Loading...'}
+                        </p>
+                        {t?.driver_contact_number && (
+                          <p className="text-xs text-slate-600 mt-0.5">Contact: {t.driver_contact_number}</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {t?.assigned_vehicle_id && (
+                    <div className="flex items-start gap-2 bg-white rounded-lg px-3 py-2 border border-indigo-100">
+                      <Car className="h-4 w-4 text-indigo-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-xs text-indigo-700 font-medium mb-0.5">Assigned Vehicle</p>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {t?.assigned_vehicle_name || t?.assigned_vehicle?.name || t?.assigned_vehicle?.vehicle_name || (t?.assigned_vehicle?.model && t?.assigned_vehicle?.plate_number ? `${t.assigned_vehicle.model} (${t.assigned_vehicle.plate_number})` : null) || t?.assigned_vehicle?.plate_number || 'Not assigned'}
+                        </p>
+                        {t?.assigned_vehicle?.plate_number && (
+                          <p className="text-xs text-slate-600 mt-0.5">Plate: {t.assigned_vehicle.plate_number}</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {t?.admin_notes && (
+                    <div className="bg-white rounded-lg px-3 py-2 border border-indigo-100">
+                      <p className="text-xs text-indigo-700 font-medium mb-1">Admin Notes</p>
+                      <p className="text-sm text-slate-700 whitespace-pre-wrap">{t.admin_notes}</p>
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
+
+            {/* Attachments */}
+            {t?.attachments && Array.isArray(t.attachments) && t.attachments.length > 0 && (
+              <section className="rounded-lg bg-gradient-to-br from-emerald-50 to-teal-50 border-2 border-emerald-200 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <FileText className="h-5 w-5 text-emerald-600" />
+                  <p className="text-xs font-bold uppercase tracking-wide text-emerald-700">
+                    Attached Documents ({t.attachments.length})
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {t.attachments.map((attachment: any, idx: number) => (
+                    <a
+                      key={attachment.id || idx}
+                      href={attachment.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 bg-white rounded-lg px-3 py-2 border border-emerald-100 hover:border-emerald-300 hover:shadow-sm transition-all"
+                    >
+                      <FileText className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-900 truncate">{attachment.name || `Document ${idx + 1}`}</p>
+                        {attachment.size && (
+                          <p className="text-xs text-slate-600">{(attachment.size / 1024).toFixed(2)} KB</p>
+                        )}
+                      </div>
+                      <svg className="h-4 w-4 text-emerald-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    </a>
+                  ))}
+                </div>
               </section>
             )}
 
@@ -1023,78 +1313,140 @@ export default function PresidentRequestModal({
             )}
           </div>
 
-          {/* RIGHT - President Signature Section */}
-          <div className="space-y-5 rounded-xl border-2 border-[#7A0010]/20 bg-gradient-to-br from-white to-red-50/30 p-6 shadow-lg">
-            <div className="flex items-center gap-3 pb-4 border-b-2 border-[#7A0010]/10">
-              {(presidentProfile?.profile_picture || presidentProfile?.avatar_url || presidentProfile?.avatarUrl) ? (
-                <img 
-                  src={presidentProfile.profile_picture || presidentProfile.avatar_url || presidentProfile.avatarUrl} 
-                  alt={presidentProfile?.name || "President"}
-                  className="h-14 w-14 rounded-full object-cover border-2 border-[#7A0010] shadow-lg flex-shrink-0"
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement;
-                    target.style.display = 'none';
-                    const parent = target.parentElement;
-                    if (parent && !parent.querySelector('.fallback-avatar-president')) {
-                      const fallback = document.createElement('div');
-                      fallback.className = 'h-14 w-14 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-xl shadow-lg flex-shrink-0 fallback-avatar-president';
-                      fallback.textContent = (presidentProfile?.name || 'P').charAt(0).toUpperCase();
-                      parent.appendChild(fallback);
-                    }
-                  }}
+            {/* Your Notes/Comments Section */}
+            {!viewOnly && (
+              <section className="rounded-lg bg-white p-5 border border-slate-200 shadow-sm">
+                <label className="mb-3 block text-xs font-bold text-slate-700 uppercase tracking-wide">
+                  Your Notes/Comments
+                </label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={3}
+                  className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] resize-none text-sm"
+                  placeholder="Add your comments or reasons for approval/rejection..."
                 />
-              ) : (
-                <div className="h-14 w-14 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-xl shadow-lg flex-shrink-0">
-                  {(presidentProfile?.name || 'P').charAt(0).toUpperCase()}
-                </div>
-              )}
-              <div className="flex-1">
-                <p className="text-xs font-bold uppercase tracking-wider text-[#7A0010]/70">
-                  Presidential Review
-                </p>
-                <div className="text-base font-bold text-slate-900 mt-1">
-                  {presidentProfile?.name || presidentProfile?.email || "Loading..."}
-                </div>
-                {presidentProfile?.department && (
-                  <p className="text-xs text-slate-600 mt-0.5 font-medium">
-                    {typeof presidentProfile.department === 'string' 
-                      ? presidentProfile.department 
-                      : (presidentProfile.department.name || presidentProfile.department.code)}
-                  </p>
-                )}
-                {presidentProfile?.position_title && (
-                  <p className="text-xs text-slate-500 mt-0.5">{presidentProfile.position_title}</p>
-                )}
-              </div>
-            </div>
+              </section>
+            )}
 
-            {viewOnly ? (
-              <div>
-                <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
-                  President Signature
+            {viewOnly && t.president_comments && (
+              <section className="rounded-lg bg-white p-5 border border-slate-200 shadow-sm">
+                <label className="mb-3 block text-xs font-bold text-slate-700 uppercase tracking-wide">
+                  President Comments
                 </label>
                 <div className="rounded-xl bg-slate-50 p-4 border-2 border-slate-200">
-                  {t.president_signature ? (
-                    <>
-                      <img 
-                        src={t.president_signature} 
-                        alt="President Signature" 
-                        className="max-h-40 mx-auto"
-                      />
-                      {t.president_approved_at && (
-                        <p className="text-xs text-slate-500 text-center mt-2">
-                          Signed on {new Date(t.president_approved_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
-                        </p>
-                      )}
-                    </>
-                  ) : (
-                    <p className="text-sm text-slate-500 text-center py-8">
-                      No signature available
+                  <p className="text-sm text-slate-700">{t.president_comments}</p>
+                </div>
+              </section>
+            )}
+          </div>
+        </div>
+
+        {/* Actions */}
+        {!viewOnly && (
+          <div className="sticky bottom-0 bg-white border-t-2 border-gray-200 px-6 py-4 flex gap-3 flex-shrink-0 shadow-lg">
+            <button
+              onClick={handleReject}
+              disabled={submitting}
+              className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-semibold py-3 px-6 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg transform hover:scale-[1.02] active:scale-[0.98]"
+            >
+              <XCircle className="h-5 w-5" />
+              {submitting ? "Rejecting..." : "Reject & Return to User"}
+            </button>
+            <button
+              onClick={doApprove}
+              disabled={submitting}
+              className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 active:bg-green-800 text-white font-semibold py-3 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg transform hover:scale-[1.02] active:scale-[0.98]"
+            >
+              <Check className="h-5 w-5" />
+              {submitting ? "Approving..." : "Approve & Send"}
+            </button>
+            <button
+              onClick={onClose}
+              className="px-6 py-3 border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 font-semibold rounded-lg transition-all transform hover:scale-[1.02] active:scale-[0.98]"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
+        {viewOnly && (
+          <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex justify-end flex-shrink-0">
+            <button
+              onClick={onClose}
+              className="px-6 py-3 border border-gray-300 hover:bg-gray-100 text-gray-700 font-medium rounded-lg transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Approval Modal */}
+      {showApprovalModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="relative w-full max-w-2xl rounded-2xl bg-white shadow-2xl transform transition-all duration-300 scale-100 flex flex-col max-h-[90vh] overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b bg-[#7A0010] px-6 py-4 rounded-t-2xl flex-shrink-0">
+              <div>
+                <h3 className="text-lg font-semibold text-white">Presidential Review & Approval</h3>
+                <p className="text-sm text-white/80">Sign and add notes to approve this request</p>
+              </div>
+              <button
+                onClick={() => setShowApprovalModal(false)}
+                className="rounded-full p-1 text-white/80 hover:bg-white/10 transition-colors"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="overflow-y-auto flex-1 p-6 space-y-5">
+              {/* President Profile */}
+              <div className="flex items-center gap-3 pb-4 border-b-2 border-[#7A0010]/10">
+                {(presidentProfile?.profile_picture || presidentProfile?.avatar_url || presidentProfile?.avatarUrl) ? (
+                  <img 
+                    src={presidentProfile.profile_picture || presidentProfile.avatar_url || presidentProfile.avatarUrl} 
+                    alt={presidentProfile?.name || "President"}
+                    className="h-14 w-14 rounded-full object-cover border-2 border-[#7A0010] shadow-lg flex-shrink-0"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = 'none';
+                      const parent = target.parentElement;
+                      if (parent && !parent.querySelector('.fallback-avatar-president')) {
+                        const fallback = document.createElement('div');
+                        fallback.className = 'h-14 w-14 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-xl shadow-lg flex-shrink-0 fallback-avatar-president';
+                        fallback.textContent = (presidentProfile?.name || 'P').charAt(0).toUpperCase();
+                        parent.appendChild(fallback);
+                      }
+                    }}
+                  />
+                ) : (
+                  <div className="h-14 w-14 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-xl shadow-lg flex-shrink-0">
+                    {(presidentProfile?.name || 'P').charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div className="flex-1">
+                  <p className="text-xs font-bold uppercase tracking-wider text-[#7A0010]/70">
+                    Presidential Review
+                  </p>
+                  <div className="text-base font-bold text-slate-900 mt-1">
+                    {presidentProfile?.name || presidentProfile?.email || "Loading..."}
+                  </div>
+                  {presidentProfile?.department && (
+                    <p className="text-xs text-slate-600 mt-0.5 font-medium">
+                      {typeof presidentProfile.department === 'string' 
+                        ? presidentProfile.department 
+                        : (presidentProfile.department.name || presidentProfile.department.code)}
                     </p>
+                  )}
+                  {presidentProfile?.position_title && (
+                    <p className="text-xs text-slate-500 mt-0.5">{presidentProfile.position_title}</p>
                   )}
                 </div>
               </div>
-            ) : (
+
+              {/* Signature */}
               <div>
                 <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
                   Your Signature <span className="text-red-500">*</span>
@@ -1117,13 +1469,11 @@ export default function PresidentRequestModal({
                   />
                 </div>
               </div>
-            )}
 
-            {/* President Notes/Comments */}
-            {!viewOnly && (
+              {/* Notes */}
               <div>
                 <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
-                  President Notes/Comments
+                  Your Notes/Comments <span className="text-red-500">*</span>
                 </label>
                 
                 {/* Quick Fill Buttons */}
@@ -1149,13 +1499,6 @@ export default function PresidentRequestModal({
                   >
                     ✓ Final Approval
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setNotes("Request rejected. Please review and resubmit with necessary corrections.")}
-                    className="px-3 py-1.5 text-xs font-medium bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
-                  >
-                    ✗ Rejected
-                  </button>
                 </div>
                 
                 <textarea
@@ -1166,61 +1509,28 @@ export default function PresidentRequestModal({
                   placeholder="Add your comments here..."
                 />
               </div>
-            )}
+            </div>
 
-            {viewOnly && t.president_comments && (
-              <div>
-                <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
-                  President Comments
-                </label>
-                <div className="rounded-xl bg-slate-50 p-4 border-2 border-slate-200">
-                  <p className="text-sm text-slate-700">{t.president_comments}</p>
-                </div>
-              </div>
-            )}
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50 flex-shrink-0">
+              <button
+                onClick={() => setShowApprovalModal(false)}
+                className="px-6 py-2 border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 font-semibold rounded-lg transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleApprovalSubmit}
+                disabled={submitting || !presidentSignature || !notes.trim() || notes.trim().length < 10}
+                className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Check className="h-5 w-5" />
+                {submitting ? "Processing..." : "Confirm Approval"}
+              </button>
+            </div>
           </div>
         </div>
-
-        {/* Actions */}
-        {!viewOnly && (
-          <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex gap-3 flex-shrink-0">
-            <button
-              onClick={handleApprove}
-              disabled={submitting || !presidentSignature}
-              className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <CheckCircle2 className="h-5 w-5" />
-              {submitting ? "Approving..." : "Approve Request"}
-            </button>
-            <button
-              onClick={handleReject}
-              disabled={submitting || !notes.trim()}
-              className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white font-medium py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <XCircle className="h-5 w-5" />
-              {submitting ? "Rejecting..." : "Reject Request"}
-            </button>
-            <button
-              onClick={onClose}
-              className="px-6 py-3 border border-gray-300 hover:bg-gray-100 text-gray-700 font-medium rounded-lg transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        )}
-
-        {viewOnly && (
-          <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex justify-end flex-shrink-0">
-            <button
-              onClick={onClose}
-              className="px-6 py-3 border border-gray-300 hover:bg-gray-100 text-gray-700 font-medium rounded-lg transition-colors"
-            >
-              Close
-            </button>
-          </div>
-        )}
-      </div>
-
+      )}
     </div>
   );
 }

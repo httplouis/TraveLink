@@ -376,7 +376,7 @@ export async function GET(
         console.log(`[GET /api/requests/${requestId}] Fetching assigned vehicle for ID:`, fullRequest.assigned_vehicle_id);
         const { data: vehicle, error: vehicleError } = await supabaseServiceRole
           .from("vehicles")
-          .select("id, vehicle_name, plate_number, vehicle_type, capacity")
+          .select("id, vehicle_name, plate_number, type, capacity")
           .eq("id", fullRequest.assigned_vehicle_id)
           .single();
         
@@ -387,7 +387,7 @@ export async function GET(
             id: vehicle.id,
             name: vehicle.vehicle_name,
             plate_number: vehicle.plate_number,
-            type: vehicle.vehicle_type,
+            type: vehicle.type,
             capacity: vehicle.capacity
           };
           fullRequest.assigned_vehicle_name = `${vehicle.vehicle_name} • ${vehicle.plate_number}`;

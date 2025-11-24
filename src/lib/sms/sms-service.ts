@@ -233,6 +233,7 @@ export async function sendDriverTravelNotification(params: {
   requesterPhone: string;
   travelDate: string;
   destination: string;
+  purpose?: string;
   pickupLocation?: string;
   pickupTime?: string;
   pickupPreference?: 'pickup' | 'self' | 'gymnasium';
@@ -244,16 +245,25 @@ export async function sendDriverTravelNotification(params: {
     requesterPhone,
     travelDate,
     destination,
+    purpose,
     pickupLocation,
     pickupTime,
     pickupPreference,
     requestNumber,
   } = params;
 
-  // Format travel date
+  // Check for demo mode override
+  const demoPhone = process.env.DEMO_DRIVER_PHONE;
+  const actualPhone = driverPhone;
+  const targetPhone = demoPhone || driverPhone;
+
+  if (demoPhone) {
+    console.log(`[sendSMS] 📱 [DEMO MODE] Redirecting SMS to demo number: ${demoPhone} (original: ${actualPhone})`);
+  }
+
+  // Format travel date (Month Day, Year format)
   const dateObj = new Date(travelDate);
   const formattedDate = dateObj.toLocaleDateString('en-US', {
-    weekday: 'long',
     year: 'numeric',
     month: 'long',
     day: 'numeric',
@@ -273,21 +283,31 @@ export async function sendDriverTravelNotification(params: {
   }
 
   // Build message
-  const message = `TRAVILINK - Travel Assignment
+  let message = `TRAVILINK - Travel Assignment
 
 Request: ${requestNumber}
 Date: ${formattedDate}
-Destination: ${destination}
+Destination: ${destination}`;
+
+  // Add purpose if provided
+  if (purpose) {
+    message += `\nPurpose: ${purpose}`;
+  }
+
+  message += `
 
 Requester: ${requesterName}
-Contact: ${requesterPhone}
+Contact: ${requesterPhone}`;
 
-${pickupInstruction}
+  // Add pickup instruction if applicable
+  if (pickupInstruction) {
+    message += `\n\n${pickupInstruction}`;
+  }
 
-Please coordinate with the requester for travel details.`;
+  message += `\n\nPlease coordinate with the requester for travel details.`;
 
   return await sendSMS({
-    to: driverPhone,
+    to: targetPhone,
     message: message.trim(),
   });
 }

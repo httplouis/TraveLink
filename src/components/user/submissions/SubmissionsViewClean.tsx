@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Clock, Eye, CheckCircle, XCircle, AlertCircle } from "lucide-react";
+import { Clock, Eye, CheckCircle, XCircle, AlertCircle, FileDown } from "lucide-react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { WorkflowEngine } from "@/lib/workflow/engine";
 import { SkeletonRequestCard } from "@/components/common/SkeletonLoader";
@@ -390,6 +390,49 @@ export default function SubmissionsView() {
         onClose={() => setShowDetailsModal(false)}
         size="lg"
         showCloseButton={true}
+        headerActions={
+          selectedRequest ? (
+            <button
+              onClick={async () => {
+                try {
+                  const res = await fetch(`/api/requests/${selectedRequest.id}/pdf`);
+                  if (!res.ok) {
+                    const errorText = await res.text();
+                    console.error('PDF API error:', res.status, errorText);
+                    throw new Error(`Failed to generate PDF: ${res.status}`);
+                  }
+                  
+                  const blob = await res.blob();
+                  const url = window.URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  
+                  const contentDisposition = res.headers.get('Content-Disposition');
+                  let filename = `travel-order-${selectedRequest.request_number || selectedRequest.id}.pdf`;
+                  if (contentDisposition) {
+                    const filenameMatch = contentDisposition.match(/filename="?(.+?)"?$/);
+                    if (filenameMatch) {
+                      filename = filenameMatch[1];
+                    }
+                  }
+                  
+                  a.download = filename;
+                  document.body.appendChild(a);
+                  a.click();
+                  window.URL.revokeObjectURL(url);
+                  document.body.removeChild(a);
+                } catch (err) {
+                  console.error('Failed to generate PDF:', err);
+                  alert(`Failed to generate PDF: ${err instanceof Error ? err.message : 'Unknown error'}. Please try again.`);
+                }
+              }}
+              className="flex items-center gap-2 px-4 py-2 rounded-md bg-[#7A0010] hover:bg-[#5c000c] text-white text-sm font-medium transition-colors"
+            >
+              <FileDown className="h-4 w-4" />
+              Download PDF
+            </button>
+          ) : undefined
+        }
       >
         {loadingDetails ? (
           <div className="p-6 space-y-6">

@@ -125,28 +125,48 @@ export default function SignatureStageRail({
                 </div>
               </div>
 
-              {/* Approver Info */}
-              {stage.approver && (
+              {/* Approver Info - Show name if approver exists or if signature exists */}
+              {(stage.approver || (stage.signature && stage.status === 'approved')) && (
                 <div className="flex items-center space-x-3 mb-3">
-                  <ProfilePicture
-                    src={stage.approver.profile_picture}
-                    name={stage.approver.name}
-                    size="sm"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900">
-                      <NameWithProfile 
+                  {stage.approver ? (
+                    <>
+                      <ProfilePicture
+                        src={stage.approver.profile_picture}
                         name={stage.approver.name}
-                        profile={stage.approver}
+                        size="sm"
                       />
-                    </p>
-                    <p className="text-sm text-gray-600 truncate">
-                      {stage.approver.position && stage.approver.department 
-                        ? `${stage.approver.position}, ${stage.approver.department}`
-                        : stage.approver.position || stage.approver.department || stage.role
-                      }
-                    </p>
-                  </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-base text-gray-900">
+                          <NameWithProfile 
+                            name={stage.approver.name}
+                            profile={stage.approver}
+                          />
+                        </p>
+                        <p className="text-sm text-gray-600 truncate">
+                          {stage.approver.position && stage.approver.department 
+                            ? `${stage.approver.position}, ${stage.approver.department}`
+                            : stage.approver.position || stage.approver.department || stage.role
+                          }
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
+                        <span className="text-gray-600 font-semibold text-sm">
+                          {stage.label.charAt(0)}
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-base text-gray-900">
+                          {stage.label}
+                        </p>
+                        <p className="text-sm text-gray-600 truncate">
+                          {stage.role}
+                        </p>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 

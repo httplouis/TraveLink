@@ -65,11 +65,109 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
   const [preferredDriverName, setPreferredDriverName] = React.useState<string>("");
   const [preferredVehicleName, setPreferredVehicleName] = React.useState<string>("");
   const [totalCost, setTotalCost] = React.useState(0);
+  const [showApprovalModal, setShowApprovalModal] = React.useState(false);
+  const [additionalRequesters, setAdditionalRequesters] = React.useState<any[]>([]);
+  const [loadingRequesters, setLoadingRequesters] = React.useState(false);
+  const [mainRequesterSignature, setMainRequesterSignature] = React.useState<string | null>(null);
+
+  const loadAdditionalRequesters = React.useCallback(async () => {
+    try {
+      setLoadingRequesters(true);
+      const t = fullRequest || request;
+      
+      // Check for additional_requesters, requester_tracking, requester_invitations, or head_endorsements
+      const requesters = t?.additional_requesters || t?.requester_tracking || t?.requester_invitations || [];
+      
+      if (Array.isArray(requesters) && requesters.length > 0) {
+        // If requesters have IDs, fetch full details
+        const requesterPromises = requesters.map(async (req: any) => {
+          // For requester_invitations, use user_id if available, otherwise use the invitation data as-is
+          if (req.user_id) {
+            try {
+              const res = await fetch(`/api/users/${req.user_id}`);
+              if (res.ok) {
+                const json = await res.json();
+                if (json.ok && json.data) {
+                  return {
+                    ...req,
+                    ...json.data,
+                    name: req.name || json.data.name,
+                    email: req.email || json.data.email,
+                    department: req.department || json.data.department?.name || json.data.department?.code,
+                    signature: req.signature || json.data.signature,
+                    confirmed_at: req.confirmed_at || req.created_at,
+                    profile_picture: req.profile_picture || json.data.profile_picture || json.data.avatar_url
+                  };
+                }
+              }
+            } catch (err) {
+              console.error("[ComptrollerReviewModal] Error loading requester:", err);
+            }
+          }
+          // Return the requester data as-is if no user_id or if fetch failed
+          return req;
+        });
+        
+        const loadedRequesters = await Promise.all(requesterPromises);
+        
+        // Find main requester's signature from requester_invitations
+        // Check multiple ways to identify the main requester
+        const mainRequester = loadedRequesters.find(r => {
+          if (!r) return false;
+          return (r.user_id === t?.requester_id) || 
+                 (r.user_id === request?.requester_id) ||
+                 (r.id === t?.requester_id) ||
+                 (r.id === request?.requester_id) ||
+                 (r.email === t?.requester?.email) ||
+                 (r.email === request?.requester?.email) ||
+                 (r.email?.toLowerCase() === t?.requester_name?.toLowerCase()?.split(' ').map((n: string) => n.charAt(0)).join('') + '@' || '');
+        });
+        
+        if (mainRequester?.signature) {
+          console.log("[ComptrollerReviewModal] ✅ Found main requester signature from requester_invitations:", {
+            name: mainRequester.name,
+            email: mainRequester.email,
+            signatureLength: mainRequester.signature?.length || 0
+          });
+          setMainRequesterSignature(mainRequester.signature);
+        } else {
+          console.log("[ComptrollerReviewModal] ⚠️ Main requester signature not found in requester_invitations:", {
+            requester_id: t?.requester_id || request?.requester_id,
+            requester_name: t?.requester_name || request?.requester_name,
+            loadedRequestersCount: loadedRequesters.length,
+            mainRequesterFound: !!mainRequester,
+            mainRequesterHasSignature: !!mainRequester?.signature
+          });
+        }
+        
+        // Filter out the main requester - check both id and user_id
+        setAdditionalRequesters(loadedRequesters.filter(r => {
+          if (!r) return false;
+          // Exclude if it's the main requester (check both invitation id and user_id)
+          const isMainRequester = (r.user_id === t?.requester_id) || (r.id === t?.requester_id);
+          return !isMainRequester;
+        }));
+      } else {
+        setAdditionalRequesters([]);
+      }
+    } catch (err) {
+      console.error("[ComptrollerReviewModal] Error loading additional requesters:", err);
+      setAdditionalRequesters([]);
+    } finally {
+      setLoadingRequesters(false);
+    }
+  }, [fullRequest, request]);
 
   React.useEffect(() => {
     loadFullRequest();
     loadComptrollerProfile();
   }, [request.id]);
+
+  React.useEffect(() => {
+    if (fullRequest || request) {
+      loadAdditionalRequesters();
+    }
+  }, [fullRequest, request, loadAdditionalRequesters]);
 
   // Ensure expense breakdown is initialized even if API fails - RUN IMMEDIATELY
   React.useEffect(() => {
@@ -150,12 +248,20 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
       
       const res = await fetch(`/api/requests/${request.id}`, {
         cache: 'no-store',
+        credentials: 'include',
         headers: {
           'Cache-Control': 'no-cache',
         },
       });
       
       if (!res.ok) {
+        // Handle 401 (Unauthorized) gracefully - session might have expired
+        if (res.status === 401) {
+          console.warn("[ComptrollerReviewModal] Authentication required. Using request prop data.");
+          setFullRequest(request);
+          setLoading(false);
+          return;
+        }
         console.error("[ComptrollerReviewModal] API response not OK:", res.status, res.statusText);
         throw new Error(`Failed to load request: ${res.status} ${res.statusText}`);
       }
@@ -186,6 +292,10 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
         has_expense_breakdown: !!req.expense_breakdown,
         expense_breakdown_type: typeof req.expense_breakdown,
         expense_breakdown_value: req.expense_breakdown,
+        has_requester_signature: !!req.requester_signature,
+        requester_signature_length: req.requester_signature?.length || 0,
+        requester_id: req.requester_id,
+        requester_name: req.requester_name,
       });
       
       // Parse expense_breakdown if it's a string (JSONB from database)
@@ -319,29 +429,46 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
         }
       }
 
-      // Load preferred vehicle
+      // Load preferred vehicle - check if already in response first
       if (req.preferred_vehicle_id) {
-        try {
-          const vehicleRes = await fetch(`/api/vehicles/${req.preferred_vehicle_id}`);
-          if (!vehicleRes.ok) {
-            console.warn("[ComptrollerReviewModal] Vehicle API not OK:", vehicleRes.status);
-            return;
+        // Check if vehicle data is already in the response
+        if (req.preferred_vehicle?.name || req.preferred_vehicle?.vehicle_name || req.preferred_vehicle?.plate_number) {
+          const vehicleName = req.preferred_vehicle.name || req.preferred_vehicle.vehicle_name || req.preferred_vehicle.plate_number;
+          setPreferredVehicleName(vehicleName);
+        } else if (req.preferred_vehicle_name) {
+          setPreferredVehicleName(req.preferred_vehicle_name);
+        } else {
+          // Fetch from API if not in response
+          try {
+            const vehicleRes = await fetch(`/api/vehicles/${req.preferred_vehicle_id}`);
+            if (!vehicleRes.ok) {
+              console.warn("[ComptrollerReviewModal] Vehicle API not OK:", vehicleRes.status);
+              setPreferredVehicleName("Not specified");
+              return;
+            }
+            const contentType = vehicleRes.headers.get("content-type");
+            if (!contentType || !contentType.includes("application/json")) {
+              console.warn("[ComptrollerReviewModal] Vehicle API returned non-JSON response");
+              setPreferredVehicleName("Not specified");
+              return;
+            }
+            const vehicleData = await vehicleRes.json();
+            if (vehicleData.ok && vehicleData.data) {
+              setPreferredVehicleName(vehicleData.data.name || vehicleData.data.vehicle_name || vehicleData.data.plate_number || "Unknown Vehicle");
+            } else {
+              setPreferredVehicleName("Not specified");
+            }
+          } catch (err) {
+            console.error("[ComptrollerReviewModal] Failed to load vehicle:", err);
+            setPreferredVehicleName("Not specified");
           }
-          const contentType = vehicleRes.headers.get("content-type");
-          if (!contentType || !contentType.includes("application/json")) {
-            console.warn("[ComptrollerReviewModal] Vehicle API returned non-JSON response");
-            return;
-          }
-          const vehicleData = await vehicleRes.json();
-          if (vehicleData.ok && vehicleData.data) {
-            setPreferredVehicleName(vehicleData.data.name || vehicleData.data.plate_number || "Unknown Vehicle");
-          }
-        } catch (err) {
-          console.error("[ComptrollerReviewModal] Failed to load vehicle:", err);
         }
       }
     } catch (err: any) {
-      console.error("[ComptrollerReviewModal] Failed to load request:", err);
+      // Only log non-401 errors to avoid noise
+      if (err?.message && !err.message.includes('401')) {
+        console.error("[ComptrollerReviewModal] Failed to load request:", err);
+      }
       // Don't show toast error - just use request prop data
       // Still set fullRequest to request prop so modal can still display
       setFullRequest(request);
@@ -454,6 +581,12 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
 
   const doApprove = async () => {
     console.log("[Comptroller] ========== APPROVE BUTTON CLICKED ==========");
+    // Open approval modal instead of directly proceeding
+    setShowApprovalModal(true);
+  };
+
+  const handleApprovalSubmit = async () => {
+    console.log("[Comptroller] ========== APPROVAL SUBMITTED ==========");
     console.log("[Comptroller] Has signature:", !!signature);
     
     if (!signature) {
@@ -461,8 +594,11 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
       toast.error("Signature Required", "Please provide your signature");
       return;
     }
+    
+    // Close approval modal
+    setShowApprovalModal(false);
 
-    // Fetch available approvers (HR)
+    // Fetch available approvers (HR) - continue with approval process
     try {
       const approversRes = await fetch("/api/approvers/list?role=hr");
       if (!approversRes.ok) {
@@ -603,13 +739,14 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
   };
 
   const handleReject = async () => {
-    if (!comptrollerNotes.trim()) {
-      toast.error("Reason Required", "Please provide a reason for rejection");
+    if (!showRejectConfirm) {
+      setShowRejectConfirm(true);
       return;
     }
 
-    if (!showRejectConfirm) {
-      setShowRejectConfirm(true);
+    if (!comptrollerNotes.trim()) {
+      toast.error("Reason Required", "Please provide a reason for rejection");
+      setShowRejectConfirm(false);
       return;
     }
 
@@ -709,9 +846,8 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
         </div>
 
         {/* Body */}
-        <div className="grid gap-8 px-6 py-6 lg:grid-cols-[1.1fr_0.9fr] overflow-y-auto flex-1">
-          {/* LEFT */}
-          <div className="space-y-5">
+        <div className="px-6 py-6 overflow-y-auto flex-1">
+          <div className="max-w-4xl mx-auto space-y-5">
             {/* Requester Information */}
             <section className="rounded-lg bg-white p-5 border border-slate-200 shadow-sm">
               <p className="text-xs font-medium uppercase tracking-wider text-slate-500 mb-3">
@@ -765,6 +901,59 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                     <p className="text-xs text-slate-500 mt-0.5">Role: {t.requester.role}</p>
                   )}
                 </div>
+                {(() => {
+                  // Check if requester is also the head approver - if so, use head_signature
+                  const requesterId = t?.requester_id || request?.requester_id;
+                  const headApprovedBy = t?.head_approved_by || request?.head_approved_by;
+                  const isRequesterAlsoHead = requesterId && headApprovedBy && requesterId === headApprovedBy;
+                  
+                  // Check multiple possible locations for the signature
+                  // First, check requester_invitations array directly from fullRequest
+                  let signatureFromInvitations = null;
+                  if (fullRequest?.requester_invitations && Array.isArray(fullRequest.requester_invitations)) {
+                    const mainRequesterInvitation = fullRequest.requester_invitations.find((inv: any) => {
+                      return (inv.user_id === requesterId) || 
+                             (inv.id === requesterId) ||
+                             (inv.email === t?.requester?.email) ||
+                             (inv.email === request?.requester?.email);
+                    });
+                    signatureFromInvitations = mainRequesterInvitation?.signature || null;
+                  }
+                  
+                  // Priority: 
+                  // 1. If requester is also head, use head_signature
+                  // 2. signatureFromInvitations 
+                  // 3. mainRequesterSignature 
+                  // 4. fullRequest.requester_signature
+                  // 5. Other fallbacks
+                  const signature = (isRequesterAlsoHead && (fullRequest?.head_signature || request?.head_signature || t?.head_signature))
+                    || signatureFromInvitations
+                    || mainRequesterSignature
+                    || (fullRequest?.requester_signature)
+                    || (request?.requester_signature)
+                    || (t?.requester_signature)
+                    || (fullRequest?.requester?.signature)
+                    || (request?.requester?.signature)
+                    || (t?.requester?.signature)
+                    || (fullRequest as any)?.signature
+                    || (request as any)?.signature
+                    || (t as any)?.signature;
+                  
+                  return signature ? (
+                    <div className="flex flex-col items-end gap-1">
+                      <p className="text-xs text-slate-500 font-medium">Signature</p>
+                      <img
+                        src={signature}
+                        alt={`${t?.requester_name || request?.requester_name || "Requester"}'s signature`}
+                        className="h-16 w-32 rounded border border-slate-300 bg-white object-contain p-1"
+                        onError={(e) => {
+                          console.error("[ComptrollerReviewModal] Failed to load requester signature image");
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
+                    </div>
+                  ) : null;
+                })()}
               </div>
               
               {t?.created_at && (
@@ -784,6 +973,90 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                 </div>
               )}
             </section>
+
+            {/* Additional Requesters Section */}
+            {additionalRequesters.length > 0 && (
+              <section className="rounded-lg bg-blue-50/50 border border-blue-200 p-5 shadow-sm">
+                <p className="text-xs font-medium uppercase tracking-wider text-blue-700 mb-3 flex items-center gap-2">
+                  <Users className="h-4 w-4" />
+                  Additional Requesters ({additionalRequesters.length})
+                </p>
+                <div className="space-y-3">
+                  {loadingRequesters ? (
+                    <div className="text-center py-4">
+                      <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-500 border-t-transparent mx-auto"></div>
+                      <p className="text-xs text-blue-600 mt-2">Loading requesters...</p>
+                    </div>
+                  ) : (
+                    additionalRequesters.map((requester: any, index: number) => (
+                      <div
+                        key={requester.id || requester.user_id || index}
+                        className="bg-white rounded-lg border border-blue-100 p-4"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-3 flex-1">
+                            {(requester.profile_picture || requester.avatar_url) ? (
+                              <img 
+                                src={requester.profile_picture || requester.avatar_url} 
+                                alt={requester.name || "Requester"}
+                                className="h-10 w-10 rounded-full object-cover border-2 border-blue-200 flex-shrink-0"
+                                onError={(e) => {
+                                  const target = e.target as HTMLImageElement;
+                                  target.style.display = 'none';
+                                  const parent = target.parentElement;
+                                  if (parent && !parent.querySelector('.fallback-avatar-additional')) {
+                                    const fallback = document.createElement('div');
+                                    fallback.className = 'h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0 fallback-avatar-additional';
+                                    fallback.textContent = (requester.name || "U").charAt(0).toUpperCase();
+                                    parent.appendChild(fallback);
+                                  }
+                                }}
+                              />
+                            ) : (
+                              <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                                {(requester.name || "U").charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                            <div className="flex-1">
+                              <p className="font-semibold text-slate-900 text-sm">{requester.name || 'Unknown'}</p>
+                              {requester.department && (
+                                <p className="text-xs text-slate-600 mt-1">{requester.department}</p>
+                              )}
+                              {requester.email && (
+                                <p className="text-xs text-slate-500 mt-0.5">{requester.email}</p>
+                              )}
+                              {requester.confirmed_at && (
+                                <div className="mt-2 flex items-center gap-2 text-xs text-green-600">
+                                  <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                                  Confirmed {new Date(requester.confirmed_at).toLocaleString('en-US', {
+                                    year: 'numeric',
+                                    month: '2-digit',
+                                    day: '2-digit',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    hour12: true
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          {requester.signature && (
+                            <div className="flex flex-col items-end gap-1">
+                              <p className="text-xs text-slate-500 font-medium">Signature</p>
+                              <img
+                                src={requester.signature}
+                                alt={`${requester.name}'s signature`}
+                                className="h-16 w-32 rounded border border-slate-300 bg-white object-contain p-1"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </section>
+            )}
 
             {/* Service Preferences */}
             <section className="rounded-lg bg-white p-5 border border-slate-200 shadow-sm">
@@ -815,7 +1088,7 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                       <div className="flex-1 min-w-0">
                         <p className="text-xs text-slate-500 mb-1">Preferred Vehicle</p>
                         <p className="text-sm font-medium text-slate-900">
-                          {preferredVehicleName || "Loading..."}
+                          {preferredVehicleName || t?.preferred_vehicle_name || t?.preferred_vehicle?.name || t?.preferred_vehicle?.vehicle_name || t?.preferred_vehicle?.plate_number || "Not specified"}
                         </p>
                       </div>
                     </div>
@@ -850,7 +1123,7 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                 </p>
                 <p className="text-sm text-slate-800 font-medium">
                   {t?.travel_start_date && t?.travel_end_date
-                    ? `${new Date(t.travel_start_date).toLocaleDateString()} – ${new Date(t.travel_end_date).toLocaleDateString()}`
+                    ? `${new Date(t.travel_start_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} – ${new Date(t.travel_end_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`
                     : "—"}
                 </p>
               </section>
@@ -1049,7 +1322,7 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                       <div className="flex-1">
                         <p className="text-xs text-indigo-700 font-medium mb-0.5">Assigned Vehicle</p>
                         <p className="text-sm font-semibold text-slate-900">
-                          {t?.assigned_vehicle_name || t?.assigned_vehicle?.name || 'Loading...'}
+                          {t?.assigned_vehicle_name || t?.assigned_vehicle?.name || t?.assigned_vehicle?.vehicle_name || (t?.assigned_vehicle?.model && t?.assigned_vehicle?.plate_number ? `${t.assigned_vehicle.model} (${t.assigned_vehicle.plate_number})` : null) || t?.assigned_vehicle?.plate_number || 'Not assigned'}
                         </p>
                         {t?.assigned_vehicle?.plate_number && (
                           <p className="text-xs text-slate-600 mt-0.5">Plate: {t.assigned_vehicle.plate_number}</p>
@@ -1061,12 +1334,6 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                     <div className="bg-white rounded-lg px-3 py-2 border border-indigo-100">
                       <p className="text-xs text-indigo-700 font-medium mb-1">Admin Notes</p>
                       <p className="text-sm text-slate-700 whitespace-pre-wrap">{t.admin_notes}</p>
-                    </div>
-                  )}
-                  {t?.admin_comments && (
-                    <div className="bg-white rounded-lg px-3 py-2 border border-indigo-100">
-                      <p className="text-xs text-indigo-700 font-medium mb-1">Admin Comments</p>
-                      <p className="text-sm text-slate-700 whitespace-pre-wrap">{t.admin_comments}</p>
                     </div>
                   )}
                 </div>
@@ -1121,50 +1388,6 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                 </p>
               </section>
             )}
-
-            {/* Requester Signature - Same style as Previous Approvals */}
-            <section className="rounded-lg bg-slate-50 border border-slate-200 p-4">
-              <p className="text-xs font-semibold uppercase text-slate-700 mb-3">
-                Requester's Signature
-              </p>
-              {(t?.requester_signature) ? (
-                <div className="bg-white rounded-lg border border-slate-200 p-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm font-medium text-slate-900">
-                      Requester Signed
-                    </p>
-                    {(t.requester_signed_at || t.created_at) && (
-                      <span className="text-xs text-green-600 font-medium">
-                        {new Date(t.requester_signed_at || t.created_at).toLocaleString('en-US', { 
-                          year: 'numeric', 
-                          month: 'short', 
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          hour12: true,
-                          timeZone: 'Asia/Manila'
-                        })}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-slate-600">
-                    By: {t.requester_name || "Requester"}
-                  </p>
-                  <div className="mt-2 pt-2 border-t border-slate-100">
-                    <img
-                      src={t.requester_signature}
-                      alt="Requester signature"
-                      className="h-16 w-full object-contain"
-                    />
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-center justify-center gap-2 text-sm text-slate-600 bg-white rounded-lg border border-slate-200 p-4">
-                  <FileText className="h-4 w-4" />
-                  <span>No signature provided by requester</span>
-                </div>
-              )}
-            </section>
 
             {/* Previous Approvals */}
             <section className="rounded-lg bg-slate-50 border border-slate-200 p-4">
@@ -1352,40 +1575,53 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                             ? (expense as any).description 
                             : label;
                           
+                          // Get original amount from fullRequest
+                          const originalExpense = (fullRequest || request)?.expense_breakdown?.[index];
+                          const originalAmount = originalExpense?.amount || 0;
+                          const currentAmount = expense.amount || 0;
+                          const hasChanged = originalAmount !== currentAmount && originalAmount > 0;
+                          
                           // ALWAYS show items - don't filter out 0 amounts, show them all
                           return (
                             <div key={index} className="border-b border-slate-100 last:border-0 pb-3 last:pb-0">
                               <div className="flex items-center justify-between mb-2">
                                 <span className="text-sm text-slate-600 font-medium">{displayLabel}</span>
                                 {editingBudget ? (
-                                  <input
-                                    type="text"
-                                    inputMode="numeric"
-                                    value={expense.amount === 0 ? '' : expense.amount || ''}
-                                    onChange={(e) => {
-                                      // Only allow numbers and decimal point
-                                      const value = e.target.value.replace(/[^0-9.]/g, '');
-                                      // Prevent multiple decimal points
-                                      const parts = value.split('.');
-                                      const cleanedValue = parts.length > 2 
-                                        ? parts[0] + '.' + parts.slice(1).join('')
-                                        : value;
-                                      handleExpenseEdit(index, cleanedValue);
-                                    }}
-                                    onBlur={(e) => {
-                                      // On blur, ensure we have a valid number (default to 0 if empty)
-                                      const value = e.target.value.trim();
-                                      if (value === '' || value === '0') {
-                                        setEditedExpenses(prev => {
-                                          const updated = [...prev];
-                                          updated[index] = { ...updated[index], amount: 0 };
-                                          return updated;
-                                        });
-                                      }
-                                    }}
-                                    className="w-32 px-3 py-1.5 border-2 border-[#7A0010]/20 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] text-sm"
-                                    placeholder="0"
-                                  />
+                                  <div className="flex items-center gap-2">
+                                    {hasChanged && (
+                                      <span className="text-xs text-slate-400 line-through">
+                                        {peso(originalAmount)}
+                                      </span>
+                                    )}
+                                    <input
+                                      type="text"
+                                      inputMode="numeric"
+                                      value={expense.amount === 0 ? '' : expense.amount || ''}
+                                      onChange={(e) => {
+                                        // Only allow numbers and decimal point
+                                        const value = e.target.value.replace(/[^0-9.]/g, '');
+                                        // Prevent multiple decimal points
+                                        const parts = value.split('.');
+                                        const cleanedValue = parts.length > 2 
+                                          ? parts[0] + '.' + parts.slice(1).join('')
+                                          : value;
+                                        handleExpenseEdit(index, cleanedValue);
+                                      }}
+                                      onBlur={(e) => {
+                                        // On blur, ensure we have a valid number (default to 0 if empty)
+                                        const value = e.target.value.trim();
+                                        if (value === '' || value === '0') {
+                                          setEditedExpenses(prev => {
+                                            const updated = [...prev];
+                                            updated[index] = { ...updated[index], amount: 0 };
+                                            return updated;
+                                          });
+                                        }
+                                      }}
+                                      className="w-32 px-3 py-1.5 border-2 border-[#7A0010]/20 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] text-sm"
+                                      placeholder="0"
+                                    />
+                                  </div>
                                 ) : (
                                   <span className="text-sm font-semibold text-slate-900">{peso(expense.amount || 0)}</span>
                                 )}
@@ -1575,150 +1811,197 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                 </div>
               </section>
             )}
-          </div>
 
-          {/* RIGHT */}
-          <div className="space-y-5 rounded-xl border-2 border-[#7A0010]/20 bg-gradient-to-br from-white to-red-50/30 p-6 shadow-lg">
-            <div className="flex items-center gap-3 pb-4 border-b-2 border-[#7A0010]/10">
-              {(comptrollerProfile?.profile_picture || comptrollerProfile?.avatar_url) ? (
-                <img 
-                  src={comptrollerProfile.profile_picture || comptrollerProfile.avatar_url} 
-                  alt={comptrollerProfile?.name || "Comptroller"}
-                  className="h-14 w-14 rounded-full object-cover border-2 border-[#7A0010] shadow-lg flex-shrink-0"
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement;
-                    target.style.display = 'none';
-                    const parent = target.parentElement;
-                    if (parent && !parent.querySelector('.fallback-avatar-comptroller')) {
-                      const fallback = document.createElement('div');
-                      fallback.className = 'h-14 w-14 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-xl shadow-lg flex-shrink-0 fallback-avatar-comptroller';
-                      fallback.textContent = (comptrollerProfile?.name || 'C').charAt(0).toUpperCase();
-                      parent.appendChild(fallback);
-                    }
-                  }}
-                />
-              ) : (
-                <div className="h-14 w-14 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-xl shadow-lg flex-shrink-0">
-                  {(comptrollerProfile?.name || 'C').charAt(0).toUpperCase()}
-                </div>
-              )}
-              <div className="flex-1">
-                <p className="text-xs font-bold uppercase tracking-wider text-[#7A0010]/70">
-                  Comptroller Review
-                </p>
-                <div className="text-base font-bold text-slate-900 mt-1">
-                  {comptrollerProfile?.name || comptrollerProfile?.email || "Loading..."}
-                </div>
-                {comptrollerProfile?.department && (
-                  <p className="text-xs text-slate-600 mt-0.5 font-medium">
-                    {comptrollerProfile.department.name || comptrollerProfile.department.code}
-                  </p>
-                )}
-                {comptrollerProfile?.position_title && (
-                  <p className="text-xs text-slate-500 mt-0.5">{comptrollerProfile.position_title}</p>
-                )}
-              </div>
-            </div>
-
-            {/* Comptroller Signature */}
-            <div>
-              <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
-                Your Signature <span className="text-red-500">*</span>
+            {/* Comptroller Notes/Comments Input */}
+            <section className="rounded-lg bg-white p-5 border border-slate-200 shadow-sm">
+              <label className="mb-3 block text-xs font-bold text-slate-700 uppercase tracking-wide">
+                Your Notes/Comments
               </label>
-              <div className="rounded-xl bg-white p-3 border-2 border-[#7A0010]/20 shadow-sm">
-                <SignaturePad
-                  height={160}
-                  value={signature || null}
-                  onSave={(dataUrl) => {
-                    setSignature(dataUrl);
-                  }}
-                  onClear={() => {
-                    setSignature(null);
-                  }}
-                  onUseSaved={(dataUrl) => {
-                    setSignature(dataUrl);
-                  }}
-                  showUseSavedButton={true}
-                  hideSaveButton
-                />
-              </div>
-            </div>
-
-            {/* Comptroller Notes */}
-            <div>
-              <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
-                Comptroller Notes/Comments
-              </label>
-              
-              {/* Quick Fill Buttons */}
-              <div className="mb-2 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setComptrollerNotes("Budget verified. Proceed to HR.")}
-                  className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-                >
-                  ✓ Budget Verified
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setComptrollerNotes("Budget verified and approved. All expenses are justified.")}
-                  className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-                >
-                  ✓ Budget Approved
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setComptrollerNotes("Budget requires revision. Please review and resubmit with corrected amounts.")}
-                  className="px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
-                >
-                  ⏳ Needs Revision
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setComptrollerNotes("Budget requires revision. Please review and resubmit with corrected amounts.")}
-                  className="px-3 py-1.5 text-xs font-medium bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
-                >
-                  ✗ Needs Revision
-                </button>
-              </div>
-              
               <textarea
                 value={comptrollerNotes}
                 onChange={(e) => setComptrollerNotes(e.target.value)}
-                rows={4}
-                className="w-full px-4 py-3 border-2 border-[#7A0010]/20 rounded-xl focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] resize-none text-sm"
+                rows={3}
+                className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] resize-none text-sm"
                 placeholder="Add your comments or reasons for approval/rejection..."
               />
-            </div>
+            </section>
           </div>
         </div>
 
         {/* Actions */}
-        <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex gap-3 flex-shrink-0">
+        <div className="sticky bottom-0 bg-white border-t-2 border-gray-200 px-6 py-4 flex gap-3 flex-shrink-0 shadow-lg">
           <button
             onClick={handleReject}
-            disabled={submitting || !comptrollerNotes.trim()}
-            className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white font-medium py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={submitting}
+            className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-semibold py-3 px-6 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg transform hover:scale-[1.02] active:scale-[0.98]"
           >
             <XCircle className="h-5 w-5" />
             {submitting ? "Rejecting..." : "Reject & Return to User"}
           </button>
           <button
             onClick={doApprove}
-            disabled={submitting || !signature}
-            className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={submitting}
+            className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 active:bg-green-800 text-white font-semibold py-3 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg transform hover:scale-[1.02] active:scale-[0.98]"
           >
             <Check className="h-5 w-5" />
             {submitting ? "Approving..." : "Approve & Send"}
           </button>
           <button
             onClick={onClose}
-            className="px-6 py-3 border border-gray-300 hover:bg-gray-100 text-gray-700 font-medium rounded-lg transition-colors"
+            className="px-6 py-3 border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 font-semibold rounded-lg transition-all transform hover:scale-[1.02] active:scale-[0.98]"
           >
             Cancel
           </button>
         </div>
       </div>
+
+      {/* Approval Modal */}
+      {showApprovalModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="relative w-full max-w-2xl rounded-2xl bg-white shadow-2xl transform transition-all duration-300 scale-100 flex flex-col max-h-[90vh] overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b bg-[#7A0010] px-6 py-4 rounded-t-2xl flex-shrink-0">
+              <div>
+                <h3 className="text-lg font-semibold text-white">Comptroller Review & Approval</h3>
+                <p className="text-sm text-white/80">Sign and add notes to approve this request</p>
+              </div>
+              <button
+                onClick={() => setShowApprovalModal(false)}
+                className="rounded-full p-1 text-white/80 hover:bg-white/10 transition-colors"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="overflow-y-auto flex-1 p-6 space-y-5">
+              {/* Comptroller Profile */}
+              <div className="flex items-center gap-3 pb-4 border-b-2 border-[#7A0010]/10">
+                {(comptrollerProfile?.profile_picture || comptrollerProfile?.avatar_url) ? (
+                  <img 
+                    src={comptrollerProfile.profile_picture || comptrollerProfile.avatar_url} 
+                    alt={comptrollerProfile?.name || "Comptroller"}
+                    className="h-14 w-14 rounded-full object-cover border-2 border-[#7A0010] shadow-lg flex-shrink-0"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = 'none';
+                      const parent = target.parentElement;
+                      if (parent && !parent.querySelector('.fallback-avatar-comptroller-modal')) {
+                        const fallback = document.createElement('div');
+                        fallback.className = 'h-14 w-14 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-xl shadow-lg flex-shrink-0 fallback-avatar-comptroller-modal';
+                        fallback.textContent = (comptrollerProfile?.name || 'C').charAt(0).toUpperCase();
+                        parent.appendChild(fallback);
+                      }
+                    }}
+                  />
+                ) : (
+                  <div className="h-14 w-14 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-xl shadow-lg flex-shrink-0">
+                    {(comptrollerProfile?.name || 'C').charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div className="flex-1">
+                  <p className="text-xs font-bold uppercase tracking-wider text-[#7A0010]/70">
+                    Comptroller Review
+                  </p>
+                  <div className="text-base font-bold text-slate-900 mt-1">
+                    {comptrollerProfile?.name || comptrollerProfile?.email || (comptrollerProfile ? "Comptroller" : "Loading...")}
+                  </div>
+                  {comptrollerProfile?.department && (
+                    <p className="text-xs text-slate-600 mt-0.5 font-medium">
+                      {comptrollerProfile.department.name || comptrollerProfile.department.code}
+                    </p>
+                  )}
+                  {comptrollerProfile?.position_title && (
+                    <p className="text-xs text-slate-500 mt-0.5">{comptrollerProfile.position_title}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Comptroller Signature */}
+              <div>
+                <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
+                  Your Signature <span className="text-red-500">*</span>
+                </label>
+                <div className="rounded-xl bg-white p-3 border-2 border-[#7A0010]/20 shadow-sm">
+                  <SignaturePad
+                    height={160}
+                    value={signature || null}
+                    onSave={(dataUrl) => {
+                      setSignature(dataUrl);
+                    }}
+                    onClear={() => {
+                      setSignature(null);
+                    }}
+                    onUseSaved={(dataUrl) => {
+                      setSignature(dataUrl);
+                    }}
+                    showUseSavedButton={true}
+                    hideSaveButton
+                  />
+                </div>
+              </div>
+
+              {/* Comptroller Notes */}
+              <div>
+                <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
+                  Comptroller Notes/Comments
+                </label>
+                
+                {/* Quick Fill Buttons */}
+                <div className="mb-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setComptrollerNotes("Budget verified. Proceed to HR.")}
+                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+                  >
+                    Budget Verified
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setComptrollerNotes("Budget verified and approved. All expenses are justified.")}
+                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+                  >
+                    Budget Approved
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setComptrollerNotes("Budget requires revision. Please review and resubmit with corrected amounts.")}
+                    className="px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
+                  >
+                    Needs Revision
+                  </button>
+                </div>
+                
+                <textarea
+                  value={comptrollerNotes}
+                  onChange={(e) => setComptrollerNotes(e.target.value)}
+                  rows={4}
+                  className="w-full px-4 py-3 border-2 border-[#7A0010]/20 rounded-xl focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] resize-none text-sm"
+                  placeholder="Add your comments or reasons for approval/rejection..."
+                />
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="border-t border-gray-200 px-6 py-4 flex gap-3 flex-shrink-0 bg-gray-50">
+              <button
+                onClick={() => setShowApprovalModal(false)}
+                className="px-6 py-2 border border-gray-300 hover:bg-gray-100 text-gray-700 font-medium rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleApprovalSubmit}
+                disabled={submitting || !signature}
+                className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Check className="h-5 w-5" />
+                {submitting ? "Processing..." : "Confirm Approval"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Approver Selection Modal */}
       {showApproverSelection && (

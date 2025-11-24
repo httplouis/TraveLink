@@ -223,6 +223,23 @@ export async function GET(req: NextRequest) {
       
       // For pending_exec requests
       if (req.status === 'pending_exec') {
+        // Check if multiple VPs are assigned (new multi-VP system)
+        const assignedVpIds = workflowMetadata?.assigned_vp_ids || [];
+        if (Array.isArray(assignedVpIds) && assignedVpIds.length > 0) {
+          // Multiple VPs assigned - check if this VP is in the list
+          const isAssignedVP = assignedVpIds.some((id: any) => String(id).trim() === profileIdStr);
+          if (isAssignedVP) {
+            // Check if this VP has already approved
+            const alreadyApproved = req.vp_approved_by === profile.id || req.vp2_approved_by === profile.id;
+            if (!alreadyApproved) {
+              console.log(`[VP Inbox] ✅ Request ${req.id} (${req.request_number}) assigned to this VP (multi-VP) - showing`);
+              return true;
+            }
+          }
+          return false;
+        }
+        
+        // Single VP assignment (backward compatibility)
         if (nextVpIdStr || isAssignedViaUniversalId) {
           // Request is assigned to a specific VP - only show to that VP
           if (nextVpIdStr !== profileIdStr && !isAssignedViaUniversalId) {

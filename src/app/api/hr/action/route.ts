@@ -153,9 +153,26 @@ export async function POST(request: Request) {
         updated_at: now,
       };
 
-      // Set specific VP/President if selected via choice-based sending
-      const { nextApproverId, nextApproverRole } = body;
-      if (nextApproverId) {
+      // Handle multiple VP selection (new) or single selection (backward compatibility)
+      const { nextApproverId, nextApproverRole, next_vp_ids, next_vp_id } = body;
+      const vpIds = next_vp_ids || (next_vp_id ? [next_vp_id] : (nextApproverId && (nextApproverRole === 'vp' || !nextApproverRole) ? [nextApproverId] : []));
+      
+      // Update workflow_metadata with routing information
+      const workflowMetadata: any = request.workflow_metadata || {};
+      
+      if (vpIds.length > 0) {
+        // Multiple VPs selected - store all VP IDs
+        workflowMetadata.assigned_vp_ids = vpIds;
+        workflowMetadata.vp_signature_required_count = vpIds.length;
+        updateData.vp_signature_required_count = vpIds.length;
+        
+        // Set first VP ID for backward compatibility (for inbox filtering)
+        updateData.next_vp_id = vpIds[0];
+        approverRole = "vp";
+        
+        console.log(`[HR Action] Multiple VPs assigned: ${vpIds.length} VPs`, vpIds);
+      } else if (nextApproverId) {
+        // Single approver selected (backward compatibility)
         // Fetch user's actual role to determine correct routing
         try {
           const { data: approverUser } = await supabase
@@ -174,16 +191,10 @@ export async function POST(request: Request) {
               updateData.next_vp_id = nextApproverId;
             } else if (approverUser.is_admin || approverUser.role === "admin") {
               approverRole = "admin";
-              // Don't set next_admin_id - allow all admins to see it
-              // updateData.next_admin_id = nextApproverId;
             } else if (approverUser.is_hr || approverUser.role === "hr") {
               approverRole = "hr";
-              // Don't set next_hr_id - allow all HRs to see it
-              // updateData.next_hr_id = nextApproverId;
             } else if (approverUser.is_comptroller || approverUser.role === "comptroller") {
               approverRole = "comptroller";
-              // Don't set next_comptroller_id - allow all comptrollers to see it
-              // updateData.next_comptroller_id = nextApproverId;
             } else {
               // Use role from selection
               if (nextApproverRole === "vp") {
@@ -215,28 +226,19 @@ export async function POST(request: Request) {
             updateData.next_president_id = nextApproverId;
           }
         }
-      }
-
-      // Update workflow_metadata with routing information
-      const workflowMetadata: any = request.workflow_metadata || {};
-      if (nextApproverId && approverRole) {
-        workflowMetadata.next_approver_id = nextApproverId;
-        workflowMetadata.next_approver_role = approverRole;
-        // Store role-specific IDs for inbox filtering
-        if (approverRole === "vp") {
-          workflowMetadata.next_vp_id = nextApproverId;
-        } else if (approverRole === "president") {
-          workflowMetadata.next_president_id = nextApproverId;
-        } else if (approverRole === "admin") {
-          workflowMetadata.next_admin_id = nextApproverId;
-        } else if (approverRole === "hr") {
-          workflowMetadata.next_hr_id = nextApproverId;
-        } else if (approverRole === "comptroller") {
-          workflowMetadata.next_comptroller_id = nextApproverId;
-        } else if (approverRole === "head") {
-          workflowMetadata.next_head_id = nextApproverId;
+        
+        // Store in workflow_metadata for single selection too
+        if (nextApproverId && approverRole) {
+          workflowMetadata.next_approver_id = nextApproverId;
+          workflowMetadata.next_approver_role = approverRole;
+          if (approverRole === "vp") {
+            workflowMetadata.next_vp_id = nextApproverId;
+          } else if (approverRole === "president") {
+            workflowMetadata.next_president_id = nextApproverId;
+          }
         }
       }
+      
       updateData.workflow_metadata = workflowMetadata;
 
       // Approve and route to VP
@@ -294,8 +296,24 @@ export async function POST(request: Request) {
           });
         }
 
-        // Notify next approver (VP or President)
-        if (nextApproverId) {
+        // Notify all assigned VPs (if multiple) or single approver
+        if (vpIds.length > 0) {
+          // Notify all assigned VPs
+          for (const vpId of vpIds) {
+            await createNotification({
+              user_id: vpId,
+              notification_type: "request_pending_signature",
+              title: "Request Requires Your Approval",
+              message: `A travel order request ${request.request_number || ''} has been sent to you for approval.`,
+              related_type: "request",
+              related_id: requestId,
+              action_url: `/vp/inbox?view=${requestId}`,
+              action_label: "Review Request",
+              priority: "high",
+            });
+          }
+        } else if (nextApproverId) {
+          // Single approver (backward compatibility)
           await createNotification({
             user_id: nextApproverId,
             notification_type: "request_pending_signature",

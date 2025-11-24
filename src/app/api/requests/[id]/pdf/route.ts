@@ -488,14 +488,13 @@ export async function GET(
       
       // Draw requesting persons in 2-column layout (up to 6 per page)
       // Layout: 2 columns, 3 rows max
-      // Accurate coordinates based on template: Requesting Person field at x=150, top=180
-      // Template shows names side-by-side with signatures on the right
+      // Format: "NAME [signature] [date/time]" - all close together
       const requesterStartX = 150; // Left edge of requesting person field
       const requesterStartY = 180; // Top of requesting person field (from top of page)
-      const nameWidth = 100; // Width for name text
-      const sigWidth = 80; // Signature width (larger for visibility)
-      const sigHeight = 35; // Signature height (larger for visibility)
-      const requesterColSpacing = 250; // Space between columns (name + signature)
+      const nameMaxWidth = 120; // Max width for name text (will be trimmed if needed)
+      const sigWidth = 90; // Signature width (larger for visibility)
+      const sigHeight = 40; // Signature height (larger for visibility)
+      const requesterColSpacing = 280; // Space between columns
       const requesterRowSpacing = 25; // Space between rows
       
       // Use for...of loop to properly handle async/await
@@ -506,15 +505,25 @@ export async function GET(
         const x = requesterStartX + (col * requesterColSpacing);
         const y = requesterStartY - (row * requesterRowSpacing);
         
-        // Draw name (left side of the box)
-        drawInRect(req.name, x, y, nameWidth, 10, 9);
+        // Draw name (left side)
+        drawInRect(req.name, x, y, nameMaxWidth, 10, 9);
         
-        // Draw signature if available (right side, larger and more visible)
+        // Draw signature if available (immediately after name, no extra spacing)
+        let currentX = x + nameMaxWidth; // Start right after name
         if (req.signature) {
-          // Position signature on the right side of the name
-          const sigX = x + nameWidth + 5; // Right of name with 5px spacing
-          const sigY = y - 5; // Slightly below name baseline
+          // Position signature immediately after name (minimal spacing)
+          const sigX = currentX + 2; // Just 2px spacing from name
+          const sigY = y - 8; // Slightly below name baseline
           await drawSignature(req.signature, sigX, sigY, sigWidth, sigHeight);
+          currentX = sigX + sigWidth; // Update position after signature
+          
+          // Draw date/time immediately after signature (if available)
+          if (req.confirmed_at) {
+            const dateTimeText = fmtDateTime(req.confirmed_at);
+            const dateTimeX = currentX + 3; // Just 3px spacing from signature
+            const dateTimeY = y - 2; // Aligned with name baseline
+            drawInRect(dateTimeText, dateTimeX, dateTimeY, 100, 10, 7);
+          }
         }
       }
       
@@ -747,6 +756,7 @@ export async function GET(
     }
     
     // Helper function to draw signature with date/time and comments
+    // Format: [signature] NAME [date/time] - all close together, no extra spacing
     const drawSignatureWithMetadata = async (
       signature: string | null,
       name: string | null | undefined,
@@ -762,29 +772,42 @@ export async function GET(
     ) => {
       if (!signature && !name) return;
       
-      // Draw signature
+      // Draw signature (larger for better visibility - 30% bigger)
+      let actualSigW = sigW;
+      let actualSigH = sigH;
       if (signature) {
-        await drawSignature(signature, sigX, sigY, sigW, sigH);
+        actualSigW = sigW * 1.3; // 30% larger width
+        actualSigH = sigH * 1.3; // 30% larger height
+        await drawSignature(signature, sigX, sigY, actualSigW, actualSigH);
       }
       
-      // Draw name
+      // Draw name - position it right next to signature (or use nameX if no signature)
+      // Calculate name position: right after signature with minimal spacing
+      let nameStartX = signature ? sigX + actualSigW + 2 : nameX; // Just 2px spacing (dikit)
+      let nameStartY = nameY; // Use provided Y coordinate
+      
+      // If signature exists, align name with signature bottom
+      if (signature) {
+        nameStartY = sigY - actualSigH + 5; // Align with bottom of signature + small offset
+      }
+      
       if (name) {
-        drawInRect(name, nameX, nameY, nameW, 14, 10);
+        drawInRect(name, nameStartX, nameStartY, nameW, 14, 10);
       }
       
-      // Draw date/time next to signature (right side)
+      // Draw date/time immediately after name (right next to it, dikit)
       if (timestamp) {
         const dateTimeText = fmtDateTime(timestamp);
-        const dateTimeX = sigX + sigW + 5; // 5px spacing from signature
-        const dateTimeY = sigY + (sigH / 2) - 7; // Center vertically with signature
+        const dateTimeX = nameStartX + nameW + 2; // Just 2px spacing from name (dikit)
+        const dateTimeY = nameStartY; // Same Y as name (aligned)
         drawInRect(dateTimeText, dateTimeX, dateTimeY, 120, 12, 8);
       }
       
       // Draw comments below signature if available
       if (comments && comments.trim()) {
-        const commentsY = sigY - sigH - 5; // 5px below signature box
+        const commentsY = sigY - actualSigH - 5; // 5px below signature box
         // Wrap comments if too long
-        const maxWidth = sigW + 120; // Signature width + date/time width
+        const maxWidth = actualSigW + nameW + 122; // Signature + name + date/time width
         const commentsLines = comments.split('\n').slice(0, 3); // Max 3 lines
         commentsLines.forEach((line, idx) => {
           if (line.trim()) {
