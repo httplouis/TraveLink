@@ -35,9 +35,10 @@ type Request = {
 export default function AdminInboxPage() {
   const router = useRouter();
   const [items, setItems] = React.useState<Request[]>([]);
+  const [approvedItems, setApprovedItems] = React.useState<Request[]>([]);
   const [historyItems, setHistoryItems] = React.useState<Request[]>([]);
   const [selectedRequest, setSelectedRequest] = React.useState<RequestData | null>(null);
-  const [activeTab, setActiveTab] = React.useState<"pending" | "history">("pending");
+  const [activeTab, setActiveTab] = React.useState<"pending" | "approved" | "history">("pending");
   const [isLoading, setIsLoading] = React.useState(true);
   const [loadingDetails, setLoadingDetails] = React.useState(false);
   const [viewedIds, setViewedIds] = React.useState<Set<string>>(new Set());
@@ -115,15 +116,18 @@ export default function AdminInboxPage() {
           return true;
         });
         
-        // Filter for pending: all requests that are not in final state and admin hasn't acted yet
-        // IMPORTANT: Include pending_head if head requester sent to admin (already filtered in previous step)
+        // Filter for pending: ONLY requests that are waiting for admin action
+        // EXCLUDE requests where admin has already acted (admin_approved_at, admin_processed_at, admin_signature)
         const pendingRequests = headApprovedRequests.filter((r: any) => {
+          // EXCLUDE if admin has already acted (signed/approved/processed)
+          const adminActed = !!(r.admin_approved_at || r.admin_processed_at || r.admin_signature || r.admin_approved_by || r.admin_processed_by);
+          if (adminActed) {
+            return false; // Don't show in pending if admin already acted
+          }
+          
+          // Only include requests explicitly waiting for admin
           const isPending = [
-            "pending_admin",
-            "pending_comptroller",
-            "pending_hr",
-            "pending_exec",
-            "pending_hr_ack"
+            "pending_admin"
           ].includes(r.status);
           
           // SPECIAL CASE: Include pending_head if head requester sent to admin
@@ -137,8 +141,7 @@ export default function AdminInboxPage() {
             }
           }
           
-          // Also include requests that haven't been fully processed by admin
-          return isPending || (!r.admin_approved_at && r.status !== "approved" && r.status !== "rejected" && r.status !== "completed");
+          return isPending;
         });
         
         setItems(pendingRequests || []);
@@ -153,7 +156,44 @@ export default function AdminInboxPage() {
     }
   }, []);
 
-  // Load history - Admin can see ALL requests
+  // Load tracking - Requests that admin has processed and sent to next stage
+  const loadTracking = React.useCallback(async () => {
+    try {
+      const response = await fetch("/api/admin/inbox");
+      const result = await response.json();
+      
+      if (result.ok && result.data) {
+        // Filter for tracking: requests where admin has acted AND are in intermediate states
+        const trackingRequests = result.data.filter((r: any) => {
+          // Admin must have acted (signed/approved/processed)
+          const adminActed = !!(r.admin_approved_at || r.admin_processed_at || r.admin_signature || r.admin_approved_by || r.admin_processed_by);
+          
+          if (!adminActed) {
+            return false; // Only show requests where admin has acted
+          }
+          
+          // Include requests that admin processed and sent to next stage
+          // (pending_comptroller, pending_hr, pending_exec, pending_vp, pending_president, pending_hr_ack)
+          const isIntermediateState = [
+            "pending_comptroller",
+            "pending_hr",
+            "pending_exec",
+            "pending_vp",
+            "pending_president",
+            "pending_hr_ack"
+          ].includes(r.status);
+          
+          return isIntermediateState;
+        });
+        
+        setTrackingItems(trackingRequests || []);
+      }
+    } catch (error) {
+      console.error("[Admin Inbox] Error loading tracking:", error);
+    }
+  }, []);
+
+  // Load history - Final states only
   const loadHistory = React.useCallback(async () => {
     try {
       // Use the same API endpoint to get all requests
@@ -161,16 +201,10 @@ export default function AdminInboxPage() {
       const result = await response.json();
       
       if (result.ok && result.data) {
-        // Filter for history: requests that are approved, rejected, completed, or admin already acted
+        // Filter for history: ONLY final states (approved, rejected, completed)
         const historyRequests = result.data.filter((r: any) => {
-          const adminActed = r.admin_approved_at || r.admin_approved_by || r.admin_processed_by;
           const isFinalState = ["approved", "rejected", "completed"].includes(r.status);
-          const adminProcessed = adminActed && (
-            r.status === "pending_comptroller" ||
-            r.status === "pending_hr" ||
-            r.status === "pending_exec"
-          );
-          return isFinalState || adminProcessed;
+          return isFinalState;
         });
         
         setHistoryItems(historyRequests || []);
@@ -182,6 +216,7 @@ export default function AdminInboxPage() {
 
   React.useEffect(() => {
     loadPending();
+    loadTracking();
     loadHistory();
 
     // Set up Supabase Realtime subscription for instant updates
@@ -201,11 +236,13 @@ export default function AdminInboxPage() {
           // Debounce: only trigger refetch after 500ms
           if (mutateTimeout) clearTimeout(mutateTimeout);
           mutateTimeout = setTimeout(() => {
-            if (activeTab === "pending") {
-              loadPending();
-            } else {
-              loadHistory();
-            }
+          if (activeTab === "pending") {
+            loadPending();
+          } else if (activeTab === "tracking") {
+            loadTracking();
+          } else {
+            loadHistory();
+          }
           }, 500);
         }
       )
@@ -217,6 +254,10 @@ export default function AdminInboxPage() {
     const interval = setInterval(() => {
       if (activeTab === "pending") {
         loadPending();
+      } else if (activeTab === "tracking") {
+        loadTracking();
+      } else {
+        loadHistory();
       }
     }, 30000);
 
@@ -225,7 +266,7 @@ export default function AdminInboxPage() {
       if (mutateTimeout) clearTimeout(mutateTimeout);
       supabase.removeChannel(channel);
     };
-  }, [loadPending, loadHistory, activeTab]);
+  }, [loadPending, loadTracking, loadHistory, activeTab]);
 
   const markAsViewed = React.useCallback((id: string) => {
     setViewedIds((prev) => {
@@ -666,7 +707,7 @@ export default function AdminInboxPage() {
     }
   };
 
-  const currentItems = activeTab === "pending" ? items : historyItems;
+  const currentItems = activeTab === "pending" ? items : activeTab === "tracking" ? trackingItems : historyItems;
   const uniqueDepartments = Array.from(new Set(currentItems.map((r) => r.department?.name || "Unknown")));
 
   // Show loading skeleton while fetching details
@@ -835,6 +876,16 @@ export default function AdminInboxPage() {
             )}
           </button>
           <button
+            onClick={() => setActiveTab("tracking")}
+            className={`px-4 py-2 rounded-lg ${
+              activeTab === "tracking"
+                ? "bg-[#7a1f2a] text-white"
+                : "bg-gray-200 text-gray-700"
+            }`}
+          >
+            Tracking ({trackingItems.length})
+          </button>
+          <button
             onClick={() => setActiveTab("history")}
             className={`px-4 py-2 rounded-lg ${
               activeTab === "history"
@@ -937,6 +988,8 @@ function AdminApprovalModal({
   const [vehicles, setVehicles] = React.useState<Array<{id: string; label: string}>>([]);
   const [loadingOptions, setLoadingOptions] = React.useState(true);
   const [requiresComptroller, setRequiresComptroller] = React.useState(false);
+  const [showNextApproverModal, setShowNextApproverModal] = React.useState(false);
+  const [nextApproverRole, setNextApproverRole] = React.useState<'comptroller' | 'hr' | null>(null);
 
   // Reset state when modal closes
   React.useEffect(() => {
@@ -1004,6 +1057,8 @@ function AdminApprovalModal({
     if (request) {
       const hasBudget = (request.total_budget || 0) > 0;
       setRequiresComptroller(hasBudget);
+      // Set default next approver based on budget
+      setNextApproverRole(hasBudget ? 'comptroller' : 'hr');
     }
   }, [request]);
 
@@ -1034,7 +1089,7 @@ function AdminApprovalModal({
           vehicle: isOwnedVehicle ? null : vehicle,
           adminNotes: adminNotes.trim(),
           requiresComptroller,
-          nextApproverRole: requiresComptroller ? 'comptroller' : 'hr',
+          nextApproverRole: nextApproverRole || (requiresComptroller ? 'comptroller' : 'hr'),
           sendNotifications, // NEW: Optional email/notification sending
         }),
       });
@@ -1047,7 +1102,8 @@ function AdminApprovalModal({
         return;
       }
 
-      alert(`Request approved and sent to ${requiresComptroller ? 'Comptroller' : 'HR'}!`);
+      const approverName = nextApproverRole === 'comptroller' ? 'Comptroller' : 'HR';
+      alert(`Request approved and sent to ${approverName}!`);
       onApproved();
     } catch (error) {
       console.error('Approval error:', error);
@@ -1109,6 +1165,40 @@ function AdminApprovalModal({
               </>
             )}
           </div>
+
+          {/* Preferred Driver/Vehicle Info */}
+          {(() => {
+            const preferredDriver = (request as any)?.preferred_driver_name || (request as any)?.preferred_driver;
+            const preferredVehicle = (request as any)?.preferred_vehicle_name || (request as any)?.preferred_vehicle;
+            
+            if (preferredDriver || preferredVehicle) {
+              return (
+                <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+                  <p className="text-sm font-semibold text-blue-900 mb-2 flex items-center gap-2">
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Requester Preferences
+                  </p>
+                  <div className="space-y-2 text-sm">
+                    {preferredDriver && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-blue-700 font-medium">Preferred Driver:</span>
+                        <span className="text-blue-900">{preferredDriver}</span>
+                      </div>
+                    )}
+                    {preferredVehicle && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-blue-700 font-medium">Preferred Vehicle:</span>
+                        <span className="text-blue-900">{preferredVehicle}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })()}
 
           {/* Check if request uses owned vehicle */}
           {(() => {
@@ -1193,10 +1283,24 @@ function AdminApprovalModal({
 
           {/* Admin Notes (Required) */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Admin Notes <span className="text-red-500">*</span>
-              <span className="text-xs text-gray-500 ml-2">(Minimum 20 characters)</span>
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-gray-700">
+                Admin Notes <span className="text-red-500">*</span>
+                <span className="text-xs text-gray-500 ml-2">(Minimum 20 characters)</span>
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const quickNote = "Vehicle and driver assigned as per request. All requirements met. Proceeding to next approval stage.";
+                    setAdminNotes(quickNote);
+                  }}
+                  className="text-xs px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md border border-gray-300 transition-colors"
+                >
+                  Quick Fill
+                </button>
+              </div>
+            </div>
             <textarea
               value={adminNotes}
               onChange={(e) => setAdminNotes(e.target.value)}
@@ -1208,6 +1312,30 @@ function AdminApprovalModal({
             {adminNotes.trim().length > 0 && adminNotes.trim().length < 20 && (
               <p className="text-xs text-amber-600 mt-1">
                 {20 - adminNotes.trim().length} more characters required
+              </p>
+            )}
+          </div>
+
+          {/* Next Approver Selection */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Send to Next Approver
+            </label>
+            <button
+              type="button"
+              onClick={() => setShowNextApproverModal(true)}
+              className="w-full h-11 rounded-lg border-2 border-gray-300 px-4 text-sm text-left flex items-center justify-between hover:border-[#7A0010] transition-colors bg-white"
+            >
+              <span className="text-gray-700">
+                {nextApproverRole === 'comptroller' ? 'Comptroller' : nextApproverRole === 'hr' ? 'Human Resources' : 'Select approver...'}
+              </span>
+              <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {nextApproverRole && (
+              <p className="text-xs text-gray-500 mt-1">
+                Request will be sent to {nextApproverRole === 'comptroller' ? 'Comptroller' : 'HR'} for approval
               </p>
             )}
           </div>
@@ -1276,6 +1404,78 @@ function AdminApprovalModal({
           </div>
         </div>
       </Dialog.Panel>
+
+      {/* Next Approver Selection Modal */}
+      {showNextApproverModal && (
+        <Dialog open={showNextApproverModal} onClose={() => setShowNextApproverModal(false)} className="fixed inset-0 z-[102] flex items-center justify-center">
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[102]" onClick={() => setShowNextApproverModal(false)} />
+          <Dialog.Panel className="relative bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 z-[103]">
+            <div className="p-6">
+              <Dialog.Title className="text-xl font-bold text-gray-900 mb-4">
+                Select Next Approver
+              </Dialog.Title>
+              
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNextApproverRole('comptroller');
+                    setShowNextApproverModal(false);
+                  }}
+                  className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
+                    nextApproverRole === 'comptroller'
+                      ? 'border-[#7A0010] bg-[#7A0010]/5'
+                      : 'border-gray-200 hover:border-gray-300 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-semibold text-gray-900">Comptroller</p>
+                      <p className="text-sm text-gray-500 mt-1">For requests with budget</p>
+                    </div>
+                    {nextApproverRole === 'comptroller' && (
+                      <CheckCircle2 className="h-5 w-5 text-[#7A0010]" />
+                    )}
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNextApproverRole('hr');
+                    setShowNextApproverModal(false);
+                  }}
+                  className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
+                    nextApproverRole === 'hr'
+                      ? 'border-[#7A0010] bg-[#7A0010]/5'
+                      : 'border-gray-200 hover:border-gray-300 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-semibold text-gray-900">Human Resources</p>
+                      <p className="text-sm text-gray-500 mt-1">For requests without budget</p>
+                    </div>
+                    {nextApproverRole === 'hr' && (
+                      <CheckCircle2 className="h-5 w-5 text-[#7A0010]" />
+                    )}
+                  </div>
+                </button>
+              </div>
+
+              <div className="mt-6 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowNextApproverModal(false)}
+                  className="px-4 py-2 bg-[#7A0010] text-white rounded-lg font-semibold hover:bg-[#5a000c] transition-colors"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </Dialog.Panel>
+        </Dialog>
+      )}
     </Dialog>
   );
 }

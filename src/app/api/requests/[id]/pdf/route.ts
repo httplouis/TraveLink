@@ -308,27 +308,49 @@ export async function GET(
     };
 
     // Get display label for expense category
-    const getExpenseLabel = (category: string | null | undefined, label: string | null | undefined): string => {
-      // If there's a custom label, use it
-      if (label && label.trim()) return label;
-      // If category matches a known key, use the mapped label
-      if (category && COST_LABELS[category]) return COST_LABELS[category];
-      // If category is already a display name, use it
-      if (category && Object.values(COST_LABELS).includes(category)) return category;
-      // Try to match category with case-insensitive comparison
-      if (category) {
-        const lowerCategory = category.toLowerCase();
+    // Handles both old format (category/label) and new format (item/description)
+    const getExpenseLabel = (
+      category: string | null | undefined, 
+      label: string | null | undefined,
+      item: string | null | undefined,
+      description: string | null | undefined
+    ): string => {
+      // Priority 1: Custom label/description (most specific)
+      if (label && label.trim() && label.trim() !== "Other") return label.trim();
+      if (description && description.trim() && description.trim() !== "Miscellaneous") return description.trim();
+      
+      // Priority 2: Item field (new format)
+      if (item && item.trim() && item.trim() !== "Other") {
+        const itemLower = item.toLowerCase();
+        // Check if it matches a known category
+        if (COST_LABELS[itemLower]) return COST_LABELS[itemLower];
+        // Check case-insensitive match
         for (const [key, value] of Object.entries(COST_LABELS)) {
-          if (key.toLowerCase() === lowerCategory || value.toLowerCase() === lowerCategory) {
+          if (key.toLowerCase() === itemLower || value.toLowerCase() === itemLower) {
             return value;
           }
         }
-        // If category looks like a valid name (not empty, has letters), use it
-        if (category.trim().length > 0 && /[a-zA-Z]/.test(category)) {
-          return category;
-        }
+        // If item is a valid name, use it
+        if (/[a-zA-Z]/.test(item)) return item;
       }
-      // Fallback to "Other" only if category is truly missing
+      
+      // Priority 3: Category field (old format)
+      if (category && category.trim() && category.trim() !== "Other") {
+        const catLower = category.toLowerCase();
+        if (COST_LABELS[catLower]) return COST_LABELS[catLower];
+        for (const [key, value] of Object.entries(COST_LABELS)) {
+          if (key.toLowerCase() === catLower || value.toLowerCase() === catLower) {
+            return value;
+          }
+        }
+        if (/[a-zA-Z]/.test(category)) return category;
+      }
+      
+      // Fallback: Use description even if it's "Miscellaneous" or "Other"
+      if (description && description.trim()) return description.trim();
+      if (label && label.trim()) return label.trim();
+      
+      // Last resort: "Other"
       return "Other";
     };
 
@@ -425,7 +447,7 @@ export async function GET(
       if (seminarData.breakdown && Array.isArray(seminarData.breakdown)) {
         let costY = 325;
         seminarData.breakdown.slice(0, 5).forEach((item: any) => {
-          const displayLabel = getExpenseLabel(item.category, item.label);
+          const displayLabel = getExpenseLabel(item.category, item.label, item.item, item.description);
           const amount = item.amount || 0;
           if (amount > 0) {
             drawInRect(`${displayLabel}: Php ${amount.toLocaleString()}`, 150, costY, 446, 8, 8);
@@ -466,11 +488,14 @@ export async function GET(
       
       // Draw requesting persons in 2-column layout (up to 6 per page)
       // Layout: 2 columns, 3 rows max
-      const requesterBoxWidth = 100; // Width per requester box
-      const requesterBoxHeight = 20; // Height per requester box
-      const requesterStartX = 150;
-      const requesterStartY = 180;
-      const requesterColSpacing = 120; // Space between columns
+      // Accurate coordinates based on template: Requesting Person field at x=150, top=180
+      // Template shows names side-by-side with signatures on the right
+      const requesterStartX = 150; // Left edge of requesting person field
+      const requesterStartY = 180; // Top of requesting person field (from top of page)
+      const nameWidth = 100; // Width for name text
+      const sigWidth = 80; // Signature width (larger for visibility)
+      const sigHeight = 35; // Signature height (larger for visibility)
+      const requesterColSpacing = 250; // Space between columns (name + signature)
       const requesterRowSpacing = 25; // Space between rows
       
       // Use for...of loop to properly handle async/await
@@ -481,12 +506,15 @@ export async function GET(
         const x = requesterStartX + (col * requesterColSpacing);
         const y = requesterStartY - (row * requesterRowSpacing);
         
-        // Draw name
-        drawInRect(req.name, x, y, requesterBoxWidth, 10, 9);
+        // Draw name (left side of the box)
+        drawInRect(req.name, x, y, nameWidth, 10, 9);
         
-        // Draw signature if available (larger box for better visibility)
+        // Draw signature if available (right side, larger and more visible)
         if (req.signature) {
-          await drawSignature(req.signature, x + requesterBoxWidth - 60, y - 10, 60, 25);
+          // Position signature on the right side of the name
+          const sigX = x + nameWidth + 5; // Right of name with 5px spacing
+          const sigY = y - 5; // Slightly below name baseline
+          await drawSignature(req.signature, sigX, sigY, sigWidth, sigHeight);
         }
       }
       
@@ -549,7 +577,13 @@ export async function GET(
         let costY = 295;
         const maxItems = 12; // Limit to fit on page
         request.expense_breakdown.slice(0, maxItems).forEach((item: any) => {
-          const displayLabel = getExpenseLabel(item.category, item.label);
+          // Handle both old format (category/label) and new format (item/description)
+          const displayLabel = getExpenseLabel(
+            item.category, 
+            item.label, 
+            item.item, 
+            item.description
+          );
           const amount = item.amount || 0;
           if (amount > 0) {
             const costText = `${displayLabel} - Php ${amount.toLocaleString()}`;
@@ -581,7 +615,7 @@ export async function GET(
         ].filter(item => item.amount && item.amount > 0);
         
         costItems.forEach((item) => {
-          const displayLabel = getExpenseLabel(item.category, null);
+          const displayLabel = getExpenseLabel(item.category, null, null, null);
           const costText = `${displayLabel} - Php ${item.amount.toLocaleString()}`;
           drawInRect(costText, 150, costY, 446, 8, 8);
           costY += 8;
@@ -761,7 +795,7 @@ export async function GET(
     };
 
     // Head name and signature (LEFT) - Department Head endorsement
-    const headTimestamp = request.head_approved_at || headEndorsements[0]?.confirmed_at || null;
+    const headTimestamp = request.head_signed_at || request.head_approved_at || headEndorsements[0]?.confirmed_at || null;
     const headComments = request.head_comments || headEndorsements[0]?.comments || null;
     await drawSignatureWithMetadata(
       request.head_signature || headEndorsements[0]?.signature || null,
@@ -774,7 +808,7 @@ export async function GET(
     
     // Parent Head signature if exists (for parent department approval)
     if (parentHeadApproverName && request.parent_head_signature) {
-      const parentHeadTimestamp = request.parent_head_approved_at || null;
+      const parentHeadTimestamp = request.parent_head_signed_at || request.parent_head_approved_at || null;
       const parentHeadComments = request.parent_head_comments || null;
       await drawSignatureWithMetadata(
         request.parent_head_signature,
@@ -796,7 +830,7 @@ export async function GET(
     
     // Transportation Coordinator signature (RIGHT)
     // Position: "School Transportation Coordinator" or "Approved by" section
-    const adminTimestamp = request.admin_approved_at || request.admin_processed_at || null;
+    const adminTimestamp = request.admin_signed_at || request.admin_approved_at || request.admin_processed_at || null;
     const adminComments = request.admin_notes || request.admin_comments || null;
     await drawSignatureWithMetadata(
       request.admin_signature || null,
@@ -808,7 +842,7 @@ export async function GET(
     );
     
     // President/COO signature (Approved by section)
-    const presidentTimestamp = request.president_approved_at || null;
+    const presidentTimestamp = request.president_signed_at || request.president_approved_at || null;
     const presidentComments = request.president_comments || null;
     await drawSignatureWithMetadata(
       request.president_signature || null,
@@ -821,7 +855,7 @@ export async function GET(
     
     // Executive signature (fallback if president_signature not available)
     if (!request.president_signature && request.exec_signature) {
-      const execTimestamp = request.exec_approved_at || null;
+      const execTimestamp = request.exec_signed_at || request.exec_approved_at || null;
       const execComments = request.exec_comments || null;
       await drawSignatureWithMetadata(
         request.exec_signature,
@@ -835,7 +869,7 @@ export async function GET(
     
     // Comptroller signature and name (For Travel Cost - Recommending Approval)
     // Position: Right side, "Recommending Approval" section
-    const comptrollerTimestamp = request.comptroller_approved_at || null;
+    const comptrollerTimestamp = request.comptroller_signed_at || request.comptroller_approved_at || null;
     const comptrollerComments = request.comptroller_comments || null;
     await drawSignatureWithMetadata(
       request.comptroller_signature || null,
@@ -855,7 +889,7 @@ export async function GET(
     
     // VP signatures (Recommending Approval section)
     // First VP - Position: Left side, "Recommending Approval" section
-    const vpTimestamp = request.vp_approved_at || null;
+    const vpTimestamp = request.vp_signed_at || request.vp_approved_at || null;
     const vpComments = request.vp_comments || null;
     await drawSignatureWithMetadata(
       request.vp_signature || null,
@@ -868,7 +902,7 @@ export async function GET(
     
     // Second VP (if both VPs approved - for multi-department requests)
     if (request.both_vps_approved && vp2ApproverName) {
-      const vp2Timestamp = request.vp2_approved_at || null;
+      const vp2Timestamp = request.vp2_signed_at || request.vp2_approved_at || null;
       const vp2Comments = request.vp2_comments || null;
       await drawSignatureWithMetadata(
         request.vp2_signature || null,
@@ -882,7 +916,7 @@ export async function GET(
     
     // HR Director signature (Noted by section)
     // Position: Left side, "Noted by" section
-    const hrTimestamp = request.hr_approved_at || null;
+    const hrTimestamp = request.hr_signed_at || request.hr_approved_at || null;
     const hrComments = request.hr_comments || null;
     await drawSignatureWithMetadata(
       request.hr_signature || null,

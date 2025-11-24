@@ -120,7 +120,7 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
         setTotalCost(budgetToUse);
       }
     }
-  }, [fullRequest, request, editedExpenses.length]); // Removed loading dependency - initialize immediately
+  }, [fullRequest?.id, request?.id, editedExpenses.length]); // Use IDs instead of objects to prevent infinite loops
 
   const loadComptrollerProfile = async () => {
     try {
@@ -674,7 +674,7 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 pt-20 pb-8">
-      <div className="relative w-full max-w-5xl max-h-[85vh] rounded-3xl bg-white shadow-2xl transform transition-all duration-300 scale-100 flex flex-col overflow-hidden">
+      <div className="relative w-full max-w-7xl max-h-[90vh] rounded-3xl bg-white shadow-2xl transform transition-all duration-300 scale-100 flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between border-b bg-[#7A0010] px-6 py-4 rounded-t-3xl flex-shrink-0">
           <div>
@@ -1016,6 +1016,109 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                     </p>
                   </div>
                 )}
+              </section>
+            )}
+
+            {/* Admin Assignment Details */}
+            {(t?.assigned_driver_id || t?.assigned_vehicle_id || t?.admin_notes || t?.admin_comments) && (
+              <section className="rounded-lg bg-gradient-to-br from-indigo-50 to-purple-50 border-2 border-indigo-200 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Users className="h-5 w-5 text-indigo-600" />
+                  <p className="text-xs font-bold uppercase tracking-wide text-indigo-700">
+                    Admin Assignment & Notes
+                  </p>
+                </div>
+                <div className="space-y-3">
+                  {t?.assigned_driver_id && (
+                    <div className="flex items-start gap-2 bg-white rounded-lg px-3 py-2 border border-indigo-100">
+                      <Users className="h-4 w-4 text-indigo-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-xs text-indigo-700 font-medium mb-0.5">Assigned Driver</p>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {t?.assigned_driver_name || t?.assigned_driver?.name || 'Loading...'}
+                        </p>
+                        {t?.driver_contact_number && (
+                          <p className="text-xs text-slate-600 mt-0.5">Contact: {t.driver_contact_number}</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {t?.assigned_vehicle_id && (
+                    <div className="flex items-start gap-2 bg-white rounded-lg px-3 py-2 border border-indigo-100">
+                      <Car className="h-4 w-4 text-indigo-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-xs text-indigo-700 font-medium mb-0.5">Assigned Vehicle</p>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {t?.assigned_vehicle_name || t?.assigned_vehicle?.name || 'Loading...'}
+                        </p>
+                        {t?.assigned_vehicle?.plate_number && (
+                          <p className="text-xs text-slate-600 mt-0.5">Plate: {t.assigned_vehicle.plate_number}</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {t?.admin_notes && (
+                    <div className="bg-white rounded-lg px-3 py-2 border border-indigo-100">
+                      <p className="text-xs text-indigo-700 font-medium mb-1">Admin Notes</p>
+                      <p className="text-sm text-slate-700 whitespace-pre-wrap">{t.admin_notes}</p>
+                    </div>
+                  )}
+                  {t?.admin_comments && (
+                    <div className="bg-white rounded-lg px-3 py-2 border border-indigo-100">
+                      <p className="text-xs text-indigo-700 font-medium mb-1">Admin Comments</p>
+                      <p className="text-sm text-slate-700 whitespace-pre-wrap">{t.admin_comments}</p>
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
+
+            {/* Attachments */}
+            {t?.attachments && Array.isArray(t.attachments) && t.attachments.length > 0 && (
+              <section className="rounded-lg bg-gradient-to-br from-emerald-50 to-teal-50 border-2 border-emerald-200 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <FileText className="h-5 w-5 text-emerald-600" />
+                  <p className="text-xs font-bold uppercase tracking-wide text-emerald-700">
+                    Attached Documents ({t.attachments.length})
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {t.attachments.map((attachment: any, idx: number) => (
+                    <a
+                      key={attachment.id || idx}
+                      href={attachment.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 bg-white rounded-lg px-3 py-2 border border-emerald-100 hover:border-emerald-300 hover:shadow-sm transition-all"
+                    >
+                      <FileText className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-900 truncate">{attachment.name || `Document ${idx + 1}`}</p>
+                        {attachment.size && (
+                          <p className="text-xs text-slate-600">{(attachment.size / 1024).toFixed(2)} KB</p>
+                        )}
+                      </div>
+                      <svg className="h-4 w-4 text-emerald-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    </a>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Cost Justification */}
+            {t?.cost_justification && (
+              <section className="rounded-lg bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <FileText className="h-5 w-5 text-amber-600" />
+                  <p className="text-xs font-bold uppercase tracking-wide text-amber-700">
+                    Cost Justification
+                  </p>
+                </div>
+                <p className="text-sm text-slate-700 whitespace-pre-wrap bg-white rounded-lg px-3 py-2 border border-amber-100">
+                  {t.cost_justification}
+                </p>
               </section>
             )}
 
@@ -1623,7 +1726,9 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
           isOpen={showApproverSelection}
           onClose={() => setShowApproverSelection(false)}
           onSelect={(approverId, approverRole) => {
-            proceedWithApproval(approverId, approverRole);
+            const id = Array.isArray(approverId) ? approverId[0] : (typeof approverId === 'string' ? approverId : null);
+            const role = Array.isArray(approverRole) ? approverRole[0] : (typeof approverRole === 'string' ? approverRole : null);
+            proceedWithApproval(id || undefined, role || undefined);
           }}
           title="Select Next Approver"
           description="Choose where to send this request after approval."

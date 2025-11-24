@@ -106,10 +106,10 @@ export async function GET(
     try {
       // Use service role client to bypass RLS completely
       // Use maybeSingle() instead of single() to handle 0 rows gracefully
-      // Include budget_history in the select
+      // Note: budget_history doesn't exist as a column, removed from select
       const { data, error } = await supabaseServiceRole
         .from("requests")
-        .select("*, budget_history")
+        .select("*")
         .eq("id", requestId)
         .maybeSingle(); // Changed from .single() to .maybeSingle()
 
@@ -340,40 +340,31 @@ export async function GET(
     console.log(`[GET /api/requests/${requestId}] Assigned vehicle ID:`, fullRequest.assigned_vehicle_id);
     
     if (fullRequest.assigned_driver_id || fullRequest.assigned_vehicle_id) {
-      // Fetch assigned driver name (from drivers table -> users table)
+      // Fetch assigned driver name (assigned_driver_id is FK to users table, not drivers table)
       if (fullRequest.assigned_driver_id) {
         console.log(`[GET /api/requests/${requestId}] Fetching assigned driver for ID:`, fullRequest.assigned_driver_id);
         try {
-          // First get the user_id from drivers table
-          const { data: driverRecord, error: driverRecordError } = await supabaseServiceRole
-            .from("drivers")
-            .select("user_id")
+          // assigned_driver_id is directly a user_id, fetch from users table
+          const { data: driverUser, error: driverUserError } = await supabaseServiceRole
+            .from("users")
+            .select("id, name, name_full, email, phone_number, profile_picture")
             .eq("id", fullRequest.assigned_driver_id)
             .single();
           
-          if (driverRecordError) {
-            console.error(`[GET /api/requests/${requestId}] Error fetching driver record:`, driverRecordError);
-          } else if (driverRecord && driverRecord.user_id) {
-            // Then get the user's name
-            const { data: driverUser, error: driverUserError } = await supabaseServiceRole
-              .from("users")
-              .select("id, name, email, phone_number, profile_picture")
-              .eq("id", driverRecord.user_id)
-              .single();
-            
-            if (driverUserError) {
-              console.error(`[GET /api/requests/${requestId}] Error fetching driver user:`, driverUserError);
-            } else if (driverUser) {
-              fullRequest.assigned_driver = {
-                id: driverUser.id,
-                name: driverUser.name,
-                email: driverUser.email,
-                phone: driverUser.phone_number,
-                profile_picture: driverUser.profile_picture
-              };
-              fullRequest.assigned_driver_name = driverUser.name;
-              console.log(`[GET /api/requests/${requestId}] Assigned driver found:`, driverUser.name);
-            }
+          if (driverUserError) {
+            console.error(`[GET /api/requests/${requestId}] Error fetching assigned driver user:`, driverUserError);
+          } else if (driverUser) {
+            fullRequest.assigned_driver = {
+              id: driverUser.id,
+              name: driverUser.name || driverUser.name_full || 'Unknown Driver',
+              full_name: driverUser.name || driverUser.name_full || 'Unknown Driver',
+              email: driverUser.email,
+              phone: driverUser.phone_number,
+              phone_number: driverUser.phone_number,
+              profile_picture: driverUser.profile_picture
+            };
+            fullRequest.assigned_driver_name = driverUser.name || driverUser.name_full || 'Unknown Driver';
+            console.log(`[GET /api/requests/${requestId}] Assigned driver found:`, fullRequest.assigned_driver_name);
           }
         } catch (e: any) {
           console.error(`[GET /api/requests/${requestId}] Exception fetching assigned driver:`, e);
@@ -442,27 +433,7 @@ export async function GET(
       fullRequest.expense_breakdown = null;
     }
 
-    // Parse budget_history if it's a string (JSONB from database)
-    try {
-      if (fullRequest.budget_history && typeof fullRequest.budget_history === 'string') {
-        try {
-          fullRequest.budget_history = JSON.parse(fullRequest.budget_history);
-          console.log(`[GET /api/requests/${requestId}] Parsed budget_history:`, fullRequest.budget_history);
-        } catch (e) {
-          console.warn(`[GET /api/requests/${requestId}] Failed to parse budget_history:`, e);
-          fullRequest.budget_history = null;
-        }
-      }
-
-      // Ensure budget_history is always an array or null
-      if (fullRequest.budget_history && !Array.isArray(fullRequest.budget_history)) {
-        console.warn(`[GET /api/requests/${requestId}] budget_history is not an array, converting...`);
-        fullRequest.budget_history = null;
-      }
-    } catch (e) {
-      console.warn(`[GET /api/requests/${requestId}] Error processing budget_history:`, e);
-      fullRequest.budget_history = null;
-    }
+    // Note: budget_history column doesn't exist in requests table, removed processing
 
     // Log expense_breakdown for debugging
     try {

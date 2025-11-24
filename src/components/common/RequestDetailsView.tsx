@@ -2063,6 +2063,12 @@ export default function RequestDetailsView({
                                   e.currentTarget.style.display = 'none';
                                 }}
                               />
+                              {/* Timestamp */}
+                              {((request as any).requester_signed_at || request.created_at) && (
+                                <p className="text-xs text-gray-500 mt-2 text-center">
+                                  Signed on {formatLongDateTime((request as any).requester_signed_at || request.created_at)}
+                                </p>
+                              )}
                             </div>
                           ) : (
                             <div className="bg-gray-50 rounded-lg border-2 border-dashed border-gray-300 p-4 text-center">
@@ -2252,6 +2258,12 @@ export default function RequestDetailsView({
                                   e.currentTarget.style.display = 'none';
                                 }}
                               />
+                              {/* Timestamp */}
+                              {(requester.confirmed_at || requester.signed_at) && (
+                                <p className="text-xs text-gray-500 mt-2 text-center">
+                                  Signed on {formatLongDateTime(requester.confirmed_at || requester.signed_at)}
+                                </p>
+                              )}
                             </div>
                           ) : (
                             <div className="bg-gray-50 rounded-lg border-2 border-dashed border-gray-300 p-4 text-center">
