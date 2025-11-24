@@ -71,7 +71,8 @@ export async function GET() {
         hr_approved_by,
         workflow_metadata,
         requester_is_head,
-        total_budget
+        total_budget,
+        comptroller_edited_budget
       `)
       .eq("status", "pending_hr")
       .order("created_at", { ascending: false })

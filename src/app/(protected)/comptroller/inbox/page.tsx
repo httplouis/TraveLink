@@ -289,6 +289,8 @@ export default function ComptrollerInboxPage() {
                   travel_end_date: req.travel_end_date,
                   status: req.status,
                   created_at: req.created_at,
+                  admin_processed_at: req.admin_processed_at,
+                  comptroller_approved_at: req.comptroller_approved_at,
                   total_budget: req.total_budget,
                   request_type: req.request_type,
                   requester_name: req.requester_name || req.requester?.name,

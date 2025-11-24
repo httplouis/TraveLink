@@ -473,6 +473,8 @@ export default function HeadInboxPage() {
                   travel_end_date: item.travel_end_date,
                   status: item.status,
                   created_at: item.created_at,
+                  head_approved_at: item.head_approved_at,
+                  admin_processed_at: item.admin_processed_at,
                   total_budget: item.total_budget,
                   request_type: item.request_type,
                   requester_name: item.requester?.name || item.requester_name,

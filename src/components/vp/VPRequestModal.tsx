@@ -1690,6 +1690,32 @@ export default function VPRequestModal({
                   className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] resize-none text-sm"
                   placeholder="Add your comments or reasons for approval/rejection..."
                 />
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNotes("Approved - All requirements met. Request is complete and ready for next step.")}
+                    disabled={viewOnly}
+                    className="text-xs px-3 py-1.5 rounded-md border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Approved - Complete
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNotes("Approved - Budget and documentation verified. Ready for final approval.")}
+                    disabled={viewOnly}
+                    className="text-xs px-3 py-1.5 rounded-md border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Approved - Verified
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNotes("Approved - Request meets all criteria. Proceeding to President for final approval.")}
+                    disabled={viewOnly}
+                    className="text-xs px-3 py-1.5 rounded-md border border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Approved - Ready for President
+                  </button>
+                </div>
               </section>
             )}
           </div>
@@ -1831,6 +1857,32 @@ export default function VPRequestModal({
                 <p className="text-xs text-slate-500 mt-1">
                   {notes.trim().length}/10 characters minimum
                 </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNotes("Approved - All requirements met. Request is complete and ready for next step.")}
+                    disabled={viewOnly}
+                    className="text-xs px-3 py-1.5 rounded-md border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Approved - Complete
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNotes("Approved - Budget and documentation verified. Ready for final approval.")}
+                    disabled={viewOnly}
+                    className="text-xs px-3 py-1.5 rounded-md border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Approved - Verified
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNotes("Approved - Request meets all criteria. Proceeding to President for final approval.")}
+                    disabled={viewOnly}
+                    className="text-xs px-3 py-1.5 rounded-md border border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Approved - Ready for President
+                  </button>
+                </div>
               </div>
             </div>
 

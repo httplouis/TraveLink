@@ -113,6 +113,7 @@ export async function GET(req: NextRequest) {
         workflow_metadata,
         requester_is_head,
         total_budget,
+        comptroller_edited_budget,
         hr_approved_at,
         hr_approved_by,
         admin_processed_at,

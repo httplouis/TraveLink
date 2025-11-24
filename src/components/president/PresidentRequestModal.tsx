@@ -1579,6 +1579,32 @@ export default function PresidentRequestModal({
                   className="w-full px-4 py-3 border-2 border-[#7A0010]/20 rounded-xl focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] resize-none text-sm"
                   placeholder="Add your comments here..."
                 />
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNotes("Approved - Final approval granted. All requirements met and verified.")}
+                    disabled={viewOnly}
+                    className="text-xs px-3 py-1.5 rounded-md border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Approved - Final
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNotes("Approved - Request fully reviewed and approved. Ready for processing.")}
+                    disabled={viewOnly}
+                    className="text-xs px-3 py-1.5 rounded-md border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Approved - Fully Reviewed
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNotes("Approved - All documentation and budget verified. Final approval granted.")}
+                    disabled={viewOnly}
+                    className="text-xs px-3 py-1.5 rounded-md border border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Approved - Verified
+                  </button>
+                </div>
               </div>
             </div>
 

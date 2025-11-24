@@ -1805,6 +1805,32 @@ export default function HRRequestModal({
                 <p className="text-xs text-slate-500 mt-1">
                   Minimum 10 characters required
                 </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNotes("Approved - All requirements met. Request is complete and ready for next step.")}
+                    disabled={readOnly}
+                    className="text-xs px-3 py-1.5 rounded-md border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Approved - Complete
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNotes("Approved - Budget verified and documentation complete. Ready for VP review.")}
+                    disabled={readOnly}
+                    className="text-xs px-3 py-1.5 rounded-md border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Approved - Budget Verified
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNotes("Approved - All documentation reviewed and verified. Proceeding to next approver.")}
+                    disabled={readOnly}
+                    className="text-xs px-3 py-1.5 rounded-md border border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Approved - Documentation Complete
+                  </button>
+                </div>
               </div>
             </div>
 

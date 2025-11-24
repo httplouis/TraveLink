@@ -71,7 +71,9 @@ export async function POST(request: Request) {
       email: userEmail,
     };
 
-    if (userDepartment) {
+    // Only update department if user doesn't already have a manually set department_id
+    // This preserves super admin manual assignments (force-update is for syncing, not overwriting manual changes)
+    if (userDepartment && !existingUser.department_id) {
       // Try to find department by name
       const { data: dept } = await supabaseAdmin
         .from("departments")
@@ -87,6 +89,9 @@ export async function POST(request: Request) {
         updateData.department = userDepartment;
         updateData.department_id = null;
       }
+    } else if (userDepartment && existingUser.department_id) {
+      // User already has a manually set department_id - preserve it
+      console.log(`[force-update] ⚠️ User already has department_id (${existingUser.department_id}) - preserving manual assignment, not overwriting with Microsoft Graph data`);
     }
 
     if (userPosition) {

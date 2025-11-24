@@ -44,6 +44,11 @@ interface RequestCardEnhancedProps {
     status: string;
     created_at?: string;
     comptroller_approved_at?: string;
+    hr_approved_at?: string;
+    vp_approved_at?: string;
+    vp2_approved_at?: string;
+    admin_processed_at?: string;
+    head_approved_at?: string;
     total_budget?: number;
     comptroller_edited_budget?: number;
     request_type?: 'travel_order' | 'seminar';
@@ -159,20 +164,47 @@ export default function RequestCardEnhanced({
               </div>
             )}
           </div>
-          {request.comptroller_approved_at && (
-            <div className="text-xs text-white/80 ml-4 text-right">
-              <div className="font-medium">Received</div>
-              <div>{new Date(request.comptroller_approved_at).toLocaleString('en-US', { 
-                month: 'short', 
-                day: 'numeric',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: true,
-                timeZone: 'Asia/Manila'
-              })}</div>
-            </div>
-          )}
+          {(() => {
+            // Determine received time based on request status and approval timestamps
+            let receivedAt: string | null = null;
+            
+            if (request.status === 'pending_hr') {
+              // HR inbox: received when comptroller approved
+              receivedAt = request.comptroller_approved_at || null;
+            } else if (request.status === 'pending_exec' || request.status === 'pending_president') {
+              // VP/President inbox: received when HR approved
+              receivedAt = request.hr_approved_at || null;
+            } else if (request.status === 'pending_admin') {
+              // Admin inbox: received when head approved
+              receivedAt = request.head_approved_at || null;
+            } else if (request.status === 'pending_comptroller') {
+              // Comptroller inbox: received when admin processed
+              receivedAt = request.admin_processed_at || null;
+            } else if (request.status === 'pending_head') {
+              // Head inbox: received when requester submitted
+              receivedAt = request.created_at || null;
+            }
+            
+            // Fallback: use created_at if no specific timestamp found
+            if (!receivedAt) {
+              receivedAt = request.created_at || null;
+            }
+            
+            return receivedAt ? (
+              <div className="text-xs text-white/80 ml-4 text-right">
+                <div className="font-medium">Received</div>
+                <div>{new Date(receivedAt).toLocaleString('en-US', { 
+                  month: 'short', 
+                  day: 'numeric',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: true,
+                  timeZone: 'Asia/Manila'
+                })}</div>
+              </div>
+            ) : null;
+          })()}
         </div>
       </div>
 

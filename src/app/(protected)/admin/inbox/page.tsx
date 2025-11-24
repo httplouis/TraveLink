@@ -966,6 +966,8 @@ export default function AdminInboxPage() {
                     travel_end_date: req.travel_end_date,
                     status: req.status,
                     created_at: req.created_at,
+                    head_approved_at: (req as any).head_approved_at,
+                    admin_processed_at: (req as any).admin_processed_at,
                     total_budget: (req as any).total_budget,
                     request_type: (req.request_type === "seminar" ? "seminar" : "travel_order") as "travel_order" | "seminar" | undefined,
                     requester_name: req.requester?.name,

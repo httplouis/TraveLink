@@ -244,13 +244,18 @@ export async function GET() {
 // PATCH /api/head  → approve / reject using Workflow Engine
 export async function PATCH(req: Request) {
   try {
-    const supabase = await createSupabaseServerClient(true);
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    // Use regular client for auth (with cookies)
+    const authSupabase = await createSupabaseServerClient(false);
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser();
+    
     if (authError || !user) {
+      console.error("[PATCH /api/head] Auth error:", authError);
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
+    // Use service role client for database operations (bypasses RLS)
+    const supabase = await createSupabaseServerClient(true);
+    
     const { data: profile } = await supabase
       .from("users")
       .select("id, name, email, department_id, is_head")

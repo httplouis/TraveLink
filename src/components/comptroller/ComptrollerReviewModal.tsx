@@ -2024,6 +2024,32 @@ export default function ComptrollerReviewModal({ request, onClose, readOnly = fa
                       className="w-full px-4 py-3 border-2 border-[#7A0010]/20 rounded-xl focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] resize-none text-sm"
                       placeholder="Add your comments or reasons for approval/rejection..."
                     />
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setComptrollerNotes("Approved - Budget verified and within allocated limits. Ready for HR processing.")}
+                        disabled={readOnly}
+                        className="text-xs px-3 py-1.5 rounded-md border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Approved - Budget Verified
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setComptrollerNotes("Approved - Budget edited and verified. Changes documented and ready for next step.")}
+                        disabled={readOnly}
+                        className="text-xs px-3 py-1.5 rounded-md border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Approved - Budget Edited
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setComptrollerNotes("Approved - All financial requirements met. Documentation complete.")}
+                        disabled={readOnly}
+                        className="text-xs px-3 py-1.5 rounded-md border border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Approved - Complete
+                      </button>
+                    </div>
                   </>
                 )}
               </div>

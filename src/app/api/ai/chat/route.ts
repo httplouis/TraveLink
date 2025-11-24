@@ -36,13 +36,23 @@ export async function POST(request: NextRequest) {
     console.log(`[POST /api/ai/chat] AI response received in ${duration}ms`);
 
     if (!response.success) {
-      console.error('[POST /api/ai/chat] AI service error:', response.error);
+      // Use 503 (Service Unavailable) for missing API key or configuration issues
+      // This is more appropriate than 500 (Internal Server Error)
+      const isConfigError = response.error === 'Missing API key' || response.error?.includes('API key');
+      const statusCode = isConfigError ? 503 : 500;
+      
+      // Only log unexpected errors, not missing API key (expected in some deployments)
+      if (!isConfigError) {
+        console.error('[POST /api/ai/chat] AI service error:', response.error);
+      }
+      
       return NextResponse.json(
         { 
           error: response.error || 'AI service error',
-          message: response.message // Include user-friendly message
+          message: response.message || 'Unable to connect to the AI service. Please check your connection and try again.',
+          success: false
         },
-        { status: 500 }
+        { status: statusCode }
       );
     }
 

@@ -56,9 +56,11 @@ export default function ChatbotWidget() {
       clearTimeout(timeoutId);
       
       if (!response.ok) {
-        console.warn('[ChatbotWidget] Suggestions API not OK:', response.status);
-        const errorText = await response.text();
-        console.error('[ChatbotWidget] Error response body:', errorText.substring(0, 500));
+        // Silently fail for suggestions - not critical
+        // Only log if it's not a configuration issue
+        if (response.status !== 503) {
+          console.warn('[ChatbotWidget] Suggestions API not OK:', response.status);
+        }
         throw new Error(`HTTP ${response.status}`);
       }
       
@@ -114,17 +116,31 @@ export default function ChatbotWidget() {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        console.warn('[ChatbotWidget] Chat API not OK:', response.status, response.statusText);
-        const errorText = await response.text();
-        console.error('[ChatbotWidget] Error response body:', errorText.substring(0, 500));
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        // Try to parse error response for user-friendly message
+        let errorData: any = {};
+        try {
+          const errorText = await response.text();
+          errorData = JSON.parse(errorText);
+        } catch {
+          // If parsing fails, use default error
+        }
+        
+        // Only log unexpected errors (not 503 Service Unavailable)
+        if (response.status !== 503) {
+          console.warn('[ChatbotWidget] Chat API not OK:', response.status, response.statusText);
+        }
+        
+        // Throw error with user-friendly message from API if available
+        const errorMessage = errorData.message || errorData.error || `HTTP ${response.status}: ${response.statusText}`;
+        throw new Error(errorMessage);
       }
 
       const contentType = response.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
-        console.warn('[ChatbotWidget] Chat API returned non-JSON response. Content-Type:', contentType);
-        const errorText = await response.text();
-        console.error('[ChatbotWidget] Non-JSON response body:', errorText.substring(0, 500));
+        // Only log if it's unexpected (not a 503 config error)
+        if (response.status !== 503) {
+          console.warn('[ChatbotWidget] Chat API returned non-JSON response. Content-Type:', contentType);
+        }
         throw new Error('Invalid response format');
       }
 
@@ -139,10 +155,14 @@ export default function ChatbotWidget() {
         };
         setMessages(prev => [...prev, aiMessage]);
       } else {
-        throw new Error(data.error || data.message || 'Failed to get response');
+        // Use the user-friendly message from API if available
+        throw new Error(data.message || data.error || 'Failed to get response');
       }
     } catch (error) {
-      console.error('[ChatbotWidget] Chat error:', error);
+      // Only log unexpected errors (not configuration issues)
+      if (error instanceof Error && !error.message.includes('AI service is not configured')) {
+        console.error('[ChatbotWidget] Chat error:', error);
+      }
       
       // Provide user-friendly error message
       let errorMessage = 'Sorry, I encountered an error. Please try again.';
@@ -153,7 +173,7 @@ export default function ChatbotWidget() {
         } else if (error.message.includes('HTTP')) {
           errorMessage = 'Unable to connect to the AI service. Please check your connection and try again.';
         } else if (error.message) {
-          // Use the error message from the API if available
+          // Use the error message from the API if available (already user-friendly)
           errorMessage = error.message;
         }
       }

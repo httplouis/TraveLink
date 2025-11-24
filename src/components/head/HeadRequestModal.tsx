@@ -150,21 +150,28 @@ export default function HeadRequestModal({
   const expenseBreakdown = t.expense_breakdown || [];
   const totalCost = t.total_budget || expenseBreakdown.reduce((sum: number, item: any) => sum + (item.amount || 0), 0);
   
-  // Debug logging
-  console.log("[HeadRequestModal] Request data:", t);
-  console.log("[HeadRequestModal] Preferred driver ID:", t.preferred_driver_id);
-  console.log("[HeadRequestModal] Preferred vehicle ID:", t.preferred_vehicle_id);
-  console.log("[HeadRequestModal] Expense breakdown:", expenseBreakdown);
-  console.log("[HeadRequestModal] Total cost:", totalCost);
-  
-  // Log each expense for debugging
-  expenseBreakdown.forEach((exp: any, i: number) => {
-    console.log(`[HeadRequestModal] Expense ${i}:`, {
-      item: exp.item,
-      description: exp.description,
-      amount: exp.amount
-    });
-  });
+  // Debug logging - only log once when request changes
+  React.useEffect(() => {
+    if (t?.id) {
+      const expenseBreakdown = t.expense_breakdown || [];
+      const totalCost = t.total_budget || expenseBreakdown.reduce((sum: number, item: any) => sum + (item.amount || 0), 0);
+      
+      console.log("[HeadRequestModal] Request data:", t);
+      console.log("[HeadRequestModal] Preferred driver ID:", t.preferred_driver_id);
+      console.log("[HeadRequestModal] Preferred vehicle ID:", t.preferred_vehicle_id);
+      console.log("[HeadRequestModal] Expense breakdown:", expenseBreakdown);
+      console.log("[HeadRequestModal] Total cost:", totalCost);
+      
+      // Log each expense for debugging
+      expenseBreakdown.forEach((exp: any, i: number) => {
+        console.log(`[HeadRequestModal] Expense ${i}:`, {
+          item: exp.item,
+          description: exp.description,
+          amount: exp.amount
+        });
+      });
+    }
+  }, [t?.id]); // Only log when request ID changes
 
   async function doApprove() {
     if (submitting) return;
@@ -387,7 +394,7 @@ export default function HeadRequestModal({
     proceedWithApproval(null, "admin");
   }
 
-  async function proceedWithApproval(selectedApproverId: string | null, selectedRole: string, returnReason?: string) {
+  async function proceedWithApproval(selectedApproverId: string | null, selectedRole: string, returnReason?: string | null) {
     setSubmitting(true);
     try {
       const approvalDate = new Date().toISOString();
@@ -402,7 +409,7 @@ export default function HeadRequestModal({
           approved_at: approvalDate,
           next_approver_id: selectedApproverId, // Send to specific approver if selected
           next_approver_role: selectedRole,
-          return_reason: returnReason || null
+          return_reason: (Array.isArray(returnReason) ? returnReason[0] : returnReason) || null
         }),
       });
       const j = await res.json();
@@ -1169,6 +1176,32 @@ export default function HeadRequestModal({
                     Comments must be at least 10 characters long
                   </p>
                 )}
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setComments("Approved - Request meets all department requirements. Ready for admin processing.")}
+                    disabled={viewOnly}
+                    className="text-xs px-3 py-1.5 rounded-md border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Approved - Complete
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setComments("Approved - All documentation verified. Request is valid and ready for next step.")}
+                    disabled={viewOnly}
+                    className="text-xs px-3 py-1.5 rounded-md border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Approved - Verified
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setComments("Approved - Department head endorsement granted. Proceeding to admin for processing.")}
+                    disabled={viewOnly}
+                    className="text-xs px-3 py-1.5 rounded-md border border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Approved - Endorsed
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -1228,7 +1261,11 @@ export default function HeadRequestModal({
             setLoadingApprovers(false);
           }}
           onSelect={(approverId, approverRole, returnReason) => {
-            proceedWithApproval(approverId, approverRole, returnReason);
+            // Handle single approver (not array)
+            const approverIdStr = Array.isArray(approverId) ? approverId[0] : approverId;
+            const approverRoleStr = Array.isArray(approverRole) ? approverRole[0] : approverRole;
+            const reason = returnReason || null;
+            proceedWithApproval(approverIdStr, approverRoleStr, reason);
           }}
           title="Select Next Approver"
           description={`Request ${request.request_number || request.id} - Choose where to send this request after approval`}

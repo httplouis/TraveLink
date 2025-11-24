@@ -380,9 +380,11 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      if (userDepartment) {
+      // Only update department if user doesn't already have a manually set department_id
+      // This preserves super admin manual assignments
+      if (userDepartment && !existingUser.department_id) {
         const departmentName = userDepartment.trim();
-        console.log(`[auth/callback] 🔍 Looking up department_id for: "${departmentName}"`);
+        console.log(`[auth/callback] 🔍 Looking up department_id for: "${departmentName}" (user has no existing department_id)`);
         
         // Try exact match first
         let { data: deptData } = await supabaseAdmin
@@ -432,6 +434,9 @@ export async function GET(request: NextRequest) {
           updateData.department_id = null; // Clear ID if not found
           console.warn(`[auth/callback] ⚠️ Could not find department_id for: "${departmentName}", storing as text`);
         }
+      } else if (userDepartment && existingUser.department_id) {
+        // User already has a manually set department_id - preserve it
+        console.log(`[auth/callback] ⚠️ User already has department_id (${existingUser.department_id}) - preserving manual assignment, not overwriting with Microsoft Graph data`);
       }
 
       if (userPosition) {
