@@ -8,6 +8,11 @@ import { createNotification } from "@/lib/notifications/helpers";
 import { getPhilippineTimestamp } from "@/lib/datetime";
 import crypto from "crypto";
 
+// Force dynamic rendering (uses cookies and complex operations)
+export const dynamic = 'force-dynamic';
+// Increase timeout for complex request submission (60 seconds)
+export const maxDuration = 60;
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();

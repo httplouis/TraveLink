@@ -131,6 +131,7 @@ export default function HeadInboxPage() {
           event: "*",
           schema: "public",
           table: "requests",
+          filter: "status=in.(pending_head,pending_parent_head)", // Only listen to relevant statuses
         },
         (payload: any) => {
           // Debounce: only trigger refetch after 500ms
@@ -140,17 +141,9 @@ export default function HeadInboxPage() {
           }, 500);
         }
       )
-      .subscribe((status: string) => {
-        console.log("[Head Inbox] Realtime subscription status:", status);
-      });
-
-    // Fallback polling every 30 seconds
-    const interval = setInterval(() => {
-      load(false);
-    }, 30000);
+      .subscribe();
 
     return () => {
-      clearInterval(interval);
       if (mutateTimeout) clearTimeout(mutateTimeout);
       if (channel) {
         supabase.removeChannel(channel);

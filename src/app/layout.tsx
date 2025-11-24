@@ -11,10 +11,13 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       { url: "/travelink.png", type: "image/png", sizes: "any" },
+      { url: "/travelink.png", type: "image/png", sizes: "32x32" },
+      { url: "/travelink.png", type: "image/png", sizes: "16x16" },
     ],
     apple: [
       { url: "/travelink.png", sizes: "any", type: "image/png" },
     ],
+    shortcut: "/travelink.png",
   },
 };
 
@@ -25,6 +28,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        <link rel="icon" href="/travelink.png" type="image/png" />
+        <link rel="shortcut icon" href="/travelink.png" type="image/png" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
