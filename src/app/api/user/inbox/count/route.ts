@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-// Force dynamic rendering (API routes should always be dynamic)
-export const dynamic = 'force-dynamic';
 // Performance: Cache count for 10 seconds (frequently polled)
+// Note: API routes are dynamic by default in Next.js 15, but revalidate still works for caching
 export const revalidate = 10;
 
 /**

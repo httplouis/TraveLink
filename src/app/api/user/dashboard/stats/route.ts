@@ -3,9 +3,9 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 
-// Performance: Cache stats for 30 seconds (revalidate)
+// Performance: Cache stats for 30 seconds
+// Note: API routes are dynamic by default in Next.js 15, but revalidate still works for caching
 export const revalidate = 30;
-export const dynamic = 'force-dynamic'; // Still dynamic for user-specific data
 
 /**
  * GET /api/user/dashboard/stats
