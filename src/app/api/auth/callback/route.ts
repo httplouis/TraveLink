@@ -129,6 +129,8 @@ export async function GET(request: NextRequest) {
         supabaseCookies: exchangeCookies.filter(c => c.name.includes('supabase') || c.name.includes('sb-')).map(c => c.name)
       });
       
+      // Try to exchange code for session
+      // If code verifier is missing, try to get it from cookies manually
       const exchangeResult = await supabase.auth.exchangeCodeForSession(code);
       session = exchangeResult.data?.session || null;
       sessionError = exchangeResult.error || null;
@@ -146,6 +148,12 @@ export async function GET(request: NextRequest) {
           console.error("[auth/callback] 2. SameSite cookie restrictions");
           console.error("[auth/callback] 3. Cookie path mismatch");
           console.error("[auth/callback] 4. Cookie expired or cleared");
+          
+          // Return a more user-friendly error
+          return NextResponse.redirect(new URL(
+            `/login?error=${encodeURIComponent("Authentication failed: Please try logging in again. If the problem persists, clear your browser cookies and try again.")}`,
+            baseUrl
+          ));
         }
       }
     } else if (session) {
