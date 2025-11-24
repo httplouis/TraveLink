@@ -13,7 +13,7 @@ export default function RequesterConfirmationPage() {
   const router = useRouter();
   
   // Get token from URL params - Next.js automatically decodes it
-  let token = params.token as string;
+  let token = (params?.token as string) || '';
   
   // Fallback: Try to get token from URL if params.token is missing
   if (!token && typeof window !== 'undefined') {
@@ -345,14 +345,14 @@ export default function RequesterConfirmationPage() {
                     <span className="font-medium">Vehicle:</span> {request.own_vehicle_details}
                   </p>
                 )}
-                {request?.preferred_driver_name && (
+                {(request?.preferred_driver?.name || request?.preferred_driver_id) && (
                   <p className="text-sm text-gray-600">
-                    <span className="font-medium">Preferred Driver:</span> {request.preferred_driver_name}
+                    <span className="font-medium">Preferred Driver:</span> {request.preferred_driver?.name || 'Driver preference specified'}
                   </p>
                 )}
-                {request?.preferred_vehicle_name && (
+                {(request?.preferred_vehicle?.vehicle_name || request?.preferred_vehicle_id) && (
                   <p className="text-sm text-gray-600">
-                    <span className="font-medium">Preferred Vehicle:</span> {request.preferred_vehicle_name}
+                    <span className="font-medium">Preferred Vehicle:</span> {request.preferred_vehicle?.vehicle_name || 'Vehicle preference specified'}
                   </p>
                 )}
                 {request?.total_budget && request.total_budget > 0 && (
@@ -527,14 +527,14 @@ export default function RequesterConfirmationPage() {
                     <span className="font-medium">Vehicle:</span> {request.own_vehicle_details}
                   </p>
                 )}
-                {request?.preferred_driver_name && (
+                {(request?.preferred_driver?.name || request?.preferred_driver_id) && (
                   <p className="text-sm text-gray-600">
-                    <span className="font-medium">Preferred Driver:</span> {request.preferred_driver_name}
+                    <span className="font-medium">Preferred Driver:</span> {request.preferred_driver?.name || 'Driver preference specified'}
                   </p>
                 )}
-                {request?.preferred_vehicle_name && (
+                {(request?.preferred_vehicle?.vehicle_name || request?.preferred_vehicle_id) && (
                   <p className="text-sm text-gray-600">
-                    <span className="font-medium">Preferred Vehicle:</span> {request.preferred_vehicle_name}
+                    <span className="font-medium">Preferred Vehicle:</span> {request.preferred_vehicle?.vehicle_name || 'Vehicle preference specified'}
                   </p>
                 )}
                 {request?.total_budget && request.total_budget > 0 && (

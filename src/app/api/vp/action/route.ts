@@ -376,7 +376,8 @@ export async function POST(request: Request) {
               finalNextApproverRole = "vp";
               message = "First VP approved. Waiting for second VP approval (multiple departments).";
             } else {
-              // Faculty requester (with head included) → Check if should go to President or stop at VP
+              // Faculty requester (alone or with head) → Check if should go to President or stop at VP
+              // Logic: Faculty requests stop at VP unless budget >= 15,000
               // Get budget threshold to determine if should route to President
               const { data: thresholdConfig } = await supabase
                 .from("system_config")
@@ -386,22 +387,27 @@ export async function POST(request: Request) {
               
               const budgetThreshold = thresholdConfig?.value 
                 ? parseFloat(thresholdConfig.value) 
-                : 5000.00; // Default: ₱5,000
+                : 15000.00; // Default: ₱15,000 (faculty requests stop at VP unless budget >= 15k)
               
               const totalBudget = finalRequest.total_budget || 0;
               const exceedsThreshold = totalBudget >= budgetThreshold;
               
-              if (exceedsThreshold) {
-                // Budget >= threshold → President
+              // Check if requester is faculty (not head, not director, not dean)
+              const isFacultyRequester = !requesterIsHead && 
+                                         requesterRole !== "director" && 
+                                         requesterRole !== "dean";
+              
+              if (isFacultyRequester && exceedsThreshold) {
+                // Faculty requester with budget >= threshold → President
                 newStatus = "pending_exec";
                 finalNextApproverRole = "president";
                 message = `VP approved. Request sent to President (budget ₱${totalBudget.toFixed(2)} exceeds threshold ₱${budgetThreshold.toFixed(2)}).`;
-              } else {
-                // Budget < threshold → Fully approved after VP (no President needed)
+              } else if (isFacultyRequester && !exceedsThreshold) {
+                // Faculty requester with budget < threshold → Fully approved after VP (no President needed)
                 newStatus = "approved";
                 finalNextApproverRole = "requester";
                 updateData.final_approved_at = now;
-                message = "Request fully approved by VP.";
+                message = `Request fully approved by VP (budget ₱${totalBudget.toFixed(2)} is below threshold ₱${budgetThreshold.toFixed(2)}).`;
                 
                 // Send SMS to driver if assigned and not already sent
                 if (finalRequest.assigned_driver_id && !finalRequest.sms_notification_sent) {
@@ -454,6 +460,12 @@ export async function POST(request: Request) {
                     // Don't fail the approval if SMS fails
                   }
                 }
+              } else {
+                // Fallback: If not faculty requester or other edge cases, default to President
+                // This should rarely happen given the structure, but safety fallback
+                newStatus = "pending_exec";
+                finalNextApproverRole = "president";
+                message = "VP approved. Request sent to President.";
               }
             }
           }

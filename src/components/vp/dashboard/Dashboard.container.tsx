@@ -65,10 +65,18 @@ export default function VPDashboardContainer() {
           }
         }
         if (statsData.ok && statsData.data) {
+          logger.info("Setting VP KPIs with data:", statsData.data);
           setKpis([
-            { label: "Pending Approvals", value: statsData.data.pendingApprovals || 0 },
-            { label: "Active Requests", value: statsData.data.activeRequests || 0 },
-            { label: "This Month", value: statsData.data.thisMonth || 0 },
+            { label: "Pending Approvals", value: Number(statsData.data.pendingApprovals) || 0 },
+            { label: "Active Requests", value: Number(statsData.data.activeRequests) || 0 },
+            { label: "This Month", value: Number(statsData.data.thisMonth) || 0 },
+          ]);
+        } else {
+          logger.warn("VP stats data not OK or missing. Response:", statsData);
+          setKpis([
+            { label: "Pending Approvals", value: 0 },
+            { label: "Active Requests", value: 0 },
+            { label: "This Month", value: 0 },
           ]);
         }
 

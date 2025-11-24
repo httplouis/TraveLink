@@ -1,6 +1,7 @@
 // src/app/api/president/stats/route.ts
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 
 /**
  * GET /api/president/stats
@@ -42,7 +43,18 @@ export async function GET() {
     // - Requests with status = pending_exec where both VPs have approved (both_vps_approved = true)
     // - Requests with status = pending_president (legacy)
     // - Requests with workflow_metadata.next_president_id matching this President
-    const { data: allPendingRequests } = await supabase
+    const supabaseServiceRole = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    );
+    
+    const { data: allPendingRequests } = await supabaseServiceRole
       .from("requests")
       .select("id, status, workflow_metadata, both_vps_approved, president_approved_at")
       .or(`and(status.eq.pending_exec,both_vps_approved.eq.true),status.eq.pending_president`)
@@ -85,18 +97,30 @@ export async function GET() {
     }).length;
 
     // 2. Active Requests: Requests submitted by or requested by this President, not in final states
-    const { count: activeRequests } = await supabase
+    // Use service role client to bypass RLS
+    const supabaseServiceRole = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    );
+    
+    const { count: activeRequests } = await supabaseServiceRole
       .from("requests")
       .select("*", { count: "exact", head: true })
       .or(`submitted_by_user_id.eq.${userId},requester_id.eq.${userId}`)
-      .not("status", "in", "(approved,rejected,cancelled)");
+      .not("status", "in", "(approved,rejected,cancelled,completed)");
 
     // 3. This Month: Requests approved by this President this month
-    const { count: thisMonth } = await supabase
+    const { count: thisMonth } = await supabaseServiceRole
       .from("requests")
       .select("*", { count: "exact", head: true })
       .or(`president_approved_by.eq.${userId},exec_approved_by.eq.${userId}`)
-      .or(`president_approved_at.gte.${thisMonthStart.toISOString()},exec_approved_at.gte.${thisMonthStart.toISOString()}`);
+      .gte("president_approved_at", thisMonthStart.toISOString());
 
     return NextResponse.json({
       ok: true,

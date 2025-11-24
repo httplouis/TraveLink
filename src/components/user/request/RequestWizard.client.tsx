@@ -30,10 +30,7 @@ import {
 import { useConfirm } from "@/components/common/hooks/useConfirm";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 
-import {
-  QuickFillCurrentButton,
-  QuickFillMenu,
-} from "@/components/user/request/dev/QuickFillButton.ui";
+// Quick fill buttons removed per user request
 import SuccessModal from "@/components/user/request/SuccessModal";
 import SubmitConfirmationDialog from "@/components/user/request/SubmitConfirmationDialog";
 import ApproverSelectionModal from "@/components/common/ApproverSelectionModal";
@@ -1850,8 +1847,6 @@ function RequestWizardContent() {
                 >
                   Clear
                 </button>
-                <QuickFillCurrentButton />
-                <QuickFillMenu />
                 <Link 
                   href="/user/drafts" 
                   className="rounded-lg border-2 border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 transition-all hover:border-blue-300 hover:bg-blue-100"

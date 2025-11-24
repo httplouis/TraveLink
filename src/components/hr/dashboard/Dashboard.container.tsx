@@ -45,17 +45,20 @@ export default function HRDashboardContainer() {
 
         const statsData = await statsRes.json().catch(() => ({ ok: false }));
         logger.info("HR stats data received:", statsData);
-        if (statsData.ok) {
-          // HR stats returns: pendingApprovals, activeRequests, thisMonth in data object
-          const data = statsData.data || statsData; // Handle both formats
-          logger.info("Setting HR KPIs with data:", data);
+        if (statsData.ok && statsData.data) {
+          logger.info("Setting HR KPIs with data:", statsData.data);
           setKpis([
-            { label: "Pending Approvals", value: data.pendingApprovals ?? data.pending_count ?? 0 },
-            { label: "Active Requests", value: data.activeRequests ?? data.active_count ?? 0 },
-            { label: "This Month", value: data.thisMonth ?? data.processed_today ?? 0 },
+            { label: "Pending Approvals", value: Number(statsData.data.pendingApprovals) || 0 },
+            { label: "Active Requests", value: Number(statsData.data.activeRequests) || 0 },
+            { label: "This Month", value: Number(statsData.data.thisMonth) || 0 },
           ]);
         } else {
-          logger.warn("HR stats data not OK. Response:", statsData);
+          logger.warn("HR stats data not OK or missing. Response:", statsData);
+          setKpis([
+            { label: "Pending Approvals", value: 0 },
+            { label: "Active Requests", value: 0 },
+            { label: "This Month", value: 0 },
+          ]);
         }
 
         // Fetch non-critical data in parallel

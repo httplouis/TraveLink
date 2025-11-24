@@ -82,13 +82,18 @@ export default function DashboardContainer() {
         if (statsData.ok && statsData.data) {
           logger.info("Setting KPIs with data:", statsData.data);
           setKpis([
-            { label: "Active Requests", value: statsData.data.activeRequests ?? 0 },
-            { label: "Vehicles Online", value: statsData.data.vehiclesOnline ?? 0 },
-            { label: "Pending Approvals", value: statsData.data.pendingApprovals ?? 0 },
+            { label: "Active Requests", value: Number(statsData.data.activeRequests) || 0 },
+            { label: "Vehicles Online", value: Number(statsData.data.vehiclesOnline) || 0 },
+            { label: "Pending Approvals", value: Number(statsData.data.pendingApprovals) || 0 },
           ]);
         } else {
           logger.warn("Stats data not OK or missing. Response:", statsData);
           // Keep default KPIs (0 values) if API fails
+          setKpis([
+            { label: "Active Requests", value: 0 },
+            { label: "Vehicles Online", value: 0 },
+            { label: "Pending Approvals", value: 0 },
+          ]);
         }
 
         // Fetch non-critical data in parallel (can load after initial render)

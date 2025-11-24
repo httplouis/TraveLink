@@ -48,26 +48,39 @@ export async function GET() {
 
     // 1. Active Requests (submitted by user OR requested by user, not in final states)
     // Use service role client to bypass RLS
-    const { count: activeRequests } = await supabaseServiceRole
+    const { count: activeRequests, error: activeError } = await supabaseServiceRole
       .from("requests")
       .select("*", { count: "exact", head: true })
       .or(`submitted_by_user_id.eq.${userId},requester_id.eq.${userId}`)
-      .not("status", "in", "(approved,rejected,cancelled)");
+      .not("status", "in", "(approved,rejected,cancelled,completed)");
+    
+    if (activeError) {
+      console.error("[GET /api/user/dashboard/stats] Active requests error:", activeError);
+    }
 
-    // 2. Pending Approvals (requests awaiting user's signature)
-    // Use service role client to bypass RLS
-    const { count: pendingApprovals } = await supabaseServiceRole
+    // 2. Pending Approvals (requests awaiting user's approval/action)
+    // Count requests where user is a requester and status is pending_requester_signature
+    // Also count requests where user needs to sign as a participant
+    const { count: pendingApprovals, error: pendingError } = await supabaseServiceRole
       .from("requests")
       .select("*", { count: "exact", head: true })
       .eq("requester_id", userId)
       .eq("status", "pending_requester_signature");
+    
+    if (pendingError) {
+      console.error("[GET /api/user/dashboard/stats] Pending approvals error:", pendingError);
+    }
 
     // 3. Vehicles Online (available vehicles)
     // Use service role client to bypass RLS
-    const { count: vehiclesOnline } = await supabaseServiceRole
+    const { count: vehiclesOnline, error: vehiclesError } = await supabaseServiceRole
       .from("vehicles")
       .select("*", { count: "exact", head: true })
       .eq("status", "available");
+    
+    if (vehiclesError) {
+      console.error("[GET /api/user/dashboard/stats] Vehicles online error:", vehiclesError);
+    }
 
     // 4. This Month's Requests
     // Use service role client to bypass RLS

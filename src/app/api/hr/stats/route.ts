@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 
 export async function GET() {
   const supabase = await createSupabaseServerClient(true);
@@ -29,9 +30,21 @@ export async function GET() {
 
   const userId = profile.id;
 
+  // Use service role client to bypass RLS for queries
+  const supabaseServiceRole = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    }
+  );
+
   // 1. Pending Count: Requests awaiting HR approval
   // Count both pending_hr requests, with workflow_metadata filtering
-  const { data: allPendingRequests } = await supabase
+  const { data: allPendingRequests } = await supabaseServiceRole
     .from("requests")
     .select("id, status, workflow_metadata")
     .eq("status", "pending_hr")
@@ -73,28 +86,28 @@ export async function GET() {
   }).length;
 
   // 2. Active Count: Requests submitted by or requested by this HR, not in final states
-  const { count: activeCount } = await supabase
+  const { count: activeCount } = await supabaseServiceRole
     .from("requests")
     .select("*", { count: "exact", head: true })
     .or(`submitted_by_user_id.eq.${userId},requester_id.eq.${userId}`)
-    .not("status", "in", "(approved,rejected,cancelled)");
+    .not("status", "in", "(approved,rejected,cancelled,completed)");
 
-  // 3. Processed Today: Requests approved by this HR today
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // 3. Processed This Month: Requests approved by this HR this month
+  const now = new Date();
+  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const { count: processedToday } = await supabase
+  const { count: processedThisMonth } = await supabaseServiceRole
     .from("requests")
     .select("*", { count: "exact", head: true })
     .eq("hr_approved_by", userId)
-    .gte("hr_approved_at", today.toISOString());
+    .gte("hr_approved_at", thisMonthStart.toISOString());
 
   return NextResponse.json({
     ok: true,
     data: {
       pendingApprovals: pendingCount || 0,
       activeRequests: activeCount || 0,
-      thisMonth: processedToday || 0,
+      thisMonth: processedThisMonth || 0,
     }
   });
 }

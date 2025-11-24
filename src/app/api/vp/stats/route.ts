@@ -101,7 +101,7 @@ export async function GET() {
       .from("requests")
       .select("*", { count: "exact", head: true })
       .or(`submitted_by_user_id.eq.${userId},requester_id.eq.${userId}`)
-      .not("status", "in", "(approved,rejected,cancelled)");
+      .not("status", "in", "(approved,rejected,cancelled,completed)");
 
     // 3. This Month: Requests approved by this VP this month
     const { count: thisMonth } = await supabase

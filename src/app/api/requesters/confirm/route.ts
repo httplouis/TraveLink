@@ -136,11 +136,13 @@ export async function GET(req: NextRequest) {
           total_budget,
           expense_breakdown,
           cost_justification,
-          preferred_driver_name,
-          preferred_vehicle_name,
+          preferred_driver_id,
+          preferred_vehicle_id,
           preferred_driver_note,
           preferred_vehicle_note,
           pickup_contact_number,
+          preferred_driver:users!preferred_driver_id(id, name),
+          preferred_vehicle:vehicles!preferred_vehicle_id(id, vehicle_name),
           pickup_special_instructions,
           created_at,
           status,
@@ -185,8 +187,8 @@ export async function GET(req: NextRequest) {
               total_budget,
               expense_breakdown,
               cost_justification,
-              preferred_driver_name,
-              preferred_vehicle_name,
+              preferred_driver_id,
+              preferred_vehicle_id,
               preferred_driver_note,
               preferred_vehicle_note,
               pickup_contact_number,
@@ -194,7 +196,9 @@ export async function GET(req: NextRequest) {
               created_at,
               status,
               transportation_type,
-              requester:users!requester_id(id, name, email, profile_picture)
+              requester:users!requester_id(id, name, email, profile_picture),
+              preferred_driver:users!preferred_driver_id(id, name),
+              preferred_vehicle:vehicles!preferred_vehicle_id(id, vehicle_name)
             )
           `)
           .eq("token", decodedToken)
@@ -271,15 +275,17 @@ export async function GET(req: NextRequest) {
                   total_budget,
                   expense_breakdown,
                   cost_justification,
-                  preferred_driver_name,
-                  preferred_vehicle_name,
-                  preferred_driver_note,
-                  preferred_vehicle_note,
-                  pickup_contact_number,
-                  pickup_special_instructions,
-                  created_at,
-                  status,
-                  requester:users!requester_id(id, name, email, profile_picture, department, position_title)
+          preferred_driver_id,
+          preferred_vehicle_id,
+          preferred_driver_note,
+          preferred_vehicle_note,
+          pickup_contact_number,
+          pickup_special_instructions,
+          created_at,
+          status,
+          requester:users!requester_id(id, name, email, profile_picture, department, position_title),
+          preferred_driver:users!preferred_driver_id(id, name),
+          preferred_vehicle:vehicles!preferred_vehicle_id(id, vehicle_name)
                 )
               `)
               .eq("id", exactMatch.id)

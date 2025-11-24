@@ -33,21 +33,33 @@ export default function ExecDashboardContainer() {
       .then(data => {
         if (data.ok && data.data) {
           setKpis([
-            { label: "Executive Pending", value: data.data.pending_count || 0 },
-            { label: "Active Requests", value: data.data.active_count || 0 },
-            { label: "Approved This Month", value: data.data.approved_month || 0 },
+            { label: "Executive Pending", value: Number(data.data.pending_count) || 0 },
+            { label: "Active Requests", value: Number(data.data.active_count) || 0 },
+            { label: "Approved This Month", value: Number(data.data.approved_month) || 0 },
           ]);
         } else if (data.ok) {
           // Fallback for old format
           setKpis([
-            { label: "Executive Pending", value: data.pending_count || 0 },
-            { label: "Active Requests", value: data.active_count || 0 },
-            { label: "Approved This Month", value: data.approved_month || 0 },
+            { label: "Executive Pending", value: Number(data.pending_count) || 0 },
+            { label: "Active Requests", value: Number(data.active_count) || 0 },
+            { label: "Approved This Month", value: Number(data.approved_month) || 0 },
+          ]);
+        } else {
+          console.warn("[ExecDashboard] Stats data not OK. Response:", data);
+          setKpis([
+            { label: "Executive Pending", value: 0 },
+            { label: "Active Requests", value: 0 },
+            { label: "Approved This Month", value: 0 },
           ]);
         }
       })
       .catch(err => {
         console.error("[ExecDashboard] Failed to fetch stats:", err);
+        setKpis([
+          { label: "Executive Pending", value: 0 },
+          { label: "Active Requests", value: 0 },
+          { label: "Approved This Month", value: 0 },
+        ]);
       });
 
     fetch("/api/schedule")

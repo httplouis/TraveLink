@@ -1139,38 +1139,6 @@ export default function HeadRequestModal({
                   <span className="text-xs font-normal text-gray-500 ml-2">(Required, minimum 10 characters)</span>
                 </label>
                 
-                {/* Quick Fill Buttons */}
-                <div className="mb-2 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setComments("Okay, approved.")}
-                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-                  >
-                    ✓ Okay, approved
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setComments("Request approved. Proceed to admin.")}
-                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-                  >
-                    ✓ Approved
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setComments("Request approved. All requirements are in order.")}
-                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-                  >
-                    ✓ Fully Approved
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setComments("Request rejected. Please review and resubmit with corrections.")}
-                    className="px-3 py-1.5 text-xs font-medium bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
-                  >
-                    ✗ Rejected
-                  </button>
-                </div>
-                
                 <textarea
                   value={comments}
                   onChange={(e) => setComments(e.target.value)}

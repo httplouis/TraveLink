@@ -1804,38 +1804,6 @@ export default function VPRequestModal({
                   <span className="text-xs font-normal text-slate-500 ml-2">(Minimum 10 characters)</span>
                 </label>
                 
-                {/* Quick Fill Buttons */}
-                <div className="mb-2 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setNotes("Request approved. Proceed to President.")}
-                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-                  >
-                    Approved - Send to President
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNotes("Request reviewed and approved. All requirements met.")}
-                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-                  >
-                    Requirements Met
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNotes("Request approved. Budget and travel details verified.")}
-                    className="px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
-                  >
-                    Budget Verified
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNotes("Request requires revision. Please review and resubmit.")}
-                    className="px-3 py-1.5 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors"
-                  >
-                    Needs Revision
-                  </button>
-                </div>
-                
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}

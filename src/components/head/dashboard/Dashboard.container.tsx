@@ -48,12 +48,17 @@ export default function HeadDashboardContainer() {
         if (statsData.ok && statsData.data) {
           logger.info("Setting Head KPIs with data:", statsData.data);
           setKpis([
-            { label: "Pending Endorsements", value: statsData.data.pendingEndorsements ?? 0 },
-            { label: "Active Requests", value: statsData.data.activeRequests ?? 0 },
-            { label: "My Department", value: statsData.data.departmentRequests ?? 0 },
+            { label: "Pending Endorsements", value: Number(statsData.data.pendingEndorsements) || 0 },
+            { label: "Active Requests", value: Number(statsData.data.activeRequests) || 0 },
+            { label: "My Department", value: Number(statsData.data.departmentRequests) || 0 },
           ]);
         } else {
           logger.warn("Head stats data not OK or missing. Response:", statsData);
+          setKpis([
+            { label: "Pending Endorsements", value: 0 },
+            { label: "Active Requests", value: 0 },
+            { label: "My Department", value: 0 },
+          ]);
         }
 
         // Fetch non-critical data in parallel (can load after initial render)

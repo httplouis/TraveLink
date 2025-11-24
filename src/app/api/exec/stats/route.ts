@@ -47,10 +47,11 @@ export async function GET() {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
     // 1. Pending Approvals: Requests awaiting executive approval
+    // Count requests with status pending_exec or pending_president that haven't been approved by president
     const { count: pendingCount } = await supabaseServiceRole
       .from("requests")
       .select("*", { count: "exact", head: true })
-      .eq("status", "pending_exec")
+      .or("status.eq.pending_exec,status.eq.pending_president")
       .is("president_approved_at", null);
 
     // 2. Active Requests: Requests submitted by this executive user
