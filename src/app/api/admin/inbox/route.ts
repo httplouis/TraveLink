@@ -80,7 +80,7 @@ export async function GET() {
         assigned_vehicle_id
       `)
       .order("created_at", { ascending: false })
-      .limit(100); // OPTIMIZED: Reduced from 1000 to 100 to minimize egress
+      .limit(500); // Increased limit for Pro Plan - can handle more data
 
     if (error) {
       console.error("[Admin Inbox API] Fetch error:", error);

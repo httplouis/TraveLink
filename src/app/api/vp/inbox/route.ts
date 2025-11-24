@@ -80,17 +80,50 @@ export async function GET(req: NextRequest) {
     // Use .in() instead of .or() for better compatibility
     console.log(`[VP Inbox] 🔍 Querying requests with status IN ('pending_exec', 'pending_head')...`);
     
+    // Use specific columns instead of select(*) to avoid malformed JSON issues
     const { data: allRequests, error: requestsError } = await supabase
       .from("requests")
       .select(`
-        *,
+        id,
+        request_number,
+        status,
+        requester_id,
+        requester_name,
+        department_id,
+        travel_start_date,
+        travel_end_date,
+        destination,
+        purpose,
+        created_at,
+        updated_at,
+        head_approved_at,
+        head_approved_by,
+        parent_head_approved_at,
+        parent_head_approved_by,
+        parent_head_signature,
+        vp_approved_by,
+        vp_approved_at,
+        vp2_approved_by,
+        vp2_approved_at,
+        vp_signature,
+        vp2_signature,
+        vp_comments,
+        vp2_comments,
+        both_vps_approved,
+        workflow_metadata,
+        requester_is_head,
+        total_budget,
+        hr_approved_at,
+        hr_approved_by,
+        admin_processed_at,
+        admin_processed_by,
         vp_approver:users!vp_approved_by(id, name, email, position_title),
         vp2_approver:users!vp2_approved_by(id, name, email, position_title),
         parent_head_approver:users!parent_head_approved_by(id, is_vp, exec_type, role)
       `)
       .in("status", ["pending_exec", "pending_head"])
       .order("created_at", { ascending: false })
-      .limit(100);
+      .limit(200); // Increased for Pro Plan but still reasonable
     
     console.log(`[VP Inbox] 🔍 Query executed. Result:`, {
       count: allRequests?.length || 0,
@@ -162,24 +195,38 @@ export async function GET(req: NextRequest) {
       }
       
       // Check if request is specifically assigned to a VP via workflow_metadata
-      const workflowMetadata = req.workflow_metadata || {};
+      // Add robust error handling for malformed JSON
+      let workflowMetadata: any = {};
+      try {
+        const rawMetadata = req.workflow_metadata;
+        if (rawMetadata) {
+          if (typeof rawMetadata === 'string') {
+            // Try to parse JSON string
+            try {
+              workflowMetadata = JSON.parse(rawMetadata);
+            } catch (parseErr) {
+              console.error(`[VP Inbox] Error parsing workflow_metadata as JSON for request ${req.id}:`, parseErr);
+              workflowMetadata = {}; // Use empty object if parsing fails
+            }
+          } else if (typeof rawMetadata === 'object' && rawMetadata !== null) {
+            workflowMetadata = rawMetadata;
+          }
+        }
+      } catch (metadataErr) {
+        console.error(`[VP Inbox] Error accessing workflow_metadata for request ${req.id}:`, metadataErr);
+        workflowMetadata = {};
+      }
+      
       // Handle both object and JSON string formats
       let nextVpId = null;
       let nextApproverId = null;
       let nextApproverRole = null;
-      if (typeof workflowMetadata === 'string') {
-        try {
-          const parsed = JSON.parse(workflowMetadata);
-          nextVpId = parsed?.next_vp_id;
-          nextApproverId = parsed?.next_approver_id;
-          nextApproverRole = parsed?.next_approver_role;
-        } catch (e) {
-          console.error(`[VP Inbox] Error parsing workflow_metadata as JSON:`, e);
-        }
-      } else if (workflowMetadata && typeof workflowMetadata === 'object') {
+      try {
         nextVpId = workflowMetadata?.next_vp_id;
         nextApproverId = workflowMetadata?.next_approver_id;
         nextApproverRole = workflowMetadata?.next_approver_role;
+      } catch (e) {
+        console.error(`[VP Inbox] Error accessing workflow_metadata properties:`, e);
       }
       
       // Convert both to strings for reliable comparison (UUIDs)
@@ -295,7 +342,7 @@ export async function GET(req: NextRequest) {
         try {
           const { data: requester } = await supabase
             .from("users")
-            .select("name, profile_picture, position_title")
+            .select("name, email, profile_picture, position_title")
             .eq("id", req.requester_id)
             .single();
 
@@ -541,12 +588,64 @@ export async function GET(req: NextRequest) {
       // Don't fail the request if notifications fail
     }
 
-    return NextResponse.json({
-      ok: true,
-      data: enrichedRequests,
+    // Sanitize data before JSON serialization to handle malformed JSONB fields
+    const sanitizedRequests = enrichedRequests.map((req: any) => {
+      try {
+        // Deep clone and sanitize workflow_metadata
+        const sanitized = { ...req };
+        if (sanitized.workflow_metadata) {
+          try {
+            // If it's a string, try to parse it
+            if (typeof sanitized.workflow_metadata === 'string') {
+              sanitized.workflow_metadata = JSON.parse(sanitized.workflow_metadata);
+            }
+            // Ensure it's a valid object
+            if (typeof sanitized.workflow_metadata !== 'object' || sanitized.workflow_metadata === null) {
+              sanitized.workflow_metadata = {};
+            }
+          } catch (e) {
+            console.error(`[VP Inbox] Error sanitizing workflow_metadata for request ${req.id}:`, e);
+            sanitized.workflow_metadata = {};
+          }
+        }
+        return sanitized;
+      } catch (sanitizeErr) {
+        console.error(`[VP Inbox] Error sanitizing request ${req.id}:`, sanitizeErr);
+        // Return minimal safe data
+        return {
+          id: req.id,
+          request_number: req.request_number || 'Unknown',
+          status: req.status || 'unknown',
+          requester_name: req.requester_name || 'Unknown',
+          workflow_metadata: {}
+        };
+      }
     });
+
+    try {
+      return NextResponse.json({
+        ok: true,
+        data: sanitizedRequests,
+      });
+    } catch (jsonError: any) {
+      console.error("[VP Inbox] JSON serialization error:", jsonError);
+      // Return a safe response with minimal data
+      return NextResponse.json({
+        ok: false,
+        error: "Failed to serialize response data",
+        details: jsonError?.message || "JSON serialization error",
+        data: [] // Return empty array as fallback
+      }, { status: 500 });
+    }
   } catch (error: any) {
     console.error("[VP Inbox] Unexpected error:", error);
+    // Check if it's a JSON parsing error
+    if (error?.message?.includes('JSON') || error?.message?.includes('Unterminated')) {
+      return NextResponse.json(
+        { ok: false, error: "Failed to fetch VP inbox", details: "Data contains malformed JSON. Please check database records." },
+        { status: 500 }
+      );
+    }
     return NextResponse.json(
       { ok: false, error: "Failed to fetch VP inbox", details: error?.message || "Unknown error" },
       { status: 500 }

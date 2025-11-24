@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
         workflow_metadata
       `)
       .order("created_at", { ascending: false })
-      .limit(100); // OPTIMIZED: Added limit to prevent fetching all records
+      .limit(500); // Increased limit for Pro Plan - can handle more data
 
     // Apply filters
     if (status && status !== "All") {

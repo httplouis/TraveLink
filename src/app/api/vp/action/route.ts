@@ -166,7 +166,7 @@ export async function POST(request: Request) {
       const headIncluded = finalRequest.head_included || false;
 
       // Check workflow_metadata for multiple assigned VPs
-      const workflowMetadata: any = finalRequest.workflow_metadata || {};
+      let workflowMetadata: any = finalRequest.workflow_metadata || {};
       const assignedVpIds = Array.isArray(workflowMetadata?.assigned_vp_ids) ? workflowMetadata.assigned_vp_ids : [];
       const vpApprovals = workflowMetadata?.vp_approvals || []; // Track which VPs have approved
       
@@ -204,11 +204,21 @@ export async function POST(request: Request) {
         .eq("request_id", requestId)
         .eq("status", "confirmed");
       
-      const uniqueDepartments = new Set(
-        (requesters || [])
-          .map((r: any) => r.department_id)
-          .filter(Boolean)
-      );
+      // Also include the main requester's department
+      const allDepartmentIds = [
+        finalRequest.department_id, // Main requester's department
+        ...(requesters || []).map((r: any) => r.department_id).filter(Boolean)
+      ].filter(Boolean);
+      
+      const uniqueDepartments = new Set(allDepartmentIds);
+      const needsSecondVP = uniqueDepartments.size > 1 && !requesterIsHead;
+      
+      console.log(`[VP Action] Department check:`, {
+        requesterIsHead,
+        uniqueDepartments: Array.from(uniqueDepartments),
+        needsSecondVP,
+        allDepartmentIds
+      });
 
       let updateData: any = {};
       let newStatus: string;
@@ -221,10 +231,20 @@ export async function POST(request: Request) {
         updateData.vp_approved_by = vpUser.id;
         updateData.vp_signature = signature || null;
         updateData.vp_comments = notes || null;
-        // Set both_vps_approved = true since one VP signature is sufficient
-        updateData.both_vps_approved = true;
+        
+        // Only set both_vps_approved = true if:
+        // 1. Requester is head (skip VP2, go to President)
+        // 2. All requesters are from same department (skip VP2)
+        // Otherwise, wait for second VP if multiple departments
+        if (requesterIsHead || !needsSecondVP) {
+          updateData.both_vps_approved = true;
+        } else {
+          // Multiple departments and requester is not head - need second VP
+          updateData.both_vps_approved = false;
+        }
         
         // Track VP approval in workflow_metadata for multi-VP system
+        // We'll update this later with routing info, but prepare the vp_approvals array
         const updatedWorkflowMetadata = { ...workflowMetadata };
         if (!updatedWorkflowMetadata.vp_approvals) {
           updatedWorkflowMetadata.vp_approvals = [];
@@ -236,11 +256,8 @@ export async function POST(request: Request) {
           signature: signature || null,
           comments: notes || null
         });
-        updateData.workflow_metadata = updatedWorkflowMetadata;
-        
-        // NEW RULE: Only one VP signature is sufficient (even for multiple departments)
-        // Request proceeds to President after any VP approval
-        // No need to wait for second VP
+        // Store temporarily to use later when setting final workflow_metadata
+        workflowMetadata = updatedWorkflowMetadata;
         
         // Use selected approver or default logic
         if (returnReason) {
@@ -347,12 +364,17 @@ export async function POST(request: Request) {
               }
             }
           } else {
-            // Default logic based on requester type
+            // Default logic based on requester type and department check
             if (requesterIsHead || requesterRole === "director" || requesterRole === "dean") {
-              // Head/Director/Dean requester → Must go to President
+              // Head/Director/Dean requester → Must go to President (skip VP2)
               newStatus = "pending_exec";
               finalNextApproverRole = "president";
               message = "VP approved. Request sent to President.";
+            } else if (needsSecondVP) {
+              // Multiple departments and requester is not head → Need second VP
+              newStatus = "pending_exec";
+              finalNextApproverRole = "vp";
+              message = "First VP approved. Waiting for second VP approval (multiple departments).";
             } else {
               // Faculty requester (with head included) → Check if should go to President or stop at VP
               // Get budget threshold to determine if should route to President

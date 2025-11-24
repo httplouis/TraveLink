@@ -103,8 +103,8 @@ export function useNotifications() {
   React.useEffect(() => {
     refresh();
     
-    // OPTIMIZED: Reduced frequency from 10s to 60s to minimize egress
-    const interval = setInterval(refresh, 60000);
+    // Poll for updates every 10 seconds for real-time notifications
+    const interval = setInterval(refresh, 10000);
     return () => clearInterval(interval);
   }, [refresh]);
 

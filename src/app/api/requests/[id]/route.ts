@@ -7,6 +7,7 @@ export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  // Wrap everything in a top-level try-catch to ensure we always return JSON
   let requestId: string | undefined;
   try {
     console.log("[GET /api/requests/[id]] ========== STARTING REQUEST ==========");
@@ -730,6 +731,37 @@ export async function GET(
     // Step 7: Clean up and serialize response
     console.log(`[GET /api/requests/[id]] Step 7: Serializing response...`);
     try {
+      // Sanitize JSONB fields that might contain malformed JSON
+      if (fullRequest.workflow_metadata) {
+        try {
+          if (typeof fullRequest.workflow_metadata === 'string') {
+            fullRequest.workflow_metadata = JSON.parse(fullRequest.workflow_metadata);
+          }
+          // Ensure it's a valid object
+          if (typeof fullRequest.workflow_metadata !== 'object' || fullRequest.workflow_metadata === null) {
+            fullRequest.workflow_metadata = {};
+          }
+        } catch (e) {
+          console.warn(`[GET /api/requests/${requestId}] Error parsing workflow_metadata, using empty object:`, e);
+          fullRequest.workflow_metadata = {};
+        }
+      }
+      
+      if (fullRequest.expense_breakdown) {
+        try {
+          if (typeof fullRequest.expense_breakdown === 'string') {
+            fullRequest.expense_breakdown = JSON.parse(fullRequest.expense_breakdown);
+          }
+          // Ensure it's a valid array
+          if (!Array.isArray(fullRequest.expense_breakdown)) {
+            fullRequest.expense_breakdown = [];
+          }
+        } catch (e) {
+          console.warn(`[GET /api/requests/${requestId}] Error parsing expense_breakdown, using empty array:`, e);
+          fullRequest.expense_breakdown = [];
+        }
+      }
+      
       // Remove any functions or circular references
       const cleanData = JSON.parse(JSON.stringify(fullRequest, (key, value) => {
         // Remove functions
@@ -740,11 +772,37 @@ export async function GET(
         if (value === undefined) {
           return null;
         }
+        // Handle potential malformed JSON strings
+        if (typeof value === 'string' && (key === 'workflow_metadata' || key === 'expense_breakdown' || key.includes('metadata'))) {
+          try {
+            return JSON.parse(value);
+          } catch {
+            return null; // Return null for unparseable JSON strings
+          }
+        }
         return value;
       }));
       
       console.log(`[GET /api/requests/${requestId}] Step 7: ✅ Successfully serialized, returning response`);
-      return NextResponse.json({ ok: true, data: cleanData });
+      try {
+        return NextResponse.json({ ok: true, data: cleanData }, {
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+      } catch (jsonErr: any) {
+        console.error(`[GET /api/requests/${requestId}] Step 7: ❌ NextResponse.json failed:`, jsonErr);
+        // Fallback: use Response directly
+        return new Response(
+          JSON.stringify({ ok: true, data: cleanData }),
+          {
+            status: 200,
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+      }
     } catch (e: any) {
       console.error(`[GET /api/requests/${requestId}] Step 7: ❌ SERIALIZATION ERROR:`, {
         message: e?.message,

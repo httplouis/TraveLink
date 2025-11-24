@@ -149,7 +149,10 @@ export default function RequestStatusTracker({
     if (stage.key === "parent_head" && !hasParentHead) return false;
     // Show comptroller even if skipped (with skip indicator)
     // if (stage.key === "comptroller" && !hasBudget && !comptrollerSkipped) return false;
-    if (stage.key === "vp2" && !bothVpsApproved) return false;
+    // Hide VP2 if:
+    // 1. Requester is head (heads go directly to President after first VP)
+    // 2. Both VPs are not required (all requesters from same department)
+    if (stage.key === "vp2" && (!bothVpsApproved || requesterIsHead)) return false;
     // Always show President if they've already approved, or if approval is required
     if (stage.key === "president" && !requiresPresidentApproval && !presidentApprovedAt) return false;
     return true;
@@ -225,10 +228,18 @@ export default function RequestStatusTracker({
       
       case "vp2":
         if (vp2ApprovedAt) return "completed";
-        // If first VP approved but second hasn't, this is current
+        // Skip VP2 if requester is head (heads go directly to President)
+        if (requesterIsHead) return "skipped";
+        // If first VP approved but second hasn't, this is current (only if both VPs are required)
         if (vpApprovedAt && !vp2ApprovedAt && bothVpsApproved) return "current";
         // If we're past VP2 or request is approved, mark as completed
-        if (status === "pending_president" || status === "approved") return "completed";
+        if (status === "pending_president" || status === "pending_exec" || status === "approved") {
+          // If status is pending_exec and next approver is president, skip VP2
+          if (status === "pending_exec") return "skipped";
+          return "completed";
+        }
+        // If both VPs not required (same department), skip VP2
+        if (!bothVpsApproved) return "skipped";
         return "pending";
       
       case "president":

@@ -2201,10 +2201,10 @@ export default function RequestDetailsView({
                                 );
                               }
                               
-                              // If no position_title, check if user is faculty/staff in TraviLink
-                              // Even if they have student email, show Faculty/Staff if that's their role
-                              const userRole = (requester as any).role;
-                              const isFacultyOrStaff = userRole === 'faculty' || userRole === 'staff';
+                              // If no position_title, check if user is faculty/staff/student in TraviLink
+                              // Map student role to Faculty/Staff for display
+                              const userRole = (requester as any).role?.toLowerCase();
+                              const isFacultyOrStaff = userRole === 'faculty' || userRole === 'staff' || userRole === 'student';
                               
                               if (isFacultyOrStaff) {
                                 return (
@@ -2214,7 +2214,7 @@ export default function RequestDetailsView({
                                 );
                               }
                               
-                              // Don't show anything if no position_title and not faculty/staff
+                              // Don't show anything if no position_title and not faculty/staff/student
                               return null;
                             })()}
                             <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-green-100 border border-green-300 rounded-full shadow-sm">

@@ -207,9 +207,9 @@ export default function HeadEndorsementInvitationEditor({
       }
     };
 
-    // OPTIMIZED: Reduced frequency from 5s to 30s to minimize egress
+    // Poll immediately, then every 5 seconds for real-time status updates
     pollStatus();
-    const interval = setInterval(pollStatus, 30000);
+    const interval = setInterval(pollStatus, 5000);
     setPollingInterval(interval);
 
     return () => {
@@ -237,7 +237,8 @@ export default function HeadEndorsementInvitationEditor({
       try {
         setSending(headId);
         // Silent auto-save - no toast notifications since data is already persisted
-        finalRequestId = await onAutoSaveRequest();
+        const savedId = await onAutoSaveRequest();
+        finalRequestId = savedId || undefined;
         
         if (!finalRequestId) {
           throw new Error("Draft created but no request ID returned");
@@ -358,7 +359,8 @@ export default function HeadEndorsementInvitationEditor({
       try {
         setSendingAll(true);
         // Silent auto-save - no toast notifications since data is already persisted
-        finalRequestId = await onAutoSaveRequest();
+        const savedId = await onAutoSaveRequest();
+        finalRequestId = savedId || undefined;
         
         if (!finalRequestId) {
           throw new Error("Draft created but no request ID returned");

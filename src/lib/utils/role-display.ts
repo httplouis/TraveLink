@@ -14,11 +14,13 @@ export function getRoleDisplayName(role: string): string {
     vp: "Vice President",
     president: "University President",
     executive: "Executive",
-    faculty: "Faculty",
-    user: "User",
+    faculty: "Faculty/Staff",
+    staff: "Faculty/Staff",
+    student: "Faculty/Staff", // Map student to Faculty/Staff
+    user: "Faculty/Staff", // Default user role to Faculty/Staff
   };
 
-  return roleMap[role.toLowerCase()] || role;
+  return roleMap[role.toLowerCase()] || "Faculty/Staff"; // Default to Faculty/Staff if role not found
 }
 
 export function getRoleBadgeLabel(isAdmin: boolean, isSuperAdmin?: boolean): string {

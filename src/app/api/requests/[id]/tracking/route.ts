@@ -108,7 +108,7 @@ export async function GET(
       if (!vehicleId) return null;
       const { data, error } = await supabase
         .from("vehicles")
-        .select("plate_number, model, vehicle_name")
+        .select("id, plate_number, model, vehicle_name")
         .eq("id", vehicleId)
         .single();
       
@@ -543,7 +543,32 @@ export async function GET(
       vp2_approved_by: vp2ApproverName,
       vp2_signature: request.vp2_signature,
       vp2_comments: request.vp2_comments,
-      both_vps_approved: request.both_vps_approved || false,
+      // Calculate both_vps_approved based on logic:
+      // 1. If requester is head → Skip VP2 (both_vps_approved = true)
+      // 2. If all requesters are from same department → Skip VP2 (both_vps_approved = true)
+      // 3. Only if multiple departments AND requester is not head → Need VP2 (both_vps_approved = false)
+      both_vps_approved: (() => {
+        const requesterIsHead = request.requester_is_head || false;
+        
+        // If requester is head, skip VP2
+        if (requesterIsHead) {
+          return true;
+        }
+        
+        // Check if all requesters are from the same department
+        const allDepartmentIds = [
+          request.department_id, // Main requester's department
+          ...requesterTracking
+            .filter((r: any) => r.status === 'confirmed' && r.department_id)
+            .map((r: any) => r.department_id)
+        ].filter(Boolean);
+        
+        const uniqueDepartments = new Set(allDepartmentIds);
+        const needsSecondVP = uniqueDepartments.size > 1;
+        
+        // If all from same department, skip VP2
+        return !needsSecondVP;
+      })(),
       
       president_approved_at: request.president_approved_at,
       president_approved_by: presidentApproverName,

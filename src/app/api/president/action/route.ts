@@ -4,14 +4,15 @@ import { getPhilippineTimestamp } from "@/lib/datetime";
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createSupabaseServerClient(true);
+    // First, use regular client to get authenticated user (has access to cookies/session)
+    const supabase = await createSupabaseServerClient(false);
     
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    // Get President user info
+    // Get President user info using regular client (RLS will apply)
     const { data: presidentUser } = await supabase
       .from("users")
       .select("id, name, is_president")
@@ -37,8 +38,11 @@ export async function POST(request: Request) {
     // Get request details for notifications (will be fetched again in approve/reject if needed)
 
     if (action === "approve") {
+      // Use service role client for database operations (bypass RLS)
+      const supabaseServiceRole = await createSupabaseServerClient(true);
+      
       // Get request to check current status
-      const { data: request } = await supabase
+      const { data: request } = await supabaseServiceRole
         .from("requests")
         .select("*, requester:users!requester_id(role, is_head, exec_type)")
         .eq("id", requestId)
@@ -67,13 +71,13 @@ export async function POST(request: Request) {
         nextApproverRoleFinal = "requester";
         updateData.return_reason = returnReason;
       } else if (nextApproverId && nextApproverRole) {
-        // User selected specific approver - fetch user's actual role to determine correct status
-        try {
-          const { data: approverUser } = await supabase
-            .from("users")
-            .select("id, role, is_admin, is_hr, is_vp, is_president, is_head, is_comptroller, exec_type")
-            .eq("id", nextApproverId)
-            .single();
+          // User selected specific approver - fetch user's actual role to determine correct status
+          try {
+            const { data: approverUser } = await supabaseServiceRole
+              .from("users")
+              .select("id, role, is_admin, is_hr, is_vp, is_president, is_head, is_comptroller, exec_type")
+              .eq("id", nextApproverId)
+              .single();
           
           if (approverUser) {
             // Determine status based on user's actual role
@@ -189,7 +193,7 @@ export async function POST(request: Request) {
       }
       updateData.workflow_metadata = workflowMetadata;
 
-      const { error: updateError } = await supabase
+      const { error: updateError } = await supabaseServiceRole
         .from("requests")
         .update(updateData)
         .eq("id", requestId);
@@ -200,7 +204,7 @@ export async function POST(request: Request) {
       }
 
       // Log to request history with complete tracking
-      await supabase.from("request_history").insert({
+      await supabaseServiceRole.from("request_history").insert({
         request_id: requestId,
         action: "approved",
         actor_id: presidentUser.id,
@@ -270,7 +274,7 @@ export async function POST(request: Request) {
 
         // Notify all admins if fully approved
         if (newStatus === "approved") {
-          const { data: admins } = await supabase
+          const { data: admins } = await supabaseServiceRole
             .from("users")
             .select("id")
             .eq("is_admin", true);
@@ -295,14 +299,14 @@ export async function POST(request: Request) {
           if (request.assigned_driver_id && !request.sms_notification_sent) {
             try {
               // Fetch driver details
-              const { data: driver } = await supabase
+              const { data: driver } = await supabaseServiceRole
                 .from("users")
                 .select("id, name, phone_number")
                 .eq("id", request.assigned_driver_id)
                 .single();
 
               // Fetch requester details
-              const { data: requester } = await supabase
+              const { data: requester } = await supabaseServiceRole
                 .from("users")
                 .select("id, name")
                 .eq("id", request.requester_id)
@@ -326,7 +330,7 @@ export async function POST(request: Request) {
 
                 if (smsResult.success) {
                   // Update SMS tracking fields
-                  await supabase
+                  await supabaseServiceRole
                     .from("requests")
                     .update({
                       sms_notification_sent: true,
@@ -369,8 +373,11 @@ export async function POST(request: Request) {
       });
 
     } else if (action === "reject") {
+      // Use service role client for database operations (bypass RLS)
+      const supabaseServiceRole = await createSupabaseServerClient(true);
+      
       // Reject request
-      const { error: updateError } = await supabase
+      const { error: updateError } = await supabaseServiceRole
         .from("requests")
         .update({
           status: "rejected",
@@ -388,7 +395,7 @@ export async function POST(request: Request) {
       }
 
       // Get request for notifications
-      const { data: request } = await supabase
+      const { data: request } = await supabaseServiceRole
         .from("requests")
         .select("requester_id, request_number")
         .eq("id", requestId)
@@ -397,7 +404,7 @@ export async function POST(request: Request) {
       const now = getPhilippineTimestamp();
 
       // Log to request history with complete tracking
-      await supabase.from("request_history").insert({
+      await supabaseServiceRole.from("request_history").insert({
         request_id: requestId,
         action: "rejected",
         actor_id: presidentUser.id,
@@ -439,8 +446,11 @@ export async function POST(request: Request) {
       });
 
     } else if (action === "edit_budget") {
+      // Use service role client for database operations (bypass RLS)
+      const supabaseServiceRole = await createSupabaseServerClient(true);
+      
       // Just update the edited budget without changing status
-      const { error: updateError } = await supabase
+      const { error: updateError } = await supabaseServiceRole
         .from("requests")
         .update({
           president_edited_budget: editedBudget,

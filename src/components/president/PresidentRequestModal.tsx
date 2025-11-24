@@ -19,6 +19,31 @@ function peso(n?: number | null) {
   return `₱${Number(n).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+// Helper function to properly format timestamps with timezone handling
+function formatTimestamp(timestamp: string | null | undefined): string {
+  if (!timestamp) return "";
+  
+  // If timestamp doesn't have timezone info, treat it as UTC (append 'Z')
+  // This ensures consistent timezone handling
+  let dateStr = timestamp;
+  if (!dateStr.includes('+') && !dateStr.includes('Z')) {
+    // Check if it's a timestamp without timezone (format: YYYY-MM-DD HH:MM:SS)
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(dateStr)) {
+      dateStr = dateStr + 'Z'; // Treat as UTC
+    }
+  }
+  
+  return new Date(dateStr).toLocaleString('en-US', { 
+    year: 'numeric', 
+    month: 'short', 
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'Asia/Manila'
+  });
+}
+
 export default function PresidentRequestModal({
   request,
   onClose,
@@ -196,37 +221,85 @@ export default function PresidentRequestModal({
         // Load preferred driver
         if (req.preferred_driver_id) {
           try {
+            console.log(`[PresidentRequestModal] 🔍 Starting fetch to /api/users/${req.preferred_driver_id}`);
             const driverRes = await fetch(`/api/users/${req.preferred_driver_id}`);
-            if (driverRes.ok) {
-              const contentType = driverRes.headers.get("content-type");
-              if (contentType && contentType.includes("application/json")) {
-                const driverData = await driverRes.json();
-                if (driverData.ok && driverData.data) {
-                  setPreferredDriverName(driverData.data.name || "Unknown Driver");
-                }
-              }
+            console.log(`[PresidentRequestModal] 📡 Driver response received:`, {
+              ok: driverRes.ok,
+              status: driverRes.status,
+              contentType: driverRes.headers.get("content-type")
+            });
+            if (!driverRes.ok) {
+              console.warn("[PresidentRequestModal] ❌ Driver API not OK:", driverRes.status);
+              setPreferredDriverName("Not specified");
+              return;
+            }
+            const contentType = driverRes.headers.get("content-type");
+            if (!contentType || !contentType.includes("application/json")) {
+              console.warn("[PresidentRequestModal] ❌ Driver API returned non-JSON response");
+              setPreferredDriverName("Not specified");
+              return;
+            }
+            console.log(`[PresidentRequestModal] ✅ Parsing driver JSON...`);
+            const driverData = await driverRes.json();
+            console.log(`[PresidentRequestModal] ✅ Driver JSON parsed successfully:`, { ok: driverData?.ok, hasData: !!driverData?.data });
+            if (driverData.ok && driverData.data) {
+              setPreferredDriverName(driverData.data.name || driverData.data.name_full || "Unknown Driver");
+            } else {
+              setPreferredDriverName("Not specified");
             }
           } catch (err) {
             console.error("[PresidentRequestModal] Failed to load driver:", err);
+            setPreferredDriverName("Not specified");
           }
+        } else {
+          setPreferredDriverName("Not specified");
         }
 
         // Load preferred vehicle
         if (req.preferred_vehicle_id) {
           try {
+            console.log(`[PresidentRequestModal] 🔍 Starting fetch to /api/vehicles/${req.preferred_vehicle_id}`);
             const vehicleRes = await fetch(`/api/vehicles/${req.preferred_vehicle_id}`);
-            if (vehicleRes.ok) {
-              const contentType = vehicleRes.headers.get("content-type");
-              if (contentType && contentType.includes("application/json")) {
-                const vehicleData = await vehicleRes.json();
-                if (vehicleData.ok && vehicleData.data) {
-                  setPreferredVehicleName(vehicleData.data.name || vehicleData.data.plate_number || "Unknown Vehicle");
-                }
+            console.log(`[PresidentRequestModal] 📡 Vehicle response received:`, {
+              ok: vehicleRes.ok,
+              status: vehicleRes.status,
+              contentType: vehicleRes.headers.get("content-type")
+            });
+            if (!vehicleRes.ok) {
+              console.warn("[PresidentRequestModal] ❌ Vehicle API not OK:", vehicleRes.status);
+              setPreferredVehicleName("Not specified");
+              return;
+            }
+            const contentType = vehicleRes.headers.get("content-type");
+            if (!contentType || !contentType.includes("application/json")) {
+              console.warn("[PresidentRequestModal] ❌ Vehicle API returned non-JSON response");
+              setPreferredVehicleName("Not specified");
+              return;
+            }
+            console.log(`[PresidentRequestModal] ✅ Parsing vehicle JSON...`);
+            const vehicleData = await vehicleRes.json();
+            console.log(`[PresidentRequestModal] ✅ Vehicle JSON parsed successfully:`, { ok: vehicleData?.ok, hasData: !!vehicleData?.data });
+            if (vehicleData.ok && vehicleData.data) {
+              const vehicleName = vehicleData.data.vehicle_name || vehicleData.data.name;
+              const plateNumber = vehicleData.data.plate_number;
+              if (vehicleName && plateNumber) {
+                setPreferredVehicleName(`${vehicleName} • ${plateNumber}`);
+              } else if (vehicleName) {
+                setPreferredVehicleName(vehicleName);
+              } else if (plateNumber) {
+                setPreferredVehicleName(plateNumber);
+              } else {
+                setPreferredVehicleName("Unknown Vehicle");
               }
+            } else {
+              setPreferredVehicleName("Not specified");
             }
           } catch (err) {
             console.error("[PresidentRequestModal] Failed to load vehicle:", err);
+            setPreferredVehicleName("Not specified");
           }
+        } else {
+          setPreferredVehicleName("Not specified");
         }
       }
     } catch (err) {
@@ -440,8 +513,9 @@ export default function PresidentRequestModal({
   };
 
   return (
+    <>
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 pt-20 pb-8">
-      <div className="relative w-full max-w-5xl max-h-[85vh] rounded-3xl bg-white shadow-2xl transform transition-all duration-300 scale-100 flex flex-col overflow-hidden">
+      <div className="relative w-full max-w-7xl max-h-[90vh] rounded-3xl bg-white shadow-2xl transform transition-all duration-300 scale-100 flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between border-b bg-[#7A0010] px-6 py-4 rounded-t-3xl flex-shrink-0">
           <div>
@@ -527,9 +601,19 @@ export default function PresidentRequestModal({
                   {t.requester?.position_title && (
                     <p className="text-xs text-slate-500 mt-0.5">{t.requester.position_title}</p>
                   )}
-                  {t.requester?.role && (
-                    <p className="text-xs text-slate-500 mt-0.5">Role: {t.requester.role}</p>
-                  )}
+                  {(() => {
+                    // Always show Faculty/Staff for requesters (unless they're a head, which is shown in position_title)
+                    // Check if requester is a head - if so, don't show role (head is shown in position_title)
+                    const isHead = t.requester_is_head || t.requester?.is_head || false;
+                    if (!isHead) {
+                      // For all non-head requesters, show Faculty/Staff
+                      return (
+                        <p className="text-xs text-slate-500 mt-0.5">Role: Faculty/Staff</p>
+                      );
+                    }
+                    // If head, don't show role (position_title already shows "Department Head")
+                    return null;
+                  })()}
                 </div>
                 {(() => {
                   // Check if requester is also the head approver - if so, use head_signature
@@ -583,7 +667,15 @@ export default function PresidentRequestModal({
                 <div className="mt-4 pt-4 border-t border-slate-100">
                   <p className="text-xs text-slate-500 flex items-center gap-1.5">
                     <Calendar className="h-3.5 w-3.5" />
-                    Submitted {new Date(t.created_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                    Submitted {new Date(t.created_at).toLocaleString('en-US', { 
+                      year: 'numeric', 
+                      month: 'long', 
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      hour12: true,
+                      timeZone: 'Asia/Manila'
+                    })}
                   </p>
                 </div>
               )}
@@ -648,11 +740,12 @@ export default function PresidentRequestModal({
                             )}
                           </div>
                           {req.signature && (
-                            <div className="flex-shrink-0">
+                            <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                              <p className="text-xs text-slate-500 font-medium">Signature</p>
                               <img 
                                 src={req.signature} 
-                                alt="Signature" 
-                                className="h-8 w-20 object-contain border border-gray-200 rounded"
+                                alt={`${req.name || "Requester"}'s signature`} 
+                                className="h-16 w-32 rounded border border-slate-300 bg-white object-contain p-1"
                               />
                             </div>
                           )}
@@ -680,7 +773,7 @@ export default function PresidentRequestModal({
                       <div className="flex-1 min-w-0">
                         <p className="text-xs text-slate-500 mb-1">Preferred Driver</p>
                         <p className="text-sm font-medium text-slate-900">
-                          {preferredDriverName || "Loading..."}
+                          {preferredDriverName || "Not specified"}
                         </p>
                       </div>
                     </div>
@@ -694,7 +787,7 @@ export default function PresidentRequestModal({
                       <div className="flex-1 min-w-0">
                         <p className="text-xs text-slate-500 mb-1">Preferred Vehicle</p>
                         <p className="text-sm font-medium text-slate-900">
-                          {preferredVehicleName || "Loading..."}
+                          {preferredVehicleName || "Not specified"}
                         </p>
                       </div>
                     </div>
@@ -729,7 +822,7 @@ export default function PresidentRequestModal({
                 </p>
                 <p className="text-sm text-slate-800 font-medium">
                   {t.travel_start_date && t.travel_end_date
-                    ? `${new Date(t.travel_start_date).toLocaleDateString()} – ${new Date(t.travel_end_date).toLocaleDateString()}`
+                    ? `${new Date(t.travel_start_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} – ${new Date(t.travel_end_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`
                     : "—"}
                 </p>
               </section>
@@ -1033,7 +1126,15 @@ export default function PresidentRequestModal({
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-sm font-medium text-slate-900">Head Approved</p>
                       <span className="text-xs text-green-600 font-medium">
-                        {new Date(t.head_approved_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                        {new Date(t.head_approved_at).toLocaleString('en-US', { 
+                          year: 'numeric', 
+                          month: 'short', 
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: true,
+                          timeZone: 'Asia/Manila'
+                        })}
                       </span>
                     </div>
                     {t.head_approved_by && (
@@ -1064,7 +1165,7 @@ export default function PresidentRequestModal({
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-sm font-medium text-slate-900">HR Approved</p>
                       <span className="text-xs text-green-600 font-medium">
-                        {new Date(t.hr_approved_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                        {formatTimestamp(t.hr_approved_at)}
                       </span>
                     </div>
                     {t.hr_approved_by && (
@@ -1095,15 +1196,7 @@ export default function PresidentRequestModal({
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-sm font-medium text-slate-900">First VP Approved</p>
                       <span className="text-xs text-green-600 font-medium">
-                        {new Date(t.vp_approved_at).toLocaleString('en-US', { 
-                          timeZone: 'Asia/Manila',
-                          year: 'numeric',
-                          month: 'long',
-                          day: 'numeric',
-                          hour: 'numeric',
-                          minute: '2-digit',
-                          hour12: true
-                        })}
+                        {formatTimestamp(t.vp_approved_at)}
                       </span>
                     </div>
                     {t.vp_approved_by && (
@@ -1134,15 +1227,7 @@ export default function PresidentRequestModal({
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-sm font-medium text-slate-900">Second VP Approved</p>
                       <span className="text-xs text-green-600 font-medium">
-                        {new Date(t.vp2_approved_at).toLocaleString('en-US', { 
-                          timeZone: 'Asia/Manila',
-                          year: 'numeric',
-                          month: 'long',
-                          day: 'numeric',
-                          hour: 'numeric',
-                          minute: '2-digit',
-                          hour12: true
-                        })}
+                        {formatTimestamp(t.vp2_approved_at)}
                       </span>
                     </div>
                     {t.vp2_approved_by && (
@@ -1177,13 +1262,27 @@ export default function PresidentRequestModal({
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-sm font-medium text-slate-900">Comptroller Approved</p>
                       <span className="text-xs text-green-600 font-medium">
-                        {new Date(t.comptroller_approved_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                        {formatTimestamp(t.comptroller_approved_at)}
                       </span>
                     </div>
+                    {t.comptroller_approved_by && (
+                      <p className="text-xs text-slate-600 mb-3">
+                        By: <span className="font-medium text-slate-700">{t.comptroller_approver?.name || "Comptroller"}</span>
+                      </p>
+                    )}
+                    {t.comptroller_signature && (
+                      <div className="mt-3 pt-3 border-t border-slate-200">
+                        <img
+                          src={t.comptroller_signature}
+                          alt="Comptroller signature"
+                          className="h-20 w-full object-contain bg-slate-50 rounded p-2"
+                        />
+                      </div>
+                    )}
                     {t.comptroller_comments && (
-                      <div className="mt-2 pt-2 border-t border-slate-100">
-                        <p className="text-xs text-slate-500 mb-1">Comments:</p>
-                        <p className="text-xs text-slate-700">{t.comptroller_comments}</p>
+                      <div className="mt-3 pt-3 border-t border-slate-200">
+                        <p className="text-xs text-slate-500 mb-1 font-medium">Comments:</p>
+                        <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">{t.comptroller_comments}</p>
                       </div>
                     )}
                   </div>
@@ -1311,23 +1410,6 @@ export default function PresidentRequestModal({
                 </div>
               </section>
             )}
-          </div>
-
-            {/* Your Notes/Comments Section */}
-            {!viewOnly && (
-              <section className="rounded-lg bg-white p-5 border border-slate-200 shadow-sm">
-                <label className="mb-3 block text-xs font-bold text-slate-700 uppercase tracking-wide">
-                  Your Notes/Comments
-                </label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={3}
-                  className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] resize-none text-sm"
-                  placeholder="Add your comments or reasons for approval/rejection..."
-                />
-              </section>
-            )}
 
             {viewOnly && t.president_comments && (
               <section className="rounded-lg bg-white p-5 border border-slate-200 shadow-sm">
@@ -1343,8 +1425,8 @@ export default function PresidentRequestModal({
         </div>
 
         {/* Actions */}
-        {!viewOnly && (
-          <div className="sticky bottom-0 bg-white border-t-2 border-gray-200 px-6 py-4 flex gap-3 flex-shrink-0 shadow-lg">
+        {!viewOnly ? (
+          <div className="bg-white border-t-2 border-gray-200 px-6 py-4 flex gap-3 flex-shrink-0 shadow-lg">
             <button
               onClick={handleReject}
               disabled={submitting}
@@ -1368,10 +1450,8 @@ export default function PresidentRequestModal({
               Cancel
             </button>
           </div>
-        )}
-
-        {viewOnly && (
-          <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex justify-end flex-shrink-0">
+        ) : (
+          <div className="bg-gray-50 border-t border-gray-200 px-6 py-4 flex justify-end flex-shrink-0">
             <button
               onClick={onClose}
               className="px-6 py-3 border border-gray-300 hover:bg-gray-100 text-gray-700 font-medium rounded-lg transition-colors"
@@ -1381,6 +1461,7 @@ export default function PresidentRequestModal({
           </div>
         )}
       </div>
+    </div>
 
       {/* Approval Modal */}
       {showApprovalModal && (
@@ -1531,6 +1612,6 @@ export default function PresidentRequestModal({
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

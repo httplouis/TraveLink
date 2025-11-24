@@ -898,7 +898,12 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                     <p className="text-xs text-slate-500 mt-0.5">{t.requester.position_title}</p>
                   )}
                   {t?.requester?.role && (
-                    <p className="text-xs text-slate-500 mt-0.5">Role: {t.requester.role}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Role: {(() => {
+                      const role = t.requester.role?.toLowerCase();
+                      if (role === 'student') return 'Faculty/Staff';
+                      if (role === 'faculty' || role === 'staff') return 'Faculty/Staff';
+                      return t.requester.role;
+                    })()}</p>
                   )}
                 </div>
                 {(() => {

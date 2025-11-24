@@ -477,10 +477,19 @@ export default function VPRequestModal({
     const otherVPApproved = request.vp_approved_by && request.vp_approved_by !== request.vp2_approved_by;
     const isFirstVP = !request.vp_approved_by;
     const isSecondVP = !!request.vp_approved_by && !request.vp2_approved_by;
+    const isHeadRequest = request.requester_is_head || false;
 
+    // If requester is head, automatically send to President (no selection needed)
     // If first VP and multiple departments, wait for second VP (no selection needed)
     // Otherwise, show approver selection
-    const needsApproverSelection = !(isFirstVP && request.requester_invitations?.length > 1);
+    const needsApproverSelection = !isHeadRequest && !(isFirstVP && request.requester_invitations?.length > 1);
+
+    // If head request, automatically proceed to President
+    if (isHeadRequest) {
+      console.log("[VPRequestModal] Head request detected - automatically sending to President");
+      proceedWithApproval(null, "president");
+      return;
+    }
 
     if (needsApproverSelection) {
       // Fetch available approvers
@@ -603,6 +612,7 @@ export default function VPRequestModal({
         const errorText = await res.text();
         console.error("[VPRequestModal] Approval API returned non-JSON response. Response:", errorText.substring(0, 200));
         toast.error("Approval Failed", "Invalid response format from server");
+        setSubmitting(false);
         return;
       }
 
@@ -773,7 +783,12 @@ export default function VPRequestModal({
                     <p className="text-xs text-slate-500 mt-0.5">{t.requester.position_title}</p>
                   )}
                   {t.requester?.role && (
-                    <p className="text-xs text-slate-500 mt-0.5">Role: {t.requester.role}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Role: {(() => {
+                      const role = t.requester.role?.toLowerCase();
+                      if (role === 'student') return 'Faculty/Staff';
+                      if (role === 'faculty' || role === 'staff') return 'Faculty/Staff';
+                      return t.requester.role;
+                    })()}</p>
                   )}
                 </div>
                 {(() => {
@@ -1714,13 +1729,174 @@ export default function VPRequestModal({
         )}
       </div>
 
+      {/* Approval Modal */}
+      {showApprovalModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="relative w-full max-w-2xl rounded-2xl bg-white shadow-2xl transform transition-all duration-300 scale-100 flex flex-col max-h-[90vh] overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b bg-[#7A0010] px-6 py-4 rounded-t-2xl flex-shrink-0">
+              <div>
+                <h3 className="text-lg font-semibold text-white">VP Review & Approval</h3>
+                <p className="text-sm text-white/80">Sign and add notes to approve this request</p>
+              </div>
+              <button
+                onClick={() => setShowApprovalModal(false)}
+                disabled={submitting}
+                className="rounded-full p-1 text-white/80 hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="overflow-y-auto flex-1 p-6 space-y-5">
+              {/* VP Profile */}
+              <div className="flex items-center gap-3 pb-4 border-b-2 border-[#7A0010]/10">
+                {vpProfile?.profile_picture ? (
+                  <img 
+                    src={vpProfile.profile_picture} 
+                    alt={vpProfile?.name || "VP"}
+                    className="h-14 w-14 rounded-full object-cover border-2 border-[#7A0010] shadow-lg flex-shrink-0"
+                  />
+                ) : (
+                  <div className="h-14 w-14 rounded-full bg-gradient-to-br from-[#7A0010] to-[#5e000d] flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
+                    {(vpProfile?.name || "V").charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div className="flex-1">
+                  <p className="text-base font-semibold text-slate-900">
+                    {vpProfile?.name || "Vice President"}
+                  </p>
+                  <p className="text-sm text-slate-600">
+                    {vpProfile?.position_title || "Vice President"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Signature Pad */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-900 mb-2">
+                  Your Signature <span className="text-red-500">*</span>
+                </label>
+                <div className="rounded-xl bg-white p-3 border-2 border-[#7A0010]/20 shadow-sm">
+                  <SignaturePad
+                    height={160}
+                    value={vpSignature || null}
+                    onSave={(dataUrl) => {
+                      setVpSignature(dataUrl);
+                    }}
+                    onClear={() => {
+                      setVpSignature("");
+                    }}
+                    onUseSaved={(dataUrl) => {
+                      setVpSignature(dataUrl);
+                    }}
+                    showUseSavedButton={true}
+                    hideSaveButton
+                  />
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-900 mb-2">
+                  Notes/Comments <span className="text-red-500">*</span>
+                  <span className="text-xs font-normal text-slate-500 ml-2">(Minimum 10 characters)</span>
+                </label>
+                
+                {/* Quick Fill Buttons */}
+                <div className="mb-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNotes("Request approved. Proceed to President.")}
+                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+                  >
+                    Approved - Send to President
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNotes("Request reviewed and approved. All requirements met.")}
+                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+                  >
+                    Requirements Met
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNotes("Request approved. Budget and travel details verified.")}
+                    className="px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
+                  >
+                    Budget Verified
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNotes("Request requires revision. Please review and resubmit.")}
+                    className="px-3 py-1.5 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors"
+                  >
+                    Needs Revision
+                  </button>
+                </div>
+                
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={4}
+                  className="w-full px-4 py-3 border-2 border-[#7A0010]/20 rounded-xl focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] resize-none text-sm"
+                  placeholder="Add your comments or reasons for approval..."
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  {notes.trim().length}/10 characters minimum
+                </p>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="border-t border-gray-200 px-6 py-4 flex gap-3 flex-shrink-0 bg-gray-50 relative">
+              {submitting && (
+                <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-10 rounded-b-2xl">
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="animate-spin h-8 w-8 border-4 border-[#7A0010] border-t-transparent rounded-full"></div>
+                    <p className="text-sm font-medium text-slate-700">Processing approval...</p>
+                  </div>
+                </div>
+              )}
+              <button
+                onClick={() => setShowApprovalModal(false)}
+                disabled={submitting}
+                className="px-6 py-2 border border-gray-300 hover:bg-gray-100 text-gray-700 font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleApprovalSubmit}
+                disabled={submitting || !vpSignature || notes.trim().length < 10}
+                className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {submitting ? (
+                  <>
+                    <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div>
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <Check className="h-5 w-5" />
+                    Confirm Approval
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Approver Selection Modal */}
       {showApproverSelection && (
         <ApproverSelectionModal
           isOpen={showApproverSelection}
           onClose={() => setShowApproverSelection(false)}
           onSelect={(approverId, approverRole, returnReason) => {
-            proceedWithApproval(approverId, approverRole, returnReason);
+            const id = Array.isArray(approverId) ? approverId[0] : (typeof approverId === 'string' ? approverId : null);
+            const role = Array.isArray(approverRole) ? approverRole[0] : (typeof approverRole === 'string' ? approverRole : 'president');
+            proceedWithApproval(id, role, returnReason);
           }}
           title="Select Next Approver"
           description="Choose who should review this request next, or return it to the requester for revision."
