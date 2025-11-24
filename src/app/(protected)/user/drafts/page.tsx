@@ -2,6 +2,7 @@
 "use client";
 
 import * as React from "react";
+import { Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FileText, Clock, Trash2, Loader2, ArrowRight, Calendar, AlertCircle } from "lucide-react";
@@ -22,7 +23,7 @@ import { useToast } from "@/components/common/ui/ToastProvider.ui";
 import { saveHandoff } from "@/lib/user/request/persist";
 import BackToRequestButton from "@/components/common/buttons/BackToRequestButton.ui";
 
-export default function DraftsPage() {
+function DraftsPageContent() {
   const [drafts, setDrafts] = React.useState<Draft[]>([]);
   const [dbDrafts, setDbDrafts] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -336,5 +337,20 @@ export default function DraftsPage() {
       </PageBody>
       {confirmUI}
     </>
+  );
+}
+
+export default function DraftsPage() {
+  return (
+    <Suspense fallback={
+      <div className="p-4 md:p-6 space-y-4 bg-neutral-50 min-h-[calc(100vh-64px)] flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-[#7A0010] mx-auto mb-2" />
+          <p className="text-neutral-600">Loading drafts...</p>
+        </div>
+      </div>
+    }>
+      <DraftsPageContent />
+    </Suspense>
   );
 }
