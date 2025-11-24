@@ -2,6 +2,7 @@
 "use client";
 
 import * as React from "react";
+import { useMemo } from "react";
 import type { RequestRow, Pagination, FilterState } from "@/lib/admin/types";
 import StatusBadge from "./StatusBadge";
 import PaginationUI from "./Pagination";
@@ -72,10 +73,17 @@ export default function RequestsTable(props: Props) {
     onApproveRow, onRejectRow, onCancelRow
   } = props;
 
-  const set = selectedIds ?? new Set<string>();
-  const idsOnPage = rows.map(r => r.id);
-  const allChecked = idsOnPage.length > 0 && idsOnPage.every(id => set.has(id));
-  const indeterminate = !allChecked && idsOnPage.some(id => set.has(id));
+  // Memoize expensive computations
+  const set = useMemo(() => selectedIds ?? new Set<string>(), [selectedIds]);
+  const idsOnPage = useMemo(() => rows.map(r => r.id), [rows]);
+  const allChecked = useMemo(() => 
+    idsOnPage.length > 0 && idsOnPage.every(id => set.has(id)),
+    [idsOnPage, set]
+  );
+  const indeterminate = useMemo(() => 
+    !allChecked && idsOnPage.some(id => set.has(id)),
+    [allChecked, idsOnPage, set]
+  );
 
   return (
     <div className="rounded-2xl border border-neutral-200 bg-white shadow-sm">

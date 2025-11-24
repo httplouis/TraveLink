@@ -3,6 +3,9 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 
+// Performance: Cache stats for 30 seconds
+export const revalidate = 30;
+
 /**
  * GET /api/vp/stats
  * Get real-time dashboard statistics for VP
@@ -111,7 +114,7 @@ export async function GET() {
       .gte("vp_approved_at", thisMonthStart.toISOString())
       .or(`vp_approved_at.gte.${thisMonthStart.toISOString()},vp2_approved_at.gte.${thisMonthStart.toISOString()}`);
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       ok: true,
       data: {
         pendingApprovals: pendingApprovals || 0,
@@ -119,6 +122,9 @@ export async function GET() {
         thisMonth: thisMonth || 0
       }
     });
+    // Performance: Add cache headers
+    response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=60');
+    return response;
   } catch (err: any) {
     console.error("[GET /api/vp/stats] Error:", err);
     return NextResponse.json({ 

@@ -3,6 +3,10 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 
+// Performance: Cache stats for 30 seconds (revalidate)
+export const revalidate = 30;
+export const dynamic = 'force-dynamic'; // Still dynamic for user-specific data
+
 /**
  * GET /api/user/dashboard/stats
  * Get real-time dashboard statistics for the logged-in user
@@ -113,7 +117,7 @@ export async function GET() {
       ? ((thisMonthRequests || 0) - lastMonthRequests) / lastMonthRequests * 100
       : 0;
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       ok: true,
       data: {
         activeRequests: activeRequests || 0,
@@ -125,6 +129,11 @@ export async function GET() {
         requestTrend: Math.round(requestTrend * 10) / 10, // Round to 1 decimal
       }
     });
+    
+    // Performance: Add cache headers
+    response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=60');
+    
+    return response;
   } catch (err: any) {
     console.error("[GET /api/user/dashboard/stats] Error:", err);
     return NextResponse.json({ ok: false, error: err.message }, { status: 500 });

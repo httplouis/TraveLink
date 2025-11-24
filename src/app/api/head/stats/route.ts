@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 
+// Performance: Cache stats for 30 seconds
+export const revalidate = 30;
+
 export async function GET() {
   try {
     // Use service role client to bypass RLS for stats queries
@@ -112,7 +115,7 @@ export async function GET() {
       console.error("[GET /api/head/stats] Department requests error:", deptError);
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       ok: true,
       data: {
         pendingEndorsements: pendingEndorsements || 0,
@@ -120,6 +123,9 @@ export async function GET() {
         departmentRequests: departmentRequests || 0
       }
     });
+    // Performance: Add cache headers
+    response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=60');
+    return response;
   } catch (err: any) {
     console.error("[GET /api/head/stats] Unexpected error:", err);
     return NextResponse.json({ 

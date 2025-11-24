@@ -3,6 +3,9 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
 
+// Performance: Cache list for 10 seconds
+export const revalidate = 10;
+
 export async function GET(request: NextRequest) {
   try {
     // Create a direct Supabase client with service role key to bypass RLS
@@ -232,8 +235,11 @@ export async function GET(request: NextRequest) {
       console.log("  - Expense breakdown items:", firstReq.expense_breakdown?.length || 0);
     }
 
-    // Return just the data array
-    return NextResponse.json(data || []);
+    // Return just the data array with cache headers
+    const response = NextResponse.json(data || []);
+    // Performance: Cache for 10 seconds, allow stale for 30 seconds
+    response.headers.set('Cache-Control', 'public, s-maxage=10, stale-while-revalidate=30');
+    return response;
     
   } catch (error: any) {
     console.error("[/api/requests/list] Error:", error);

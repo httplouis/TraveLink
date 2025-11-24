@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useMemo } from "react";
 import { motion } from "framer-motion";
 import { 
   Calendar, 
@@ -81,7 +81,7 @@ interface RequestCardEnhancedProps {
   className?: string;
 }
 
-export default function RequestCardEnhanced({
+function RequestCardEnhanced({
   request,
   showActions = true,
   onView,
@@ -93,32 +93,42 @@ export default function RequestCardEnhanced({
   variant = 'default',
   className = "",
 }: RequestCardEnhancedProps) {
-  const requesterName = request.requester_name || request.requester?.name || "Unknown";
-  const requesterEmail = request.requester?.email;
-  const departmentName = request.department?.name || request.department?.code || "No Department";
-  const purpose = request.purpose || request.title || "No purpose specified";
-  const destination = request.destination || "—";
+  // Memoize expensive computations
+  const requesterName = useMemo(() => 
+    request.requester_name || request.requester?.name || "Unknown",
+    [request.requester_name, request.requester?.name]
+  );
+  const requesterEmail = useMemo(() => request.requester?.email, [request.requester?.email]);
+  const departmentName = useMemo(() => 
+    request.department?.name || request.department?.code || "No Department",
+    [request.department?.name, request.department?.code]
+  );
+  const purpose = useMemo(() => 
+    request.purpose || request.title || "No purpose specified",
+    [request.purpose, request.title]
+  );
+  const destination = useMemo(() => request.destination || "—", [request.destination]);
   const startDate = request.travel_start_date;
   const endDate = request.travel_end_date;
-  const isSeminar = request.request_type === 'seminar';
-  const isApproved = request.status === 'approved';
-  const isRejected = request.status === 'rejected';
+  const isSeminar = useMemo(() => request.request_type === 'seminar', [request.request_type]);
+  const isApproved = useMemo(() => request.status === 'approved', [request.status]);
+  const isRejected = useMemo(() => request.status === 'rejected', [request.status]);
 
-  // Format date range
-  const formatDateRange = () => {
+  // Memoize date range formatting
+  const dateRange = useMemo(() => {
     if (!startDate) return "—";
     if (startDate && endDate && startDate !== endDate) {
       return `${formatLongDate(startDate)} - ${formatLongDate(endDate)}`;
     }
     return formatLongDate(startDate);
-  };
+  }, [startDate, endDate]);
 
-  // Get status icon
-  const getStatusIcon = () => {
+  // Memoize status icon
+  const statusIcon = useMemo(() => {
     if (isApproved) return <CheckCircle2 className="h-4 w-4 text-green-600" />;
     if (isRejected) return <XCircle className="h-4 w-4 text-red-600" />;
     return <Clock className="h-4 w-4 text-amber-600" />;
-  };
+  }, [isApproved, isRejected]);
 
   return (
     <motion.div
@@ -138,7 +148,7 @@ export default function RequestCardEnhanced({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3 mb-2 flex-wrap">
               <div className="flex items-center gap-2">
-                {getStatusIcon()}
+                {statusIcon}
                 <span className="font-mono font-bold text-lg">{request.request_number}</span>
               </div>
               <StatusBadge status={request.status} variant="light" size="sm" />
@@ -259,7 +269,7 @@ export default function RequestCardEnhanced({
                 {isSeminar ? 'Seminar Dates' : 'Travel Dates'}
               </div>
               <div className="text-sm font-semibold text-gray-900">
-                {formatDateRange()}
+                {dateRange}
               </div>
             </div>
           </div>
@@ -408,4 +418,22 @@ export default function RequestCardEnhanced({
     </motion.div>
   );
 }
+
+// Memoize component to prevent unnecessary re-renders
+export default React.memo(RequestCardEnhanced, (prevProps, nextProps) => {
+  // Custom comparison function for better performance
+  return (
+    prevProps.request.id === nextProps.request.id &&
+    prevProps.request.status === nextProps.request.status &&
+    prevProps.request.request_number === nextProps.request.request_number &&
+    prevProps.showActions === nextProps.showActions &&
+    prevProps.variant === nextProps.variant &&
+    prevProps.className === nextProps.className &&
+    // Compare function references (they should be stable)
+    prevProps.onView === nextProps.onView &&
+    prevProps.onTrack === nextProps.onTrack &&
+    prevProps.onApprove === nextProps.onApprove &&
+    prevProps.onReject === nextProps.onReject
+  );
+});
 

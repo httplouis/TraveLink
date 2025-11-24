@@ -212,6 +212,7 @@ export async function POST(request: NextRequest) {
     console.log('[/api/auth/login] ✅ Session verified, cookies should be set');
 
     // Get user profile using service role to bypass RLS
+    // Performance: Use specific columns only (not *) and use index on auth_user_id
     const supabaseAdmin = await createSupabaseServerClient(true);
     const { data: profile, error: profileError } = await supabaseAdmin
       .from("users")

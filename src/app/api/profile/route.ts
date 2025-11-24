@@ -5,6 +5,9 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
+// Performance: Cache profile for 60 seconds (profile doesn't change often)
+export const revalidate = 60;
+
 /**
  * GET /api/profile
  * Get current user's profile
@@ -157,7 +160,10 @@ export async function GET(request: Request) {
       position_title: profile.position_title,
     });
     
-    return NextResponse.json({ ok: true, data: profile });
+    const response = NextResponse.json({ ok: true, data: profile });
+    // Performance: Cache profile for 60 seconds
+    response.headers.set('Cache-Control', 'private, s-maxage=60, stale-while-revalidate=120');
+    return response;
   } catch (err: any) {
     console.error("[GET /api/profile] Unexpected error:", err);
     return NextResponse.json({ ok: false, error: err.message }, { status: 500 });

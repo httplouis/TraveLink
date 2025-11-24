@@ -14,6 +14,17 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
 
+  // Performance: Enable compression (Vercel handles this automatically, but explicit is good)
+  compress: true,
+
+  // Performance: Optimize production builds
+  swcMinify: true,
+
+  // Performance: Enable experimental features for better performance
+  experimental: {
+    optimizePackageImports: ['lucide-react', '@headlessui/react'],
+  },
+
   // Image configuration - optimized for production
   images: {
     unoptimized: true, // Disable optimization to fix loading issues

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import * as React from "react";
+import { useMemo } from "react";
 import DashboardView from "./DashboardView";
 import DashboardSkeleton from "@/components/common/skeletons/DashboardSkeleton";
 import CommandPalette from "@/components/common/CommandPalette";

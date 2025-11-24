@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
+// Performance: Cache count for 10 seconds (frequently polled)
+export const revalidate = 10;
+
 /**
  * GET /api/user/inbox/count
  * Lightweight count-only endpoint for badge polling
@@ -38,7 +41,10 @@ export async function GET() {
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ ok: true, pending_count: count || 0 });
+    const response = NextResponse.json({ ok: true, pending_count: count || 0 });
+    // Performance: Cache count for 10 seconds
+    response.headers.set('Cache-Control', 'private, s-maxage=10, stale-while-revalidate=30');
+    return response;
   } catch (err: any) {
     console.error("User inbox count error:", err);
     return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
