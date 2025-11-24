@@ -1,8 +1,8 @@
 "use client";
 import * as React from "react";
 import type { TripRow } from "@/lib/admin/report/types";
-import { downloadCSV, getHistory, printElementById } from "@/lib/admin/report/export";
-import { FileDown, Printer } from "lucide-react";
+import { downloadCSV, getHistory, printElementById, downloadExcel, downloadPDF } from "@/lib/admin/report/export";
+import { FileDown, Printer, FileSpreadsheet, FileText } from "lucide-react";
 
 export function ExportBar({
   rows,
