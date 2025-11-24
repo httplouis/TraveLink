@@ -13,6 +13,7 @@ export async function queryReport(
     if (filters.search) params.set("search", filters.search);
     if (filters.department) params.set("department", filters.department);
     if (filters.status) params.set("status", filters.status);
+    if (filters.requestType && filters.requestType !== "all") params.set("requestType", filters.requestType);
     if (filters.from) params.set("from", filters.from);
     if (filters.to) params.set("to", filters.to);
     params.set("page", String(page));

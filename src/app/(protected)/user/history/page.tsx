@@ -202,10 +202,18 @@ export default function UserHistoryPage() {
             return (
               <motion.button
                 key={item.id}
-                onClick={() => setSelected(item)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  try {
+                    setSelected(item);
+                  } catch (err) {
+                    console.error("[HistoryPage] Error setting selected:", err);
+                  }
+                }}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="group flex w-full items-center justify-between rounded-xl border-2 border-gray-200 bg-white px-5 py-4 text-left shadow-sm transition-all hover:border-[#7A0010]/40 hover:shadow-md"
+                className="group flex w-full items-center justify-between rounded-xl border-2 border-gray-200 bg-white px-5 py-4 text-left shadow-sm transition-all hover:border-[#7A0010]/40 hover:shadow-md cursor-pointer"
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2.5 mb-3">

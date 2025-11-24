@@ -9,6 +9,7 @@ import {
   formatApprovalTimestamp,
   formatApproverInfo,
 } from "@/lib/utils/pdf-helpers";
+import { PDF_COORDINATES } from "@/lib/utils/pdf-coordinates-helper";
 
 // Route segment config to ensure proper handling
 export const dynamic = 'force-dynamic';
@@ -234,7 +235,7 @@ export async function GET(
       });
     };
     
-    // Helper to embed signature image
+    // Helper to embed signature image - improved for better visibility
     const drawSignature = async (signatureDataUrl: string | null, x: number, top: number, w: number, h: number) => {
       if (!signatureDataUrl) return;
       try {
@@ -246,9 +247,11 @@ export async function GET(
         const y = PAGE_H - (top + h);
         const iw = img.width;
         const ih = img.height;
-        const scale = Math.min(w / iw, h / ih);
+        // Use 90% of available space for better fit, but maintain aspect ratio
+        const scale = Math.min((w * 0.9) / iw, (h * 0.9) / ih);
         const dw = iw * scale;
         const dh = ih * scale;
+        // Center the signature in the box
         const dx = x + (w - dw) / 2;
         const dy = y + (h - dh) / 2;
         
@@ -257,36 +260,41 @@ export async function GET(
           y: dy,
           width: dw,
           height: dh,
-          opacity: 0.95,
+          opacity: 1.0, // Full opacity for better visibility
         });
       } catch (err) {
         console.error('Error embedding signature:', err);
       }
     };
     
-    // Format date
+    // Format date - matching reference format: "November 25, 2025"
     const fmtLongDate = (dateStr: string) => {
-      const date = new Date(dateStr);
-      return new Intl.DateTimeFormat("en-US", {
-        month: "long",
-        day: "2-digit",
-        year: "numeric",
-      }).format(date);
+      if (!dateStr) return "";
+      try {
+        const date = new Date(dateStr);
+        return new Intl.DateTimeFormat("en-US", {
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        }).format(date);
+      } catch (err) {
+        console.error("[PDF] Error formatting date:", err);
+        return "";
+      }
     };
 
     // Format date and time (Philippines timezone)
+    // Format: "Nov 24, 2025, 3:12 PM" (matching reference)
     const fmtDateTime = (dateStr: string | null | undefined) => {
       if (!dateStr) return "";
       try {
         const date = new Date(dateStr);
-        // Convert to Philippines timezone (UTC+8)
-        const phDate = new Date(date.toLocaleString("en-US", { timeZone: "Asia/Manila" }));
         
         return new Intl.DateTimeFormat("en-US", {
           month: "short",
-          day: "2-digit",
+          day: "numeric",
           year: "numeric",
-          hour: "2-digit",
+          hour: "numeric",
           minute: "2-digit",
           hour12: true,
           timeZone: "Asia/Manila",
@@ -488,14 +496,14 @@ export async function GET(
       
       // Draw requesting persons in 2-column layout (up to 6 per page)
       // Layout: 2 columns, 3 rows max
-      // Format: "NAME [signature] [date/time]" - all close together
+      // Format: "NAME" with signature below and date/time next to name (matching reference)
       const requesterStartX = 150; // Left edge of requesting person field
       const requesterStartY = 180; // Top of requesting person field (from top of page)
-      const nameMaxWidth = 120; // Max width for name text (will be trimmed if needed)
-      const sigWidth = 90; // Signature width (larger for visibility)
-      const sigHeight = 40; // Signature height (larger for visibility)
+      const nameMaxWidth = 180; // Max width for name text
+      const sigWidth = 100; // Signature width (larger for better visibility)
+      const sigHeight = 35; // Signature height
       const requesterColSpacing = 280; // Space between columns
-      const requesterRowSpacing = 25; // Space between rows
+      const requesterRowSpacing = 50; // Space between rows (increased for signature + name + date)
       
       // Use for...of loop to properly handle async/await
       for (let idx = 0; idx < mainPageRequesters.length; idx++) {
@@ -505,24 +513,29 @@ export async function GET(
         const x = requesterStartX + (col * requesterColSpacing);
         const y = requesterStartY - (row * requesterRowSpacing);
         
-        // Draw name (left side)
+        // Draw name first (top)
         drawInRect(req.name, x, y, nameMaxWidth, 10, 9);
         
-        // Draw signature if available (immediately after name, no extra spacing)
-        let currentX = x + nameMaxWidth; // Start right after name
+        // Draw signature below name (centered under name)
         if (req.signature) {
-          // Position signature immediately after name (minimal spacing)
-          const sigX = currentX + 2; // Just 2px spacing from name
-          const sigY = y - 8; // Slightly below name baseline
+          const sigX = x + (nameMaxWidth - sigWidth) / 2; // Center signature under name
+          const sigY = y - 12; // Below name
           await drawSignature(req.signature, sigX, sigY, sigWidth, sigHeight);
-          currentX = sigX + sigWidth; // Update position after signature
           
-          // Draw date/time immediately after signature (if available)
+          // Draw date/time next to name (on the right side)
           if (req.confirmed_at) {
             const dateTimeText = fmtDateTime(req.confirmed_at);
-            const dateTimeX = currentX + 3; // Just 3px spacing from signature
-            const dateTimeY = y - 2; // Aligned with name baseline
-            drawInRect(dateTimeText, dateTimeX, dateTimeY, 100, 10, 7);
+            const dateTimeX = x + nameMaxWidth + 5; // Right of name
+            const dateTimeY = y; // Aligned with name
+            drawInRect(dateTimeText, dateTimeX, dateTimeY, 120, 10, 7);
+          }
+        } else {
+          // If no signature, just show date/time next to name
+          if (req.confirmed_at) {
+            const dateTimeText = fmtDateTime(req.confirmed_at);
+            const dateTimeX = x + nameMaxWidth + 5;
+            const dateTimeY = y;
+            drawInRect(dateTimeText, dateTimeX, dateTimeY, 120, 10, 7);
           }
         }
       }
@@ -582,10 +595,15 @@ export async function GET(
       drawInRect(request.purpose || "", 150, 260, 446, 26, 9);
       
       // Travel Cost breakdown (if exists) - match template format
+      // Format: "Item name - Php amount" (matching reference image)
       if (request.expense_breakdown && Array.isArray(request.expense_breakdown)) {
         let costY = 295;
         const maxItems = 12; // Limit to fit on page
-        request.expense_breakdown.slice(0, maxItems).forEach((item: any) => {
+        const validItems = request.expense_breakdown
+          .filter((item: any) => (item.amount || 0) > 0)
+          .slice(0, maxItems);
+        
+        validItems.forEach((item: any) => {
           // Handle both old format (category/label) and new format (item/description)
           const displayLabel = getExpenseLabel(
             item.category, 
@@ -594,16 +612,25 @@ export async function GET(
             item.description
           );
           const amount = item.amount || 0;
-          if (amount > 0) {
-            const costText = `${displayLabel} - Php ${amount.toLocaleString()}`;
-            drawInRect(costText, 150, costY, 446, 8, 8);
-            costY += 8;
-          }
+          // Format: "Item name - Php amount" (matching reference)
+          const costText = `${displayLabel} - Php ${amount.toLocaleString()}`;
+          drawInRect(costText, 150, costY, 446, 10, 9);
+          costY += 10; // Slightly more spacing for readability
         });
         
-        // Total if available
+        // Total if available - format: "Total: Php amount" (bold)
+        // Show original/edited format if budget was changed
         if (request.total_budget) {
-          drawInRect(`Total: Php ${request.total_budget.toLocaleString()}`, 150, costY + 4, 446, 10, 9, true);
+          let totalText = `Total: Php ${request.total_budget.toLocaleString()}`;
+          
+          // Check if budget was edited (by comptroller or president)
+          const editedBudget = request.comptroller_edited_budget || request.president_edited_budget;
+          if (editedBudget && editedBudget !== request.total_budget) {
+            // Show original / edited format
+            totalText = `Total: Php ${request.total_budget.toLocaleString()} / Php ${editedBudget.toLocaleString()}`;
+          }
+          
+          drawInRect(totalText, 150, costY + 4, 446, 12, 10, true);
         }
       } else {
         // Fallback: Try to build expense breakdown from individual cost fields if expense_breakdown is not available
@@ -625,14 +652,25 @@ export async function GET(
         
         costItems.forEach((item) => {
           const displayLabel = getExpenseLabel(item.category, null, null, null);
+          // Format: "Item name - Php amount" (matching reference)
           const costText = `${displayLabel} - Php ${item.amount.toLocaleString()}`;
-          drawInRect(costText, 150, costY, 446, 8, 8);
-          costY += 8;
+          drawInRect(costText, 150, costY, 446, 10, 9);
+          costY += 10; // Slightly more spacing for readability
         });
         
-        // Total if available
+        // Total if available - format: "Total: Php amount" (bold)
+        // Show original/edited format if budget was changed
         if (request.total_budget) {
-          drawInRect(`Total: Php ${request.total_budget.toLocaleString()}`, 150, costY + 4, 446, 10, 9, true);
+          let totalText = `Total: Php ${request.total_budget.toLocaleString()}`;
+          
+          // Check if budget was edited (by comptroller or president)
+          const editedBudget = request.comptroller_edited_budget || request.president_edited_budget;
+          if (editedBudget && editedBudget !== request.total_budget) {
+            // Show original / edited format
+            totalText = `Total: Php ${request.total_budget.toLocaleString()} / Php ${editedBudget.toLocaleString()}`;
+          }
+          
+          drawInRect(totalText, 150, costY + 4, 446, 12, 10, true);
         }
       }
       
@@ -755,8 +793,8 @@ export async function GET(
       }
     }
     
-    // Helper function to draw signature with date/time and comments
-    // Format: [signature] NAME [date/time] - all close together, no extra spacing
+    // Helper function to draw signature with name, date/time, and comments
+    // Format matches reference: Signature box with name below and date/time next to name
     const drawSignatureWithMetadata = async (
       signature: string | null,
       name: string | null | undefined,
@@ -768,66 +806,73 @@ export async function GET(
       sigH: number,
       nameX: number,
       nameY: number,
-      nameW: number
+      nameW: number,
+      commentsX?: number,
+      commentsY?: number,
+      commentsW?: number,
+      commentsH?: number
     ) => {
       if (!signature && !name) return;
       
-      // Draw signature (larger for better visibility - 30% bigger)
-      let actualSigW = sigW;
-      let actualSigH = sigH;
+      // Draw signature in the box (use full box size for better visibility)
       if (signature) {
-        actualSigW = sigW * 1.3; // 30% larger width
-        actualSigH = sigH * 1.3; // 30% larger height
-        await drawSignature(signature, sigX, sigY, actualSigW, actualSigH);
+        await drawSignature(signature, sigX, sigY, sigW, sigH);
       }
       
-      // Draw name - position it right next to signature (or use nameX if no signature)
-      // Calculate name position: right after signature with minimal spacing
-      let nameStartX = signature ? sigX + actualSigW + 2 : nameX; // Just 2px spacing (dikit)
-      let nameStartY = nameY; // Use provided Y coordinate
-      
-      // If signature exists, align name with signature bottom
-      if (signature) {
-        nameStartY = sigY - actualSigH + 5; // Align with bottom of signature + small offset
-      }
-      
+      // Draw name below signature box (centered)
       if (name) {
-        drawInRect(name, nameStartX, nameStartY, nameW, 14, 10);
+        // Center name under signature box
+        const nameTextWidth = name.length * 5; // Approximate width
+        const centeredNameX = sigX + (sigW - nameTextWidth) / 2;
+        drawInRect(name, centeredNameX, nameY, nameW, 12, 9);
       }
       
-      // Draw date/time immediately after name (right next to it, dikit)
-      if (timestamp) {
-        const dateTimeText = fmtDateTime(timestamp);
-        const dateTimeX = nameStartX + nameW + 2; // Just 2px spacing from name (dikit)
-        const dateTimeY = nameStartY; // Same Y as name (aligned)
-        drawInRect(dateTimeText, dateTimeX, dateTimeY, 120, 12, 8);
-      }
+      // NOTE: Dates are now drawn separately on the right side using PDF_COORDINATES
+      // This function only draws signature and name
       
-      // Draw comments below signature if available
+      // Draw comments below name if available (using provided coordinates or default)
       if (comments && comments.trim()) {
-        const commentsY = sigY - actualSigH - 5; // 5px below signature box
+        const commentsXPos = commentsX ?? sigX;
+        const commentsYPos = commentsY ?? (nameY - 15);
+        const commentsWidth = commentsW ?? sigW;
+        const commentsHeight = commentsH ?? 20;
+        
         // Wrap comments if too long
-        const maxWidth = actualSigW + nameW + 122; // Signature + name + date/time width
-        const commentsLines = comments.split('\n').slice(0, 3); // Max 3 lines
+        const commentsLines = comments.split('\n').slice(0, 2); // Max 2 lines
         commentsLines.forEach((line, idx) => {
           if (line.trim()) {
-            drawInRect(line.trim(), sigX, commentsY - (idx * 10), maxWidth, 10, 8);
+            drawInRect(line.trim(), commentsXPos, commentsYPos - (idx * 10), commentsWidth, 10, 7);
           }
         });
       }
     };
 
     // Head name and signature (LEFT) - Department Head endorsement
+    // Position: "Indorsed by" section
     const headTimestamp = request.head_signed_at || request.head_approved_at || headEndorsements[0]?.confirmed_at || null;
     const headComments = request.head_comments || headEndorsements[0]?.comments || null;
     await drawSignatureWithMetadata(
       request.head_signature || headEndorsements[0]?.signature || null,
       headApproverName,
-      headTimestamp,
+      null, // Don't draw date here, draw separately
       headComments,
-      85, 380, 180, 34, // Signature box
-      125, 400, 260 // Name position
+      PDF_COORDINATES.APPROVALS.HEAD.sig.x,
+      PDF_COORDINATES.APPROVALS.HEAD.sig.top,
+      PDF_COORDINATES.APPROVALS.HEAD.sig.w,
+      PDF_COORDINATES.APPROVALS.HEAD.sig.h,
+      PDF_COORDINATES.APPROVALS.HEAD.name.x,
+      PDF_COORDINATES.APPROVALS.HEAD.name.top,
+      PDF_COORDINATES.APPROVALS.HEAD.name.w,
+      PDF_COORDINATES.APPROVALS.HEAD.comments.x,
+      PDF_COORDINATES.APPROVALS.HEAD.comments.top,
+      PDF_COORDINATES.APPROVALS.HEAD.comments.w,
+      PDF_COORDINATES.APPROVALS.HEAD.comments.h
     );
+    // Draw Head date on the right side
+    if (headTimestamp) {
+      const dateText = fmtDateTime(headTimestamp);
+      drawInRect(dateText, PDF_COORDINATES.APPROVALS.HEAD.date.x, PDF_COORDINATES.APPROVALS.HEAD.date.top, PDF_COORDINATES.APPROVALS.HEAD.date.w, PDF_COORDINATES.APPROVALS.HEAD.date.h, 9);
+    }
     
     // Parent Head signature if exists (for parent department approval)
     if (parentHeadApproverName && request.parent_head_signature) {
@@ -836,11 +881,25 @@ export async function GET(
       await drawSignatureWithMetadata(
         request.parent_head_signature,
         parentHeadApproverName,
-        parentHeadTimestamp,
+        null, // Don't draw date here, draw separately
         parentHeadComments,
-        85, 340, 180, 34, // Signature box
-        125, 360, 260 // Name position
+        PDF_COORDINATES.APPROVALS.PARENT_HEAD.sig.x,
+        PDF_COORDINATES.APPROVALS.PARENT_HEAD.sig.top,
+        PDF_COORDINATES.APPROVALS.PARENT_HEAD.sig.w,
+        PDF_COORDINATES.APPROVALS.PARENT_HEAD.sig.h,
+        PDF_COORDINATES.APPROVALS.PARENT_HEAD.name.x,
+        PDF_COORDINATES.APPROVALS.PARENT_HEAD.name.top,
+        PDF_COORDINATES.APPROVALS.PARENT_HEAD.name.w,
+        PDF_COORDINATES.APPROVALS.PARENT_HEAD.comments.x,
+        PDF_COORDINATES.APPROVALS.PARENT_HEAD.comments.top,
+        PDF_COORDINATES.APPROVALS.PARENT_HEAD.comments.w,
+        PDF_COORDINATES.APPROVALS.PARENT_HEAD.comments.h
       );
+      // Draw Parent Head date on the right side
+      if (parentHeadTimestamp) {
+        const dateText = fmtDateTime(parentHeadTimestamp);
+        drawInRect(dateText, PDF_COORDINATES.APPROVALS.PARENT_HEAD.date.x, PDF_COORDINATES.APPROVALS.PARENT_HEAD.date.top, PDF_COORDINATES.APPROVALS.PARENT_HEAD.date.w, PDF_COORDINATES.APPROVALS.PARENT_HEAD.date.h, 9);
+      }
     }
     
     // Driver and vehicle
@@ -852,29 +911,57 @@ export async function GET(
     }
     
     // Transportation Coordinator signature (RIGHT)
-    // Position: "School Transportation Coordinator" or "Approved by" section
+    // Position: "School Transportation Coordinator" section
     const adminTimestamp = request.admin_signed_at || request.admin_approved_at || request.admin_processed_at || null;
     const adminComments = request.admin_notes || request.admin_comments || null;
     await drawSignatureWithMetadata(
       request.admin_signature || null,
-      adminProcessorName,
-      adminTimestamp,
+      adminProcessorName || "TRIZZIA MAREE Z. CASIÑO",
+      null, // Don't draw date here, draw separately
       adminComments,
-      340, 455, 200, 34, // Signature box
-      430, 515, 260 // Name position
+      PDF_COORDINATES.APPROVALS.TRANSPORT_COORD.sig.x,
+      PDF_COORDINATES.APPROVALS.TRANSPORT_COORD.sig.top,
+      PDF_COORDINATES.APPROVALS.TRANSPORT_COORD.sig.w,
+      PDF_COORDINATES.APPROVALS.TRANSPORT_COORD.sig.h,
+      PDF_COORDINATES.APPROVALS.TRANSPORT_COORD.name.x,
+      PDF_COORDINATES.APPROVALS.TRANSPORT_COORD.name.top,
+      PDF_COORDINATES.APPROVALS.TRANSPORT_COORD.name.w,
+      PDF_COORDINATES.APPROVALS.TRANSPORT_COORD.comments.x,
+      PDF_COORDINATES.APPROVALS.TRANSPORT_COORD.comments.top,
+      PDF_COORDINATES.APPROVALS.TRANSPORT_COORD.comments.w,
+      PDF_COORDINATES.APPROVALS.TRANSPORT_COORD.comments.h
     );
+    // Draw Transportation Coordinator date on the right side
+    if (adminTimestamp) {
+      const dateText = fmtDateTime(adminTimestamp);
+      drawInRect(dateText, PDF_COORDINATES.APPROVALS.TRANSPORT_COORD.date.x, PDF_COORDINATES.APPROVALS.TRANSPORT_COORD.date.top, PDF_COORDINATES.APPROVALS.TRANSPORT_COORD.date.w, PDF_COORDINATES.APPROVALS.TRANSPORT_COORD.date.h, 9);
+    }
     
     // President/COO signature (Approved by section)
     const presidentTimestamp = request.president_signed_at || request.president_approved_at || null;
     const presidentComments = request.president_comments || null;
     await drawSignatureWithMetadata(
       request.president_signature || null,
-      presidentApproverName,
-      presidentTimestamp,
+      presidentApproverName || "NAILA E. LEVERIZA",
+      null, // Don't draw date here, draw separately
       presidentComments,
-      85, 530, 180, 34, // Signature box
-      125, 550, 260 // Name position
+      PDF_COORDINATES.APPROVALS.PRESIDENT.sig.x,
+      PDF_COORDINATES.APPROVALS.PRESIDENT.sig.top,
+      PDF_COORDINATES.APPROVALS.PRESIDENT.sig.w,
+      PDF_COORDINATES.APPROVALS.PRESIDENT.sig.h,
+      PDF_COORDINATES.APPROVALS.PRESIDENT.name.x,
+      PDF_COORDINATES.APPROVALS.PRESIDENT.name.top,
+      PDF_COORDINATES.APPROVALS.PRESIDENT.name.w,
+      PDF_COORDINATES.APPROVALS.PRESIDENT.comments.x,
+      PDF_COORDINATES.APPROVALS.PRESIDENT.comments.top,
+      PDF_COORDINATES.APPROVALS.PRESIDENT.comments.w,
+      PDF_COORDINATES.APPROVALS.PRESIDENT.comments.h
     );
+    // Draw President date on the right side
+    if (presidentTimestamp) {
+      const dateText = fmtDateTime(presidentTimestamp);
+      drawInRect(dateText, PDF_COORDINATES.APPROVALS.PRESIDENT.date.x, PDF_COORDINATES.APPROVALS.PRESIDENT.date.top, PDF_COORDINATES.APPROVALS.PRESIDENT.date.w, PDF_COORDINATES.APPROVALS.PRESIDENT.date.h, 9);
+    }
     
     // Executive signature (fallback if president_signature not available)
     if (!request.president_signature && request.exec_signature) {
@@ -883,11 +970,25 @@ export async function GET(
       await drawSignatureWithMetadata(
         request.exec_signature,
         execApproverName,
-        execTimestamp,
+        null, // Don't draw date here, draw separately
         execComments,
-        85, 530, 180, 34, // Signature box
-        125, 550, 260 // Name position
+        PDF_COORDINATES.APPROVALS.PRESIDENT.sig.x,
+        PDF_COORDINATES.APPROVALS.PRESIDENT.sig.top,
+        PDF_COORDINATES.APPROVALS.PRESIDENT.sig.w,
+        PDF_COORDINATES.APPROVALS.PRESIDENT.sig.h,
+        PDF_COORDINATES.APPROVALS.PRESIDENT.name.x,
+        PDF_COORDINATES.APPROVALS.PRESIDENT.name.top,
+        PDF_COORDINATES.APPROVALS.PRESIDENT.name.w,
+        PDF_COORDINATES.APPROVALS.PRESIDENT.comments.x,
+        PDF_COORDINATES.APPROVALS.PRESIDENT.comments.top,
+        PDF_COORDINATES.APPROVALS.PRESIDENT.comments.w,
+        PDF_COORDINATES.APPROVALS.PRESIDENT.comments.h
       );
+      // Draw Executive date on the right side (same as President)
+      if (execTimestamp) {
+        const dateText = fmtDateTime(execTimestamp);
+        drawInRect(dateText, PDF_COORDINATES.APPROVALS.PRESIDENT.date.x, PDF_COORDINATES.APPROVALS.PRESIDENT.date.top, PDF_COORDINATES.APPROVALS.PRESIDENT.date.w, PDF_COORDINATES.APPROVALS.PRESIDENT.date.h, 9);
+      }
     }
     
     // Comptroller signature and name (For Travel Cost - Recommending Approval)
@@ -896,18 +997,51 @@ export async function GET(
     const comptrollerComments = request.comptroller_comments || null;
     await drawSignatureWithMetadata(
       request.comptroller_signature || null,
-      comptrollerApproverName,
-      comptrollerTimestamp,
+      comptrollerApproverName || "CARLOS JAYRON A. REMIENDO",
+      null, // Don't draw date here, draw separately
       comptrollerComments,
-      480, 570, 150, 30, // Signature box
-      480, 600, 200 // Name position
+      PDF_COORDINATES.APPROVALS.COMPTROLLER.sig.x,
+      PDF_COORDINATES.APPROVALS.COMPTROLLER.sig.top,
+      PDF_COORDINATES.APPROVALS.COMPTROLLER.sig.w,
+      PDF_COORDINATES.APPROVALS.COMPTROLLER.sig.h,
+      PDF_COORDINATES.APPROVALS.COMPTROLLER.name.x,
+      PDF_COORDINATES.APPROVALS.COMPTROLLER.name.top,
+      PDF_COORDINATES.APPROVALS.COMPTROLLER.name.w,
+      PDF_COORDINATES.APPROVALS.COMPTROLLER.comments.x,
+      PDF_COORDINATES.APPROVALS.COMPTROLLER.comments.top,
+      PDF_COORDINATES.APPROVALS.COMPTROLLER.comments.w,
+      PDF_COORDINATES.APPROVALS.COMPTROLLER.comments.h
     );
+    // Draw Comptroller date on the right side
+    if (comptrollerTimestamp) {
+      const dateText = fmtDateTime(comptrollerTimestamp);
+      drawInRect(dateText, PDF_COORDINATES.APPROVALS.COMPTROLLER.date.x, PDF_COORDINATES.APPROVALS.COMPTROLLER.date.top, PDF_COORDINATES.APPROVALS.COMPTROLLER.date.w, PDF_COORDINATES.APPROVALS.COMPTROLLER.date.h, 9);
+    }
     
     // Comptroller recommended amount if exists
+    // Format: "Rec Amt: amount subject to liquidation" (matching reference)
+    // Show original/edited format if budget was changed
     if (request.comptroller_edited_budget) {
-      const recAmount = `Rec Amt: ${request.comptroller_edited_budget.toLocaleString()} subject to liquidation`;
+      let recAmount = `Rec Amt: ${request.comptroller_edited_budget.toLocaleString()} subject to liquidation`;
+      
+      // If original budget exists and is different, show original / edited format
+      if (request.total_budget && request.total_budget !== request.comptroller_edited_budget) {
+        recAmount = `Rec Amt: ${request.total_budget.toLocaleString()} / ${request.comptroller_edited_budget.toLocaleString()} subject to liquidation`;
+      }
+      
       const recAmountY = isSeminar ? 620 : 620;
-      drawInRect(recAmount, 480, recAmountY, 200, 14, 9);
+      drawInRect(recAmount, 480, recAmountY, 200, 12, 8);
+      
+      // Comptroller account if exists
+      if (request.comptroller_account) {
+        const accountText = `Account: ${request.comptroller_account}`;
+        drawInRect(accountText, 480, recAmountY - 12, 200, 12, 8);
+      }
+    } else if (request.president_edited_budget && request.total_budget && request.total_budget !== request.president_edited_budget) {
+      // If president edited budget but comptroller didn't, show it in the same location
+      const recAmount = `Rec Amt: ${request.total_budget.toLocaleString()} / ${request.president_edited_budget.toLocaleString()} subject to liquidation`;
+      const recAmountY = isSeminar ? 620 : 620;
+      drawInRect(recAmount, 480, recAmountY, 200, 12, 8);
     }
     
     // VP signatures (Recommending Approval section)
@@ -917,11 +1051,25 @@ export async function GET(
     await drawSignatureWithMetadata(
       request.vp_signature || null,
       vpApproverName,
-      vpTimestamp,
+      null, // Don't draw date here, draw separately
       vpComments,
-      85, 730, 180, 34, // Signature box
-      125, 750, 260 // Name position
+      PDF_COORDINATES.APPROVALS.VP.sig.x,
+      PDF_COORDINATES.APPROVALS.VP.sig.top,
+      PDF_COORDINATES.APPROVALS.VP.sig.w,
+      PDF_COORDINATES.APPROVALS.VP.sig.h,
+      PDF_COORDINATES.APPROVALS.VP.name.x,
+      PDF_COORDINATES.APPROVALS.VP.name.top,
+      PDF_COORDINATES.APPROVALS.VP.name.w,
+      PDF_COORDINATES.APPROVALS.VP.comments.x,
+      PDF_COORDINATES.APPROVALS.VP.comments.top,
+      PDF_COORDINATES.APPROVALS.VP.comments.w,
+      PDF_COORDINATES.APPROVALS.VP.comments.h
     );
+    // Draw VP date on the right side
+    if (vpTimestamp) {
+      const dateText = fmtDateTime(vpTimestamp);
+      drawInRect(dateText, PDF_COORDINATES.APPROVALS.VP.date.x, PDF_COORDINATES.APPROVALS.VP.date.top, PDF_COORDINATES.APPROVALS.VP.date.w, PDF_COORDINATES.APPROVALS.VP.date.h, 9);
+    }
     
     // Second VP (if both VPs approved - for multi-department requests)
     if (request.both_vps_approved && vp2ApproverName) {
@@ -930,11 +1078,25 @@ export async function GET(
       await drawSignatureWithMetadata(
         request.vp2_signature || null,
         vp2ApproverName,
-        vp2Timestamp,
+        null, // Don't draw date here, draw separately
         vp2Comments,
-        85, 680, 180, 34, // Signature box
-        125, 700, 260 // Name position
+        PDF_COORDINATES.APPROVALS.VP2.sig.x,
+        PDF_COORDINATES.APPROVALS.VP2.sig.top,
+        PDF_COORDINATES.APPROVALS.VP2.sig.w,
+        PDF_COORDINATES.APPROVALS.VP2.sig.h,
+        PDF_COORDINATES.APPROVALS.VP2.name.x,
+        PDF_COORDINATES.APPROVALS.VP2.name.top,
+        PDF_COORDINATES.APPROVALS.VP2.name.w,
+        PDF_COORDINATES.APPROVALS.VP2.comments.x,
+        PDF_COORDINATES.APPROVALS.VP2.comments.top,
+        PDF_COORDINATES.APPROVALS.VP2.comments.w,
+        PDF_COORDINATES.APPROVALS.VP2.comments.h
       );
+      // Draw VP2 date on the right side
+      if (vp2Timestamp) {
+        const dateText = fmtDateTime(vp2Timestamp);
+        drawInRect(dateText, PDF_COORDINATES.APPROVALS.VP2.date.x, PDF_COORDINATES.APPROVALS.VP2.date.top, PDF_COORDINATES.APPROVALS.VP2.date.w, PDF_COORDINATES.APPROVALS.VP2.date.h, 9);
+      }
     }
     
     // HR Director signature (Noted by section)
@@ -943,12 +1105,26 @@ export async function GET(
     const hrComments = request.hr_comments || null;
     await drawSignatureWithMetadata(
       request.hr_signature || null,
-      hrApproverName,
-      hrTimestamp,
+      hrApproverName || "DR. MARIA SYLVIA S. AVILA",
+      null, // Don't draw date here, draw separately
       hrComments,
-      85, 630, 180, 34, // Signature box
-      125, 650, 260 // Name position
+      PDF_COORDINATES.APPROVALS.HR.sig.x,
+      PDF_COORDINATES.APPROVALS.HR.sig.top,
+      PDF_COORDINATES.APPROVALS.HR.sig.w,
+      PDF_COORDINATES.APPROVALS.HR.sig.h,
+      PDF_COORDINATES.APPROVALS.HR.name.x,
+      PDF_COORDINATES.APPROVALS.HR.name.top,
+      PDF_COORDINATES.APPROVALS.HR.name.w,
+      PDF_COORDINATES.APPROVALS.HR.comments.x,
+      PDF_COORDINATES.APPROVALS.HR.comments.top,
+      PDF_COORDINATES.APPROVALS.HR.comments.w,
+      PDF_COORDINATES.APPROVALS.HR.comments.h
     );
+    // Draw HR date on the right side
+    if (hrTimestamp) {
+      const dateText = fmtDateTime(hrTimestamp);
+      drawInRect(dateText, PDF_COORDINATES.APPROVALS.HR.date.x, PDF_COORDINATES.APPROVALS.HR.date.top, PDF_COORDINATES.APPROVALS.HR.date.w, PDF_COORDINATES.APPROVALS.HR.date.h, 9);
+    }
     
 
     // Save the PDF

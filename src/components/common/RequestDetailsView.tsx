@@ -29,6 +29,7 @@ import RequestStatusTracker from './RequestStatusTracker';
 import { formatLongDate, formatLongDateTime } from '@/lib/datetime';
 import FileAttachmentSection from '@/components/user/request/ui/parts/FileAttachmentSection.view';
 import { createSupabaseClient } from '@/lib/supabase/client';
+import NudgeButton from '@/components/user/request/NudgeButton';
 
 export interface RequestData {
   id: string;
@@ -251,6 +252,7 @@ interface RequestDetailsViewProps {
   canApprove?: boolean;
   canReturn?: boolean;
   canEdit?: boolean;
+  isRequester?: boolean; // Whether current user is the requester
   onApprove?: () => void;
   onReturn?: () => void;
   onEdit?: () => void;
@@ -264,6 +266,7 @@ export default function RequestDetailsView({
   canApprove = false,
   canReturn = false,
   canEdit = false,
+  isRequester = false,
   onApprove,
   onReturn,
   onEdit,
@@ -820,7 +823,7 @@ export default function RequestDetailsView({
           )}
           {canReturn && (
             <WowButton variant="danger" onClick={onReturn}>
-              Return for Changes
+              Reject
             </WowButton>
           )}
           {canEdit && (
@@ -828,6 +831,37 @@ export default function RequestDetailsView({
               Edit Details
             </WowButton>
           )}
+        </motion.div>
+      )}
+
+      {/* Nudge Button for Requester */}
+      {isRequester && request.status.startsWith("pending_") && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-center justify-center p-4 bg-amber-50 border border-amber-200 rounded-xl"
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex-1">
+              <p className="text-sm font-medium text-amber-900">Request Pending Approval</p>
+              <p className="text-xs text-amber-700 mt-1">
+                Send a reminder to the current approver if your request has been pending for a while.
+              </p>
+            </div>
+            <NudgeButton
+              requestId={request.id}
+              requestStatus={request.status}
+              requestCreatedAt={request.created_at || new Date().toISOString()}
+              currentApprover={{
+                role: request.status === "pending_head" ? "Department Head" :
+                      request.status === "pending_admin" ? "Admin" :
+                      request.status === "pending_comptroller" ? "Comptroller" :
+                      request.status === "pending_hr" ? "HR" :
+                      request.status === "pending_exec" || request.status === "pending_vp" ? "VP" :
+                      request.status === "pending_president" ? "President" : "Approver"
+              }}
+            />
+          </div>
         </motion.div>
       )}
 

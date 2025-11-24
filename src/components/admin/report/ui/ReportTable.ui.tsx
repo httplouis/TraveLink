@@ -24,7 +24,7 @@ export function ReportTable({
       <table id={tableId} className="min-w-full">
         <thead className="sticky top-0 z-10 bg-gradient-to-b from-[#7a1f2a] to-[#8a2f3a] text-white">
           <tr className="text-xs font-semibold uppercase tracking-wide">
-            {["ID","Department","Purpose","Date","Status","Vehicle","Driver","KM"].map((h) => (
+            {["ID","Type","Department","Purpose","Date","Status","Vehicle","Driver","Budget","KM"].map((h) => (
               <th key={h} className="px-6 py-4 text-left">{h}</th>
             ))}
           </tr>
@@ -32,7 +32,7 @@ export function ReportTable({
         <tbody className="text-sm [&>tr:nth-child(odd)]:bg-white [&>tr:nth-child(even)]:bg-neutral-50/50">
           {rows.length === 0 && (
             <tr>
-              <td colSpan={8} className="px-6 py-12 text-center">
+              <td colSpan={10} className="px-6 py-12 text-center">
                 <div className="flex flex-col items-center gap-2">
                   <div className="text-4xl">📊</div>
                   <div className="text-sm font-medium text-neutral-500">No records found</div>
@@ -44,6 +44,15 @@ export function ReportTable({
           {rows.map((r) => (
             <tr key={r.id} className="border-b border-neutral-200/60 last:border-0 hover:bg-[#7a1f2a]/5 transition-colors">
               <td className="px-6 py-3 font-medium text-neutral-900">{r.id}</td>
+              <td className="px-6 py-3">
+                <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
+                  r.requestType === "seminar" 
+                    ? "bg-purple-100 text-purple-700 border border-purple-200" 
+                    : "bg-blue-100 text-blue-700 border border-blue-200"
+                }`}>
+                  {r.requestType === "seminar" ? "Seminar" : "Travel"}
+                </span>
+              </td>
               <td className="px-6 py-3 text-neutral-700">{r.department}</td>
               <td className="px-6 py-3 text-neutral-700">{r.purpose}</td>
               <td className="px-6 py-3 text-neutral-600">{r.date ? new Date(r.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : "—"}</td>
@@ -54,6 +63,9 @@ export function ReportTable({
               </td>
               <td className="px-6 py-3 text-neutral-700">{r.vehicleCode}</td>
               <td className="px-6 py-3 text-neutral-700">{r.driver}</td>
+              <td className="px-6 py-3 text-neutral-600 font-medium">
+                {r.budget ? `₱${r.budget.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "₱0.00"}
+              </td>
               <td className="px-6 py-3 text-neutral-600 font-medium">{r.km || "—"}</td>
             </tr>
           ))}

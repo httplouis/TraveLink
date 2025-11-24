@@ -17,6 +17,14 @@ export function ExportBar({
     downloadCSV(rows);
     setHistory(getHistory());
   };
+  const handleExcel = () => {
+    downloadExcel(rows);
+    setHistory(getHistory());
+  };
+  const handlePDF = () => {
+    downloadPDF(rows, tableId);
+    setHistory(getHistory());
+  };
   const handlePrint = () => {
     printElementById(tableId);
     setHistory(getHistory());
@@ -24,12 +32,24 @@ export function ExportBar({
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-4">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <button
           onClick={handleCSV}
           className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-[#7a1f2a] to-[#9a2f3a] text-white px-4 py-2.5 text-sm font-medium hover:from-[#6a1a24] hover:to-[#8a1f2a] transition-all shadow-md hover:shadow-lg"
         >
-          <FileDown size={18} /> Export CSV
+          <FileDown size={18} /> CSV
+        </button>
+        <button
+          onClick={handleExcel}
+          className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-2.5 text-sm font-medium hover:from-green-700 hover:to-green-800 transition-all shadow-md hover:shadow-lg"
+        >
+          <FileSpreadsheet size={18} /> Excel
+        </button>
+        <button
+          onClick={handlePDF}
+          className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-red-600 to-red-700 text-white px-4 py-2.5 text-sm font-medium hover:from-red-700 hover:to-red-800 transition-all shadow-md hover:shadow-lg"
+        >
+          <FileText size={18} /> PDF
         </button>
         <button
           onClick={handlePrint}

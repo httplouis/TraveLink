@@ -39,6 +39,16 @@ export function ReportFilterBar({
 
       <select
         className="rounded-lg border border-neutral-300 px-3 py-2 text-sm bg-white hover:border-[#7a1f2a] focus:outline-none focus:ring-2 focus:ring-[#7a1f2a]/30 transition-colors"
+        value={value.requestType ?? "all"}
+        onChange={(e) => onChange({ ...value, requestType: e.target.value as any })}
+      >
+        <option value="all">All Types</option>
+        <option value="travel_order">Travel Orders</option>
+        <option value="seminar">Seminar Applications</option>
+      </select>
+
+      <select
+        className="rounded-lg border border-neutral-300 px-3 py-2 text-sm bg-white hover:border-[#7a1f2a] focus:outline-none focus:ring-2 focus:ring-[#7a1f2a]/30 transition-colors"
         value={value.status ?? ""}
         onChange={(e) => onChange({ ...value, status: e.target.value as any })}
       >

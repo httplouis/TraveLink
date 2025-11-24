@@ -90,12 +90,14 @@ export async function POST(
 
     const now = new Date().toISOString();
 
-    // Update request: set status to "returned" and allow editing
+    // Update request: set status to "draft" (rejected, goes back to drafts)
     const updateData: any = {
-      status: "returned",
+      status: "draft",
       returned_at: now,
       returned_by: profile.id,
       return_reason: return_reason,
+      rejected_at: now,
+      rejected_by: profile.id,
       updated_at: now,
     };
 
@@ -131,7 +133,7 @@ export async function POST(
     // Log to request_history
     await supabaseServiceRole.from("request_history").insert({
       request_id: requestId,
-      action: "returned_to_requester",
+      action: "rejected",
       actor_id: profile.id,
       actor_role: profile.is_head
         ? "head"
@@ -143,42 +145,42 @@ export async function POST(
         ? "hr"
         : "executive",
       previous_status: request.status,
-      new_status: "returned",
-      comments: return_reason + (comments ? ` - ${comments}` : ""),
+      new_status: "draft",
+      comments: `Request rejected and returned to drafts. Reason: ${return_reason}${comments ? ` - ${comments}` : ""}`,
       metadata: {
         return_reason,
-        returned_at: now,
-        returned_by: profile.id,
+        rejected_at: now,
+        rejected_by: profile.id,
       },
     });
 
-    // Create notification for requester
+    // Create notification for requester - clickable, goes to drafts
     try {
       const { createNotification } = await import("@/lib/notifications/helpers");
 
       if (request.requester_id) {
         await createNotification({
           user_id: request.requester_id,
-          notification_type: "request_returned",
-          title: "Request Returned for Revision",
-          message: `Your request ${request.request_number || ""} has been returned. Reason: ${return_reason}`,
+          notification_type: "request_rejected",
+          title: "Request Rejected",
+          message: `Your request ${request.request_number || ""} has been rejected and returned to your drafts. Reason: ${return_reason}${comments ? ` - ${comments}` : ""}`,
           related_type: "request",
           related_id: requestId,
-          action_url: `/user/request/${requestId}`,
-          action_label: "Edit Request",
+          action_url: `/user/drafts?requestId=${requestId}`,
+          action_label: "View in Drafts",
           priority: "high",
         });
       }
     } catch (notifError: any) {
-      console.error("[Return Request] Failed to create notification:", notifError);
+      console.error("[Reject Request] Failed to create notification:", notifError);
     }
 
     return NextResponse.json({
       ok: true,
       data: {
         id: requestId,
-        status: "returned",
-        message: "Request returned to requester successfully",
+        status: "draft",
+        message: "Request rejected and returned to drafts. Requester has been notified.",
       },
     });
   } catch (error: any) {

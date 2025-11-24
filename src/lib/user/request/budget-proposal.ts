@@ -13,13 +13,13 @@ import type { TravelCosts } from "@/lib/user/request/types";
 export function getInstitutionalVehicleProposedBudget(): TravelCosts {
   return {
     food: 500, // Default food budget
-    driversAllowance: 0, // No driver allowance needed for institutional vehicles (driver is provided)
+    driversAllowance: 1000, // Fixed driver allowance for institutional vehicles (editable)
     rentVehicles: 0, // No rental needed (using institutional vehicle)
     hiredDrivers: 0, // No hired drivers needed (driver is provided)
     accommodation: 0, // Accommodation is optional
     // Keep existing descriptions if any
     foodDescription: "Meals during travel",
-    driversAllowanceDescription: "",
+    driversAllowanceDescription: "Driver allowance for institutional vehicle",
     rentVehiclesDescription: "",
     hiredDriversDescription: "",
     accommodationDescription: "",
@@ -69,10 +69,16 @@ export function mergeProposedBudget(existingCosts?: TravelCosts): TravelCosts {
     ...existingCosts,
     // Override amounts with proposed defaults only if not set
     food: existingCosts?.food ?? proposed.food,
-    driversAllowance: existingCosts?.driversAllowance ?? proposed.driversAllowance,
+    // For institutional vehicles, set driver allowance to 1000 if not already set
+    // But allow user to edit it
+    driversAllowance: existingCosts?.driversAllowance !== undefined 
+      ? existingCosts.driversAllowance 
+      : proposed.driversAllowance,
     rentVehicles: existingCosts?.rentVehicles ?? proposed.rentVehicles,
     hiredDrivers: existingCosts?.hiredDrivers ?? proposed.hiredDrivers,
     accommodation: existingCosts?.accommodation ?? proposed.accommodation,
+    // Preserve or set driver allowance description
+    driversAllowanceDescription: existingCosts?.driversAllowanceDescription || proposed.driversAllowanceDescription,
   };
 }
 

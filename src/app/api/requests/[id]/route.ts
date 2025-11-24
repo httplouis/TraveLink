@@ -985,6 +985,7 @@ export async function PATCH(
     
     // Allow cancellation if user is requester AND request is still pending
     // Allow editing if user is requester AND request is returned
+    // Admin can edit requests at ANY stage (pending, processing, approved)
     if (isCancellation && isRequester && (request.status.startsWith("pending_") || request.status === "draft")) {
       // Requester can cancel their own pending requests - allow this
     } else if (isReturned && isRequester) {
@@ -995,6 +996,9 @@ export async function PATCH(
         error: "Only admins can update requests" 
       }, { status: 403 });
     }
+    
+    // Admin can edit requests regardless of status (pending, processing, approved)
+    // No status restriction for admin edits
 
     // Parse request body fields
     const {
@@ -1012,6 +1016,30 @@ export async function PATCH(
       travel_start_date,
       travel_end_date,
       passengers,
+      // Additional fields for admin editing
+      title,
+      participants,
+      vehicle_mode,
+      needs_vehicle,
+      vehicle_type,
+      needs_rental,
+      rental_note,
+      pickup_preference,
+      pickup_location,
+      pickup_time,
+      pickup_contact_number,
+      transportation_type,
+      return_transportation_same,
+      dropoff_location,
+      dropoff_time,
+      parking_required,
+      own_vehicle_details,
+      preferred_driver_id,
+      preferred_vehicle_id,
+      preferred_driver_note,
+      preferred_vehicle_note,
+      destination_geo,
+      workflow_metadata,
       // Allow updating other fields as needed
       ...otherFields
     } = body;
@@ -1048,23 +1076,55 @@ export async function PATCH(
       updateData.cost_justification = cost_justification || null;
     }
 
-    // Admin can edit travel details (date, destination, passengers)
+    // Admin can edit ALL request fields (while processing and after approval)
     if (isAdmin) {
-      if (destination !== undefined) {
-        updateData.destination = destination;
-      }
-      if (travel_start_date !== undefined) {
-        updateData.travel_start_date = travel_start_date;
-      }
-      if (travel_end_date !== undefined) {
-        updateData.travel_end_date = travel_end_date;
-      }
-      if (passengers !== undefined) {
-        updateData.passengers = passengers;
-      }
-      if (purpose !== undefined) {
-        updateData.purpose = purpose;
-      }
+      // Basic request details
+      if (title !== undefined) updateData.title = title;
+      if (purpose !== undefined) updateData.purpose = purpose;
+      if (destination !== undefined) updateData.destination = destination;
+      if (destination_geo !== undefined) updateData.destination_geo = destination_geo;
+      
+      // Dates
+      if (travel_start_date !== undefined) updateData.travel_start_date = travel_start_date;
+      if (travel_end_date !== undefined) updateData.travel_end_date = travel_end_date;
+      
+      // Participants
+      if (participants !== undefined) updateData.participants = participants;
+      if (passengers !== undefined) updateData.passengers = passengers;
+      
+      // Budget
+      if (total_budget !== undefined) updateData.total_budget = total_budget;
+      if (expense_breakdown !== undefined) updateData.expense_breakdown = expense_breakdown;
+      if (has_budget !== undefined) updateData.has_budget = has_budget;
+      
+      // Vehicle details
+      if (vehicle_mode !== undefined) updateData.vehicle_mode = vehicle_mode;
+      if (needs_vehicle !== undefined) updateData.needs_vehicle = needs_vehicle;
+      if (vehicle_type !== undefined) updateData.vehicle_type = vehicle_type;
+      if (needs_rental !== undefined) updateData.needs_rental = needs_rental;
+      if (rental_note !== undefined) updateData.rental_note = rental_note;
+      if (assigned_driver_id !== undefined) updateData.assigned_driver_id = assigned_driver_id || null;
+      if (assigned_vehicle_id !== undefined) updateData.assigned_vehicle_id = assigned_vehicle_id || null;
+      if (preferred_driver_id !== undefined) updateData.preferred_driver_id = preferred_driver_id || null;
+      if (preferred_vehicle_id !== undefined) updateData.preferred_vehicle_id = preferred_vehicle_id || null;
+      if (preferred_driver_note !== undefined) updateData.preferred_driver_note = preferred_driver_note;
+      if (preferred_vehicle_note !== undefined) updateData.preferred_vehicle_note = preferred_vehicle_note;
+      
+      // Transportation details
+      if (transportation_type !== undefined) updateData.transportation_type = transportation_type;
+      if (pickup_preference !== undefined) updateData.pickup_preference = pickup_preference;
+      if (pickup_location !== undefined) updateData.pickup_location = pickup_location;
+      if (pickup_time !== undefined) updateData.pickup_time = pickup_time;
+      if (pickup_contact_number !== undefined) updateData.pickup_contact_number = pickup_contact_number;
+      if (return_transportation_same !== undefined) updateData.return_transportation_same = return_transportation_same;
+      if (dropoff_location !== undefined) updateData.dropoff_location = dropoff_location;
+      if (dropoff_time !== undefined) updateData.dropoff_time = dropoff_time;
+      if (parking_required !== undefined) updateData.parking_required = parking_required;
+      if (own_vehicle_details !== undefined) updateData.own_vehicle_details = own_vehicle_details;
+      
+      // Other fields
+      if (cost_justification !== undefined) updateData.cost_justification = cost_justification;
+      if (workflow_metadata !== undefined) updateData.workflow_metadata = workflow_metadata;
     }
 
     // Allow updating attachments (and adding new ones for returned requests)

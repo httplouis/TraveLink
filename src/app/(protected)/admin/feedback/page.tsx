@@ -25,7 +25,7 @@ type Trip = {
 };
 
 export default function FeedbackPage() {
-  const { rows, refresh } = useFeedback();
+  const { rows, refresh, loading } = useFeedback();
   const [open, setOpen] = React.useState(false);
   const [view, setView] = React.useState<Feedback | null>(null);
   const [completedTrips, setCompletedTrips] = React.useState<Trip[]>([]);
@@ -104,17 +104,29 @@ export default function FeedbackPage() {
       {/* Content */}
       {activeTab === "feedback" ? (
         <>
-          <FeedbackTable
-            rows={rows}
-            onView={(f) => setView(f)}
-            onDelete={(ids) => {
-              FeedbackRepo.removeMany(ids);
-              refresh();
-            }}
-          />
+          {loading ? (
+            <div className="text-center py-8">
+              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-[#7A0010]"></div>
+              <p className="mt-2 text-gray-500">Loading feedback...</p>
+            </div>
+          ) : (
+            <FeedbackTable
+              rows={rows}
+              onView={(f) => setView(f)}
+              onDelete={async (ids) => {
+                try {
+                  await FeedbackRepo.removeMany(ids);
+                  await refresh();
+                } catch (error) {
+                  console.error('[FeedbackPage] Error deleting feedback:', error);
+                }
+              }}
+            />
+          )}
           <FeedbackForm
             open={open}
             onClose={() => setOpen(false)}
+            trips={completedTrips}
             onSave={(data) => {
               FeedbackRepo.create(data);
               refresh();

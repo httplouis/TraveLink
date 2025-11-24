@@ -100,13 +100,44 @@ export default function AdminCalendarPageClient() {
     refresh();
   }, [refresh]);
 
-  // Real-time updates: Poll every 10 seconds
+  // Real-time updates using Supabase Realtime (no polling)
   React.useEffect(() => {
-    const interval = setInterval(() => {
-      refresh();
-    }, 10000);
+    const { createSupabaseClient } = require("@/lib/supabase/client");
+    const supabase = createSupabaseClient();
+    let mutateTimeout: NodeJS.Timeout | null = null;
+    let channel: any = null;
+    
+    // Set up real-time subscription for requests table
+    channel = supabase
+      .channel("admin-schedule-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*", // INSERT, UPDATE, DELETE
+          schema: "public",
+          table: "requests",
+        },
+        (payload: any) => {
+          console.log("[AdminCalendar] 🔄 Real-time change detected:", payload.eventType);
+          
+          // Debounce: only trigger refetch after 500ms of no changes
+          if (mutateTimeout) clearTimeout(mutateTimeout);
+          mutateTimeout = setTimeout(() => {
+            refresh(); // Silent refresh
+          }, 500);
+        }
+      )
+      .subscribe((status: string) => {
+        console.log("[AdminCalendar] Realtime subscription status:", status);
+      });
 
-    return () => clearInterval(interval);
+    // Cleanup
+    return () => {
+      if (mutateTimeout) clearTimeout(mutateTimeout);
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
   }, [refresh]);
 
   // Open date details

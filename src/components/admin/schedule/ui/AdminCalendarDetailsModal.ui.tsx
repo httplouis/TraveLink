@@ -2,6 +2,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { X, MapPin, Calendar, Users, Car, User, FileText, Edit2 } from "lucide-react";
 
 type CalendarRequest = {
@@ -48,6 +49,8 @@ export function AdminCalendarDetailsModal({
   onClose: () => void;
   onRefresh: () => void;
 }) {
+  const router = useRouter();
+  
   if (!open || !dateISO) return null;
 
   const date = dateISO ? new Date(dateISO) : null;
@@ -123,12 +126,14 @@ export function AdminCalendarDetailsModal({
                       <p className="text-sm text-gray-600 mb-1">Request #: {req.request_number}</p>
                     </div>
                     <button
-                      onClick={() => {
-                        // TODO: Open edit modal
-                        window.location.href = `/admin/requests?requestId=${req.id}`;
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        // Use Next.js router to navigate without full page reload
+                        router.push(`/admin/requests?requestId=${req.id}`);
                       }}
                       className="p-2 hover:bg-gray-100 rounded-lg transition"
                       aria-label="Edit request"
+                      title="View/Edit Request"
                     >
                       <Edit2 className="h-4 w-4 text-gray-500" />
                     </button>

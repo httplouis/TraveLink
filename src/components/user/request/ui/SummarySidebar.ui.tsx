@@ -5,6 +5,7 @@ import * as React from "react";
 import type { RequestFormData } from "@/lib/user/request/types";
 import { ArrowRight, CheckCircle2, MapPin, Calendar, User, Building2, Users, FileText, Wallet, Briefcase, Crown, Truck, Settings } from "lucide-react";
 import { getApproverDisplayName } from "@/lib/user/request/routing";
+import { computeTotalBudget } from "@/lib/user/request/status";
 
 export default function SummarySidebar({
   data,
@@ -16,6 +17,16 @@ export default function SummarySidebar({
   path: string[];
 }) {
   const usedInstitutional = data.vehicleMode === "institutional";
+  
+  // Calculate total budget for approver logic
+  const totalBudget = React.useMemo(() => {
+    return computeTotalBudget(data.travelOrder?.costs);
+  }, [data.travelOrder?.costs]);
+  
+  const budgetThreshold = 15000;
+  const needsPresident = 
+    data.requesterRole === "head" || 
+    (data.requesterRole === "faculty" && totalBudget >= budgetThreshold);
 
   return (
     <aside className="sticky top-6 h-fit rounded-2xl border-2 border-gray-200 bg-gradient-to-br from-white via-gray-50/30 to-white p-6 shadow-xl">
@@ -26,22 +37,14 @@ export default function SummarySidebar({
             <div className="rounded-lg bg-blue-600 p-1.5">
               <FileText className="h-4 w-4 text-white" />
             </div>
-            <h4 className="text-base font-bold text-gray-900">Routing Preview</h4>
+            <h4 className="text-base font-bold text-gray-900">Approval Path</h4>
           </div>
           <Badge tone={usedInstitutional ? "info" : "success"}>
             {usedInstitutional ? "With TM" : "Budget first"}
           </Badge>
         </div>
 
-        <div className="mb-3 rounded-lg border border-blue-200 bg-white p-3">
-          <div className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-blue-700">
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            First receiver
-          </div>
-          <div className="text-sm font-bold text-gray-900">{getApproverDisplayName(firstHop)}</div>
-        </div>
-
-        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-600">Full path</div>
+        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-600">Full approval path</div>
         <Stepper steps={path} />
       </section>
 
@@ -128,7 +131,14 @@ export default function SummarySidebar({
             { name: "Comptroller", icon: <Wallet className="h-4 w-4 text-purple-600" /> },
             { name: "Human Resources Department", icon: <Users className="h-4 w-4 text-blue-600" /> },
             { name: "Vice President", icon: <Briefcase className="h-4 w-4 text-indigo-600" /> },
-            { name: "President / COO", icon: <Crown className="h-4 w-4 text-amber-600" />, conditional: data.requesterRole === "head", note: "(for Heads only)" },
+            { 
+              name: "President / COO", 
+              icon: <Crown className="h-4 w-4 text-amber-600" />, 
+              conditional: needsPresident, 
+              note: needsPresident && data.requesterRole === "faculty" 
+                ? `(budget ≥ ₱${budgetThreshold.toLocaleString()})` 
+                : "(for Heads only)" 
+            },
             { name: "Transportation Manager", icon: <Truck className="h-4 w-4 text-amber-600" /> },
           ].map((approver, idx) => (
             <li

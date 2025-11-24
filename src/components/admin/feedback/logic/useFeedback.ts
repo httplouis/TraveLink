@@ -6,12 +6,33 @@ import type { Feedback } from "@/lib/admin/feedback/types";
 
 export function useFeedback() {
   const [rows, setRows] = React.useState<Feedback[]>([]);
+  const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
-    setRows(FeedbackRepo.list());
+    async function loadFeedback() {
+      try {
+        setLoading(true);
+        const data = await FeedbackRepo.list();
+        setRows(Array.isArray(data) ? data : []);
+      } catch (error) {
+        console.error('[useFeedback] Error loading feedback:', error);
+        setRows([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadFeedback();
   }, []);
 
-  const refresh = () => setRows(FeedbackRepo.list());
+  const refresh = async () => {
+    try {
+      const data = await FeedbackRepo.list();
+      setRows(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error('[useFeedback] Error refreshing feedback:', error);
+      setRows([]);
+    }
+  };
 
-  return { rows, refresh };
+  return { rows, refresh, loading };
 }

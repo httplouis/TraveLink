@@ -47,12 +47,14 @@ export const DEPARTMENTS: DepartmentName[] = [
 
 export type TripRow = {
   id: string;
+  requestType?: "travel_order" | "seminar";
   department: DepartmentName; // updated
   purpose: string;
   date: string; // ISO
   status: ReportStatus;
   vehicleCode: string;
   driver: string;
+  budget?: number;
   km: number;
 };
 
@@ -60,6 +62,7 @@ export type ReportFilters = {
   search?: string;
   department?: DepartmentName | "";
   status?: ReportStatus | "";
+  requestType?: "all" | "travel_order" | "seminar";
   from?: string; // "YYYY-MM-DD"
   to?: string;   // "YYYY-MM-DD"
 };

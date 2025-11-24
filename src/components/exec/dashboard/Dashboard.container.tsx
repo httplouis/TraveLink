@@ -31,13 +31,23 @@ export default function ExecDashboardContainer() {
     fetch("/api/exec/stats")
       .then(res => res.json())
       .then(data => {
-        if (data.ok) {
+        if (data.ok && data.data) {
+          setKpis([
+            { label: "Executive Pending", value: data.data.pending_count || 0 },
+            { label: "Active Requests", value: data.data.active_count || 0 },
+            { label: "Approved This Month", value: data.data.approved_month || 0 },
+          ]);
+        } else if (data.ok) {
+          // Fallback for old format
           setKpis([
             { label: "Executive Pending", value: data.pending_count || 0 },
             { label: "Active Requests", value: data.active_count || 0 },
             { label: "Approved This Month", value: data.approved_month || 0 },
           ]);
         }
+      })
+      .catch(err => {
+        console.error("[ExecDashboard] Failed to fetch stats:", err);
       });
 
     fetch("/api/schedule")

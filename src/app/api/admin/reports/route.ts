@@ -20,12 +20,16 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get("page") || "1");
     const pageSize = parseInt(searchParams.get("pageSize") || "10");
     
+    // Get request type filter (if provided)
+    const requestType = searchParams.get("requestType"); // "travel_order", "seminar", or null for all
+    
     // Build query - fetch requests first, then get vehicle and driver data separately
     let query = supabase
       .from("requests")
       .select(`
         id,
         request_number,
+        request_type,
         title,
         purpose,
         travel_start_date,
@@ -34,8 +38,14 @@ export async function GET(request: NextRequest) {
         department_id,
         assigned_vehicle_id,
         assigned_driver_id,
+        total_budget,
         departments:departments!requests_department_id_fkey(id, name, code)
       `, { count: "exact" });
+    
+    // Filter by request type if specified
+    if (requestType && requestType !== "all") {
+      query = query.eq("request_type", requestType);
+    }
     
     // Apply filters
     if (search) {
@@ -113,12 +123,14 @@ export async function GET(request: NextRequest) {
       
       return {
         id: req.request_number || req.id,
+        requestType: req.request_type || "travel_order",
         department: req.departments?.name || "Unknown Department",
         purpose: req.purpose || req.title || "",
         date: req.travel_start_date ? new Date(req.travel_start_date).toISOString().split('T')[0] : "",
         status: mapStatus(req.status) as "Pending" | "Approved" | "Completed" | "Rejected",
         vehicleCode: vehicle?.plate_number || vehicle?.vehicle_name || "N/A",
         driver: driver?.name || "N/A",
+        budget: req.total_budget || 0,
         km: 0, // TODO: Add km tracking if available
       };
     });

@@ -1902,7 +1902,7 @@ export default function VPRequestModal({
           description="Choose who should review this request next, or return it to the requester for revision."
           options={approverOptions}
           currentRole="vp"
-          allowReturnToRequester={true}
+          allowReturnToRequester={false}
           requesterId={request.requester_id}
           requesterName={request.requester?.name || "Requester"}
           loading={loadingApprovers}

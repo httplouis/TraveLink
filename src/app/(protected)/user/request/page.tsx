@@ -1,51 +1,18 @@
 // src/app/(protected)/user/request/page.tsx
 "use client";
 
-import dynamic from "next/dynamic";
-import ToastProvider from "@/components/common/ui/ToastProvider.ui";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+import RequestFAQPage from "./faq/page";
 
-// Render the whole page client-only to avoid hydration issues
-const RequestWizard = dynamic(
-  async () => {
-    try {
-      const module = await import("@/components/user/request/RequestWizard.client");
-      return module;
-    } catch (error) {
-      console.error("[UserRequestPage] Failed to load RequestWizard:", error);
-      // Return a fallback component
-      return {
-        default: () => (
-          <div className="mx-auto max-w-6xl p-4">
-            <div className="rounded-lg border-2 border-red-200 bg-red-50 p-6 text-center">
-              <p className="text-red-800 font-semibold">Failed to load request form</p>
-              <p className="text-red-600 text-sm mt-2">Please refresh the page</p>
-            </div>
-          </div>
-        ),
-      };
-    }
-  },
-  { 
-    ssr: false,
-    loading: () => (
-      <div className="mx-auto max-w-6xl p-4">
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="text-center">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#7a0019] border-t-transparent mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading request form...</p>
-          </div>
-        </div>
-      </div>
-    )
-  }
-);
-
+// Redirect to FAQ page (which has the "Start Request Now" button)
 export default function UserRequestPage() {
-  return (
-    <ToastProvider>
-      <div className="mx-auto max-w-6xl p-4">
-        <RequestWizard />
-      </div>
-    </ToastProvider>
-  );
+  const router = useRouter();
+  
+  useEffect(() => {
+    // Redirect to FAQ page
+    router.replace("/user/request/faq");
+  }, [router]);
+
+  return <RequestFAQPage />;
 }

@@ -348,58 +348,7 @@ export default function ApproverSelectionModal({
               </div>
             )}
 
-            {/* Return to Requester Option */}
-            {!loading && allowReturnToRequester && requesterId && (
-              <div className="mb-6">
-                <button
-                  onClick={() => {
-                    setIsReturning(true);
-                    setSelectedId(null);
-                  }}
-                  className={`w-full p-4 border-2 rounded-lg text-left transition-all ${
-                    isReturning
-                      ? 'border-[#7a0019] bg-red-50'
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                      isReturning ? 'border-[#7a0019] bg-[#7a0019]' : 'border-gray-300'
-                    }`}>
-                      {isReturning && <Check className="w-3 h-3 text-white" />}
-                    </div>
-                    <div className="flex-1">
-                      <p className="font-semibold text-gray-900">Return to Requester</p>
-                      <p className="text-sm text-gray-600">{requesterName || 'Requester'}</p>
-                    </div>
-                  </div>
-                </button>
-
-                {isReturning && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    className="mt-3 ml-7"
-                  >
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Reason for Return:
-                    </label>
-                    <select
-                      value={returnReason}
-                      onChange={(e) => setReturnReason(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#7a0019] focus:border-transparent"
-                    >
-                      <option value="">Select a reason...</option>
-                      {returnReasons.map((reason) => (
-                        <option key={reason.value} value={reason.value}>
-                          {reason.label}
-                        </option>
-                      ))}
-                    </select>
-                  </motion.div>
-                )}
-              </div>
-            )}
+            {/* Return to Requester Option - REMOVED: Use Reject button instead */}
 
             {/* Loading All Users */}
             {loadingAllUsers && (

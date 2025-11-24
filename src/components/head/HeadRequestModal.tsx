@@ -1252,7 +1252,7 @@ export default function HeadRequestModal({
           description={`Request ${request.request_number || request.id} - Choose where to send this request after approval`}
           options={approverOptions}
           currentRole="head"
-          allowReturnToRequester={true}
+          allowReturnToRequester={false}
           requesterId={request.requester_id}
           requesterName={request.requester?.name || request.requester_name || "Requester"}
           loading={loadingApprovers}

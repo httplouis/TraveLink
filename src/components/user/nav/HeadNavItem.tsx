@@ -78,7 +78,7 @@ const NAV: Item[] = [
     label: "Request",
     Icon: PlusSquare,
     children: [
-      { href: "/user/request", label: "New request", Icon: PlusSquare, exact: true },
+      { href: "/user/request/new", label: "New request", Icon: PlusSquare, exact: true },
       { href: "/user/drafts", label: "Drafts", Icon: FileClock },
       { href: "/user/submissions", label: "Submissions", Icon: ListChecks },
     ],

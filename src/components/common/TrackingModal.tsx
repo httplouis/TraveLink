@@ -17,6 +17,7 @@ export default function TrackingModal({ isOpen, onClose, requestId }: TrackingMo
   const [loading, setLoading] = React.useState(true);
   const [data, setData] = React.useState<any>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [downloadingPDF, setDownloadingPDF] = React.useState(false);
 
   React.useEffect(() => {
     if (isOpen && requestId) {
@@ -83,6 +84,7 @@ export default function TrackingModal({ isOpen, onClose, requestId }: TrackingMo
 
   const downloadPDF = async () => {
     try {
+      setDownloadingPDF(true);
       const res = await fetch(`/api/requests/${requestId}/pdf`);
       if (!res.ok) {
         throw new Error('Failed to generate PDF');
@@ -99,6 +101,29 @@ export default function TrackingModal({ isOpen, onClose, requestId }: TrackingMo
     } catch (err) {
       console.error('Failed to download PDF:', err);
       alert('Failed to download PDF. Please try again.');
+    } finally {
+      setDownloadingPDF(false);
+    }
+  };
+
+  const downloadPDFDebug = async () => {
+    try {
+      // Fast debug endpoint - shows coordinate grid
+      const res = await fetch(`/api/requests/${requestId}/pdf-debug`);
+      if (!res.ok) {
+        throw new Error('Failed to generate debug PDF');
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pdf-coordinates-debug.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error('Failed to download debug PDF:', err);
     }
   };
 
@@ -134,13 +159,24 @@ export default function TrackingModal({ isOpen, onClose, requestId }: TrackingMo
           </div>
           <div className="flex items-center gap-2">
             {data && (
-              <button
-                onClick={downloadPDF}
-                className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-colors text-sm font-medium"
-              >
-                <Download className="w-4 h-4" />
-                Download PDF
-              </button>
+              <>
+                <button
+                  onClick={downloadPDF}
+                  disabled={downloadingPDF}
+                  className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Download className={`w-4 h-4 ${downloadingPDF ? 'animate-pulse' : ''}`} />
+                  {downloadingPDF ? 'Generating...' : 'Download PDF'}
+                </button>
+                <button
+                  onClick={downloadPDFDebug}
+                  className="flex items-center gap-2 px-3 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-white rounded-lg transition-colors text-xs font-medium"
+                  title="Fast coordinate grid for manual adjustment"
+                >
+                  <Download className="w-3 h-3" />
+                  Debug Grid
+                </button>
+              </>
             )}
             <button
               onClick={onClose}

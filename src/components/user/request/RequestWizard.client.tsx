@@ -208,6 +208,60 @@ function RequestWizardContent() {
           if (result.ok && result.data) {
             const dbReq = result.data;
             
+            // Transform expense_breakdown array to costs object
+            const transformExpenseBreakdown = (breakdown: any[]): any => {
+              if (!Array.isArray(breakdown)) return {};
+              
+              const costs: any = {};
+              breakdown.forEach((item: any) => {
+                const itemName = (item.item || item.category || "").toLowerCase();
+                
+                if (itemName === "food" || itemName.includes("meal")) {
+                  costs.food = item.amount || 0;
+                  if (item.description) costs.foodDescription = item.description;
+                } else if (itemName === "accommodation" || itemName.includes("lodg")) {
+                  costs.accommodation = item.amount || 0;
+                  if (item.description) costs.accommodationDescription = item.description;
+                } else if ((itemName.includes("driver") && itemName.includes("allowance")) || itemName === "driver allowance") {
+                  costs.driversAllowance = item.amount || 0;
+                  if (item.description) costs.driversAllowanceDescription = item.description;
+                } else if (itemName.includes("hired") && itemName.includes("driver")) {
+                  costs.hiredDrivers = item.amount || 0;
+                  if (item.description) costs.hiredDriversDescription = item.description;
+                } else if (itemName.includes("rent") || itemName.includes("vehicle") || itemName.includes("transport")) {
+                  costs.rentVehicles = item.amount || 0;
+                  if (item.description) costs.rentVehiclesDescription = item.description;
+                } else if (itemName === "other") {
+                  costs.otherAmount = item.amount || 0;
+                  costs.otherLabel = item.description || item.item || "Other";
+                } else if (itemName) {
+                  if (!costs.otherItems) costs.otherItems = [];
+                  costs.otherItems.push({
+                    label: item.item || item.category || "Other",
+                    amount: item.amount || 0,
+                    description: item.description || ""
+                  });
+                }
+              });
+              
+              return costs;
+            };
+            
+            // Parse expense_breakdown if it's a string (JSONB from database)
+            let expenseBreakdown = dbReq.expense_breakdown;
+            if (typeof expenseBreakdown === "string") {
+              try {
+                expenseBreakdown = JSON.parse(expenseBreakdown);
+              } catch (e) {
+                console.warn("[RequestWizard] Failed to parse expense_breakdown:", e);
+                expenseBreakdown = [];
+              }
+            }
+            
+            const costs = Array.isArray(expenseBreakdown) 
+              ? transformExpenseBreakdown(expenseBreakdown)
+              : (dbReq.expense_breakdown || {});
+            
             // Transform database request to form data format
             const formData: any = {
               requesterRole: dbReq.requester_is_head ? "head" : "faculty",
@@ -221,7 +275,7 @@ function RequestWizardContent() {
                 departureDate: dbReq.travel_start_date ? new Date(dbReq.travel_start_date).toISOString().split('T')[0] : "",
                 returnDate: dbReq.travel_end_date ? new Date(dbReq.travel_end_date).toISOString().split('T')[0] : "",
                 purposeOfTravel: dbReq.purpose || "",
-                costs: dbReq.expense_breakdown || {},
+                costs: costs,
                 // CRITICAL: Restore signatures from database
                 requesterSignature: dbReq.requester_signature || null,
                 endorsedByHeadName: dbReq.head_approver?.name || dbReq.head_approver?.email || "",
@@ -261,6 +315,60 @@ function RequestWizardContent() {
           if (result.ok && result.data && result.data.status === "draft") {
             const dbReq = result.data;
             
+            // Transform expense_breakdown array to costs object (same logic as above)
+            const transformExpenseBreakdown = (breakdown: any[]): any => {
+              if (!Array.isArray(breakdown)) return {};
+              
+              const costs: any = {};
+              breakdown.forEach((item: any) => {
+                const itemName = (item.item || item.category || "").toLowerCase();
+                
+                if (itemName === "food" || itemName.includes("meal")) {
+                  costs.food = item.amount || 0;
+                  if (item.description) costs.foodDescription = item.description;
+                } else if (itemName === "accommodation" || itemName.includes("lodg")) {
+                  costs.accommodation = item.amount || 0;
+                  if (item.description) costs.accommodationDescription = item.description;
+                } else if ((itemName.includes("driver") && itemName.includes("allowance")) || itemName === "driver allowance") {
+                  costs.driversAllowance = item.amount || 0;
+                  if (item.description) costs.driversAllowanceDescription = item.description;
+                } else if (itemName.includes("hired") && itemName.includes("driver")) {
+                  costs.hiredDrivers = item.amount || 0;
+                  if (item.description) costs.hiredDriversDescription = item.description;
+                } else if (itemName.includes("rent") || itemName.includes("vehicle") || itemName.includes("transport")) {
+                  costs.rentVehicles = item.amount || 0;
+                  if (item.description) costs.rentVehiclesDescription = item.description;
+                } else if (itemName === "other") {
+                  costs.otherAmount = item.amount || 0;
+                  costs.otherLabel = item.description || item.item || "Other";
+                } else if (itemName) {
+                  if (!costs.otherItems) costs.otherItems = [];
+                  costs.otherItems.push({
+                    label: item.item || item.category || "Other",
+                    amount: item.amount || 0,
+                    description: item.description || ""
+                  });
+                }
+              });
+              
+              return costs;
+            };
+            
+            // Parse expense_breakdown if it's a string (JSONB from database)
+            let expenseBreakdown = dbReq.expense_breakdown;
+            if (typeof expenseBreakdown === "string") {
+              try {
+                expenseBreakdown = JSON.parse(expenseBreakdown);
+              } catch (e) {
+                console.warn("[RequestWizard] Failed to parse expense_breakdown:", e);
+                expenseBreakdown = [];
+              }
+            }
+            
+            const costs = Array.isArray(expenseBreakdown) 
+              ? transformExpenseBreakdown(expenseBreakdown)
+              : (dbReq.expense_breakdown || {});
+            
             // Transform database request to form data format
             const formData: any = {
               requesterRole: dbReq.requester_is_head ? "head" : "faculty",
@@ -274,7 +382,7 @@ function RequestWizardContent() {
                 departureDate: dbReq.travel_start_date ? new Date(dbReq.travel_start_date).toISOString().split('T')[0] : "",
                 returnDate: dbReq.travel_end_date ? new Date(dbReq.travel_end_date).toISOString().split('T')[0] : "",
                 purposeOfTravel: dbReq.purpose || "",
-                costs: dbReq.expense_breakdown || {},
+                costs: costs,
                 // CRITICAL: Restore signatures from database
                 requesterSignature: dbReq.requester_signature || null,
                 endorsedByHeadName: dbReq.head_approver?.name || dbReq.head_approver?.email || "",
