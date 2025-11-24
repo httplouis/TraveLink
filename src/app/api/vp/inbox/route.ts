@@ -293,14 +293,26 @@ export async function GET(req: NextRequest) {
             console.log(`[VP Inbox] ❌ Skipping request ${req.id} - assigned to different VP (${nextVpIdStr || nextApproverIdStr} vs ${profileIdStr})`);
             return false;
           }
-          // This VP is the assigned one - show it (even if no VP approved yet)
+          // This VP is the assigned one - check if already approved
+          const alreadyApproved = String(req.vp_approved_by) === profileIdStr || String(req.vp2_approved_by) === profileIdStr;
+          if (alreadyApproved) {
+            console.log(`[VP Inbox] ❌ Skipping request ${req.id} - already approved by this VP`);
+            return false;
+          }
+          // This VP is the assigned one and hasn't approved yet - show it
           console.log(`[VP Inbox] ✅ Request ${req.id} (${req.request_number}) assigned to this VP - showing`);
           return true;
         }
         
         // No specific VP assigned - show to all VPs (first come first serve)
+        // But exclude if this VP has already approved
+        const alreadyApprovedByThisVP = String(req.vp_approved_by) === profileIdStr || String(req.vp2_approved_by) === profileIdStr;
+        if (alreadyApprovedByThisVP) {
+          console.log(`[VP Inbox] ❌ Skipping request ${req.id} - already approved by this VP`);
+          return false;
+        }
         const noVPApproved = !req.vp_approved_by;
-        const firstVPApproved = req.vp_approved_by && !req.vp2_approved_by && req.vp_approved_by !== profile.id;
+        const firstVPApproved = req.vp_approved_by && !req.vp2_approved_by && String(req.vp_approved_by) !== profileIdStr;
         return noVPApproved || firstVPApproved;
       }
       

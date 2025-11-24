@@ -6,6 +6,7 @@ import { useToast } from "@/components/common/ui/Toast";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import { NameWithProfile } from "@/components/common/ProfileHoverCard";
 import ApproverSelectionModal from "@/components/common/ApproverSelectionModal";
+import SuccessModal from "@/components/common/SuccessModal";
 
 interface VPRequestModalProps {
   request: any;
@@ -45,6 +46,8 @@ export default function VPRequestModal({
   const [additionalRequesters, setAdditionalRequesters] = React.useState<any[]>([]);
   const [loadingRequesters, setLoadingRequesters] = React.useState(false);
   const [mainRequesterSignature, setMainRequesterSignature] = React.useState<string | null>(null);
+  const [showSuccessModal, setShowSuccessModal] = React.useState(false);
+  const [successMessage, setSuccessMessage] = React.useState("");
 
   const [fullRequest, setFullRequest] = React.useState<any>(null);
   const t = fullRequest || request;
@@ -622,12 +625,14 @@ export default function VPRequestModal({
         const roleLabel = selectedRole === "requester" ? "Requester" : 
                          selectedRole === "admin" ? "Admin" : 
                          selectedRole === "president" ? "President" : "Next Approver";
-        toast.success("Request Approved", `Request has been sent to ${roleLabel}`);
         setShowApproverSelection(false);
+        setSuccessMessage(`Request approved successfully and sent to ${roleLabel}`);
+        setShowSuccessModal(true);
+        // Close modal and refresh after success modal closes
         setTimeout(() => {
           onApproved(request.id);
           onClose();
-        }, 1500);
+        }, 3000);
       } else {
         toast.error("Approval Failed", data.error || "Failed to approve request");
       }
@@ -672,11 +677,12 @@ export default function VPRequestModal({
       const data = await res.json();
 
       if (data.ok) {
-        toast.info("Request Rejected", "Request rejected successfully");
+        setSuccessMessage("Request rejected successfully");
+        setShowSuccessModal(true);
         setTimeout(() => {
           onRejected(request.id);
           onClose();
-        }, 1500);
+        }, 3000);
       } else {
         toast.error("Rejection Failed", data.error || "Failed to reject request");
       }
@@ -688,8 +694,19 @@ export default function VPRequestModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 pt-20 pb-8">
-      <div className="relative w-full max-w-5xl max-h-[85vh] rounded-3xl bg-white shadow-2xl transform transition-all duration-300 scale-100 flex flex-col overflow-hidden">
+    <>
+      {/* Full-screen loading overlay */}
+      {submitting && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4">
+            <div className="animate-spin h-12 w-12 border-4 border-white border-t-transparent rounded-full"></div>
+            <p className="text-white font-medium text-lg">Processing...</p>
+          </div>
+        </div>
+      )}
+
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 pt-20 pb-8">
+        <div className="relative w-full max-w-5xl max-h-[85vh] rounded-3xl bg-white shadow-2xl transform transition-all duration-300 scale-100 flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between border-b bg-[#7A0010] px-6 py-4 rounded-t-3xl flex-shrink-0">
           <div>
@@ -1909,6 +1926,15 @@ export default function VPRequestModal({
           }}
         />
       )}
+
+      {/* Success Modal */}
+      <SuccessModal
+        open={showSuccessModal}
+        onClose={() => setShowSuccessModal(false)}
+        message={successMessage}
+        title="Success"
+      />
     </div>
+    </>
   );
 }

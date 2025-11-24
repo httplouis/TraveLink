@@ -2154,23 +2154,10 @@ export async function POST(req: Request) {
 </html>
                     `;
 
-                    const { sendEmail } = await import("@/lib/email");
-                    console.log(`[/api/requests/submit] 📧 Sending email to ${headEmail} (${headName})...`);
-                    const emailResult = await sendEmail({
-                      to: headEmail.toLowerCase(),
-                      subject: `Head Endorsement Request: ${data.request_number || 'Request'}`,
-                      html: emailHtml,
-                    });
-
-                    if (emailResult.success) {
-                      console.log(`[/api/requests/submit] ✅ Head endorsement invitation EMAIL SENT successfully to ${headEmail} (${headName})`);
-                      console.log(`[/api/requests/submit] 📧 Email ID: ${emailResult.emailId || 'N/A'}`);
-                    } else {
-                      console.error(`[/api/requests/submit] ❌ CRITICAL: Invitation created but EMAIL FAILED for ${headEmail} (${headName})`);
-                      console.error(`[/api/requests/submit] ❌ Email error: ${emailResult.error}`);
-                      console.error(`[/api/requests/submit] 🔗 Confirmation link (for manual sharing): ${confirmationLink}`);
-                      // Still continue - invitation is created, user can manually share link
-                    }
+                    // Email sending disabled - invitations are created but emails are not sent automatically
+                    console.log(`[/api/requests/submit] 📋 Head endorsement invitation created (email sending disabled)`);
+                    console.log(`[/api/requests/submit] 🔗 Confirmation link (for manual sharing): ${confirmationLink}`);
+                    // Users can manually share the confirmation link
                   } catch (err: any) {
                     console.error(`[/api/requests/submit] ❌ Error processing head endorsement for ${dept.department_name}:`, err.message);
                   }
@@ -2317,17 +2304,10 @@ export async function POST(req: Request) {
               signatureLink,
             });
 
-            const emailResult = await sendEmail({
-              to: requesterProfile.email.toLowerCase(),
-              subject: `Signature Required: Travel Request ${data.request_number || ''}`,
-              html: emailHtml,
-            });
-
-            if (emailResult.success) {
-              console.log(`[/api/requests/submit] ✅ Signature request email sent to ${requesterProfile.email}`);
-            } else {
-              console.warn(`[/api/requests/submit] ⚠️ Failed to send signature request email:`, emailResult.error);
-            }
+            // Email sending disabled - signature requests are created but emails are not sent automatically
+            console.log(`[/api/requests/submit] 📋 Signature request created (email sending disabled)`);
+            console.log(`[/api/requests/submit] 🔗 Signature link (for manual sharing): ${signatureLink}`);
+            // Users can manually share the signature link
           } catch (emailErr: any) {
             console.error(`[/api/requests/submit] ❌ Error sending signature request email:`, emailErr);
             // Don't fail the request if email fails
@@ -2437,17 +2417,10 @@ export async function POST(req: Request) {
                       confirmationLink,
                     });
 
-                    const emailResult = await sendEmail({
-                      to: inv.email.toLowerCase(),
-                      subject: `Seminar Participation Invitation: ${seminarTitle}`,
-                      html: emailHtml,
-                    });
-
-                    if (emailResult.success) {
-                      console.log(`[/api/requests/submit] ✅ Invitation created and email sent to ${inv.email}`);
-                    } else {
-                      console.warn(`[/api/requests/submit] ⚠️ Invitation created but email failed for ${inv.email}:`, emailResult.error);
-                    }
+                    // Email sending disabled - invitations are created but emails are not sent automatically
+                    console.log(`[/api/requests/submit] 📋 Participant invitation created for ${inv.email} (email sending disabled)`);
+                    console.log(`[/api/requests/submit] 🔗 Confirmation link (for manual sharing): ${confirmationLink}`);
+                    // Users can manually share the confirmation link
                   } else {
                     console.warn(`[/api/requests/submit] ⚠️ Failed to create invitation for ${inv.email}:`, inviteError?.message);
                   }

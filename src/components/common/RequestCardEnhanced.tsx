@@ -20,6 +20,7 @@ import {
 import StatusBadge from "./StatusBadge";
 import PersonDisplay from "./PersonDisplay";
 import { formatLongDate } from "@/lib/datetime";
+import { downloadRequestPDF } from "@/lib/utils/pdf-download";
 
 // Format currency helper
 const formatCurrency = (amount: number) => {
@@ -318,18 +319,21 @@ export default function RequestCardEnhanced({
           </div>
           
           <div className="flex items-center gap-2">
-            {isApproved && onDownload && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
+            {/* Always show PDF download button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (onDownload) {
                   onDownload();
-                }}
-                className="p-2 text-gray-600 hover:text-[#7A0010] hover:bg-gray-100 rounded-lg transition-colors"
-                title="Download PDF"
-              >
-                <Download className="h-4 w-4" />
-              </button>
-            )}
+                } else {
+                  downloadRequestPDF(request.id, request.request_number);
+                }
+              }}
+              className="p-2 text-gray-600 hover:text-[#7A0010] hover:bg-gray-100 rounded-lg transition-colors"
+              title="Download PDF"
+            >
+              <Download className="h-4 w-4" />
+            </button>
             {onPrint && (
               <button
                 onClick={(e) => {

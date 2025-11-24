@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { useRouter } from "next/navigation";
 import { 
   TrendingUp, 
   Clock, 
@@ -14,6 +15,7 @@ import { motion } from "framer-motion";
 import { cardVariants, staggerContainer } from "@/lib/animations";
 
 export default function VPDashboard() {
+  const router = useRouter();
   const [stats, setStats] = React.useState({
     pending: 0,
     approved_today: 0,
@@ -161,7 +163,7 @@ export default function VPDashboard() {
             variants={cardVariants}
             whileHover={{ scale: 1.02 }}
             className={`${card.color} rounded-xl p-6 border border-gray-200 cursor-pointer`}
-            onClick={() => window.location.href = card.href}
+            onClick={() => router.push(card.href)}
           >
             <div className="flex items-center justify-between mb-4">
               <div className={`${card.iconBg} p-3 rounded-lg shadow-lg`}>
@@ -225,7 +227,7 @@ export default function VPDashboard() {
         <h2 className="text-xl font-bold mb-4">Quick Actions</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <button
-            onClick={() => window.location.href = '/vp/inbox'}
+            onClick={() => router.push('/vp/inbox')}
             className="bg-white/10 hover:bg-white/20 backdrop-blur rounded-lg p-4 text-left transition-all"
           >
             <Clock className="h-6 w-6 mb-2" />
@@ -234,7 +236,7 @@ export default function VPDashboard() {
           </button>
           
           <button
-            onClick={() => window.location.href = '/vp/analytics'}
+            onClick={() => router.push('/vp/analytics')}
             className="bg-white/10 hover:bg-white/20 backdrop-blur rounded-lg p-4 text-left transition-all"
           >
             <TrendingUp className="h-6 w-6 mb-2" />
@@ -243,7 +245,7 @@ export default function VPDashboard() {
           </button>
           
           <button
-            onClick={() => window.location.href = '/vp/request'}
+            onClick={() => router.push('/vp/request')}
             className="bg-white/10 hover:bg-white/20 backdrop-blur rounded-lg p-4 text-left transition-all"
           >
             <Users className="h-6 w-6 mb-2" />

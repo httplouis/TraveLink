@@ -1,11 +1,12 @@
 "use client";
 
 import React from "react";
-import { FileText, CheckCircle2, XCircle, History, RefreshCw } from "lucide-react";
+import { FileText, CheckCircle2, XCircle, History, RefreshCw, FileDown } from "lucide-react";
 import FilterBar from "@/components/common/FilterBar";
 import { motion } from "framer-motion";
 import PersonDisplay from "@/components/common/PersonDisplay";
 import PresidentRequestModal from "@/components/president/PresidentRequestModal";
+import { downloadRequestPDF } from "@/lib/utils/pdf-download";
 
 export default function PresidentHistoryPage() {
   const [items, setItems] = React.useState<any[]>([]);
@@ -220,6 +221,20 @@ export default function PresidentHistoryPage() {
                       <span className="line-clamp-1">Destination: <span className="font-medium text-gray-700">{item.destination}</span></span>
                     )}
                   </div>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      downloadRequestPDF(item.id, item.request_number);
+                    }}
+                    className="flex items-center gap-2 px-3 py-2 bg-[#7A0010] hover:bg-[#5e000d] text-white rounded-lg text-sm font-medium transition-colors"
+                    title="Download PDF"
+                  >
+                    <FileDown className="h-4 w-4" />
+                    PDF
+                  </button>
                 </div>
               </motion.button>
             );

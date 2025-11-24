@@ -1955,8 +1955,8 @@ function RequestWizardContent() {
                    requestingPersonHeadInfo?.department || 
                    data.travelOrder?.department)
             }
-            isHeadRequester={requestingPersonIsHead === true || currentUser?.role === "head"}
-            requestingPersonIsHead={requestingPersonIsHead}
+            isHeadRequester={requestingPersonIsHead === true || currentUser?.role === "head" || (currentUser as any)?.is_head === true}
+            requestingPersonIsHead={requestingPersonIsHead === true || currentUser?.role === "head" || (currentUser as any)?.is_head === true ? true : requestingPersonIsHead}
             isRepresentativeSubmission={data.reason === "seminar" ? false : isRepresentativeSubmission}
             requestingPersonName={data.reason === "seminar" ? undefined : data.travelOrder?.requestingPerson}
             vehicleMode={data.vehicleMode}

@@ -1,11 +1,12 @@
 "use client";
 
 import React from "react";
-import { FileText, CheckCircle2, XCircle, History, RefreshCw, Calendar, DollarSign, Building2, User, Eye } from "lucide-react";
+import { FileText, CheckCircle2, XCircle, History, RefreshCw, Calendar, DollarSign, Building2, User, Eye, FileDown } from "lucide-react";
 import FilterBar from "@/components/common/FilterBar";
 import { motion } from "framer-motion";
 import PersonDisplay from "@/components/common/PersonDisplay";
 import ComptrollerReviewModal from "@/components/comptroller/ComptrollerReviewModal";
+import { downloadRequestPDF } from "@/lib/utils/pdf-download";
 
 export default function ComptrollerHistoryPage() {
   const [items, setItems] = React.useState<any[]>([]);
@@ -292,7 +293,19 @@ export default function ComptrollerHistoryPage() {
                     )}
 
                     {/* View Details CTA */}
-                    <div className="mt-4 flex items-center justify-end">
+                    <div className="mt-4 flex items-center justify-end gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          downloadRequestPDF(item.id || item.request_id, item.request_number);
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-[#7A0010] hover:bg-[#5e000d] text-white rounded-lg text-xs font-medium transition-colors"
+                        title="Download PDF"
+                      >
+                        <FileDown className="h-3.5 w-3.5" />
+                        PDF
+                      </button>
                       <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[#7A0010] group-hover:text-[#9a0020] transition-colors">
                         <Eye className="h-3.5 w-3.5" />
                         View Details

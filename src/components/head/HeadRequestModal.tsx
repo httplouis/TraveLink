@@ -7,6 +7,7 @@ import { Users, UserCircle, User, Car, UserCog } from "lucide-react";
 import { useToast } from "@/components/common/ui/Toast";
 import ApproverSelectionModal from "@/components/common/ApproverSelectionModal";
 import { NameWithProfile } from "@/components/common/ProfileHoverCard";
+import SuccessModal from "@/components/common/SuccessModal";
 
 type Props = {
   request: any;
@@ -56,6 +57,8 @@ export default function HeadRequestModal({
   const [defaultApproverId, setDefaultApproverId] = React.useState<string | undefined>(undefined);
   const [defaultApproverName, setDefaultApproverName] = React.useState<string | undefined>(undefined);
   const [suggestionReason, setSuggestionReason] = React.useState<string | undefined>(undefined);
+  const [showSuccessModal, setShowSuccessModal] = React.useState(false);
+  const [successMessage, setSuccessMessage] = React.useState("");
 
   // Auto-load saved signature and head info
   React.useEffect(() => {
@@ -406,12 +409,12 @@ export default function HeadRequestModal({
       if (j.ok) {
         const roleLabel = selectedRole === "requester" ? "Requester" : 
                          selectedRole === "admin" ? "Admin" : "Next Approver";
-        toast.success(
-          "Approved Successfully!",
-          `Request has been sent to ${roleLabel}`
-        );
         setShowApproverSelection(false);
-        onApproved(request.id);
+        setSuccessMessage(`Request approved successfully and sent to ${roleLabel}`);
+        setShowSuccessModal(true);
+        setTimeout(() => {
+          onApproved(request.id);
+        }, 3000);
       } else {
         toast.error("Approval Failed", j.error ?? "Unknown error occurred");
       }
@@ -443,11 +446,11 @@ export default function HeadRequestModal({
       });
       const j = await res.json();
       if (j.ok) {
-        toast.success(
-          "Request Rejected",
-          "Requester has been notified"
-        );
-        onRejected(request.id);
+        setSuccessMessage("Request rejected successfully. Requester has been notified.");
+        setShowSuccessModal(true);
+        setTimeout(() => {
+          onRejected(request.id);
+        }, 3000);
       } else {
         toast.error("Rejection Failed", j.error ?? "Unknown error occurred");
       }
@@ -465,8 +468,19 @@ export default function HeadRequestModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 pt-20 pb-8">
-      <div className="relative w-full max-w-5xl max-h-[85vh] rounded-3xl bg-white shadow-2xl transform transition-all duration-300 scale-100 flex flex-col overflow-hidden">
+    <>
+      {/* Full-screen loading overlay */}
+      {submitting && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4">
+            <div className="animate-spin h-12 w-12 border-4 border-white border-t-transparent rounded-full"></div>
+            <p className="text-white font-medium text-lg">Processing...</p>
+          </div>
+        </div>
+      )}
+
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 pt-20 pb-8">
+        <div className="relative w-full max-w-5xl max-h-[85vh] rounded-3xl bg-white shadow-2xl transform transition-all duration-300 scale-100 flex flex-col overflow-hidden">
         {/* header */}
         <div className="flex items-center justify-between border-b bg-[#7A0010] px-6 py-4 rounded-t-3xl flex-shrink-0">
           <div>
@@ -1320,6 +1334,15 @@ export default function HeadRequestModal({
           </div>
         </div>
       )}
+
+      {/* Success Modal */}
+      <SuccessModal
+        open={showSuccessModal}
+        onClose={() => setShowSuccessModal(false)}
+        message={successMessage}
+        title="Success"
+      />
     </div>
+    </>
   );
 }

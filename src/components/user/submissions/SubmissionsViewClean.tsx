@@ -432,44 +432,6 @@ export default function SubmissionsView() {
                 <FileDown className="h-4 w-4" />
                 Download PDF
               </button>
-              <button
-                onClick={async () => {
-                  try {
-                    // Fast debug endpoint - shows coordinate grid
-                    const res = await fetch(`/api/requests/${selectedRequest.id}/pdf-debug`);
-                    if (!res.ok) {
-                      // Try to get error message from response
-                      let errorMsg = 'Failed to generate debug PDF';
-                      try {
-                        const errorJson = await res.json();
-                        errorMsg = errorJson.error || errorMsg;
-                      } catch {
-                        // If response is not JSON, use status text
-                        errorMsg = `Failed to generate debug PDF: ${res.status} ${res.statusText}`;
-                      }
-                      throw new Error(errorMsg);
-                    }
-                    const blob = await res.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `pdf-coordinates-debug.pdf`;
-                    document.body.appendChild(a);
-                    a.click();
-                    window.URL.revokeObjectURL(url);
-                    document.body.removeChild(a);
-                  } catch (err) {
-                    console.error('Failed to download debug PDF:', err);
-                    const errorMessage = err instanceof Error ? err.message : 'Failed to download debug PDF. Please try again.';
-                    alert(errorMessage);
-                  }
-                }}
-                className="flex items-center gap-2 px-3 py-2 rounded-md bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium transition-colors"
-                title="Fast coordinate grid for manual adjustment"
-              >
-                <FileDown className="h-3 w-3" />
-                Debug Grid
-              </button>
             </div>
           ) : undefined
         }

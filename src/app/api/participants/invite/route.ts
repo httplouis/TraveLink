@@ -15,20 +15,6 @@ export async function POST(req: NextRequest) {
   console.log("=".repeat(70));
   
   try {
-    // Create service role client for database operations (bypasses RLS)
-    const supabaseServiceRole = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false
-        }
-      }
-    );
-
-    // Use regular client for auth checks
-    const supabase = await createSupabaseServerClient(true);
     const body = await req.json();
     const { request_id, email } = body;
     
@@ -41,22 +27,43 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Get current user
-    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+    // Use regular client for auth checks (NOT service_role)
+    const authSupabase = await createSupabaseServerClient(false);
+    
+    // Get current user - use regular client for auth
+    const { data: { user: authUser }, error: authError } = await authSupabase.auth.getUser();
     if (authError || !authUser) {
+      console.error("[POST /api/participants/invite] ❌ Auth error:", authError);
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    // Get user profile
-    const { data: profile, error: profileError } = await supabase
+    console.log("[POST /api/participants/invite] ✅ Authenticated user:", authUser.id);
+
+    // Create service role client for database operations (bypasses RLS)
+    const supabaseServiceRole = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    );
+
+    // Get user profile - use service_role to bypass RLS if needed
+    const { data: profile, error: profileError } = await supabaseServiceRole
       .from("users")
       .select("id, name, email")
       .eq("auth_user_id", authUser.id)
       .single();
 
     if (profileError || !profile) {
+      console.error("[POST /api/participants/invite] ❌ Profile error:", profileError);
       return NextResponse.json({ ok: false, error: "User not found" }, { status: 404 });
     }
+
+    console.log("[POST /api/participants/invite] ✅ User profile found:", profile.id);
 
     // Check if invitation already exists (use service role to bypass RLS)
     const { data: existing, error: existingError } = await supabaseServiceRole
@@ -139,10 +146,18 @@ export async function POST(req: NextRequest) {
     console.log(`[POST /api/participants/invite] 📧 Preparing to send email to ${email}...`);
     
     // Use shared utility function for consistent baseUrl resolution
-    // This ensures email links work on mobile devices
+    // ALWAYS use production URL for email links (forceProduction = true)
+    // This ensures email links work on mobile devices and in production
     const { getBaseUrl } = await import("@/lib/utils/getBaseUrl");
-    const baseUrl = getBaseUrl(req);
+    const baseUrl = getBaseUrl(req, true); // forceProduction = true for email links
     const confirmationLink = `${baseUrl}/participants/confirm/${token}`;
+    
+    console.log(`[POST /api/participants/invite] 🌐 Base URL resolved:`, {
+      baseUrl,
+      fromEnv: process.env.NEXT_PUBLIC_APP_URL || 'not set',
+      fromHeaders: req.headers.get('origin') || req.headers.get('host') || 'not available',
+      isProduction: !baseUrl.includes('localhost') && !baseUrl.includes('127.0.0.1')
+    });
 
     console.log(`[POST /api/participants/invite] 🔗 Base URL:`, baseUrl);
     console.log(`[POST /api/participants/invite] 🔗 Confirmation link:`, confirmationLink);
@@ -211,6 +226,7 @@ export async function POST(req: NextRequest) {
       confirmationLink,
     });
 
+    // Send email for participant invitations (seminar application)
     console.log(`[POST /api/participants/invite] 📧 Calling sendEmail function...`);
     const emailResult = await sendEmail({
       to: email.toLowerCase(),
@@ -224,6 +240,14 @@ export async function POST(req: NextRequest) {
       console.warn(`[POST /api/participants/invite] ⚠️ Email sending failed for ${email}:`, emailResult.error);
       // Don't fail the request - invitation is still created in DB
       // But return a warning message to the frontend WITH the confirmation link
+      await supabaseServiceRole
+        .from("requests")
+        .update({
+          participant_invitations_sent: false, // Mark as not sent via email
+          participant_invitations_sent_at: null, // No email sent timestamp
+        })
+        .eq("id", request_id);
+
       return NextResponse.json({
         ok: true,
         data: invitation,
@@ -231,6 +255,8 @@ export async function POST(req: NextRequest) {
         warning: `Email could not be sent: ${emailResult.error}. Please check your RESEND_API_KEY configuration or check the server logs for details.`,
         confirmationLink: confirmationLink, // Include link so user can manually share
         alreadyExists: alreadyExists,
+        emailSent: false,
+        emailError: emailResult.error,
       });
     } else {
       console.log(`[POST /api/participants/invite] ✅ Email sent successfully to ${email}`);
@@ -259,6 +285,7 @@ export async function POST(req: NextRequest) {
       alreadyExists: alreadyExists,
       emailId: emailResult.emailId, // Also include at top level for easy access
       resendUrl: emailResult.emailId ? `https://resend.com/emails/${emailResult.emailId}` : null,
+      emailSent: true,
     });
   } catch (err: any) {
     console.error("[POST /api/participants/invite] ❌ Unexpected error:", err);

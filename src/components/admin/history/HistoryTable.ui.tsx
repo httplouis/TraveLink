@@ -2,7 +2,8 @@
 "use client";
 
 import type { HistoryItem } from "@/lib/admin/history/types";
-import { CheckCircle2, Wrench, Eye } from "lucide-react";
+import { CheckCircle2, Wrench, Eye, FileDown } from "lucide-react";
+import { downloadRequestPDF } from "@/lib/utils/pdf-download";
 
 // Format date helper (no external dependency)
 function formatDate(dateString: string): string {
@@ -98,15 +99,27 @@ export default function HistoryTable({ rows, onView }: Props) {
                     {row.date ? formatDate(row.date) : "N/A"}
                   </td>
                   <td className="px-6 py-4">
-                    {onView && (
-                      <button
-                        onClick={() => onView(row)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-neutral-700 hover:text-[#7a1f2a] hover:bg-neutral-100 rounded-md transition-colors"
-                      >
-                        <Eye className="h-4 w-4" />
-                        View
-                      </button>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {row.type === "request" && (
+                        <button
+                          onClick={() => downloadRequestPDF(row.id, row.reference)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-white bg-[#7a1f2a] hover:bg-[#9a2f3a] rounded-md transition-colors"
+                          title="Download PDF"
+                        >
+                          <FileDown className="h-4 w-4" />
+                          PDF
+                        </button>
+                      )}
+                      {onView && (
+                        <button
+                          onClick={() => onView(row)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-neutral-700 hover:text-[#7a1f2a] hover:bg-neutral-100 rounded-md transition-colors"
+                        >
+                          <Eye className="h-4 w-4" />
+                          View
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               );

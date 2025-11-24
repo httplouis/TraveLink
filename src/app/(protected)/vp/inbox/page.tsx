@@ -3,6 +3,7 @@
 import React from "react";
 import { Clock } from "lucide-react";
 import VPInboxContainer from "@/components/vp/inbox/InboxContainer";
+import { createSupabaseClient } from "@/lib/supabase/client";
 
 export default function VPInboxPage() {
   console.log("[VPInboxPage] 🚀 Component rendering");
@@ -46,8 +47,34 @@ export default function VPInboxPage() {
     };
     
     fetchCount();
-    const interval = setInterval(fetchCount, 10000);
-    return () => clearInterval(interval);
+    
+    // Set up real-time subscription instead of polling
+    const supabase = createSupabaseClient();
+    let mutateTimeout: NodeJS.Timeout | null = null;
+    
+    const channel = supabase
+      .channel("vp-inbox-count-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "requests",
+        },
+        (payload: any) => {
+          // Debounce: only trigger refetch after 500ms
+          if (mutateTimeout) clearTimeout(mutateTimeout);
+          mutateTimeout = setTimeout(() => {
+            fetchCount();
+          }, 500);
+        }
+      )
+      .subscribe();
+    
+    return () => {
+      if (mutateTimeout) clearTimeout(mutateTimeout);
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   return (

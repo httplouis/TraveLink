@@ -408,51 +408,25 @@ export async function POST(req: NextRequest) {
       </html>
     `;
 
-    // Send email
-    console.log(`[POST /api/requesters/invite] 📧 Attempting to send email to ${email}...`);
-    console.log(`[POST /api/requesters/invite] 📧 Confirmation link in email: ${confirmationLink}`);
+    // Email sending disabled - invitations are created but emails are not sent automatically
+    // Users can manually share the confirmation link
+    console.log(`[POST /api/requesters/invite] 📋 Invitation created (email sending disabled)`);
+    console.log(`[POST /api/requesters/invite] 🔗 Confirmation link (for manual sharing): ${confirmationLink}`);
     
-    const emailResult = await sendEmail({
-      to: email.toLowerCase(),
-      subject: `Travel Request Confirmation: ${requestData.request_number || 'Request'}`,
-      html: emailHtml,
-    });
-
-    if (!emailResult.success) {
-      console.error(`[POST /api/requesters/invite] ❌ Email sending failed for ${email}:`, emailResult.error);
-      console.error(`[POST /api/requesters/invite] 📋 Confirmation link (for manual sharing): ${confirmationLink}`);
-      
-      // Still return success but with warning - invitation was created
-      return NextResponse.json({
-        ok: true,
-        data: invitation,
-        message: alreadyExists ? "Invitation resent successfully" : "Invitation created successfully",
-        warning: `Email could not be sent: ${emailResult.error}. Please check your RESEND_API_KEY configuration. You can manually share this confirmation link.`,
-        confirmationLink: confirmationLink,
-        alreadyExists: alreadyExists,
-        emailSent: false,
-        emailError: emailResult.error,
-      });
-    }
-
-    console.log(`[POST /api/requesters/invite] ✅ Email sent successfully to ${email}`);
-    console.log(`[POST /api/requesters/invite] 📧 Email ID: ${emailResult.emailId}`);
-    console.log(`[POST /api/requesters/invite] 📧 Check delivery: https://resend.com/emails/${emailResult.emailId}`);
-    
-    // Always log confirmation link for easy testing (especially in development)
+    // Always log confirmation link for easy access
     console.log(`\n${"=".repeat(70)}`);
-    console.log(`[POST /api/requesters/invite] 🔗 CONFIRMATION LINK (for testing):`);
+    console.log(`[POST /api/requesters/invite] 🔗 CONFIRMATION LINK:`);
     console.log(`${confirmationLink}`);
     console.log(`${"=".repeat(70)}\n`);
 
     return NextResponse.json({
       ok: true,
       data: invitation,
-      message: alreadyExists ? "Invitation resent successfully" : "Invitation created successfully",
+      message: alreadyExists ? "Invitation updated successfully" : "Invitation created successfully",
       confirmationLink: confirmationLink,
       alreadyExists: alreadyExists,
-      emailId: emailResult.emailId,
-      resendUrl: emailResult.emailId ? `https://resend.com/emails/${emailResult.emailId}` : null,
+      emailSent: false, // Email not sent automatically
+      note: "Email sending is disabled. Please manually share the confirmation link.",
     });
   } catch (err: any) {
     console.error("[POST /api/requesters/invite] ❌ Error:", err);

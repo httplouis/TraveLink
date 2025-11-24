@@ -250,19 +250,7 @@ export default function AdminInboxPage() {
         console.log("[Admin Inbox] Realtime subscription status:", status);
       });
 
-    // Fallback polling every 30 seconds
-    const interval = setInterval(() => {
-      if (activeTab === "pending") {
-        loadPending();
-      } else if (activeTab === "approved") {
-        loadApproved();
-      } else {
-        loadHistory();
-      }
-    }, 30000);
-
     return () => {
-      clearInterval(interval);
       if (mutateTimeout) clearTimeout(mutateTimeout);
       supabase.removeChannel(channel);
     };
@@ -1347,18 +1335,6 @@ function AdminApprovalModal({
                 Admin Notes <span className="text-red-500">*</span>
                 <span className="text-xs text-gray-500 ml-2">(Minimum 20 characters)</span>
               </label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const quickNote = "Vehicle and driver assigned as per request. All requirements met. Proceeding to next approval stage.";
-                    setAdminNotes(quickNote);
-                  }}
-                  className="text-xs px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md border border-gray-300 transition-colors"
-                >
-                  Quick Fill
-                </button>
-              </div>
             </div>
             <textarea
               value={adminNotes}

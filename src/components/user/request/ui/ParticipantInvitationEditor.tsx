@@ -34,6 +34,8 @@ export default function ParticipantInvitationEditor({
   onStatusChange,
   onAutoSaveRequest,
 }: ParticipantInvitationEditorProps) {
+  // Track which participants have already shown confirmation toast to prevent duplicates
+  const [notifiedParticipants, setNotifiedParticipants] = React.useState<Set<string>>(new Set());
   const [showLinkModal, setShowLinkModal] = React.useState(false);
   const [linkToShow, setLinkToShow] = React.useState<{ email: string; link: string } | null>(null);
   const [copied, setCopied] = React.useState(false);
@@ -344,10 +346,13 @@ export default function ParticipantInvitationEditor({
         const updatedInvitations = invitations.map(inv => {
           const updated = data.data.find((d: any) => d.email === inv.email || d.id === inv.invitationId);
           if (updated) {
-            // Status changed - show notification
+            // Status changed - show notification (only once per participant)
             if (updated.status !== inv.status) {
-              if (updated.status === 'confirmed') {
+              const participantKey = updated.email || updated.id || inv.email || inv.invitationId;
+              
+              if (updated.status === 'confirmed' && !notifiedParticipants.has(participantKey)) {
                 toast.success("Participant confirmed", `${updated.name || updated.email} has confirmed their participation`);
+                setNotifiedParticipants(prev => new Set([...prev, participantKey]));
                 
                 // Sync confirmed participant to applicants table
                 // This will be handled by the parent component via onChange callback
@@ -359,8 +364,9 @@ export default function ParticipantInvitationEditor({
                   availableFdp: updated.available_fdp,
                   signature: updated.signature,
                 });
-              } else if (updated.status === 'declined') {
+              } else if (updated.status === 'declined' && !notifiedParticipants.has(participantKey)) {
                 toast.info("Participant declined", `${updated.name || updated.email} has declined the invitation`);
+                setNotifiedParticipants(prev => new Set([...prev, participantKey]));
               }
             }
             // Always update with latest data (name, department, etc.)

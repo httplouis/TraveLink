@@ -7,6 +7,7 @@ import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import { useToast } from "@/components/common/ui/Toast";
 import ApproverSelectionModal from "@/components/common/ApproverSelectionModal";
 import { NameWithProfile } from "@/components/common/ProfileHoverCard";
+import SuccessModal from "@/components/common/SuccessModal";
 
 function peso(n?: number | null) {
   if (!n) return "₱0.00";
@@ -70,6 +71,8 @@ export default function ComptrollerReviewModal({ request, onClose, readOnly = fa
   const [additionalRequesters, setAdditionalRequesters] = React.useState<any[]>([]);
   const [loadingRequesters, setLoadingRequesters] = React.useState(false);
   const [mainRequesterSignature, setMainRequesterSignature] = React.useState<string | null>(null);
+  const [showSuccessModal, setShowSuccessModal] = React.useState(false);
+  const [successMessage, setSuccessMessage] = React.useState("");
 
   const loadAdditionalRequesters = React.useCallback(async () => {
     try {
@@ -718,14 +721,11 @@ export default function ComptrollerReviewModal({ request, onClose, readOnly = fa
       console.log("[Comptroller Approve] API Response:", json);
       
       if (json.ok) {
-        console.log("[Comptroller Approve] Showing success toast...");
-        toast.success("Request Approved", "✅ Request approved and sent to HR for review");
-        // Delay to show toast before closing (increased to 1500ms to ensure visibility)
-        console.log("[Comptroller Approve] Closing modal in 1500ms...");
+        setSuccessMessage("Request approved and sent to HR for review");
+        setShowSuccessModal(true);
         setTimeout(() => {
-          console.log("[Comptroller Approve] Closing modal now");
           onClose();
-        }, 1500);
+        }, 3000);
       } else {
         console.log("[Comptroller Approve] Showing error toast:", json.error);
         toast.error("Approval Failed", json.error || "Failed to approve request");
@@ -811,9 +811,20 @@ export default function ComptrollerReviewModal({ request, onClose, readOnly = fa
   const t = fullRequest || request;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 pt-20 pb-8">
-      <div className="relative w-full max-w-7xl max-h-[90vh] rounded-3xl bg-white shadow-2xl transform transition-all duration-300 scale-100 flex flex-col overflow-hidden">
-        {/* Header */}
+    <>
+      {/* Full-screen loading overlay */}
+      {submitting && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4">
+            <div className="animate-spin h-12 w-12 border-4 border-white border-t-transparent rounded-full"></div>
+            <p className="text-white font-medium text-lg">Processing...</p>
+          </div>
+        </div>
+      )}
+
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 pt-20 pb-8">
+        <div className="relative w-full max-w-7xl max-h-[90vh] rounded-3xl bg-white shadow-2xl transform transition-all duration-300 scale-100 flex flex-col overflow-hidden">
+          {/* Header */}
         <div className="flex items-center justify-between border-b bg-[#7A0010] px-6 py-4 rounded-t-3xl flex-shrink-0">
           <div>
             <h2 className="text-lg font-semibold text-white">
@@ -2005,30 +2016,6 @@ export default function ComptrollerReviewModal({ request, onClose, readOnly = fa
                   </div>
                 ) : (
                   <>
-                    {/* Quick Fill Buttons */}
-                    <div className="mb-2 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setComptrollerNotes("Budget verified. Proceed to HR.")}
-                        className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-                      >
-                        Budget Verified
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setComptrollerNotes("Budget verified and approved. All expenses are justified.")}
-                        className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-                      >
-                        Budget Approved
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setComptrollerNotes("Budget requires revision. Please review and resubmit with corrected amounts.")}
-                        className="px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
-                      >
-                        Needs Revision
-                      </button>
-                    </div>
                     
                     <textarea
                       value={comptrollerNotes}
@@ -2132,6 +2119,15 @@ export default function ComptrollerReviewModal({ request, onClose, readOnly = fa
           }}
         />
       )}
+
+      {/* Success Modal */}
+      <SuccessModal
+        open={showSuccessModal}
+        onClose={() => setShowSuccessModal(false)}
+        message={successMessage}
+        title="Success"
+      />
     </div>
+    </>
   );
 }

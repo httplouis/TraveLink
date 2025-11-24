@@ -268,45 +268,25 @@ export async function POST(req: NextRequest) {
 </html>
     `;
 
-    // Send email
-    console.log(`[POST /api/head-endorsements/invite] 📧 Attempting to send email to ${head_email}...`);
-    console.log(`[POST /api/head-endorsements/invite] 📧 Confirmation link: ${confirmationLink}`);
+    // Email sending disabled - invitations are created but emails are not sent automatically
+    // Users can manually share the confirmation link
+    console.log(`[POST /api/head-endorsements/invite] 📋 Invitation created (email sending disabled)`);
+    console.log(`[POST /api/head-endorsements/invite] 🔗 Confirmation link (for manual sharing): ${confirmationLink}`);
     
-    const emailResult = await sendEmail({
-      to: head_email.toLowerCase(),
-      subject: `Head Endorsement Request: ${requestNumber}`,
-      html: emailHtml,
-    });
-
-    if (!emailResult.success) {
-      console.error(`[POST /api/head-endorsements/invite] ❌ Email sending failed:`, emailResult.error);
-      return NextResponse.json({
-        ok: true,
-        data: invitation,
-        message: alreadyExists ? "Invitation resent successfully" : "Invitation created successfully",
-        warning: `Email could not be sent: ${emailResult.error}. Please check your RESEND_API_KEY configuration.`,
-        confirmationLink: confirmationLink,
-        alreadyExists: alreadyExists,
-        emailSent: false,
-        emailError: emailResult.error,
-      });
-    }
-
-    console.log(`[POST /api/head-endorsements/invite] ✅ Email sent successfully to ${head_email}`);
-    console.log(`[POST /api/head-endorsements/invite] 📧 Email ID: ${emailResult.emailId}`);
+    // Always log confirmation link for easy access
     console.log(`\n${"=".repeat(70)}`);
-    console.log(`[POST /api/head-endorsements/invite] 🔗 CONFIRMATION LINK (for testing):`);
+    console.log(`[POST /api/head-endorsements/invite] 🔗 CONFIRMATION LINK:`);
     console.log(`${confirmationLink}`);
     console.log(`${"=".repeat(70)}\n`);
 
     return NextResponse.json({
       ok: true,
       data: invitation,
-      message: alreadyExists ? "Invitation resent successfully" : "Invitation sent successfully",
+      message: alreadyExists ? "Invitation updated successfully" : "Invitation created successfully",
       alreadyExists: alreadyExists,
-      emailSent: true,
-      emailId: emailResult.emailId,
+      emailSent: false, // Email not sent automatically
       confirmationLink: confirmationLink,
+      note: "Email sending is disabled. Please manually share the confirmation link.",
     });
   } catch (err: any) {
     console.error("[POST /api/head-endorsements/invite] ❌ Unexpected error:", err);

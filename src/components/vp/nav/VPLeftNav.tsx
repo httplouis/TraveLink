@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { createSupabaseClient } from "@/lib/supabase/client";
 import {
   LayoutGrid,
   CalendarDays,
@@ -117,11 +118,36 @@ export default function VPLeftNav() {
     };
 
     fetchCount();
-    const interval = setInterval(fetchCount, 30000);
+    
+    // Set up real-time subscription instead of polling
+    const supabase = createSupabaseClient();
+    let mutateTimeout: NodeJS.Timeout | null = null;
+    
+    const channel = supabase
+      .channel("vp-submissions-count-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "requests",
+        },
+        (payload: any) => {
+          // Debounce: only trigger refetch after 500ms
+          if (mutateTimeout) clearTimeout(mutateTimeout);
+          mutateTimeout = setTimeout(() => {
+            if (mounted) {
+              fetchCount();
+            }
+          }, 500);
+        }
+      )
+      .subscribe();
 
     return () => {
       mounted = false;
-      clearInterval(interval);
+      if (mutateTimeout) clearTimeout(mutateTimeout);
+      supabase.removeChannel(channel);
     };
   }, []);
 
@@ -162,11 +188,36 @@ export default function VPLeftNav() {
     };
 
     fetchInboxCount();
-    const interval = setInterval(fetchInboxCount, 30000);
+    
+    // Set up real-time subscription instead of polling
+    const supabase = createSupabaseClient();
+    let mutateTimeout: NodeJS.Timeout | null = null;
+    
+    const channel = supabase
+      .channel("vp-inbox-count-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "requests",
+        },
+        (payload: any) => {
+          // Debounce: only trigger refetch after 500ms
+          if (mutateTimeout) clearTimeout(mutateTimeout);
+          mutateTimeout = setTimeout(() => {
+            if (mounted) {
+              fetchInboxCount();
+            }
+          }, 500);
+        }
+      )
+      .subscribe();
 
     return () => {
       mounted = false;
-      clearInterval(interval);
+      if (mutateTimeout) clearTimeout(mutateTimeout);
+      supabase.removeChannel(channel);
     };
   }, []);
 
@@ -426,17 +477,7 @@ export default function VPLeftNav() {
                   e.preventDefault();
                   e.stopPropagation();
                   console.log("[VPLeftNav] 🚀 Forcing navigation to /vp/inbox");
-                  // Use window.location as fallback if router.push doesn't work
-                  setTimeout(() => {
-                    router.push("/vp/inbox");
-                    // Fallback to window.location if router.push doesn't navigate after 100ms
-                    setTimeout(() => {
-                      if (window.location.pathname !== "/vp/inbox") {
-                        console.log("[VPLeftNav] ⚠️ Router.push didn't work, using window.location");
-                        window.location.href = "/vp/inbox";
-                      }
-                    }, 100);
-                  }, 0);
+                  router.push("/vp/inbox");
                 }
               }}
               onMouseEnter={() => {

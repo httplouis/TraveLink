@@ -1,12 +1,13 @@
 "use client";
 
 import React from "react";
-import { FileText, CheckCircle2, XCircle, History, RefreshCw } from "lucide-react";
+import { FileText, CheckCircle2, XCircle, History, RefreshCw, FileDown } from "lucide-react";
 import FilterBar from "@/components/common/FilterBar";
 import { motion } from "framer-motion";
 import PersonDisplay from "@/components/common/PersonDisplay";
 import RequestDetailsView from "@/components/common/RequestDetailsView";
 import { createSupabaseClient } from "@/lib/supabase/client";
+import { downloadRequestPDF } from "@/lib/utils/pdf-download";
 
 export default function UserHistoryPage() {
   const [items, setItems] = React.useState<any[]>([]);
@@ -76,16 +77,8 @@ export default function UserHistoryPage() {
       )
       .subscribe();
     
-    // Fallback polling every 30 seconds
-    const interval = setInterval(() => {
-      if (isMounted) {
-        load();
-      }
-    }, 30000);
-    
     return () => {
       isMounted = false;
-      clearInterval(interval);
       if (mutateTimeout) clearTimeout(mutateTimeout);
       if (channel) {
         supabase.removeChannel(channel);
@@ -278,6 +271,20 @@ export default function UserHistoryPage() {
                     )}
                   </div>
                 </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      downloadRequestPDF(item.id, item.request_number);
+                    }}
+                    className="flex items-center gap-2 px-3 py-2 bg-[#7A0010] hover:bg-[#5e000d] text-white rounded-lg text-sm font-medium transition-colors"
+                    title="Download PDF"
+                  >
+                    <FileDown className="h-4 w-4" />
+                    PDF
+                  </button>
+                </div>
               </motion.button>
             );
           })}
@@ -290,12 +297,26 @@ export default function UserHistoryPage() {
           <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
               <h2 className="text-xl font-bold text-gray-900">Request Details</h2>
-              <button
-                onClick={handleClose}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <XCircle className="h-6 w-6" />
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    downloadRequestPDF(selected.id, selected.request_number);
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-[#7A0010] hover:bg-[#5e000d] text-white rounded-lg text-sm font-medium transition-colors"
+                  title="Download PDF"
+                >
+                  <FileDown className="h-4 w-4" />
+                  Download PDF
+                </button>
+                <button
+                  onClick={handleClose}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <XCircle className="h-6 w-6" />
+                </button>
+              </div>
             </div>
             <div className="p-6">
               <RequestDetailsView request={selected} />

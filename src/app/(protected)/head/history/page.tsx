@@ -477,7 +477,7 @@ export default function HeadHistoryPage() {
                 },
                 department: item.department,
               }}
-              showActions={false}
+              showActions={true}
               onView={() => setSelected(item)}
             />
           ))}

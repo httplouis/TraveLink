@@ -1864,8 +1864,8 @@ export default function PageInner() {
         onApprove={() => {
           // Refresh requests after approval
           setOpenDetails(false);
-          // Trigger refresh by updating a state or calling refresh function
-          window.location.reload(); // Simple refresh for now
+          // Trigger refresh via SWR mutate (realtime will also update automatically)
+          mutate();
         }}
       />
 

@@ -26,6 +26,7 @@ import ApproverSelectionModal from "@/components/common/ApproverSelectionModal";
 
 // 🔹 Cancel request modal
 import CancelRequestModal from "@/components/common/CancelRequestModal";
+import SuccessModal from "@/components/common/SuccessModal";
 
 // Drivers and vehicles will be fetched from API
 
@@ -109,6 +110,8 @@ export default function RequestDetailsModalUI({
   // Cancel request modal
   const [showCancelModal, setShowCancelModal] = React.useState(false);
   const [isCancelling, setIsCancelling] = React.useState(false);
+  const [showSuccessModal, setShowSuccessModal] = React.useState(false);
+  const [successMessage, setSuccessMessage] = React.useState("");
 
   // Hydrate local assignment state from the selected row (robust over many shapes)
   React.useEffect(() => {
@@ -714,15 +717,13 @@ export default function RequestDetailsModalUI({
         throw new Error(result.error || "Failed to cancel request");
       }
 
-      toast({
-        kind: "success",
-        title: "Request Cancelled",
-        message: "The request has been cancelled successfully.",
-      });
-
       setShowCancelModal(false);
-      onApprove?.(); // Refresh the list
-      onClose(); // Close the modal
+      setSuccessMessage("The request has been cancelled successfully.");
+      setShowSuccessModal(true);
+      setTimeout(() => {
+        onApprove?.(); // Refresh the list
+        onClose(); // Close the modal
+      }, 3000);
     } catch (error: any) {
       console.error("[Cancel Request] Error:", error);
       toast({
@@ -768,12 +769,11 @@ export default function RequestDetailsModalUI({
 
       console.log('[Admin Approve] Success:', result.message);
 
-      // Show success toast
+      // Show success modal
       const approverLabel = selectedApproverRole === 'comptroller' ? 'Comptroller' : 
                             selectedApproverRole === 'hr' ? 'HR' :
                             requiresComptroller ? 'Comptroller' : 'HR';
-      toast.success("Request Approved", `Request approved and sent to ${approverLabel}!`);
-
+      
       // Also update localStorage for offline support
       const nowIso = new Date().toISOString();
       const nextStatus = selectedApproverRole === 'comptroller' ? "pending_comptroller" : 
@@ -795,18 +795,18 @@ export default function RequestDetailsModalUI({
         vehicle,
       } as AdminRequest);
 
-      onApprove?.();
       setSignOpen(false);
       setShowApproverSelection(false);
       setSelectedApproverId(null);
       setSelectedApproverRole(null);
+      setSuccessMessage(`Request approved and sent to ${approverLabel}!`);
+      setShowSuccessModal(true);
       
       // Close main modal after successful approval
       setTimeout(() => {
+        onApprove?.();
         onClose();
-        // Refresh page to show updated data
-        window.location.reload();
-      }, 1500); // Longer delay to show toast
+      }, 3000);
       
     } catch (error) {
       console.error('[Admin Approve] Network error:', error);
@@ -816,15 +816,28 @@ export default function RequestDetailsModalUI({
   }
 
   return (
-    <Dialog open={open} onClose={onClose} className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop with fade-in animation */}
-      <div 
-        className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-300 ease-out" 
-        style={{
-          animation: open ? 'fadeIn 0.3s ease-out' : 'fadeOut 0.2s ease-in'
-        }}
-        aria-hidden="true" 
-      />
+    <>
+      {/* Full-screen loading overlay */}
+      {(isApproving || isCancelling) && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4">
+            <div className="animate-spin h-12 w-12 border-4 border-white border-t-transparent rounded-full"></div>
+            <p className="text-white font-medium text-lg">
+              {isApproving ? "Approving..." : "Cancelling..."}
+            </p>
+          </div>
+        </div>
+      )}
+
+      <Dialog open={open} onClose={onClose} className="fixed inset-0 z-50 flex items-center justify-center">
+        {/* Backdrop with fade-in animation */}
+        <div 
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-300 ease-out" 
+          style={{
+            animation: open ? 'fadeIn 0.3s ease-out' : 'fadeOut 0.2s ease-in'
+          }}
+          aria-hidden="true" 
+        />
 
       {/* Modal with scale + fade animation - Consistent with other modals */}
       <div 
@@ -1950,40 +1963,6 @@ export default function RequestDetailsModalUI({
                       <span className="text-xs font-normal text-neutral-500 ml-2">(Required)</span>
                     </label>
                     
-                    {/* Quick Fill Buttons */}
-                    {!isApproved && (
-                      <div className="mb-2 flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setAdminNotes("Vehicle and driver assigned. Ready for processing.")}
-                          className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-                        >
-                          ✓ Assigned
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setAdminNotes("Request processed. All requirements met. Proceed to comptroller.")}
-                          className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-                        >
-                          ✓ Processed
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setAdminNotes("Request processed. No budget required. Proceed to HR.")}
-                          className="px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
-                        >
-                          ✓ No Budget
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setAdminNotes("Request requires revision. Please review and resubmit.")}
-                          className="px-3 py-1.5 text-xs font-medium bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
-                        >
-                          ✗ Needs Revision
-                        </button>
-                      </div>
-                    )}
-                    
                     <textarea
                       value={adminNotes}
                       onChange={(e) => setAdminNotes(e.target.value)}
@@ -2445,6 +2424,15 @@ export default function RequestDetailsModalUI({
           }}
         />
       )}
+
+      {/* Success Modal */}
+      <SuccessModal
+        open={showSuccessModal}
+        onClose={() => setShowSuccessModal(false)}
+        message={successMessage}
+        title="Success"
+      />
     </Dialog>
+    </>
   );
 }

@@ -6,6 +6,7 @@ import { useToast } from "@/components/common/ui/Toast";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import { NameWithProfile } from "@/components/common/ProfileHoverCard";
 import ApproverSelectionModal from "@/components/common/ApproverSelectionModal";
+import SuccessModal from "@/components/common/SuccessModal";
 
 interface HRRequestModalProps {
   request: any;
@@ -50,6 +51,8 @@ export default function HRRequestModal({
   const [loadingRequesters, setLoadingRequesters] = React.useState(false);
   const [mainRequesterSignature, setMainRequesterSignature] = React.useState<string | null>(null);
   const [loadingApprovers, setLoadingApprovers] = React.useState(false);
+  const [showSuccessModal, setShowSuccessModal] = React.useState(false);
+  const [successMessage, setSuccessMessage] = React.useState("");
 
   const [fullRequest, setFullRequest] = React.useState<any>(null);
   const t = fullRequest || request;
@@ -487,61 +490,117 @@ export default function HRRequestModal({
         })));
       }
       
-      // Smart suggestion logic - Check department hierarchy first
-      if (options.length > 0) {
-        try {
-          // First, check if request department has a parent department (e.g., CCMS → OVPAR)
-          let suggestedVPId: string | undefined = undefined;
-          let suggestedVPName: string | undefined = undefined;
-          let suggestionReasonText = '';
-          
-          if (request.department_id || request.department) {
+          // Smart suggestion logic - Check department hierarchy first
+          if (options.length > 0) {
             try {
-              // Fetch department info to check for parent
-              const deptId = request.department_id;
-              const deptName = request.department;
+              // First, check if request department has a parent department (e.g., CCMS → OVPAR)
+              let suggestedVPId: string | undefined = undefined;
+              let suggestedVPName: string | undefined = undefined;
+              let suggestionReasonText = '';
               
-              let deptRes: Response;
-              if (deptId) {
-                deptRes = await fetch(`/api/departments?id=${deptId}`);
-              } else if (deptName) {
-                deptRes = await fetch(`/api/departments?name=${encodeURIComponent(deptName)}`);
-              } else {
-                throw new Error("No department ID or name");
-              }
+              // Special case: If requester is Comptroller, suggest VP Finance
+              const requesterRole = request.requester?.role || request.requester_role;
+              const requesterIsComptroller = request.requester?.is_comptroller || requesterRole === 'comptroller';
               
-              if (deptRes.ok) {
-                const deptData = await deptRes.json();
-                const dept = deptData.departments?.[0] || deptData.data?.[0];
+              if (requesterIsComptroller) {
+                console.log("[HRRequestModal] 🔍 Requester is Comptroller, looking for VP Finance...");
                 
-                if (dept?.parent_department_id) {
-                  console.log("[HRRequestModal] 🔍 Department has parent:", dept.parent_department_id);
+                // VP Finance department ID: Office of the Vice President for Finance
+                const vpFinanceDeptId = 'ac5d892d-e73f-4ae6-ac14-6e17bc525974';
+                
+                // Find VP Finance - check in priority order:
+                // 1. By department_id (most reliable)
+                // 2. By email
+                // 3. By department name containing "finance"
+                const vpFinance = options.find((opt: any) => {
+                  if (opt.role !== 'vp') return false;
                   
-                  // Find VP assigned to parent department
-                  const parentDeptId = dept.parent_department_id;
-                  const parentVP = options.find((opt: any) => {
-                    // Check if VP's department_id matches parent_department_id
-                    // VPs have department_id in the response now
-                    return opt.role === 'vp' && opt.department_id === parentDeptId;
-                  });
-                  
-                  if (parentVP) {
-                    suggestedVPId = parentVP.id;
-                    suggestedVPName = parentVP.name;
-                    suggestionReasonText = `Suggested based on department hierarchy: ${dept.name || dept.code || 'Department'} is under ${parentVP.name || 'VP'}'s office.`;
-                    console.log("[HRRequestModal] ✅ Found parent department VP:", parentVP.name);
-                  } else {
-                    console.log("[HRRequestModal] ⚠️ Parent department found but no VP assigned to it");
+                  // Priority 1: Check by department_id
+                  if (opt.department_id === vpFinanceDeptId) {
+                    return true;
                   }
+                  
+                  // Priority 2: Check by email
+                  if (opt.email === 'vp.finance@mseuf.edu.ph') {
+                    return true;
+                  }
+                  
+                  // Priority 3: Check by department name
+                  if (opt.department && (
+                    opt.department.toLowerCase().includes('finance') ||
+                    opt.department.toLowerCase().includes('vice president for finance')
+                  )) {
+                    return true;
+                  }
+                  
+                  return false;
+                });
+                
+                if (vpFinance) {
+                  suggestedVPId = vpFinance.id;
+                  suggestedVPName = vpFinance.name;
+                  suggestionReasonText = `Suggested based on requester role: Comptroller's department is under VP Finance's office.`;
+                  console.log("[HRRequestModal] ✅ Found VP Finance for Comptroller requester:", vpFinance.name);
+                } else {
+                  console.log("[HRRequestModal] ⚠️ Comptroller requester but VP Finance not found in options");
+                  console.log("[HRRequestModal] Available VP options:", options.map((opt: any) => ({
+                    name: opt.name,
+                    role: opt.role,
+                    exec_type: opt.exec_type,
+                    department_id: opt.department_id,
+                    email: opt.email
+                  })));
                 }
               }
-            } catch (deptErr) {
-              console.error("[HRRequestModal] Error checking department hierarchy:", deptErr);
-            }
-          }
-          
-          // If no department-based suggestion, use workflow logic
-          if (!suggestedVPId) {
+              
+              // If no Comptroller-based suggestion, check department hierarchy
+              if (!suggestedVPId && (request.department_id || request.department)) {
+                try {
+                  // Fetch department info to check for parent
+                  const deptId = request.department_id;
+                  const deptName = request.department;
+                  
+                  let deptRes: Response;
+                  if (deptId) {
+                    deptRes = await fetch(`/api/departments?id=${deptId}`);
+                  } else if (deptName) {
+                    deptRes = await fetch(`/api/departments?name=${encodeURIComponent(deptName)}`);
+                  } else {
+                    throw new Error("No department ID or name");
+                  }
+                  
+                  if (deptRes.ok) {
+                    const deptData = await deptRes.json();
+                    const dept = deptData.departments?.[0] || deptData.data?.[0];
+                    
+                    if (dept?.parent_department_id) {
+                      console.log("[HRRequestModal] 🔍 Department has parent:", dept.parent_department_id);
+                      
+                      // Find VP assigned to parent department
+                      const parentDeptId = dept.parent_department_id;
+                      const parentVP = options.find((opt: any) => {
+                        // Check if VP's department_id matches parent_department_id
+                        // VPs have department_id in the response now
+                        return opt.role === 'vp' && opt.department_id === parentDeptId;
+                      });
+                      
+                      if (parentVP) {
+                        suggestedVPId = parentVP.id;
+                        suggestedVPName = parentVP.name;
+                        suggestionReasonText = `Suggested based on department hierarchy: ${dept.name || dept.code || 'Department'} is under ${parentVP.name || 'VP'}'s office.`;
+                        console.log("[HRRequestModal] ✅ Found parent department VP:", parentVP.name);
+                      } else {
+                        console.log("[HRRequestModal] ⚠️ Parent department found but no VP assigned to it");
+                      }
+                    }
+                  }
+                } catch (deptErr) {
+                  console.error("[HRRequestModal] Error checking department hierarchy:", deptErr);
+                }
+              }
+              
+              // If no department-based suggestion, use workflow logic
+              if (!suggestedVPId) {
             const { suggestNextApprover, findSuggestedApprover } = await import('@/lib/workflow/suggest-next-approver');
             const suggestion = suggestNextApprover({
               status: request.status,
@@ -653,12 +712,13 @@ export default function HRRequestModal({
 
       const data = await res.json();
       if (data.ok) {
-        toast.success("Request Approved", data.message || "Request approved successfully");
         setShowVPSelection(false);
+        setSuccessMessage(data.message || "Request approved successfully");
+        setShowSuccessModal(true);
         setTimeout(() => {
           onApproved(request.id);
           onClose();
-        }, 1500);
+        }, 3000);
       } else {
         toast.error("Approval Failed", data.error || "Failed to approve request");
       }
@@ -702,11 +762,12 @@ export default function HRRequestModal({
 
       const data = await res.json();
       if (data.ok) {
-        toast.info("Request Rejected", "Request rejected successfully");
+        setSuccessMessage("Request rejected successfully");
+        setShowSuccessModal(true);
         setTimeout(() => {
           onRejected(request.id);
           onClose();
-        }, 1500);
+        }, 3000);
       } else {
         toast.error("Rejection Failed", data.error || "Failed to reject request");
       }
@@ -722,6 +783,16 @@ export default function HRRequestModal({
 
   return (
     <>
+      {/* Full-screen loading overlay */}
+      {submitting && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4">
+            <div className="animate-spin h-12 w-12 border-4 border-white border-t-transparent rounded-full"></div>
+            <p className="text-white font-medium text-lg">Processing...</p>
+          </div>
+        </div>
+      )}
+
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 pt-20 pb-8">
         <div className="relative w-full max-w-7xl max-h-[90vh] rounded-3xl bg-white shadow-2xl transform transition-all duration-300 scale-100 flex flex-col overflow-hidden">
           {/* Header */}
@@ -1724,38 +1795,6 @@ export default function HRRequestModal({
                   HR Notes/Comments <span className="text-red-500">*</span>
                 </label>
                 
-                {/* Quick Fill Buttons */}
-                <div className="mb-2 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setNotes("Okay, approved.")}
-                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-                  >
-                    ✓ Okay, approved
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNotes("Request approved. Proceed to VP for final review.")}
-                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-                  >
-                    ✓ Approved
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNotes("Request approved. All HR requirements are met.")}
-                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-                  >
-                    ✓ Fully Approved
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNotes("Request rejected. Please review and resubmit with corrections.")}
-                    className="px-3 py-1.5 text-xs font-medium bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
-                  >
-                    ✗ Rejected
-                  </button>
-                </div>
-                
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
@@ -1860,6 +1899,14 @@ export default function HRRequestModal({
           }}
         />
       )}
+
+      {/* Success Modal */}
+      <SuccessModal
+        open={showSuccessModal}
+        onClose={() => setShowSuccessModal(false)}
+        message={successMessage}
+        title="Success"
+      />
     </>
   );
 }

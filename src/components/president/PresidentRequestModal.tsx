@@ -5,6 +5,7 @@ import { X, CheckCircle2, XCircle, Users, Car, UserCog, MapPin, Calendar, FileTe
 import { useToast } from "@/components/common/ui/Toast";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import { NameWithProfile } from "@/components/common/ProfileHoverCard";
+import SuccessModal from "@/components/common/SuccessModal";
 
 interface PresidentRequestModalProps {
   request: any;
@@ -68,6 +69,8 @@ export default function PresidentRequestModal({
   const [loadingRequesters, setLoadingRequesters] = React.useState(false);
   const [mainRequesterSignature, setMainRequesterSignature] = React.useState<string | null>(null);
   const [showApprovalModal, setShowApprovalModal] = React.useState(false);
+  const [showSuccessModal, setShowSuccessModal] = React.useState(false);
+  const [successMessage, setSuccessMessage] = React.useState("");
 
   const t = fullRequest || request;
 
@@ -446,12 +449,13 @@ export default function PresidentRequestModal({
       const data = await res.json();
 
       if (data.ok) {
-        toast.success("Request Approved", "Request has been fully approved. The process is complete.");
         setShowApprovalModal(false);
+        setSuccessMessage("Request has been fully approved. The process is complete.");
+        setShowSuccessModal(true);
         setTimeout(() => {
           onApproved(request.id);
           onClose();
-        }, 1500);
+        }, 3000);
       } else {
         toast.error("Approval Failed", data.error || "Failed to approve request");
       }
@@ -497,11 +501,12 @@ export default function PresidentRequestModal({
       const data = await res.json();
 
       if (data.ok) {
-        toast.info("Request Rejected", "Request rejected successfully");
+        setSuccessMessage("Request rejected successfully");
+        setShowSuccessModal(true);
         setTimeout(() => {
           onRejected(request.id);
           onClose();
-        }, 1500);
+        }, 3000);
       } else {
         toast.error("Rejection Failed", data.error || "Failed to reject request");
       }
@@ -514,8 +519,18 @@ export default function PresidentRequestModal({
 
   return (
     <>
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 pt-20 pb-8">
-      <div className="relative w-full max-w-7xl max-h-[90vh] rounded-3xl bg-white shadow-2xl transform transition-all duration-300 scale-100 flex flex-col overflow-hidden">
+      {/* Full-screen loading overlay */}
+      {submitting && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4">
+            <div className="animate-spin h-12 w-12 border-4 border-white border-t-transparent rounded-full"></div>
+            <p className="text-white font-medium text-lg">Processing...</p>
+          </div>
+        </div>
+      )}
+
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 pt-20 pb-8">
+        <div className="relative w-full max-w-7xl max-h-[90vh] rounded-3xl bg-white shadow-2xl transform transition-all duration-300 scale-100 flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between border-b bg-[#7A0010] px-6 py-4 rounded-t-3xl flex-shrink-0">
           <div>
@@ -1557,31 +1572,6 @@ export default function PresidentRequestModal({
                   Your Notes/Comments <span className="text-red-500">*</span>
                 </label>
                 
-                {/* Quick Fill Buttons */}
-                <div className="mb-2 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setNotes("Okay, approved.")}
-                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-                  >
-                    ✓ Okay, approved
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNotes("Request fully approved. All requirements have been met.")}
-                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-                  >
-                    ✓ Fully Approved
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNotes("Request approved. Final authorization granted. Proceed with travel arrangements.")}
-                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-                  >
-                    ✓ Final Approval
-                  </button>
-                </div>
-                
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
@@ -1612,6 +1602,14 @@ export default function PresidentRequestModal({
           </div>
         </div>
       )}
+
+      {/* Success Modal */}
+      <SuccessModal
+        open={showSuccessModal}
+        onClose={() => setShowSuccessModal(false)}
+        message={successMessage}
+        title="Success"
+      />
     </>
   );
 }

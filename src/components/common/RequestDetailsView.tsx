@@ -31,6 +31,7 @@ import FileAttachmentSection from '@/components/user/request/ui/parts/FileAttach
 import { createSupabaseClient } from '@/lib/supabase/client';
 import NudgeButton from '@/components/user/request/NudgeButton';
 import CancelRequestModal from './CancelRequestModal';
+import { downloadRequestPDF } from '@/lib/utils/pdf-download';
 
 export interface RequestData {
   id: string;
@@ -803,6 +804,14 @@ export default function RequestDetailsView({
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => downloadRequestPDF(request.id, request.request_number)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-lg border border-white/30 text-white font-medium transition-colors shadow-lg"
+              title="Download PDF"
+            >
+              <Download className="w-4 h-4" />
+              PDF
+            </button>
             <span className={`
               px-5 py-2.5 rounded-full text-sm font-bold border-2 shadow-lg
               ${getStatusColor(request.status)}
