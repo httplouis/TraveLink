@@ -2,7 +2,7 @@
 import * as React from "react";
 import type { TripRow } from "@/lib/admin/report/types";
 import { downloadCSV, getHistory, printElementById, downloadExcel, downloadPDF } from "@/lib/admin/report/export";
-import { FileDown, Printer, FileSpreadsheet, FileText } from "lucide-react";
+import { FileDown, Printer, Table, FileText } from "lucide-react";
 
 export function ExportBar({
   rows,
@@ -43,7 +43,7 @@ export function ExportBar({
           onClick={handleExcel}
           className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-2.5 text-sm font-medium hover:from-green-700 hover:to-green-800 transition-all shadow-md hover:shadow-lg"
         >
-          <FileSpreadsheet size={18} /> Excel
+          <Table size={18} /> Excel
         </button>
         <button
           onClick={handlePDF}
