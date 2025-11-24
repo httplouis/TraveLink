@@ -1861,6 +1861,12 @@ export default function PageInner() {
         open={openDetails}
         onClose={() => setOpenDetails(false)}
         row={activeRow}
+        onApprove={() => {
+          // Refresh requests after approval
+          setOpenDetails(false);
+          // Trigger refresh by updating a state or calling refresh function
+          window.location.reload(); // Simple refresh for now
+        }}
       />
 
       <ConfirmUI

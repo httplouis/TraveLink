@@ -150,6 +150,29 @@ export async function notifyRequestStatusChange(
 }
 
 /**
+ * Create notification when request is cancelled
+ */
+export async function notifyRequestCancelled(
+  requestId: string,
+  requestNumber: string,
+  requesterId: string,
+  cancelledBy: string,
+  reason: string
+): Promise<void> {
+  await createNotification({
+    user_id: requesterId,
+    notification_type: "request_cancelled",
+    title: "Request Cancelled",
+    message: `Your travel order request ${requestNumber} has been cancelled by ${cancelledBy}. Reason: ${reason}`,
+    related_type: "request",
+    related_id: requestId,
+    action_url: `/user/submissions?view=${requestId}`,
+    action_label: "View Request",
+    priority: "high",
+  });
+}
+
+/**
  * Create notifications for vehicle/driver assignment
  */
 export async function notifyAssignment(

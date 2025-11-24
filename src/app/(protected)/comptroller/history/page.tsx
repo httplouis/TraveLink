@@ -314,6 +314,7 @@ export default function ComptrollerHistoryPage() {
             handleClose();
             load();
           }}
+          readOnly={true}
         />
       )}
     </motion.div>

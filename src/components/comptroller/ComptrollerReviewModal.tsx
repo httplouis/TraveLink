@@ -42,9 +42,10 @@ type Request = {
 type Props = {
   request: any;
   onClose: () => void;
+  readOnly?: boolean; // If true, disable all edit/approve actions (for history view)
 };
 
-export default function ComptrollerReviewModal({ request, onClose }: Props) {
+export default function ComptrollerReviewModal({ request, onClose, readOnly = false }: Props) {
   const toast = useToast();
   const [fullRequest, setFullRequest] = React.useState<any>(null);
   const [loading, setLoading] = React.useState(true);
@@ -1545,7 +1546,7 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                   <span className="text-lg font-bold text-slate-700">₱</span>
                   <h3 className="text-sm font-semibold text-slate-900">Budget Breakdown</h3>
                 </div>
-                {!editingBudget && (fullRequest?.total_budget || fullRequest?.comptroller_edited_budget || editedExpenses.length > 0) && (
+                {!readOnly && !editingBudget && (fullRequest?.total_budget || fullRequest?.comptroller_edited_budget || editedExpenses.length > 0) && (
                   <button
                     onClick={() => setEditingBudget(true)}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-[#7A0010] text-white hover:bg-[#5e000d] rounded-lg transition-colors text-xs font-semibold shadow-sm"
@@ -1591,7 +1592,7 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                             <div key={index} className="border-b border-slate-100 last:border-0 pb-3 last:pb-0">
                               <div className="flex items-center justify-between mb-2">
                                 <span className="text-sm text-slate-600 font-medium">{displayLabel}</span>
-                                {editingBudget ? (
+                                {!readOnly && editingBudget ? (
                                   <div className="flex items-center gap-2">
                                     {hasChanged && (
                                       <span className="text-xs text-slate-400 line-through">
@@ -1631,7 +1632,7 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                                   <span className="text-sm font-semibold text-slate-900">{peso(expense.amount || 0)}</span>
                                 )}
                               </div>
-                              {editingBudget && (
+                              {!readOnly && editingBudget && (
                                 <div className="mt-2">
                                   <textarea
                                     value={expense.justification || ""}
@@ -1654,7 +1655,7 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                       // Fallback: If no expenses but has budget, show as single item (shouldn't happen after our fix)
                       <div className="flex items-center justify-between py-2 border-b border-slate-100">
                         <span className="text-sm text-slate-600 font-medium">Total Budget</span>
-                        {editingBudget ? (
+                        {!readOnly && editingBudget ? (
                           <input
                             type="text"
                             inputMode="numeric"
@@ -1710,7 +1711,7 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                     </div>
                   )}
 
-                  {editingBudget && (
+                  {!readOnly && editingBudget && (
                     <div className="mt-4">
                       <div className="flex gap-2">
                         <button
@@ -1817,47 +1818,64 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
               </section>
             )}
 
-            {/* Comptroller Notes/Comments Input */}
+            {/* Comptroller Notes/Comments - View or Edit */}
             <section className="rounded-lg bg-white p-5 border border-slate-200 shadow-sm">
               <label className="mb-3 block text-xs font-bold text-slate-700 uppercase tracking-wide">
-                Your Notes/Comments
+                {readOnly ? "Comptroller Notes/Comments" : "Your Notes/Comments"}
               </label>
-              <textarea
-                value={comptrollerNotes}
-                onChange={(e) => setComptrollerNotes(e.target.value)}
-                rows={3}
-                className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] resize-none text-sm"
-                placeholder="Add your comments or reasons for approval/rejection..."
-              />
+              {readOnly ? (
+                <div className="px-4 py-3 bg-gray-50 border-2 border-slate-200 rounded-lg text-sm text-gray-700 min-h-[80px]">
+                  {fullRequest?.comptroller_comments || fullRequest?.comptroller_notes || "No comments provided"}
+                </div>
+              ) : (
+                <textarea
+                  value={comptrollerNotes}
+                  onChange={(e) => setComptrollerNotes(e.target.value)}
+                  rows={3}
+                  className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] resize-none text-sm"
+                  placeholder="Add your comments or reasons for approval/rejection..."
+                />
+              )}
             </section>
           </div>
         </div>
 
         {/* Actions */}
-        <div className="sticky bottom-0 bg-white border-t-2 border-gray-200 px-6 py-4 flex gap-3 flex-shrink-0 shadow-lg">
-          <button
-            onClick={handleReject}
-            disabled={submitting}
-            className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-semibold py-3 px-6 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg transform hover:scale-[1.02] active:scale-[0.98]"
-          >
-            <XCircle className="h-5 w-5" />
-            {submitting ? "Rejecting..." : "Reject & Return to User"}
-          </button>
-          <button
-            onClick={doApprove}
-            disabled={submitting}
-            className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 active:bg-green-800 text-white font-semibold py-3 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg transform hover:scale-[1.02] active:scale-[0.98]"
-          >
-            <Check className="h-5 w-5" />
-            {submitting ? "Approving..." : "Approve & Send"}
-          </button>
-          <button
-            onClick={onClose}
-            className="px-6 py-3 border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 font-semibold rounded-lg transition-all transform hover:scale-[1.02] active:scale-[0.98]"
-          >
-            Cancel
-          </button>
-        </div>
+        {readOnly ? (
+          <div className="sticky bottom-0 bg-white border-t-2 border-gray-200 px-6 py-4 flex justify-end flex-shrink-0 shadow-lg">
+            <button
+              onClick={onClose}
+              className="px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white font-semibold rounded-lg transition-all shadow-md hover:shadow-lg"
+            >
+              Close
+            </button>
+          </div>
+        ) : (
+          <div className="sticky bottom-0 bg-white border-t-2 border-gray-200 px-6 py-4 flex gap-3 flex-shrink-0 shadow-lg">
+            <button
+              onClick={handleReject}
+              disabled={submitting}
+              className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-semibold py-3 px-6 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg transform hover:scale-[1.02] active:scale-[0.98]"
+            >
+              <XCircle className="h-5 w-5" />
+              {submitting ? "Rejecting..." : "Reject & Return to User"}
+            </button>
+            <button
+              onClick={doApprove}
+              disabled={submitting}
+              className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 active:bg-green-800 text-white font-semibold py-3 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg transform hover:scale-[1.02] active:scale-[0.98]"
+            >
+              <Check className="h-5 w-5" />
+              {submitting ? "Approving..." : "Approve & Send"}
+            </button>
+            <button
+              onClick={onClose}
+              className="px-6 py-3 border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 font-semibold rounded-lg transition-all transform hover:scale-[1.02] active:scale-[0.98]"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Approval Modal */}
@@ -1925,25 +1943,54 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
               {/* Comptroller Signature */}
               <div>
                 <label className="mb-3 block text-xs font-bold text-[#7A0010] uppercase tracking-wide">
-                  Your Signature <span className="text-red-500">*</span>
+                  {readOnly ? "Comptroller Signature" : "Your Signature"} {!readOnly && <span className="text-red-500">*</span>}
                 </label>
-                <div className="rounded-xl bg-white p-3 border-2 border-[#7A0010]/20 shadow-sm">
-                  <SignaturePad
-                    height={160}
-                    value={signature || null}
-                    onSave={(dataUrl) => {
-                      setSignature(dataUrl);
-                    }}
-                    onClear={() => {
-                      setSignature(null);
-                    }}
-                    onUseSaved={(dataUrl) => {
-                      setSignature(dataUrl);
-                    }}
-                    showUseSavedButton={true}
-                    hideSaveButton
-                  />
-                </div>
+                {readOnly ? (
+                  <div className="rounded-xl bg-white p-3 border-2 border-[#7A0010]/20 shadow-sm">
+                    {fullRequest?.comptroller_signature ? (
+                      <div className="space-y-2">
+                        <img 
+                          src={fullRequest.comptroller_signature} 
+                          alt="Comptroller Signature" 
+                          className="max-w-full h-auto border border-gray-200 rounded"
+                        />
+                        {fullRequest?.comptroller_approved_at && (
+                          <p className="text-xs text-gray-500">
+                            Signed on {new Date(fullRequest.comptroller_approved_at).toLocaleString('en-US', {
+                              month: 'long',
+                              day: 'numeric',
+                              year: 'numeric',
+                              hour: 'numeric',
+                              minute: '2-digit',
+                              hour12: true,
+                              timeZone: 'Asia/Manila'
+                            })}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-500 italic">No signature available</p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="rounded-xl bg-white p-3 border-2 border-[#7A0010]/20 shadow-sm">
+                    <SignaturePad
+                      height={160}
+                      value={signature || null}
+                      onSave={(dataUrl) => {
+                        setSignature(dataUrl);
+                      }}
+                      onClear={() => {
+                        setSignature(null);
+                      }}
+                      onUseSaved={(dataUrl) => {
+                        setSignature(dataUrl);
+                      }}
+                      showUseSavedButton={true}
+                      hideSaveButton
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Comptroller Notes */}
@@ -1952,58 +1999,77 @@ export default function ComptrollerReviewModal({ request, onClose }: Props) {
                   Comptroller Notes/Comments
                 </label>
                 
-                {/* Quick Fill Buttons */}
-                <div className="mb-2 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setComptrollerNotes("Budget verified. Proceed to HR.")}
-                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-                  >
-                    Budget Verified
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setComptrollerNotes("Budget verified and approved. All expenses are justified.")}
-                    className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-                  >
-                    Budget Approved
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setComptrollerNotes("Budget requires revision. Please review and resubmit with corrected amounts.")}
-                    className="px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
-                  >
-                    Needs Revision
-                  </button>
-                </div>
-                
-                <textarea
-                  value={comptrollerNotes}
-                  onChange={(e) => setComptrollerNotes(e.target.value)}
-                  rows={4}
-                  className="w-full px-4 py-3 border-2 border-[#7A0010]/20 rounded-xl focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] resize-none text-sm"
-                  placeholder="Add your comments or reasons for approval/rejection..."
-                />
+                {readOnly ? (
+                  <div className="px-4 py-3 bg-gray-50 border-2 border-[#7A0010]/20 rounded-xl text-sm text-gray-700 min-h-[100px]">
+                    {fullRequest?.comptroller_comments || fullRequest?.comptroller_notes || "No comments provided"}
+                  </div>
+                ) : (
+                  <>
+                    {/* Quick Fill Buttons */}
+                    <div className="mb-2 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setComptrollerNotes("Budget verified. Proceed to HR.")}
+                        className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+                      >
+                        Budget Verified
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setComptrollerNotes("Budget verified and approved. All expenses are justified.")}
+                        className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+                      >
+                        Budget Approved
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setComptrollerNotes("Budget requires revision. Please review and resubmit with corrected amounts.")}
+                        className="px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
+                      >
+                        Needs Revision
+                      </button>
+                    </div>
+                    
+                    <textarea
+                      value={comptrollerNotes}
+                      onChange={(e) => setComptrollerNotes(e.target.value)}
+                      rows={4}
+                      className="w-full px-4 py-3 border-2 border-[#7A0010]/20 rounded-xl focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] resize-none text-sm"
+                      placeholder="Add your comments or reasons for approval/rejection..."
+                    />
+                  </>
+                )}
               </div>
             </div>
 
             {/* Actions */}
-            <div className="border-t border-gray-200 px-6 py-4 flex gap-3 flex-shrink-0 bg-gray-50">
-              <button
-                onClick={() => setShowApprovalModal(false)}
-                className="px-6 py-2 border border-gray-300 hover:bg-gray-100 text-gray-700 font-medium rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleApprovalSubmit}
-                disabled={submitting || !signature}
-                className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Check className="h-5 w-5" />
-                {submitting ? "Processing..." : "Confirm Approval"}
-              </button>
-            </div>
+            {readOnly ? (
+              <div className="border-t border-gray-200 px-6 py-4 flex justify-end flex-shrink-0 bg-gray-50">
+                <button
+                  onClick={() => setShowApprovalModal(false)}
+                  className="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white font-medium rounded-lg transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            ) : (
+              <div className="border-t border-gray-200 px-6 py-4 flex gap-3 flex-shrink-0 bg-gray-50">
+                <button
+                  onClick={() => setShowApprovalModal(false)}
+                  className="px-6 py-2 border border-gray-300 hover:bg-gray-100 text-gray-700 font-medium rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleApprovalSubmit}
+                  disabled={submitting || !signature}
+                  className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Check className="h-5 w-5" />
+                  {submitting ? "Processing..." : "Confirm Approval"}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

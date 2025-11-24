@@ -3,7 +3,7 @@
 
 import * as React from "react";
 import { Dialog } from "@headlessui/react";
-import { X, FileDown, CheckCircle, AlertTriangle, MapPin, User, Car, CheckCircle2, PenTool, Clock, Users } from "lucide-react";
+import { X, FileDown, CheckCircle, AlertTriangle, MapPin, User, Car, CheckCircle2, PenTool, Clock, Users, XCircle } from "lucide-react";
 
 import type { AdminRequest } from "@/lib/admin/requests/store";
 import { AdminRequestsRepo } from "@/lib/admin/requests/store";
@@ -23,6 +23,9 @@ import { NameWithProfile } from "@/components/common/ProfileHoverCard";
 
 // 🔹 Choice-based sending modal
 import ApproverSelectionModal from "@/components/common/ApproverSelectionModal";
+
+// 🔹 Cancel request modal
+import CancelRequestModal from "@/components/common/CancelRequestModal";
 
 // Drivers and vehicles will be fetched from API
 
@@ -102,6 +105,10 @@ export default function RequestDetailsModalUI({
   // Confirmed requesters
   const [confirmedRequesters, setConfirmedRequesters] = React.useState<any[]>([]);
   const [loadingRequesters, setLoadingRequesters] = React.useState(false);
+
+  // Cancel request modal
+  const [showCancelModal, setShowCancelModal] = React.useState(false);
+  const [isCancelling, setIsCancelling] = React.useState(false);
 
   // Hydrate local assignment state from the selected row (robust over many shapes)
   React.useEffect(() => {
@@ -689,6 +696,44 @@ export default function RequestDetailsModalUI({
     setShowApproverSelection(true);
     setSignOpen(false); // Close signature modal
   }
+
+  const handleCancelRequest = async (reason: string, password?: string) => {
+    if (!row?.id) return;
+
+    try {
+      setIsCancelling(true);
+      const response = await fetch(`/api/requests/${row.id}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason, password }),
+      });
+
+      const result = await response.json();
+
+      if (!result.ok) {
+        throw new Error(result.error || "Failed to cancel request");
+      }
+
+      toast({
+        kind: "success",
+        title: "Request Cancelled",
+        message: "The request has been cancelled successfully.",
+      });
+
+      setShowCancelModal(false);
+      onApprove?.(); // Refresh the list
+      onClose(); // Close the modal
+    } catch (error: any) {
+      console.error("[Cancel Request] Error:", error);
+      toast({
+        kind: "error",
+        title: "Cancellation Failed",
+        message: error.message || "Failed to cancel request. Please try again.",
+      });
+    } finally {
+      setIsCancelling(false);
+    }
+  };
 
   async function proceedWithApproval() {
     if (!row?.id || !sigDataUrl || isApproving) return;
@@ -2252,37 +2297,49 @@ export default function RequestDetailsModalUI({
               </div>
 
               {/* Right side: actions or status */}
-              {!isApproved ? (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={requestApproval}
-                    disabled={!canAdminApprove || adminNotes.trim() === "" || isApproving}
-                    title={adminNotes.trim() === "" ? "Admin notes are required" : isApproving ? "Processing..." : ""}
-                    className={`rounded-md px-4 py-2 text-sm text-white transition ${
-                      canAdminApprove && adminNotes.trim() !== "" && !isApproving
-                        ? "bg-green-600 hover:bg-green-700"
-                        : "bg-neutral-400 cursor-not-allowed"
-                    }`}
-                  >
-                    {isApproving ? "Processing..." : "Approve"}
-                  </button>
-                  {onReject && (
+              <div className="flex items-center gap-2">
+                {!isApproved ? (
+                  <>
                     <button
-                      onClick={onReject}
-                      className="rounded-md bg-red-600 hover:bg-red-700 px-4 py-2 text-sm text-white transition"
+                      onClick={requestApproval}
+                      disabled={!canAdminApprove || adminNotes.trim() === "" || isApproving}
+                      title={adminNotes.trim() === "" ? "Admin notes are required" : isApproving ? "Processing..." : ""}
+                      className={`rounded-md px-4 py-2 text-sm text-white transition ${
+                        canAdminApprove && adminNotes.trim() !== "" && !isApproving
+                          ? "bg-green-600 hover:bg-green-700"
+                          : "bg-neutral-400 cursor-not-allowed"
+                      }`}
                     >
-                      Reject
+                      {isApproving ? "Processing..." : "Approve"}
                     </button>
-                  )}
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-sm text-green-700">
-                  <CheckCircle className="h-4 w-4" />
-                  <span>
-                    Approved{row.approvedBy ? ` by ${row.approvedBy}` : ""}{approvedWhen ? ` • ${approvedWhen}` : ""}
-                  </span>
-                </div>
-              )}
+                    {onReject && (
+                      <button
+                        onClick={onReject}
+                        className="rounded-md bg-red-600 hover:bg-red-700 px-4 py-2 text-sm text-white transition"
+                      >
+                        Reject
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex items-center gap-2 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-sm text-green-700">
+                    <CheckCircle className="h-4 w-4" />
+                    <span>
+                      Approved{row.approvedBy ? ` by ${row.approvedBy}` : ""}{approvedWhen ? ` • ${approvedWhen}` : ""}
+                    </span>
+                  </div>
+                )}
+                {/* Cancel button - always visible for admin */}
+                {row?.status !== "cancelled" && row?.status !== "completed" && (
+                  <button
+                    onClick={() => setShowCancelModal(true)}
+                    className="flex items-center gap-2 rounded-md bg-red-600 hover:bg-red-700 px-4 py-2 text-sm text-white transition"
+                  >
+                    <XCircle className="h-4 w-4" />
+                    Cancel
+                  </button>
+                )}
+              </div>
             </div>
           </>
         )}
@@ -2330,6 +2387,16 @@ export default function RequestDetailsModalUI({
           </div>
         </div>
       </Dialog>
+
+      {/* Cancel Request Modal */}
+      <CancelRequestModal
+        open={showCancelModal}
+        onClose={() => setShowCancelModal(false)}
+        onConfirm={handleCancelRequest}
+        isAdmin={true}
+        isLoading={isCancelling}
+        requestNumber={row?.requestNumber || row?.request_number}
+      />
 
       {/* Approver Selection Modal */}
       {showApproverSelection && (

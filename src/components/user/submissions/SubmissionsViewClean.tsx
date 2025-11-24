@@ -699,6 +699,17 @@ export default function SubmissionsView() {
                      null)
                   : (fullRequestData?.requester_signature || null);
                 
+                // Get main requester's confirmed_at from requester_tracking
+                // Find the main requester in requester_tracking array (where user_id matches requester_id)
+                const mainRequesterTracking = fullRequestData?.requester_tracking?.find(
+                  (r: any) => r.user_id === fullRequestData?.requester?.id || 
+                              (fullRequestData?.requester && r.user_id === fullRequestData.requester.id)
+                );
+                // Use confirmed_at if available, otherwise fallback to created_at
+                const requesterApprovedAt = mainRequesterTracking?.confirmed_at || 
+                                            fullRequestData?.created_at || 
+                                            selectedRequest.created_at;
+                
                 const signatures: any[] = [
                 {
                   id: 'requester',
@@ -713,7 +724,7 @@ export default function SubmissionsView() {
                     position: requesterIsHead ? 'Department Head' : 'Faculty/Staff'
                   },
                   signature: requesterSignature,
-                  approved_at: selectedRequest.created_at
+                  approved_at: requesterApprovedAt
                 },
               ];
               
@@ -779,12 +790,13 @@ export default function SubmissionsView() {
               }
               
               // HR - always required
+              // Use same timestamp as Approval Timeline (tracking API)
               signatures.push({
                 id: 'hr',
                 label: 'Human Resources',
                 role: 'HR',
-                status: fullRequestData?.hr_signature ? 'approved' : 'pending',
-                approver: fullRequestData?.hr_signature ? {
+                status: fullRequestData?.hr_approved_at ? 'approved' : 'pending',
+                approver: fullRequestData?.hr_approved_at ? {
                   id: 'hr',
                   name: fullRequestData?.hr_approved_by || 'HR Manager',
                   position: 'HR Manager',
@@ -795,12 +807,13 @@ export default function SubmissionsView() {
               });
               
               // VP - always required (head requests go through VP then President)
+              // Use same timestamp as Approval Timeline (tracking API)
               signatures.push({
                 id: 'vp',
                 label: 'Vice President',
                 role: 'VP',
-                status: fullRequestData?.vp_signature ? 'approved' : 'pending',
-                approver: fullRequestData?.vp_signature ? {
+                status: fullRequestData?.vp_approved_at ? 'approved' : 'pending',
+                approver: fullRequestData?.vp_approved_at ? {
                   id: 'vp',
                   name: fullRequestData?.vp_approved_by || 'Vice President',
                   position: 'Vice President for Academic Affairs',
@@ -811,13 +824,14 @@ export default function SubmissionsView() {
               });
               
               // President - required for head requests OR high-value requests (>50k)
+              // Use same timestamp as Approval Timeline (tracking API)
               if (requiresPresidentApproval) {
                 signatures.push({
                   id: 'president',
                   label: 'University President',
                   role: 'President',
-                  status: fullRequestData?.president_signature ? 'approved' : 'pending',
-                  approver: fullRequestData?.president_signature ? {
+                  status: fullRequestData?.president_approved_at ? 'approved' : 'pending',
+                  approver: fullRequestData?.president_approved_at ? {
                     id: 'president',
                     name: fullRequestData?.president_approved_by || 'University President',
                     position: 'University President',

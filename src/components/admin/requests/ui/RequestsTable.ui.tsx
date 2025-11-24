@@ -57,6 +57,7 @@ type Props = {
 
   onApproveRow?: (id: string) => Promise<void>;
   onRejectRow?: (id: string) => Promise<void>;
+  onCancelRow?: (id: string) => Promise<void>;
 };
 
 export default function RequestsTable(props: Props) {
@@ -68,7 +69,7 @@ export default function RequestsTable(props: Props) {
     onToggleOne, onToggleAllOnPage,
     onRowClick, onRowViewDetails,
     onPageChange, onPageSizeChange,
-    onApproveRow, onRejectRow
+    onApproveRow, onRejectRow, onCancelRow
   } = props;
 
   const set = selectedIds ?? new Set<string>();
@@ -161,24 +162,33 @@ export default function RequestsTable(props: Props) {
                 <Td><StatusBadge status={r.status} /></Td>
 
                 <Td className="text-right" onClick={(e) => e.stopPropagation()}>
-                  {r.status === "Pending" ? (
-                    <div className="inline-flex gap-2">
+                  <div className="inline-flex gap-2">
+                    {r.status === "Pending" && (
+                      <>
+                        <button
+                          className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs text-white hover:bg-emerald-700"
+                          onClick={() => onApproveRow?.(r.id)}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          className="rounded-lg bg-rose-600 px-2.5 py-1 text-xs text-white hover:bg-rose-700"
+                          onClick={() => onRejectRow?.(r.id)}
+                        >
+                          Reject
+                        </button>
+                      </>
+                    )}
+                    {r.status !== "cancelled" && r.status !== "completed" && r.status !== "Cancelled" && r.status !== "Completed" && (
                       <button
-                        className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs text-white"
-                        onClick={() => onApproveRow?.(r.id)}
+                        className="rounded-lg bg-red-600 px-2.5 py-1 text-xs text-white hover:bg-red-700"
+                        onClick={() => onCancelRow?.(r.id)}
+                        title="Cancel Request"
                       >
-                        Approve
+                        Cancel
                       </button>
-                      <button
-                        className="rounded-lg bg-rose-600 px-2.5 py-1 text-xs text-white"
-                        onClick={() => onRejectRow?.(r.id)}
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  ) : (
-                    <span className="text-neutral-400">—</span>
-                  )}
+                    )}
+                  </div>
                 </Td>
               </tr>
             ))}

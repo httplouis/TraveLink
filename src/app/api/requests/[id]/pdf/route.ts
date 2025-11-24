@@ -25,7 +25,8 @@ export async function GET(
     const requestId = resolvedParams.id;
     const supabase = await createSupabaseServerClient(true);
 
-    // Get full request details
+    // Get full request details - use tracking API for consistency with submissions view
+    // First, fetch the request directly for PDF generation
     const { data: request, error } = await supabase
       .from("requests")
       .select("*")
@@ -37,6 +38,37 @@ export async function GET(
         { ok: false, error: "Request not found" },
         { status: 404 }
       );
+    }
+    
+    // Also fetch tracking data to ensure timestamp consistency with submissions view
+    // This ensures we use the same data source as the UI
+    let trackingData: any = null;
+    try {
+      // Fetch tracking data using the same logic as tracking API
+      // We'll use this for timestamps to ensure consistency
+      const { data: trackingResponse } = await supabase
+        .from("requests")
+        .select(`
+          head_approved_at,
+          parent_head_approved_at,
+          admin_processed_at,
+          comptroller_approved_at,
+          hr_approved_at,
+          vp_approved_at,
+          vp2_approved_at,
+          president_approved_at,
+          exec_approved_at
+        `)
+        .eq("id", requestId)
+        .single();
+      
+      if (trackingResponse) {
+        trackingData = trackingResponse;
+      }
+    } catch (err) {
+      console.warn("[PDF] Error fetching tracking data, using request data directly:", err);
+      // Fallback to using request data directly if tracking fetch fails
+      trackingData = null;
     }
 
     // Fetch related data with full user info (name, title, department, position)
@@ -90,7 +122,7 @@ export async function GET(
       if (!vehicleId) return null;
       const { data } = await supabase
         .from("vehicles")
-        .select("plate_number, model, vehicle_type")
+        .select("plate_number, vehicle_name, model, type")
         .eq("id", vehicleId)
         .single();
       return data || null;
@@ -141,8 +173,9 @@ export async function GET(
 
     // Fetch multiple requesters from requester_invitations
     let multiDeptRequesters: any[] = [];
+    let requesterInvitations: any[] = [];
     try {
-      const { data: requesterInvitations } = await supabase
+      const { data: requesterInvitationsData } = await supabase
         .from("requester_invitations")
         .select(`
           *,
@@ -153,8 +186,9 @@ export async function GET(
         .eq("status", "confirmed")
         .order("confirmed_at", { ascending: true });
       
-      if (requesterInvitations) {
-        multiDeptRequesters = requesterInvitations.map((inv: any) => ({
+      if (requesterInvitationsData) {
+        requesterInvitations = requesterInvitationsData;
+        multiDeptRequesters = requesterInvitationsData.map((inv: any) => ({
           name: inv.name || inv.user?.name || 'Unknown',
           department: inv.department?.name || inv.department || 'Unknown',
           departmentCode: inv.department?.code || null,
@@ -285,10 +319,34 @@ export async function GET(
 
     // Format date and time (Philippines timezone)
     // Format: "Nov 24, 2025, 3:12 PM" (matching reference)
+    // IMPORTANT: Handle timestamps without timezone info (treat as UTC)
+    // Some columns like vp_approved_at, president_approved_at may be stored as TIMESTAMP without timezone
     const fmtDateTime = (dateStr: string | null | undefined) => {
       if (!dateStr) return "";
       try {
-        const date = new Date(dateStr);
+        let adjustedDateStr = dateStr;
+        
+        // Check if timestamp has timezone info at the END of the string
+        // Look for 'Z', '+HH:MM', or '-HH:MM' at the end (timezone offset)
+        const hasTimezone = dateStr.endsWith('Z') || 
+                            /[+-]\d{2}:?\d{2}$/.test(dateStr) ||
+                            /[+-]\d{4}$/.test(dateStr);
+        
+        // If no timezone info and it looks like a timestamp (has time component with colons), treat as UTC
+        if (!hasTimezone && dateStr.includes(':') && dateStr.match(/\d{4}-\d{2}-\d{2}/)) {
+          // PostgreSQL TIMESTAMP without timezone stores values as UTC
+          // Convert space-separated format to ISO format and add 'Z' for UTC
+          // "2025-11-24 10:56:24.62" -> "2025-11-24T10:56:24.62Z"
+          adjustedDateStr = dateStr.replace(' ', 'T') + 'Z';
+        }
+        
+        const date = new Date(adjustedDateStr);
+        
+        // Check if date is valid
+        if (isNaN(date.getTime())) {
+          console.warn('[PDF fmtDateTime] Invalid date string:', dateStr, 'adjusted:', adjustedDateStr);
+          return "";
+        }
         
         return new Intl.DateTimeFormat("en-US", {
           month: "short",
@@ -475,11 +533,19 @@ export async function GET(
       // ===== TRAVEL ORDER TEMPLATE =====
       // Collect all requesters (primary + additional), remove duplicates
       // Primary requester signature should be included if available
+      // Find main requester's confirmed_at from requester_invitations (matching submissions view logic)
+      const mainRequesterInvitation = requesterInvitations?.find(
+        (inv: any) => inv.user_id === request.requester_id
+      );
+      const mainRequesterConfirmedAt = mainRequesterInvitation?.confirmed_at || 
+                                       request.requester_signed_at || 
+                                       request.created_at;
+      
       const allRequesters: Array<{ name: string; signature?: string | null; confirmed_at?: string | null }> = [
         { 
           name: reqName, 
           signature: request.requester_signature || null, 
-          confirmed_at: request.requester_signed_at || request.created_at 
+          confirmed_at: mainRequesterConfirmedAt
         },
         ...multiDeptRequesters.map((r: any) => ({
           name: r.name,
@@ -487,6 +553,33 @@ export async function GET(
           confirmed_at: r.confirmed_at || null,
         }))
       ];
+      
+      // If head approver is also a requester, ensure their head signature is used
+      // This handles cases where someone is both requester and department head (e.g., Belson)
+      if (headApproverName) {
+        const headNameNormalized = headApproverName.trim().toUpperCase();
+        const headSignature = request.head_signature || headEndorsements[0]?.signature || null;
+        
+        // Check if head is already in requesters list
+        const headRequesterIndex = allRequesters.findIndex(r => 
+          r.name.trim().toUpperCase() === headNameNormalized
+        );
+        
+        if (headRequesterIndex >= 0) {
+          // Head is already a requester - use head signature if requester doesn't have one
+          if (!allRequesters[headRequesterIndex].signature && headSignature) {
+            allRequesters[headRequesterIndex].signature = headSignature;
+          }
+        } else {
+          // Head is not in requesters list - add them with head signature
+          allRequesters.push({
+            name: headApproverName,
+            signature: headSignature,
+            confirmed_at: request.head_signed_at || request.head_approved_at || headEndorsements[0]?.confirmed_at || null,
+          });
+        }
+      }
+      
       const uniqueRequesters = removeDuplicateNames(allRequesters);
       
       // Limit to 6 requesters per page for main page
@@ -497,47 +590,41 @@ export async function GET(
       // Draw requesting persons in 2-column layout (up to 6 per page)
       // Layout: 2 columns, 3 rows max
       // Format: "NAME" with signature below and date/time next to name (matching reference)
-      const requesterStartX = 150; // Left edge of requesting person field
-      const requesterStartY = 180; // Top of requesting person field (from top of page)
-      const nameMaxWidth = 180; // Max width for name text
-      const sigWidth = 100; // Signature width (larger for better visibility)
-      const sigHeight = 35; // Signature height
-      const requesterColSpacing = 280; // Space between columns
-      const requesterRowSpacing = 50; // Space between rows (increased for signature + name + date)
+      // Use coordinates from PDF_COORDINATES helper
+      const reqCoords = PDF_COORDINATES.REQUESTING_PERSON;
+      const requesterStartX = reqCoords.startX;
+      const requesterStartY = reqCoords.startY;
+      const requesterColSpacing = reqCoords.colSpacing;
+      const requesterRowSpacing = reqCoords.rowSpacing;
       
-      // Use for...of loop to properly handle async/await
+      // Draw requesters vertically - signature BESIDE name (not below), NO date/time
+      // Layout: Vertical list, signature to the right of each name
+      // Can fit up to 6 requesters (15 points spacing each = 90 points total)
       for (let idx = 0; idx < mainPageRequesters.length; idx++) {
         const req = mainPageRequesters[idx];
-        const col = idx % 2; // 0 or 1
-        const row = Math.floor(idx / 2); // 0, 1, or 2
-        const x = requesterStartX + (col * requesterColSpacing);
-        const y = requesterStartY - (row * requesterRowSpacing);
+        const baseX = requesterStartX;
+        const baseY = requesterStartY - (idx * reqCoords.rowSpacing); // Vertical spacing
         
-        // Draw name first (top)
-        drawInRect(req.name, x, y, nameMaxWidth, 10, 9);
+        // Draw name
+        const nameX = baseX + reqCoords.name.offsetX;
+        const nameY = baseY + reqCoords.name.offsetY;
+        drawInRect(req.name, nameX, nameY, reqCoords.name.w, reqCoords.name.h, 9);
         
-        // Draw signature below name (centered under name)
+        // Draw signature BESIDE name (to the right)
+        // Use individual requester signature position if available, otherwise use default
         if (req.signature) {
-          const sigX = x + (nameMaxWidth - sigWidth) / 2; // Center signature under name
-          const sigY = y - 12; // Below name
-          await drawSignature(req.signature, sigX, sigY, sigWidth, sigHeight);
+          const requesterSigPos = reqCoords.requesterSignatures?.[idx];
+          const sigOffsetX = requesterSigPos?.offsetX ?? reqCoords.signature.offsetX;
+          const sigOffsetY = requesterSigPos?.offsetY ?? reqCoords.signature.offsetY;
+          const sigWidth = requesterSigPos?.w ?? reqCoords.sigWidth;
+          const sigHeight = requesterSigPos?.h ?? reqCoords.sigHeight;
           
-          // Draw date/time next to name (on the right side)
-          if (req.confirmed_at) {
-            const dateTimeText = fmtDateTime(req.confirmed_at);
-            const dateTimeX = x + nameMaxWidth + 5; // Right of name
-            const dateTimeY = y; // Aligned with name
-            drawInRect(dateTimeText, dateTimeX, dateTimeY, 120, 10, 7);
-          }
-        } else {
-          // If no signature, just show date/time next to name
-          if (req.confirmed_at) {
-            const dateTimeText = fmtDateTime(req.confirmed_at);
-            const dateTimeX = x + nameMaxWidth + 5;
-            const dateTimeY = y;
-            drawInRect(dateTimeText, dateTimeX, dateTimeY, 120, 10, 7);
-          }
+          const sigX = baseX + sigOffsetX;
+          const sigY = baseY + sigOffsetY;
+          await drawSignature(req.signature, sigX, sigY, sigWidth, sigHeight);
         }
+        
+        // NO date/time - removed as requested
       }
       
       // Created date
@@ -596,9 +683,10 @@ export async function GET(
       
       // Travel Cost breakdown (if exists) - match template format
       // Format: "Item name - Php amount" (matching reference image)
+      // Use coordinates from PDF_COORDINATES helper
       if (request.expense_breakdown && Array.isArray(request.expense_breakdown)) {
-        let costY = 295;
-        const maxItems = 12; // Limit to fit on page
+        let costY = PDF_COORDINATES.COST_START_Y;
+        const maxItems = PDF_COORDINATES.COST_MAX_ITEMS; // Use max items from helper
         const validItems = request.expense_breakdown
           .filter((item: any) => (item.amount || 0) > 0)
           .slice(0, maxItems);
@@ -615,7 +703,7 @@ export async function GET(
           // Format: "Item name - Php amount" (matching reference)
           const costText = `${displayLabel} - Php ${amount.toLocaleString()}`;
           drawInRect(costText, 150, costY, 446, 10, 9);
-          costY += 10; // Slightly more spacing for readability
+          costY += PDF_COORDINATES.COST_ITEM_SPACING; // Use spacing from helper
         });
         
         // Total if available - format: "Total: Php amount" (bold)
@@ -641,7 +729,7 @@ export async function GET(
         if (request.hired_drivers) costs.hiredDrivers = request.hired_drivers;
         if (request.accommodation) costs.accommodation = request.accommodation;
         
-        let costY = 295;
+        let costY = PDF_COORDINATES.COST_START_Y; // Use coordinates from helper
         const costItems = [
           { category: 'food', amount: costs.food },
           { category: 'driversAllowance', amount: costs.driversAllowance },
@@ -655,7 +743,7 @@ export async function GET(
           // Format: "Item name - Php amount" (matching reference)
           const costText = `${displayLabel} - Php ${item.amount.toLocaleString()}`;
           drawInRect(costText, 150, costY, 446, 10, 9);
-          costY += 10; // Slightly more spacing for readability
+          costY += PDF_COORDINATES.COST_ITEM_SPACING; // Use spacing from helper
         });
         
         // Total if available - format: "Total: Php amount" (bold)
@@ -812,19 +900,16 @@ export async function GET(
       commentsW?: number,
       commentsH?: number
     ) => {
-      if (!signature && !name) return;
-      
+      // Always draw name if provided, even without signature
       // Draw signature in the box (use full box size for better visibility)
       if (signature) {
         await drawSignature(signature, sigX, sigY, sigW, sigH);
       }
       
-      // Draw name below signature box (centered)
+      // Draw name using the provided nameX coordinate (don't center, use exact position)
       if (name) {
-        // Center name under signature box
-        const nameTextWidth = name.length * 5; // Approximate width
-        const centeredNameX = sigX + (sigW - nameTextWidth) / 2;
-        drawInRect(name, centeredNameX, nameY, nameW, 12, 9);
+        // Use the provided nameX coordinate directly (not centered)
+        drawInRect(name, nameX, nameY, nameW, 12, 9);
       }
       
       // NOTE: Dates are now drawn separately on the right side using PDF_COORDINATES
@@ -837,9 +922,41 @@ export async function GET(
         const commentsWidth = commentsW ?? sigW;
         const commentsHeight = commentsH ?? 20;
         
-        // Wrap comments if too long
-        const commentsLines = comments.split('\n').slice(0, 2); // Max 2 lines
-        commentsLines.forEach((line, idx) => {
+        // Split comments into sentences and lines
+        // First, split by newlines
+        const newlineSplit = comments.split('\n').filter(p => p.trim());
+        let commentsLines: string[] = [];
+        
+        // For each newline-separated part, split by sentences
+        newlineSplit.forEach(part => {
+          const trimmed = part.trim();
+          if (!trimmed) return;
+          
+          // Split by period followed by space (". ")
+          // This will split "Sentence 1. Sentence 2." into ["Sentence 1.", "Sentence 2."]
+          const sentences = trimmed.split(/\.\s+/).filter(s => s.trim());
+          
+          if (sentences.length > 1) {
+            // Multiple sentences found - add period back to each except the last
+            sentences.forEach((sentence, idx) => {
+              const cleaned = sentence.trim();
+              if (cleaned) {
+                // Add period back (except for last sentence if original didn't end with period)
+                const withPeriod = idx < sentences.length - 1 || trimmed.endsWith('.') 
+                  ? (cleaned.endsWith('.') ? cleaned : cleaned + '.')
+                  : cleaned;
+                commentsLines.push(withPeriod);
+              }
+            });
+          } else if (sentences.length === 1) {
+            // Single sentence or no period found - add as is
+            commentsLines.push(trimmed);
+          }
+        });
+        
+        // Limit to 2 lines max
+        const finalLines = commentsLines.slice(0, 2);
+        finalLines.forEach((line, idx) => {
           if (line.trim()) {
             drawInRect(line.trim(), commentsXPos, commentsYPos - (idx * 10), commentsWidth, 10, 7);
           }
@@ -849,7 +966,8 @@ export async function GET(
 
     // Head name and signature (LEFT) - Department Head endorsement
     // Position: "Indorsed by" section
-    const headTimestamp = request.head_signed_at || request.head_approved_at || headEndorsements[0]?.confirmed_at || null;
+    // Use same timestamp as Approval Timeline (tracking API) - ensure consistency
+    const headTimestamp = trackingData?.head_approved_at || request.head_approved_at || headEndorsements[0]?.confirmed_at || null;
     const headComments = request.head_comments || headEndorsements[0]?.comments || null;
     await drawSignatureWithMetadata(
       request.head_signature || headEndorsements[0]?.signature || null,
@@ -876,7 +994,8 @@ export async function GET(
     
     // Parent Head signature if exists (for parent department approval)
     if (parentHeadApproverName && request.parent_head_signature) {
-      const parentHeadTimestamp = request.parent_head_signed_at || request.parent_head_approved_at || null;
+      // Use same timestamp as Approval Timeline (tracking API) - ensure consistency
+      const parentHeadTimestamp = trackingData?.parent_head_approved_at || request.parent_head_approved_at || null;
       const parentHeadComments = request.parent_head_comments || null;
       await drawSignatureWithMetadata(
         request.parent_head_signature,
@@ -902,17 +1021,20 @@ export async function GET(
       }
     }
     
-    // Driver and vehicle
+    // Driver and vehicle - using coordinates from helper
     if (assignedDriverName) {
-      drawInRect(assignedDriverName, 110, 470, 210, 14, 10);
+      drawInRect(assignedDriverName, PDF_COORDINATES.DRIVER.x, PDF_COORDINATES.DRIVER.top, PDF_COORDINATES.DRIVER.w, PDF_COORDINATES.DRIVER.h, 10);
     }
     if (assignedVehicle) {
-      drawInRect(`${assignedVehicle.model} (${assignedVehicle.plate_number})`, 110, 485, 210, 14, 10);
+      // Use vehicle_name as primary, fallback to model if vehicle_name is not available
+      const vehicleDisplayName = assignedVehicle.vehicle_name || assignedVehicle.model || 'Vehicle';
+      drawInRect(`${vehicleDisplayName} (${assignedVehicle.plate_number})`, PDF_COORDINATES.VEHICLE.x, PDF_COORDINATES.VEHICLE.top, PDF_COORDINATES.VEHICLE.w, PDF_COORDINATES.VEHICLE.h, 10);
     }
     
     // Transportation Coordinator signature (RIGHT)
     // Position: "School Transportation Coordinator" section
-    const adminTimestamp = request.admin_signed_at || request.admin_approved_at || request.admin_processed_at || null;
+    // Use same timestamp as Approval Timeline (tracking API) - ensure consistency
+    const adminTimestamp = trackingData?.admin_processed_at || request.admin_processed_at || request.admin_approved_at || null;
     const adminComments = request.admin_notes || request.admin_comments || null;
     await drawSignatureWithMetadata(
       request.admin_signature || null,
@@ -938,7 +1060,8 @@ export async function GET(
     }
     
     // President/COO signature (Approved by section)
-    const presidentTimestamp = request.president_signed_at || request.president_approved_at || null;
+    // Use same timestamp as Approval Timeline (tracking API) - ensure consistency
+    const presidentTimestamp = trackingData?.president_approved_at || request.president_approved_at || null;
     const presidentComments = request.president_comments || null;
     await drawSignatureWithMetadata(
       request.president_signature || null,
@@ -965,7 +1088,8 @@ export async function GET(
     
     // Executive signature (fallback if president_signature not available)
     if (!request.president_signature && request.exec_signature) {
-      const execTimestamp = request.exec_signed_at || request.exec_approved_at || null;
+      // Use same timestamp as Approval Timeline (tracking API) - ensure consistency
+      const execTimestamp = trackingData?.exec_approved_at || request.exec_approved_at || null;
       const execComments = request.exec_comments || null;
       await drawSignatureWithMetadata(
         request.exec_signature,
@@ -993,11 +1117,26 @@ export async function GET(
     
     // Comptroller signature and name (For Travel Cost - Recommending Approval)
     // Position: Right side, "Recommending Approval" section
-    const comptrollerTimestamp = request.comptroller_signed_at || request.comptroller_approved_at || null;
+    // Use same timestamp as Approval Timeline (tracking API) - ensure consistency
+    const comptrollerTimestamp = trackingData?.comptroller_approved_at || request.comptroller_approved_at || null;
     const comptrollerComments = request.comptroller_comments || null;
+    const comptrollerName = comptrollerApproverName || "CARLOS JAYRON A. REMIENDO";
+    const comptrollerSignature = request.comptroller_signature || null;
+    
+    // Debug logging for comptroller
+    console.log("[PDF] Comptroller data:", {
+      hasSignature: !!comptrollerSignature,
+      name: comptrollerName,
+      hasComments: !!comptrollerComments,
+      comments: comptrollerComments,
+      sigCoords: PDF_COORDINATES.APPROVALS.COMPTROLLER.sig,
+      nameCoords: PDF_COORDINATES.APPROVALS.COMPTROLLER.name,
+      commentsCoords: PDF_COORDINATES.APPROVALS.COMPTROLLER.comments,
+    });
+    
     await drawSignatureWithMetadata(
-      request.comptroller_signature || null,
-      comptrollerApproverName || "CARLOS JAYRON A. REMIENDO",
+      comptrollerSignature,
+      comptrollerName,
       null, // Don't draw date here, draw separately
       comptrollerComments,
       PDF_COORDINATES.APPROVALS.COMPTROLLER.sig.x,
@@ -1046,7 +1185,8 @@ export async function GET(
     
     // VP signatures (Recommending Approval section)
     // First VP - Position: Left side, "Recommending Approval" section
-    const vpTimestamp = request.vp_signed_at || request.vp_approved_at || null;
+    // Use same timestamp as Approval Timeline (tracking API) - ensure consistency
+    const vpTimestamp = trackingData?.vp_approved_at || request.vp_approved_at || null;
     const vpComments = request.vp_comments || null;
     await drawSignatureWithMetadata(
       request.vp_signature || null,
@@ -1073,7 +1213,8 @@ export async function GET(
     
     // Second VP (if both VPs approved - for multi-department requests)
     if (request.both_vps_approved && vp2ApproverName) {
-      const vp2Timestamp = request.vp2_signed_at || request.vp2_approved_at || null;
+      // Use same timestamp as Approval Timeline (tracking API) - ensure consistency
+      const vp2Timestamp = trackingData?.vp2_approved_at || request.vp2_approved_at || null;
       const vp2Comments = request.vp2_comments || null;
       await drawSignatureWithMetadata(
         request.vp2_signature || null,
@@ -1101,7 +1242,8 @@ export async function GET(
     
     // HR Director signature (Noted by section)
     // Position: Left side, "Noted by" section
-    const hrTimestamp = request.hr_signed_at || request.hr_approved_at || null;
+    // Use same timestamp as Approval Timeline (tracking API) - ensure consistency
+    const hrTimestamp = trackingData?.hr_approved_at || request.hr_approved_at || null;
     const hrComments = request.hr_comments || null;
     await drawSignatureWithMetadata(
       request.hr_signature || null,

@@ -18,13 +18,26 @@ export const PDF_COORDINATES = {
   
   // Requesting Person section
   REQUESTING_PERSON: {
-    startX: 150,
-    startY: 180,
+    startX: 151,
+    startY: 185,
     nameWidth: 180,
-    sigWidth: 100,
-    sigHeight: 35,
+    sigWidth: 120, // Increased signature width for better visibility (was 80)
+    sigHeight: 45, // Increased signature height for better visibility (was 30)
     colSpacing: 280,
-    rowSpacing: 50,
+    rowSpacing: 15, // Reduced spacing for vertical list (was 50)
+    // Individual element positions (relative to startX, startY for each requester)
+    name: { offsetX: 0, offsetY: 0, w: 180, h: 10 }, // Name position
+    signature: { offsetX: 45, offsetY: -18, w: 120, h: 45 }, // Default signature position BESIDE name
+    // Individual requester signature positions (by index: 0 = first requester, 1 = second, etc.)
+    // Override default signature position for specific requesters
+    requesterSignatures: [
+      // First requester (index 0) - Jose Louis
+      { offsetX: 50, offsetY: -10, w: 120, h: 45 },
+      // Second requester (index 1) - Belson
+      { offsetX: 45, offsetY: -18, w: 120, h: 45 },
+      // Add more as needed (index 2, 3, etc.)
+    ],
+    // dateTime removed - no longer displaying date/time
   },
   
   // Department
@@ -37,23 +50,23 @@ export const PDF_COORDINATES = {
   PURPOSE: { x: 150, top: 260, w: 446, h: 26 },
   
   // Travel Cost section
-  COST_START_Y: 295,
-  COST_ITEM_SPACING: 10,
+  COST_START_Y: 287,
+  COST_ITEM_SPACING: 8,
   COST_MAX_ITEMS: 12,
   
   // Approval sections
   APPROVALS: {
     // Head endorsement (Indorsed by)
     HEAD: {
-      sig: { x: 85, top: 380, w: 200, h: 40 },
-      name: { x: 85, top: 400, w: 200, h: 12 },
+      sig: { x: 60, top: 375, w: 260, h: 60 }, // Increased for better visibility (was 240x50)
+      name: { x: 130, top: 400, w: 200, h: 12 },
       date: { x: 150, top: 370, w: 120, h: 12 }, // Date on the right side
       comments: { x: 150, top: 380, w: 200, h: 20 }, // Comments below name
     },
     
     // Parent Head (if exists)
     PARENT_HEAD: {
-      sig: { x: 85, top: 340, w: 200, h: 40 },
+      sig: { x: 85, top: 340, w: 260, h: 60 }, // Increased for better visibility (was 240x50)
       name: { x: 85, top: 385, w: 200, h: 12 },
       date: { x: 350, top: 350, w: 120, h: 12 }, // Date on the right side
       comments: { x: 85, top: 400, w: 200, h: 20 }, // Comments below name
@@ -61,52 +74,52 @@ export const PDF_COORDINATES = {
     
     // Comptroller (For Travel Cost - Recommending Approval)
     COMPTROLLER: {
-      sig: { x: 380, top: 380, w: 180, h: 40 },
-      name: { x: 380, top: 400, w: 180, h: 12 },
-      date: { x: 480, top: 380, w: 100, h: 12 }, // Date on the right side
-      comments: { x: 480, top: 390, w: 180, h: 20 }, // Comments below name
+      sig: { x: 330, top: 380, w: 220, h: 60 }, // Increased for better visibility (was 180x50)
+      name: { x: 415, top: 400, w: 180, h: 12 }, // Name below signature
+      date: { x: 520, top: 380, w: 100, h: 12 }, // Date on the right side
+      comments: { x: 520, top: 400, w: 250, h: 20 }, // Comments below name (fixed position)
       recAmount: { x: 480, top: 620, w: 200, h: 12 },
       account: { x: 480, top: 608, w: 200, h: 12 },
     },
     
     // HR Director (Noted by)
     HR: {
-      sig: { x: 85, top: 565, w: 200, h: 40 },
-      name: { x: 85, top: 575, w: 200, h: 12 },
-      date: { x: 400, top: 575, w: 120, h: 12 }, // Date on the right side
-      comments: { x: 85, top: 590, w: 200, h: 20 }, // Comments below name
+      sig: { x: 105, top: 530, w: 260, h: 60 }, // Increased for better visibility (was 240x50)
+      name: { x: 145, top: 570, w: 200, h: 12 },
+      date: { x: 420, top: 560, w: 120, h: 12 }, // Date on the right side
+      comments: { x: 240, top: 560, w: 200, h: 20 }, // Comments below name
     },
     
     // VP (Recommending Approval)
     VP: {
-      sig: { x: 85, top: 640, w: 200, h: 40 },
-      name: { x: 85, top: 620, w: 200, h: 12 },
-      date: { x: 400, top: 625, w: 120, h: 12 }, // Date on the right side
-      comments: { x: 85, top: 635, w: 200, h: 20 }, // Comments below name
+      sig: { x: 95, top: 600, w: 260, h: 60 }, // Increased for better visibility (was 240x50)
+      name: { x: 155, top: 630, w: 200, h: 12 },
+      date: { x: 420, top: 625, w: 120, h: 12 }, // Date on the right side
+      comments: { x: 230, top: 630, w: 200, h: 20 }, // Comments below name
     },
     
     // VP2 (if both VPs approved)
     VP2: {
-      sig: { x: 85, top: 680, w: 200, h: 40 },
+      sig: { x: 85, top: 680, w: 260, h: 60 }, // Increased for better visibility (was 240x50)
       name: { x: 85, top: 725, w: 200, h: 12 },
-      date: { x: 380, top: 690, w: 120, h: 12 }, // Date on the right side
+      date: { x: 420, top: 690, w: 120, h: 12 }, // Date on the right side
       comments: { x: 85, top: 740, w: 200, h: 20 }, // Comments below name
     },
     
     // President/COO (Approved by)
     PRESIDENT: {
-      sig: { x: 85, top: 675, w: 200, h: 40 },
-      name: { x: 85, top: 690, w: 200, h: 12 },
-      date: { x: 400, top: 680, w: 120, h: 12 }, // Date on the right side
-      comments: { x: 85, top: 705, w: 200, h: 20 }, // Comments below name
+      sig: { x: 105, top: 660, w: 260, h: 60 }, // Increased for better visibility (was 240x50)
+      name: { x: 145, top: 690, w: 200, h: 12 },
+      date: { x: 420, top: 680, w: 120, h: 12 }, // Date on the right side
+      comments: { x: 250, top: 835, w: 200, h: 20 }, // Comments below name
     },
-    
+
     // Transportation Coordinator (School Service Request)
     TRANSPORT_COORD: {
-      sig: { x: 380, top: 445, w: 200, h: 40 },
-      name: { x: 380, top: 465, w: 200, h: 12 },
-      date: { x: 480, top: 460, w: 100, h: 12 }, // Date on the right side
-      comments: { x: 480, top: 470, w: 200, h: 20 }, // Comments below name
+      sig: { x: 320, top: 430, w: 260, h: 60 }, // Increased for better visibility (was 240x50)
+      name: { x: 415, top: 470, w: 200, h: 12 },
+      date: { x: 480, top: 450, w: 100, h: 12 }, // Date on the right side
+      comments: { x: 510, top: 470, w: 200, h: 20 }, // Comments below name
     },
   },
   

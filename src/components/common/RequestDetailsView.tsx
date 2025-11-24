@@ -30,6 +30,7 @@ import { formatLongDate, formatLongDateTime } from '@/lib/datetime';
 import FileAttachmentSection from '@/components/user/request/ui/parts/FileAttachmentSection.view';
 import { createSupabaseClient } from '@/lib/supabase/client';
 import NudgeButton from '@/components/user/request/NudgeButton';
+import CancelRequestModal from './CancelRequestModal';
 
 export interface RequestData {
   id: string;
@@ -281,6 +282,10 @@ export default function RequestDetailsView({
   const [editingAttachments, setEditingAttachments] = useState(false);
   const [uploadingAttachments, setUploadingAttachments] = useState(false);
   const [currentAttachments, setCurrentAttachments] = useState<any[]>(request.attachments || []);
+  
+  // Cancel request state
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
 
   // Define fetchConfirmedRequesters BEFORE using it in useEffect
   const fetchConfirmedRequesters = React.useCallback(async () => {
@@ -861,6 +866,30 @@ export default function RequestDetailsView({
                       request.status === "pending_president" ? "President" : "Approver"
               }}
             />
+          </div>
+        </motion.div>
+      )}
+
+      {/* Cancel Button for Requester */}
+      {isRequester && request.status !== "cancelled" && request.status !== "completed" && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-center justify-center p-4 bg-red-50 border border-red-200 rounded-xl"
+        >
+          <div className="flex items-center gap-3 w-full">
+            <div className="flex-1">
+              <p className="text-sm font-medium text-red-900">Need to Cancel This Request?</p>
+              <p className="text-xs text-red-700 mt-1">
+                You can cancel this request at any time. Please provide a reason for cancellation.
+              </p>
+            </div>
+            <WowButton 
+              variant="danger" 
+              onClick={() => setShowCancelModal(true)}
+            >
+              Cancel Request
+            </WowButton>
           </div>
         </motion.div>
       )}
@@ -2495,6 +2524,46 @@ export default function RequestDetailsView({
           <SignatureStageRail stages={request.signatures} />
         </WowCard>
       </motion.div>
+
+      {/* Cancel Request Modal */}
+      <CancelRequestModal
+        open={showCancelModal}
+        onClose={() => setShowCancelModal(false)}
+        onConfirm={async (reason: string) => {
+          if (!request?.id) return;
+
+          try {
+            setIsCancelling(true);
+            const response = await fetch(`/api/requests/${request.id}/cancel`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ reason }),
+            });
+
+            const result = await response.json();
+
+            if (!result.ok) {
+              throw new Error(result.error || "Failed to cancel request");
+            }
+
+            setShowCancelModal(false);
+            // Refresh the page or call onClose to update the view
+            if (onClose) {
+              onClose();
+            } else {
+              window.location.reload();
+            }
+          } catch (error: any) {
+            console.error("[Cancel Request] Error:", error);
+            alert(error.message || "Failed to cancel request. Please try again.");
+          } finally {
+            setIsCancelling(false);
+          }
+        }}
+        isAdmin={false}
+        isLoading={isCancelling}
+        requestNumber={request.request_number}
+      />
 
     </div>
   );
