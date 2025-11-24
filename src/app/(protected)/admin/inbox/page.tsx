@@ -9,7 +9,7 @@ import type { RequestData } from "@/components/common/RequestDetailsView";
 import { SkeletonRequestCard } from "@/components/common/SkeletonLoader";
 import { createLogger } from "@/lib/debug";
 import { shouldShowPendingAlert, getAlertSeverity, getAlertMessage } from "@/lib/notifications/pending-alerts";
-import { AlertCircle, X, CheckCircle2, Loader2, Mail } from "lucide-react";
+import { AlertCircle, X, CheckCircle2, Loader2, Mail, Clock } from "lucide-react";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import { Dialog } from "@headlessui/react";
 
@@ -156,15 +156,15 @@ export default function AdminInboxPage() {
     }
   }, []);
 
-  // Load tracking - Requests that admin has processed and sent to next stage
-  const loadTracking = React.useCallback(async () => {
+  // Load approved - Requests that admin has processed and sent to next stage
+  const loadApproved = React.useCallback(async () => {
     try {
       const response = await fetch("/api/admin/inbox");
       const result = await response.json();
       
       if (result.ok && result.data) {
-        // Filter for tracking: requests where admin has acted AND are in intermediate states
-        const trackingRequests = result.data.filter((r: any) => {
+        // Filter for approved: requests where admin has acted AND are in intermediate states
+        const approvedRequests = result.data.filter((r: any) => {
           // Admin must have acted (signed/approved/processed)
           const adminActed = !!(r.admin_approved_at || r.admin_processed_at || r.admin_signature || r.admin_approved_by || r.admin_processed_by);
           
@@ -186,10 +186,10 @@ export default function AdminInboxPage() {
           return isIntermediateState;
         });
         
-        setTrackingItems(trackingRequests || []);
+        setApprovedItems(approvedRequests || []);
       }
     } catch (error) {
-      console.error("[Admin Inbox] Error loading tracking:", error);
+      console.error("[Admin Inbox] Error loading approved:", error);
     }
   }, []);
 
@@ -216,7 +216,7 @@ export default function AdminInboxPage() {
 
   React.useEffect(() => {
     loadPending();
-    loadTracking();
+    loadApproved();
     loadHistory();
 
     // Set up Supabase Realtime subscription for instant updates
@@ -238,8 +238,8 @@ export default function AdminInboxPage() {
           mutateTimeout = setTimeout(() => {
           if (activeTab === "pending") {
             loadPending();
-          } else if (activeTab === "tracking") {
-            loadTracking();
+          } else if (activeTab === "approved") {
+            loadApproved();
           } else {
             loadHistory();
           }
@@ -254,8 +254,8 @@ export default function AdminInboxPage() {
     const interval = setInterval(() => {
       if (activeTab === "pending") {
         loadPending();
-      } else if (activeTab === "tracking") {
-        loadTracking();
+      } else if (activeTab === "approved") {
+        loadApproved();
       } else {
         loadHistory();
       }
@@ -266,7 +266,7 @@ export default function AdminInboxPage() {
       if (mutateTimeout) clearTimeout(mutateTimeout);
       supabase.removeChannel(channel);
     };
-  }, [loadPending, loadTracking, loadHistory, activeTab]);
+  }, [loadPending, loadApproved, loadHistory, activeTab]);
 
   const markAsViewed = React.useCallback((id: string) => {
     setViewedIds((prev) => {
@@ -707,7 +707,7 @@ export default function AdminInboxPage() {
     }
   };
 
-  const currentItems = activeTab === "pending" ? items : activeTab === "tracking" ? trackingItems : historyItems;
+  const currentItems = activeTab === "pending" ? items : activeTab === "approved" ? approvedItems : historyItems;
   const uniqueDepartments = Array.from(new Set(currentItems.map((r) => r.department?.name || "Unknown")));
 
   // Show loading skeleton while fetching details
@@ -876,14 +876,14 @@ export default function AdminInboxPage() {
             )}
           </button>
           <button
-            onClick={() => setActiveTab("tracking")}
+            onClick={() => setActiveTab("approved")}
             className={`px-4 py-2 rounded-lg ${
-              activeTab === "tracking"
+              activeTab === "approved"
                 ? "bg-[#7a1f2a] text-white"
                 : "bg-gray-200 text-gray-700"
             }`}
           >
-            Tracking ({trackingItems.length})
+            Approved ({approvedItems.length})
           </button>
           <button
             onClick={() => setActiveTab("history")}
@@ -908,37 +908,96 @@ export default function AdminInboxPage() {
         <div className="text-center py-8 text-gray-500">No requests found</div>
       ) : (
         <div className="space-y-4">
-          {currentItems.map((req) => (
-            <RequestCardEnhanced
-              key={req.id}
-              request={{
-                id: req.id,
-                request_number: req.request_number || req.id,
-                file_code: (req as any).file_code,
-                title: (req as any).title,
-                purpose: req.purpose || "No purpose specified",
-                destination: (req as any).destination,
-                travel_start_date: req.travel_start_date,
-                travel_end_date: req.travel_end_date,
-                status: req.status,
-                created_at: req.created_at,
-                total_budget: (req as any).total_budget,
-                request_type: (req.request_type === "seminar" ? "seminar" : "travel_order") as "travel_order" | "seminar" | undefined,
-                requester_name: req.requester?.name,
-                requester: {
-                  name: req.requester?.name || "Unknown",
-                  email: req.requester?.email,
-                  profile_picture: (req as any).requester?.profile_picture,
-                  department: req.department?.name || req.department?.code,
-                  position: (req as any).requester?.position_title,
-                },
-                department: req.department,
-              }}
-              showActions={true}
-              onView={() => handleViewDetails(req)}
-              className={!viewedIds.has(req.id) ? "border-blue-500 bg-blue-50/30" : ""}
-            />
-          ))}
+          {currentItems.map((req) => {
+            // Mini approval chain for Approved section
+            const renderMiniChain = () => {
+              if (activeTab !== "approved") return null;
+              
+              const r = req as any;
+              const stages = [
+                { key: 'admin', label: 'Admin', completed: !!(r.admin_approved_at || r.admin_processed_at || r.admin_signature) },
+                { key: 'comptroller', label: 'Comptroller', completed: !!(r.comptroller_approved_at || r.comptroller_signature), current: r.status === 'pending_comptroller' },
+                { key: 'hr', label: 'HR', completed: !!(r.hr_approved_at || r.hr_signature), current: r.status === 'pending_hr' || r.status === 'pending_hr_ack' },
+                { key: 'vp', label: 'VP', completed: !!(r.vp_approved_at || r.vp_signature), current: r.status === 'pending_vp' },
+                { key: 'president', label: 'President', completed: !!(r.president_approved_at || r.president_signature), current: r.status === 'pending_president' },
+              ];
+              
+              // Filter to show only relevant stages (skip comptroller if no budget)
+              const hasBudget = (r.total_budget || 0) > 0;
+              const relevantStages = stages.filter((stage, idx) => {
+                if (stage.key === 'comptroller' && !hasBudget) return false;
+                // Show admin, current stage, and completed stages
+                return idx === 0 || stage.completed || stage.current;
+              });
+              
+              return (
+                <div className="mt-3 pt-3 border-t border-gray-200">
+                  <p className="text-xs font-semibold text-gray-600 mb-2">Approval Status:</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {relevantStages.map((stage, idx) => (
+                      <React.Fragment key={stage.key}>
+                        <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${
+                          stage.current 
+                            ? 'bg-blue-100 text-blue-700 border border-blue-300' 
+                            : stage.completed 
+                            ? 'bg-green-100 text-green-700 border border-green-300' 
+                            : 'bg-gray-100 text-gray-500 border border-gray-300'
+                        }`}>
+                          {stage.completed ? (
+                            <CheckCircle2 className="h-3 w-3" />
+                          ) : stage.current ? (
+                            <Clock className="h-3 w-3" />
+                          ) : (
+                            <div className="h-3 w-3 rounded-full border-2 border-gray-400" />
+                          )}
+                          <span>{stage.label}</span>
+                        </div>
+                        {idx < relevantStages.length - 1 && (
+                          <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        )}
+                      </React.Fragment>
+                    ))}
+                  </div>
+                </div>
+              );
+            };
+            
+            return (
+              <div key={req.id} className={!viewedIds.has(req.id) ? "border-blue-500 bg-blue-50/30 rounded-xl" : ""}>
+                <RequestCardEnhanced
+                  request={{
+                    id: req.id,
+                    request_number: req.request_number || req.id,
+                    file_code: (req as any).file_code,
+                    title: (req as any).title,
+                    purpose: req.purpose || "No purpose specified",
+                    destination: (req as any).destination,
+                    travel_start_date: req.travel_start_date,
+                    travel_end_date: req.travel_end_date,
+                    status: req.status,
+                    created_at: req.created_at,
+                    total_budget: (req as any).total_budget,
+                    request_type: (req.request_type === "seminar" ? "seminar" : "travel_order") as "travel_order" | "seminar" | undefined,
+                    requester_name: req.requester?.name,
+                    requester: {
+                      name: req.requester?.name || "Unknown",
+                      email: req.requester?.email,
+                      profile_picture: (req as any).requester?.profile_picture,
+                      department: req.department?.name || req.department?.code,
+                      position: (req as any).requester?.position_title,
+                    },
+                    department: req.department,
+                  }}
+                  showActions={true}
+                  onView={() => handleViewDetails(req)}
+                  className=""
+                />
+                {renderMiniChain()}
+              </div>
+            );
+          })}
         </div>
       )}
 

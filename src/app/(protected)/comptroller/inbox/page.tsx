@@ -75,13 +75,8 @@ export default function ComptrollerInboxPage() {
         console.log("[Comptroller Inbox] Realtime subscription status:", status);
       });
 
-    // Fallback polling every 30 seconds
-    const interval = setInterval(() => {
-      loadRequests();
-    }, 30000);
-
+    // Cleanup: Remove realtime subscription on unmount
     return () => {
-      clearInterval(interval);
       if (mutateTimeout) clearTimeout(mutateTimeout);
       if (channel) {
         supabase.removeChannel(channel);

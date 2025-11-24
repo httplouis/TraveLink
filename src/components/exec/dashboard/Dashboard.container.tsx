@@ -19,7 +19,7 @@ export default function ExecDashboardContainer() {
   useEffect(() => {
     fetch("/api/me")
       .then(res => res.json())
-      .then(data => {
+      .then(async (data) => {
         if (data.full_name) {
           // Import name formatting utility to skip titles like "Dr.", "Atty."
           const { getDisplayName } = await import('@/lib/utils/name-formatting');

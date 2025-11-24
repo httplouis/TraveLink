@@ -18,6 +18,7 @@ import {
 import { motion } from "framer-motion";
 import ProfilePicture from "@/components/common/ProfilePicture";
 import { useRouter } from "next/navigation";
+import { createSupabaseClient } from "@/lib/supabase/client";
 
 type NavItem =
   | {
@@ -88,10 +89,40 @@ export default function ComptrollerLeftNav() {
       }
     };
 
+    // Initial load
     fetchCount();
-    const interval = setInterval(fetchCount, 30000);
+    
+    // Real-time updates using Supabase Realtime
+    const supabase = createSupabaseClient();
+    let mutateTimeout: NodeJS.Timeout | null = null;
+    
+    const channel = supabase
+      .channel("comptroller-nav-count-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "requests",
+        },
+        (payload: any) => {
+          // Debounce: only trigger refetch after 500ms
+          if (mutateTimeout) clearTimeout(mutateTimeout);
+          mutateTimeout = setTimeout(() => {
+            fetchCount(); // Silent refresh
+          }, 500);
+        }
+      )
+      .subscribe((status: string) => {
+        console.log("[Comptroller LeftNav] Realtime subscription status:", status);
+      });
 
-    return () => clearInterval(interval);
+    return () => {
+      if (mutateTimeout) clearTimeout(mutateTimeout);
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
   }, []);
 
   // Fetch user profile for avatar

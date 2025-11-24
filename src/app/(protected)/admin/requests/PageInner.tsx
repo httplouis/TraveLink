@@ -1108,7 +1108,9 @@ export default function PageInner() {
       };
       
       return transformed;
-    };
+    }
+    return null;
+  };
 
   const onToggleOne = (id: string) => {
     setSelected((prev) => {
@@ -1816,7 +1818,7 @@ export default function PageInner() {
                       </div>
                       <p className="text-sm text-neutral-700 mb-1">{item.purpose}</p>
                       <div className="flex items-center gap-4 text-xs text-neutral-500">
-                      <span className="flex items-center gap-1">
+                        <span className="flex items-center gap-1">
                         <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                         </svg>

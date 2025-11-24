@@ -207,16 +207,9 @@ export default function ComptrollerNotificationDropdown() {
     
     setupRealtime();
     
-    // Fallback polling every 30 seconds
-    const interval = setInterval(() => {
-      if (isMounted) {
-        loadNotifications();
-      }
-    }, 30000);
-    
+    // Cleanup: Remove realtime subscriptions on unmount
     return () => {
       isMounted = false;
-      clearInterval(interval);
       if (channel) {
         const supabase = createSupabaseClient();
         supabase.removeChannel(channel);

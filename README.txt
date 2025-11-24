@@ -292,7 +292,58 @@ After pulling from git, verify everything is set up:
 ✓ Check browser console for any errors
 
 ===========================================================
-12. CONTACT / HELP
+12. VERCEL AUTO-DEPLOYMENT SETUP
+===========================================================
+
+AUTO-DEPLOYMENT IS NOW CONFIGURED! 🚀
+
+The project includes:
+- vercel.json (Vercel configuration)
+- .github/workflows/ (GitHub Actions for deployment)
+
+HOW TO ENABLE AUTO-DEPLOYMENT:
+
+OPTION 1: Vercel Dashboard (RECOMMENDED - EASIEST)
+---------------------------------------------------
+1. Go to https://vercel.com and sign in
+2. Click "Add New Project"
+3. Import your GitHub repository (TraviLink)
+4. Vercel will automatically detect Next.js
+5. Add your environment variables:
+   - NEXT_PUBLIC_SUPABASE_URL
+   - NEXT_PUBLIC_SUPABASE_ANON_KEY
+   - SUPABASE_SERVICE_ROLE_KEY
+   - (and any other env vars you need)
+6. Click "Deploy"
+7. ✅ DONE! Every push to main/master will auto-deploy
+
+OPTION 2: Using GitHub Actions (Alternative)
+---------------------------------------------
+If you prefer GitHub Actions instead:
+
+1. Go to your GitHub repository Settings > Secrets and variables > Actions
+2. Add these secrets:
+   - VERCEL_TOKEN (get from Vercel dashboard > Settings > Tokens)
+   - VERCEL_ORG_ID (get from Vercel dashboard > Settings > General)
+   - VERCEL_PROJECT_ID (get from Vercel dashboard > Project Settings > General)
+3. Push to main/master branch
+4. GitHub Actions will automatically deploy to Vercel
+
+VERIFICATION:
+-------------
+After setup, every time you:
+- git push origin main (or master)
+- Vercel will automatically:
+  1. Build your project
+  2. Run tests (if configured)
+  3. Deploy to production
+  4. Send you a notification
+
+You can check deployment status at:
+https://vercel.com/dashboard
+
+===========================================================
+13. CONTACT / HELP
 ===========================================================
 If something breaks:
 1. Delete `node_modules` + `pnpm-lock.yaml` then reinstall.
