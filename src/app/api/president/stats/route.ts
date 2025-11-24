@@ -97,18 +97,7 @@ export async function GET() {
     }).length;
 
     // 2. Active Requests: Requests submitted by or requested by this President, not in final states
-    // Use service role client to bypass RLS
-    const supabaseServiceRole = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false
-        }
-      }
-    );
-    
+    // Use service role client to bypass RLS (already created above)
     const { count: activeRequests } = await supabaseServiceRole
       .from("requests")
       .select("*", { count: "exact", head: true })
