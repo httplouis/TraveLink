@@ -17,8 +17,8 @@ const nextConfig: NextConfig = {
   // Performance: Enable compression (Vercel handles this automatically, but explicit is good)
   compress: true,
 
-  // Performance: Optimize production builds
-  swcMinify: true,
+  // Performance: SWC minification is enabled by default in Next.js 15
+  // No need to specify swcMinify (removed - it's automatic)
 
   // Performance: Enable experimental features for better performance
   experimental: {
