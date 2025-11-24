@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 
-// Performance: Cache stats for 30 seconds
-// Note: API routes are dynamic by default in Next.js 15, but revalidate still works for caching
-export const revalidate = 30;
+// Force dynamic rendering (uses cookies - must be dynamic)
+export const dynamic = 'force-dynamic';
+// Note: Use Cache-Control headers for runtime caching (revalidate doesn't work with force-dynamic)
 
 export async function GET() {
   try {
@@ -73,7 +73,7 @@ export async function GET() {
       .eq("action", "approved")
       .gte("created_at", monthStart.toISOString());
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       ok: true,
       data: {
         pending_count: pendingCount || 0,
@@ -81,6 +81,9 @@ export async function GET() {
         approved_month: approvedMonth || 0,
       }
     });
+    // Performance: Add cache headers
+    response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=60');
+    return response;
   } catch (err: any) {
     console.error("[GET /api/exec/stats] Error:", err);
     return NextResponse.json({ ok: false, error: err.message }, { status: 500 });

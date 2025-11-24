@@ -106,7 +106,7 @@ export async function GET() {
     .eq("hr_approved_by", userId)
     .gte("hr_approved_at", thisMonthStart.toISOString());
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     ok: true,
     data: {
       pendingApprovals: pendingCount || 0,
@@ -114,4 +114,7 @@ export async function GET() {
       thisMonth: processedThisMonth || 0,
     }
   });
+  // Performance: Add cache headers
+  response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=60');
+  return response;
 }

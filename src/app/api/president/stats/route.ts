@@ -115,7 +115,7 @@ export async function GET() {
       .or(`president_approved_by.eq.${userId},exec_approved_by.eq.${userId}`)
       .gte("president_approved_at", thisMonthStart.toISOString());
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       ok: true,
       data: {
         pendingApprovals: pendingApprovals || 0,
@@ -123,6 +123,9 @@ export async function GET() {
         thisMonth: thisMonth || 0
       }
     });
+    // Performance: Add cache headers
+    response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=60');
+    return response;
   } catch (err: any) {
     console.error("[GET /api/president/stats] Error:", err);
     return NextResponse.json({ 

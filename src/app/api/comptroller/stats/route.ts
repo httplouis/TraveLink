@@ -2,9 +2,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-// Performance: Cache stats for 30 seconds
-// Note: API routes are dynamic by default in Next.js 15, but revalidate still works for caching
-export const revalidate = 30;
+// Force dynamic rendering (uses cookies - must be dynamic)
+export const dynamic = 'force-dynamic';
+// Note: Use Cache-Control headers for runtime caching (revalidate doesn't work with force-dynamic)
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -106,7 +106,7 @@ export async function GET(req: NextRequest) {
       ? `${((((rejectedCount || 0) - (prevRejectedCount || 0)) / (prevRejectedCount || 1)) * 100).toFixed(0)}% from last month`
       : "+0% from last month";
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       pending: pendingCount,
       approved: approvedCount,
       rejected: rejectedCount,
@@ -116,6 +116,9 @@ export async function GET(req: NextRequest) {
         rejected: rejectedChange,
       }
     });
+    // Performance: Add cache headers
+    response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=60');
+    return response;
 
   } catch (error: any) {
     console.error("Error fetching comptroller stats:", error);

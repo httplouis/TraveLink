@@ -5,9 +5,9 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-// Performance: Cache profile for 60 seconds (profile doesn't change often)
-// Note: API routes are dynamic by default in Next.js 15, but revalidate still works for caching
-export const revalidate = 60;
+// Force dynamic rendering (uses cookies - must be dynamic)
+export const dynamic = 'force-dynamic';
+// Note: Use Cache-Control headers for runtime caching (revalidate doesn't work with force-dynamic)
 
 /**
  * GET /api/profile
@@ -162,7 +162,7 @@ export async function GET(request: Request) {
     });
     
     const response = NextResponse.json({ ok: true, data: profile });
-    // Performance: Cache profile for 60 seconds
+    // Performance: Cache profile for 60 seconds (profile doesn't change often)
     response.headers.set('Cache-Control', 'private, s-maxage=60, stale-while-revalidate=120');
     return response;
   } catch (err: any) {
