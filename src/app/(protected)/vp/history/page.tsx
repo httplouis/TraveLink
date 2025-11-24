@@ -5,7 +5,7 @@ import { FileText, CheckCircle2, XCircle, History, RefreshCw } from "lucide-reac
 import FilterBar from "@/components/common/FilterBar";
 import { motion } from "framer-motion";
 import PersonDisplay from "@/components/common/PersonDisplay";
-import TrackingModal from "@/components/common/TrackingModal";
+import VPRequestModal from "@/components/vp/VPRequestModal";
 import { createSupabaseClient } from "@/lib/supabase/client";
 
 export default function VPHistoryPage() {
@@ -14,7 +14,6 @@ export default function VPHistoryPage() {
   const [searchQuery, setSearchQuery] = React.useState("");
   const [selected, setSelected] = React.useState<any | null>(null);
   const [activeFilters, setActiveFilters] = React.useState<any>({});
-  const [showTrackingModal, setShowTrackingModal] = React.useState(false);
 
   async function load() {
     setLoading(true);
@@ -98,12 +97,10 @@ export default function VPHistoryPage() {
 
   const handleClose = () => {
     setSelected(null);
-    setShowTrackingModal(false);
   };
 
-  const handleViewTracking = (item: any) => {
+  const handleViewDetails = (item: any) => {
     setSelected(item);
-    setShowTrackingModal(true);
   };
 
   const filteredItems = items.filter((item) => {
@@ -212,7 +209,7 @@ export default function VPHistoryPage() {
             return (
               <motion.button
                 key={item.id}
-                onClick={() => handleViewTracking(item)}
+                onClick={() => handleViewDetails(item)}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="group flex w-full items-center justify-between rounded-xl border-2 border-gray-200 bg-white px-5 py-4 text-left shadow-sm transition-all hover:border-[#7A0010]/40 hover:shadow-md"
@@ -281,11 +278,14 @@ export default function VPHistoryPage() {
         </div>
       )}
 
-      {/* Tracking Modal */}
-      {selected && showTrackingModal && (
-        <TrackingModal
+      {/* Request Details Modal */}
+      {selected && (
+        <VPRequestModal
           request={selected}
           onClose={handleClose}
+          onApproved={() => {}}
+          onRejected={() => {}}
+          viewOnly={true}
         />
       )}
     </motion.div>

@@ -46,48 +46,48 @@ export default function LoginView({
       }}
     >
       {/* University Name and Logo - Upper Left, Outside Panel */}
-      <div className="absolute top-6 left-6 z-20">
-        <div className="logo flex items-center gap-2">
+      <div className="absolute top-3 left-3 sm:top-6 sm:left-6 z-20">
+        <div className="logo flex items-center gap-1 sm:gap-2">
           {/* Circular Seal Logo */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/eulogo.png"
             alt="Logo"
-            className="h-24 w-24 object-contain drop-shadow-lg"
+            className="h-12 w-12 sm:h-16 sm:w-16 md:h-20 md:w-20 lg:h-24 lg:w-24 object-contain drop-shadow-lg"
             onError={(e) => {
               (e.target as HTMLImageElement).style.display = 'none';
             }}
           />
           {/* University Name - Matching Official HTML Structure */}
-          <p className="notranslate text-white drop-shadow-lg" style={{
+          <p className="notranslate text-white drop-shadow-lg hidden sm:block" style={{
             fontFamily: 'Arial, Helvetica, sans-serif',
             letterSpacing: '0.03em',
             fontWeight: 900,
-            fontSize: '1.8rem',
+            fontSize: 'clamp(0.9rem, 2vw, 1.8rem)',
             lineHeight: '1'
           }}>
-            <span style={{ fontSize: '2rem', display: 'block' }}>ENVERGA</span>
-            <span style={{ fontSize: '1.8rem', display: 'block', marginTop: '0.05rem' }}>UNIVERSITY</span>
+            <span style={{ fontSize: 'clamp(1rem, 2.2vw, 2rem)', display: 'block' }}>ENVERGA</span>
+            <span style={{ fontSize: 'clamp(0.9rem, 2vw, 1.8rem)', display: 'block', marginTop: '0.05rem' }}>UNIVERSITY</span>
           </p>
         </div>
       </div>
 
-      <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-0 rounded-2xl shadow-2xl overflow-hidden bg-white">
+      <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-0 rounded-xl sm:rounded-2xl shadow-2xl overflow-hidden bg-white mt-12 sm:mt-0">
         {/* LEFT: Login Form */}
-        <div className="flex flex-col justify-center p-6 sm:p-8 lg:p-10 bg-white max-w-md mx-auto w-full">
+        <div className="flex flex-col justify-center p-4 sm:p-6 md:p-8 lg:p-10 bg-white max-w-md mx-auto w-full">
           {/* Logo and Branding */}
-          <div className="mb-6">
-            <div className="flex items-center gap-3 mb-3">
+          <div className="mb-4 sm:mb-6">
+            <div className="flex items-center gap-2 sm:gap-3 mb-2 sm:mb-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src="/travelink.png"
                 alt="Travelink Logo"
-                className="h-14 w-14 object-contain"
+                className="h-10 w-10 sm:h-12 sm:w-12 md:h-14 md:w-14 object-contain"
                 onError={(e) => {
                   (e.target as HTMLImageElement).style.display = 'none';
                 }}
               />
-              <h1 className="text-4xl font-extrabold tracking-tight text-[#7A0010]" style={{
+              <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight text-[#7A0010]" style={{
                 letterSpacing: '-0.02em',
                 fontFamily: 'Inter, system-ui, sans-serif'
               }}>
@@ -97,9 +97,9 @@ export default function LoginView({
           </div>
 
           {/* Welcome Text */}
-          <div className="mb-6">
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">Welcome back</h2>
-            <p className="text-base text-gray-600">Sign in to access your account</p>
+          <div className="mb-4 sm:mb-6">
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-1 sm:mb-2">Welcome back</h2>
+            <p className="text-sm sm:text-base text-gray-600">Sign in to access your account</p>
           </div>
 
           {/* Error Message */}
@@ -122,7 +122,7 @@ export default function LoginView({
             type="button"
             onClick={onMicrosoftLogin}
             disabled={microsoftLoading || emailLoading}
-            className="w-full h-14 mb-4 rounded-lg bg-white border-2 border-gray-300 text-gray-700 font-semibold shadow-sm transition-all hover:border-[#0078d4] hover:bg-[#0078d4] hover:text-white hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 group text-base"
+            className="w-full h-12 sm:h-14 mb-3 sm:mb-4 rounded-lg bg-white border-2 border-gray-300 text-gray-700 font-semibold shadow-sm transition-all hover:border-[#0078d4] hover:bg-[#0078d4] hover:text-white hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 group text-sm sm:text-base"
           >
             {microsoftLoading ? (
               <>
@@ -143,7 +143,7 @@ export default function LoginView({
           </button>
 
           {/* Divider */}
-          <div className="relative mb-4">
+          <div className="relative mb-3 sm:mb-4">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-gray-300"></div>
             </div>
@@ -153,14 +153,14 @@ export default function LoginView({
           </div>
 
           {/* Email/Password Form */}
-          <div className="space-y-3.5">
+          <div className="space-y-3 sm:space-y-3.5">
             <div>
-              <label htmlFor="email" className="block text-sm font-semibold text-gray-700 mb-1.5">
+              <label htmlFor="email" className="block text-xs sm:text-sm font-semibold text-gray-700 mb-1 sm:mb-1.5">
                 Email Address
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="h-4 w-4 sm:h-5 sm:w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" />
                   </svg>
                 </div>
@@ -170,19 +170,19 @@ export default function LoginView({
                   value={email}
                   onChange={(e) => onEmailChange(e.target.value)}
                   placeholder="your.email@mseuf.edu.ph"
-                  className="w-full h-14 pl-10 pr-4 rounded-lg border-2 border-gray-300 focus:border-[#7A0010] focus:ring-2 focus:ring-[#7A0010]/20 outline-none text-base transition-all"
+                  className="w-full h-12 sm:h-14 pl-9 sm:pl-10 pr-4 rounded-lg border-2 border-gray-300 focus:border-[#7A0010] focus:ring-2 focus:ring-[#7A0010]/20 outline-none text-sm sm:text-base transition-all"
                   disabled={microsoftLoading || emailLoading}
                 />
               </div>
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-sm font-semibold text-gray-700 mb-1.5">
+              <label htmlFor="password" className="block text-xs sm:text-sm font-semibold text-gray-700 mb-1 sm:mb-1.5">
                 Password
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="h-4 w-4 sm:h-5 sm:w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                   </svg>
                 </div>
@@ -192,7 +192,7 @@ export default function LoginView({
                   value={password}
                   onChange={(e) => onPasswordChange(e.target.value)}
                   placeholder="Enter your password"
-                  className="w-full h-14 pl-10 pr-12 rounded-lg border-2 border-gray-300 focus:border-[#7A0010] focus:ring-2 focus:ring-[#7A0010]/20 outline-none text-base transition-all"
+                  className="w-full h-12 sm:h-14 pl-9 sm:pl-10 pr-11 sm:pr-12 rounded-lg border-2 border-gray-300 focus:border-[#7A0010] focus:ring-2 focus:ring-[#7A0010]/20 outline-none text-sm sm:text-base transition-all"
                   disabled={microsoftLoading || emailLoading}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !microsoftLoading && !emailLoading && email && password) {
@@ -203,14 +203,14 @@ export default function LoginView({
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-400 hover:text-gray-600"
+                  className="absolute inset-y-0 right-0 pr-3 sm:pr-4 flex items-center text-gray-400 hover:text-gray-600"
                 >
                   {showPassword ? (
-                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="h-5 w-5 sm:h-6 sm:w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
                     </svg>
                   ) : (
-                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="h-5 w-5 sm:h-6 sm:w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                     </svg>
@@ -252,7 +252,7 @@ export default function LoginView({
               type="button"
               onClick={onEmailLogin}
               disabled={microsoftLoading || emailLoading || !email || !password}
-              className="w-full h-14 rounded-lg bg-gradient-to-r from-[#7A0010] to-[#9A0020] text-white font-semibold shadow-lg transition-all hover:shadow-xl hover:from-[#8A0010] hover:to-[#AA0020] disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-base"
+              className="w-full h-12 sm:h-14 rounded-lg bg-gradient-to-r from-[#7A0010] to-[#9A0020] text-white font-semibold shadow-lg transition-all hover:shadow-xl hover:from-[#8A0010] hover:to-[#AA0020] disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm sm:text-base"
             >
               {emailLoading ? (
                 <>
@@ -266,11 +266,11 @@ export default function LoginView({
           </div>
 
           {/* Footer */}
-          <div className="mt-6 space-y-1.5">
-            <p className="text-xs text-gray-500 text-center">
+          <div className="mt-4 sm:mt-6 space-y-1 sm:space-y-1.5">
+            <p className="text-xs text-gray-500 text-center leading-relaxed">
               By signing in, you agree to use your institutional Microsoft account
             </p>
-            <div className="flex items-center justify-center gap-2 text-xs">
+            <div className="flex items-center justify-center gap-1.5 sm:gap-2 text-xs flex-wrap">
               <a 
                 href="/privacy" 
                 className="text-[#7A0010] hover:underline transition-colors"
@@ -313,10 +313,10 @@ export default function LoginView({
           <div className="absolute bottom-0 left-0 w-96 h-96 bg-white/5 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2" />
 
           {/* Content */}
-          <div className="relative z-10 flex flex-col justify-between p-8 lg:p-10 text-white min-h-full">
+          <div className="relative z-10 flex flex-col justify-between p-6 sm:p-8 lg:p-10 text-white min-h-full">
             <div>
               {/* Main Heading */}
-              <h2 className="text-4xl font-extrabold mb-3 leading-tight tracking-tight" style={{
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold mb-2 sm:mb-3 leading-tight tracking-tight" style={{
                 letterSpacing: '-0.02em',
                 fontFamily: 'Inter, system-ui, sans-serif'
               }}>
@@ -332,7 +332,7 @@ export default function LoginView({
               </h2>
               
               {/* Description */}
-              <p className="text-base text-white/90 mb-6 leading-relaxed">
+              <p className="text-sm sm:text-base text-white/90 mb-4 sm:mb-6 leading-relaxed">
                 Smart campus transportation management system for efficient vehicle scheduling and travel coordination.
               </p>
 
@@ -366,10 +366,10 @@ export default function LoginView({
             </div>
 
             {/* QR Code Section for Mobile App */}
-            <div className="relative bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20 overflow-hidden">
+            <div className="relative bg-white/10 backdrop-blur-sm rounded-lg sm:rounded-xl p-4 sm:p-6 border border-white/20 overflow-hidden">
               {/* MSEUF Logo Background - Positioned to the side, light/opaque */}
               <div 
-                className="absolute right-0 top-0 bottom-0 w-80 opacity-15"
+                className="absolute right-0 top-0 bottom-0 w-60 sm:w-80 opacity-15"
                 style={{
                   backgroundImage: "url('/euwhite.png')",
                   backgroundSize: 'contain',
@@ -379,9 +379,9 @@ export default function LoginView({
                 }}
               />
               
-              <div className="relative z-10 flex flex-col items-center gap-4">
+              <div className="relative z-10 flex flex-col items-center gap-3 sm:gap-4">
                 {/* Large QR Code */}
-                <div className="w-40 h-40 bg-white rounded-xl flex items-center justify-center shadow-lg p-3">
+                <div className="w-32 h-32 sm:w-40 sm:h-40 bg-white rounded-lg sm:rounded-xl flex items-center justify-center shadow-lg p-2 sm:p-3">
                   {/* QR Code Placeholder - Replace with actual QR code image */}
                   <div className="w-full h-full flex items-center justify-center">
                     <svg className="w-full h-full text-gray-800" fill="currentColor" viewBox="0 0 24 24">
@@ -392,8 +392,8 @@ export default function LoginView({
                 
                 {/* Text Content */}
                 <div className="text-center">
-                  <p className="text-xl font-bold mb-2 text-white">Download Mobile App</p>
-                  <p className="text-sm text-white/90 leading-relaxed">
+                  <p className="text-lg sm:text-xl font-bold mb-1 sm:mb-2 text-white">Download Mobile App</p>
+                  <p className="text-xs sm:text-sm text-white/90 leading-relaxed">
                     Scan QR code to download Travelink mobile app for iOS and Android
                   </p>
                 </div>
