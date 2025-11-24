@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createNotification } from "@/lib/notifications/helpers";
 
 /**
  * Submit a head role request
@@ -94,6 +95,50 @@ export async function POST(req: Request) {
         ok: false, 
         error: insertError.message || "Failed to submit request" 
       }, { status: 500 });
+    }
+
+    // Notify superadmins about the new request
+    try {
+      const supabaseServiceRole = await createSupabaseServerClient(true);
+      const { data: superadmins } = await supabaseServiceRole
+        .from("users")
+        .select("id")
+        .eq("role", "admin")
+        .eq("is_admin", true)
+        .eq("is_active", true);
+
+      if (superadmins && superadmins.length > 0) {
+        const requesterName = profile.name || profile.email || "User";
+        let departmentName: string | null = null;
+        
+        if (request.department_id) {
+          const { data: dept } = await supabaseServiceRole
+            .from("departments")
+            .select("name, code")
+            .eq("id", request.department_id)
+            .single();
+          departmentName = dept?.name || dept?.code || null;
+        }
+
+        const notifications = superadmins.map((admin: any) =>
+          createNotification({
+            user_id: admin.id,
+            notification_type: "head_role_request_submitted",
+            title: "New Head Role Request",
+            message: `${requesterName} has submitted a request to become a department head${departmentName ? ` for ${departmentName}` : ""}.`,
+            related_type: "head_role_request",
+            related_id: request.id,
+            action_url: "/super-admin/head-requests",
+            action_label: "Review Request",
+            priority: "high",
+          })
+        );
+
+        await Promise.allSettled(notifications);
+      }
+    } catch (notifError) {
+      // Don't fail the request if notification fails
+      console.error("[head-role-requests/submit] Failed to notify superadmins:", notifError);
     }
 
     return NextResponse.json({

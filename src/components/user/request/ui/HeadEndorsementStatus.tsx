@@ -73,9 +73,10 @@ export default function HeadEndorsementStatus({
 
     fetchStatus();
 
+    // OPTIMIZED: Reduced frequency from 5s to 30s to minimize egress
     const interval = setInterval(() => {
       fetchStatus();
-    }, 5000); // Poll every 5 seconds
+    }, 30000); // Poll every 30 seconds
 
     return () => clearInterval(interval);
   }, [requestId, fetchStatus]);

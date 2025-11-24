@@ -6,15 +6,66 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, password } = await request.json();
+    const { email, password, clearSession } = await request.json();
+    
+    // If clearSession is true, clear any existing invalid session first
+    if (clearSession) {
+      const cookieStore = await cookies();
+      const tempSupabase = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+          cookies: {
+            get(name: string) {
+              return cookieStore.get(name)?.value;
+            },
+            set() {},
+            remove(name: string) {
+              cookieStore.delete(name);
+            },
+          },
+        }
+      );
+      await tempSupabase.auth.signOut();
+      console.log('[/api/auth/login] 🧹 Cleared existing session');
+    }
+    
+    // Validate environment variables
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    
+    if (!supabaseUrl || !supabaseAnonKey) {
+      console.error('[/api/auth/login] ❌ Missing Supabase environment variables:', {
+        hasUrl: !!supabaseUrl,
+        hasAnonKey: !!supabaseAnonKey
+      });
+      return NextResponse.json({ 
+        error: "Server configuration error: Missing Supabase credentials. Please check environment variables." 
+      }, { status: 500 });
+    }
+    
+    // Validate URL format
+    if (!supabaseUrl.startsWith('https://') || !supabaseUrl.includes('.supabase.co')) {
+      console.error('[/api/auth/login] ❌ Invalid Supabase URL format:', supabaseUrl);
+      return NextResponse.json({ 
+        error: "Server configuration error: Invalid Supabase URL format." 
+      }, { status: 500 });
+    }
     
     const cookieStore = await cookies();
     const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
     
+    console.log('[/api/auth/login] 🔧 Creating Supabase client with:', {
+      url: supabaseUrl.substring(0, 30) + '...',
+      hasAnonKey: !!supabaseAnonKey,
+      anonKeyLength: supabaseAnonKey?.length || 0,
+      isProduction
+    });
+    
     // Create Supabase client for auth (uses anon key) with production cookie settings
     const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      supabaseUrl,
+      supabaseAnonKey,
       {
         cookies: {
           get(name: string) {
@@ -49,14 +100,100 @@ export async function POST(request: NextRequest) {
     );
 
     // Sign in
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    console.log('[/api/auth/login] 🔐 Attempting sign in for:', email);
+    
+    // First, test if Supabase auth endpoint is accessible
+    try {
+      const testUrl = `${supabaseUrl}/auth/v1/health`;
+      console.log('[/api/auth/login] 🏥 Testing Supabase auth endpoint health...');
+      const healthCheck = await fetch(testUrl, {
+        method: 'GET',
+        headers: {
+          'apikey': supabaseAnonKey,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      const contentType = healthCheck.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const responseText = await healthCheck.text();
+        console.error('[/api/auth/login] ❌ Auth endpoint returned non-JSON:', {
+          status: healthCheck.status,
+          contentType,
+          preview: responseText.substring(0, 200)
+        });
+        return NextResponse.json({ 
+          error: "Supabase authentication service is not responding correctly. Please check your Supabase project status in the dashboard." 
+        }, { status: 503 });
+      }
+      console.log('[/api/auth/login] ✅ Auth endpoint is accessible');
+    } catch (healthErr: any) {
+      console.error('[/api/auth/login] ❌ Health check failed:', healthErr.message);
+      // Continue anyway - might be a network issue
+    }
+    
+    // Try to sign in with better error handling
+    let data, error;
+    try {
+      const result = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      data = result.data;
+      error = result.error;
+    } catch (signInErr: any) {
+      console.error('[/api/auth/login] ❌ Exception during sign in:', {
+        message: signInErr?.message,
+        name: signInErr?.name,
+        stack: signInErr?.stack?.substring(0, 500)
+      });
+      
+      // If it's a JSON parse error, Supabase returned HTML
+      if (signInErr?.message?.includes('not valid JSON') || signInErr?.name === 'SyntaxError' || 
+          (signInErr as any).originalError?.message?.includes('not valid JSON')) {
+        console.error('[/api/auth/login] ❌ CRITICAL: Supabase auth endpoint returned HTML!');
+        console.error('[/api/auth/login] This usually means:');
+        console.error('[/api/auth/login] 1. Supabase project is paused (check dashboard)');
+        console.error('[/api/auth/login] 2. Auth service is temporarily down');
+        console.error('[/api/auth/login] 3. Network/firewall blocking the request');
+        console.error('[/api/auth/login] 4. Invalid anon key or URL');
+        return NextResponse.json({ 
+          error: "Authentication service unavailable. Please check your Supabase project status in the dashboard and ensure it's not paused." 
+        }, { status: 503 });
+      }
+      
+      // Re-throw other errors
+      throw signInErr;
+    }
 
     if (error) {
-      console.error('[/api/auth/login] Sign in error:', error);
-      return NextResponse.json({ error: error.message }, { status: 401 });
+      console.error('[/api/auth/login] ❌ Sign in error:', {
+        message: error.message,
+        status: error.status,
+        name: error.name,
+        originalError: (error as any).originalError?.message
+      });
+      
+      // Check if it's a JSON parsing error (Supabase returning HTML)
+      if (error.message.includes('not valid JSON') || (error as any).originalError?.message?.includes('not valid JSON')) {
+        console.error('[/api/auth/login] ❌ CRITICAL: Supabase is returning HTML instead of JSON!');
+        console.error('[/api/auth/login] This usually means:');
+        console.error('[/api/auth/login] 1. Supabase URL is incorrect');
+        console.error('[/api/auth/login] 2. Supabase project is paused/deleted');
+        console.error('[/api/auth/login] 3. Network/firewall issue');
+        return NextResponse.json({ 
+          error: "Authentication service error: Unable to connect to Supabase. Please check server configuration." 
+        }, { status: 503 });
+      }
+      
+      return NextResponse.json({ 
+        error: error.message || "Invalid email or password" 
+      }, { 
+        status: 401,
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
     }
 
     if (!data.user) {
@@ -191,6 +328,24 @@ export async function POST(request: NextRequest) {
       redirectPath = "/driver";
     }
 
+    // Log cookie information for debugging BEFORE creating response
+    const allCookies = cookieStore.getAll();
+    console.log('[/api/auth/login] ✅ Login successful');
+    console.log('[/api/auth/login] Cookies in store:', {
+      count: allCookies.length,
+      names: allCookies.map(c => c.name).join(', '),
+      hasSupabaseCookies: allCookies.some(c => c.name.includes('supabase') || c.name.includes('sb-'))
+    });
+    
+    // Verify session one more time to ensure it's accessible
+    const { data: { session: finalSession } } = await supabase.auth.getSession();
+    if (!finalSession) {
+      console.error('[/api/auth/login] ❌ WARNING: Session not found in final check!');
+      return NextResponse.json({ error: "Session creation failed" }, { status: 500 });
+    } else {
+      console.log('[/api/auth/login] ✅ Final session check passed');
+    }
+    
     // Create response with JSON body
     // IMPORTANT: In Next.js 15, cookies set via cookieStore.set() are automatically
     // included in the response, but we need to ensure the response is created AFTER
@@ -198,24 +353,16 @@ export async function POST(request: NextRequest) {
     const response = NextResponse.json({ 
       success: true, 
       redirectPath,
-      user: data.user
+      user: {
+        id: data.user.id,
+        email: data.user.email
+      }
+    }, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+      }
     });
-    
-    // Log cookie information for debugging
-    const allCookies = cookieStore.getAll();
-    console.log('[/api/auth/login] ✅ Login successful');
-    console.log('[/api/auth/login] Cookies in store:', {
-      count: allCookies.length,
-      names: allCookies.map(c => c.name).join(', ')
-    });
-    
-    // Verify session one more time to ensure it's accessible
-    const { data: { session: finalSession } } = await supabase.auth.getSession();
-    if (!finalSession) {
-      console.error('[/api/auth/login] ❌ WARNING: Session not found in final check!');
-    } else {
-      console.log('[/api/auth/login] ✅ Final session check passed');
-    }
     
     return response;
 

@@ -106,7 +106,7 @@ export default function DriverNotificationsPage() {
   const fetchNotifications = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/notifications?limit=50');
+      const response = await fetch('/api/notifications?limit=50', { credentials: 'include' });
       const data = await response.json();
       
       if (data.ok) {
@@ -160,6 +160,7 @@ export default function DriverNotificationsPage() {
       const response = await fetch('/api/notifications', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ ids: unreadIds, is_read: true })
       });
 

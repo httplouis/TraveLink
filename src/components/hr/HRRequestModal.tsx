@@ -487,43 +487,101 @@ export default function HRRequestModal({
         })));
       }
       
-      // Smart suggestion logic
+      // Smart suggestion logic - Check department hierarchy first
       if (options.length > 0) {
         try {
-          const { suggestNextApprover, findSuggestedApprover } = await import('@/lib/workflow/suggest-next-approver');
-          const suggestion = suggestNextApprover({
-            status: request.status,
-            requester_is_head: request.requester_is_head || false,
-            requester_role: request.requester?.role || request.requester_role,
-            has_budget: (request.total_budget || 0) > 0,
-            head_included: request.head_included || false,
-            parent_head_approved_at: request.parent_head_approved_at,
-            parent_head_approver: request.parent_head_approver,
-            requester_signature: request.requester_signature,
-            head_approved_at: request.head_approved_at,
-            admin_approved_at: request.admin_approved_at,
-            comptroller_approved_at: request.comptroller_approved_at,
-            hr_approved_at: request.hr_approved_at,
-            vp_approved_at: request.vp_approved_at,
-            vp2_approved_at: request.vp2_approved_at,
-            both_vps_approved: request.both_vps_approved || false
-          });
-          
+          // First, check if request department has a parent department (e.g., CCMS → OVPAR)
+          let suggestedVPId: string | undefined = undefined;
+          let suggestedVPName: string | undefined = undefined;
           let suggestionReasonText = '';
           
-          if (suggestion) {
-            const suggested = findSuggestedApprover(suggestion, options);
-            if (suggested) {
-              setDefaultApproverId(suggested.id);
-              setDefaultApproverName(suggested.name);
-              suggestionReasonText = suggestion.reason;
-              console.log("[HRRequestModal] ✅ Smart suggestion:", suggestion.roleLabel, "-", suggestion.reason);
-            } else {
-              console.log("[HRRequestModal] ⚠️ Suggestion not found in options:", suggestion.roleLabel);
+          if (request.department_id || request.department) {
+            try {
+              // Fetch department info to check for parent
+              const deptId = request.department_id;
+              const deptName = request.department;
+              
+              let deptRes: Response;
+              if (deptId) {
+                deptRes = await fetch(`/api/departments?id=${deptId}`);
+              } else if (deptName) {
+                deptRes = await fetch(`/api/departments?name=${encodeURIComponent(deptName)}`);
+              } else {
+                throw new Error("No department ID or name");
+              }
+              
+              if (deptRes.ok) {
+                const deptData = await deptRes.json();
+                const dept = deptData.departments?.[0] || deptData.data?.[0];
+                
+                if (dept?.parent_department_id) {
+                  console.log("[HRRequestModal] 🔍 Department has parent:", dept.parent_department_id);
+                  
+                  // Find VP assigned to parent department
+                  const parentDeptId = dept.parent_department_id;
+                  const parentVP = options.find((opt: any) => {
+                    // Check if VP's department_id matches parent_department_id
+                    // VPs have department_id in the response now
+                    return opt.role === 'vp' && opt.department_id === parentDeptId;
+                  });
+                  
+                  if (parentVP) {
+                    suggestedVPId = parentVP.id;
+                    suggestedVPName = parentVP.name;
+                    suggestionReasonText = `Suggested based on department hierarchy: ${dept.name || dept.code || 'Department'} is under ${parentVP.name || 'VP'}'s office.`;
+                    console.log("[HRRequestModal] ✅ Found parent department VP:", parentVP.name);
+                  } else {
+                    console.log("[HRRequestModal] ⚠️ Parent department found but no VP assigned to it");
+                  }
+                }
+              }
+            } catch (deptErr) {
+              console.error("[HRRequestModal] Error checking department hierarchy:", deptErr);
             }
           }
           
-          setSuggestionReason(suggestionReasonText);
+          // If no department-based suggestion, use workflow logic
+          if (!suggestedVPId) {
+            const { suggestNextApprover, findSuggestedApprover } = await import('@/lib/workflow/suggest-next-approver');
+            const suggestion = suggestNextApprover({
+              status: request.status,
+              requester_is_head: request.requester_is_head || false,
+              requester_role: request.requester?.role || request.requester_role,
+              has_budget: (request.total_budget || 0) > 0,
+              head_included: request.head_included || false,
+              parent_head_approved_at: request.parent_head_approved_at,
+              parent_head_approver: request.parent_head_approver,
+              requester_signature: request.requester_signature,
+              head_approved_at: request.head_approved_at,
+              admin_approved_at: request.admin_approved_at,
+              comptroller_approved_at: request.comptroller_approved_at,
+              hr_approved_at: request.hr_approved_at,
+              vp_approved_at: request.vp_approved_at,
+              vp2_approved_at: request.vp2_approved_at,
+              both_vps_approved: request.both_vps_approved || false
+            });
+            
+            if (suggestion) {
+              const suggested = findSuggestedApprover(suggestion, options);
+              if (suggested) {
+                suggestedVPId = suggested.id;
+                suggestedVPName = suggested.name;
+                suggestionReasonText = suggestion.reason;
+                console.log("[HRRequestModal] ✅ Smart suggestion:", suggestion.roleLabel, "-", suggestion.reason);
+              } else {
+                console.log("[HRRequestModal] ⚠️ Suggestion not found in options:", suggestion.roleLabel);
+              }
+            }
+          }
+          
+          // Set the suggestion
+          if (suggestedVPId && suggestedVPName) {
+            setDefaultApproverId(suggestedVPId);
+            setDefaultApproverName(suggestedVPName);
+            setSuggestionReason(suggestionReasonText);
+          } else {
+            setSuggestionReason(suggestionReasonText || '');
+          }
         } catch (err) {
           console.error("[HRRequestModal] Error in smart suggestion:", err);
         }

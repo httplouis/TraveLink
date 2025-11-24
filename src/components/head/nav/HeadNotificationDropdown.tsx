@@ -33,9 +33,10 @@ export default function HeadNotificationDropdown() {
       const [notificationsRes, inboxRes] = await Promise.all([
         fetch("/api/notifications?limit=10", { 
           cache: "no-store",
+          credentials: "include",
           headers: { 'Cache-Control': 'no-cache' }
         }),
-        fetch("/api/head?limit=5", { cache: "no-store" })
+        fetch("/api/head?limit=5", { cache: "no-store", credentials: "include" })
       ]);
       
       const [notificationsData, inboxData] = await Promise.all([
@@ -97,7 +98,7 @@ export default function HeadNotificationDropdown() {
 
   const loadInboxCount = async () => {
     try {
-      const res = await fetch("/api/head/inbox/count", { cache: "no-store" });
+      const res = await fetch("/api/head/inbox/count", { cache: "no-store", credentials: "include" });
       const data = await res.json();
       if (data.ok) {
         setInboxCount(data.pending_count || 0);
@@ -220,6 +221,7 @@ export default function HeadNotificationDropdown() {
       await fetch("/api/notifications", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ id: notificationId, is_read: true }),
       });
       loadNotifications();
@@ -234,6 +236,7 @@ export default function HeadNotificationDropdown() {
       await fetch("/api/notifications", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ ids: unreadIds, is_read: true }),
       });
       loadNotifications();

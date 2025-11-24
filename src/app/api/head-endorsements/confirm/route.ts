@@ -653,7 +653,7 @@ export async function POST(req: NextRequest) {
       // Update request workflow_metadata with endorsement info
       const { data: requestData } = await supabase
         .from("requests")
-        .select("workflow_metadata")
+        .select("workflow_metadata, status, department_id, has_budget, requester_is_head")
         .eq("id", invitation.request_id)
         .single();
 
@@ -662,9 +662,46 @@ export async function POST(req: NextRequest) {
       metadata.department_head_endorsement_date = endorsement_date || new Date().toISOString().split('T')[0];
       metadata.head_endorsement_signature = finalSignature;
 
+      // Check if all head endorsements are confirmed
+      const { data: allEndorsements } = await supabase
+        .from("head_endorsement_invitations")
+        .select("id, status, department_id")
+        .eq("request_id", invitation.request_id);
+
+      const allConfirmed = allEndorsements && allEndorsements.length > 0 && 
+        allEndorsements.every((e: any) => e.status === 'confirmed');
+
+      // If all heads confirmed and request is still pending_head, update to pending_admin
+      const updateRequestData: any = {
+        workflow_metadata: metadata,
+        updated_at: phNow,
+      };
+
+      // If this is the primary department head (matches request department_id), update head approval fields
+      if (invitation.department_id === requestData?.department_id) {
+        updateRequestData.head_approved_at = phNow;
+        updateRequestData.head_approved_by = userProfile?.id || null;
+        console.log("[POST /api/head-endorsements/confirm] ✅ Updating head_approved_at and head_approved_by");
+      }
+
+      // If all heads confirmed and status is still pending_head, move to pending_admin
+      if (allConfirmed && requestData?.status === 'pending_head') {
+        // Import WorkflowEngine to determine next status
+        const { WorkflowEngine } = await import("@/lib/workflow/engine");
+        const hasParentDepartment = false; // Check if needed
+        const nextStatus = WorkflowEngine.getNextStatus(
+          'pending_head' as any,
+          requestData?.requester_is_head || false,
+          requestData?.has_budget || false,
+          hasParentDepartment
+        );
+        updateRequestData.status = nextStatus;
+        console.log("[POST /api/head-endorsements/confirm] ✅ All heads confirmed - updating status to:", nextStatus);
+      }
+
       await supabase
         .from("requests")
-        .update({ workflow_metadata: metadata })
+        .update(updateRequestData)
         .eq("id", invitation.request_id);
 
       console.log("[POST /api/head-endorsements/confirm] ✅ Confirmation successful:", {
@@ -672,6 +709,8 @@ export async function POST(req: NextRequest) {
         status: updatedInvitation?.status,
         hasSignature: !!updatedInvitation?.signature,
         headName: updatedInvitation?.head_name,
+        allHeadsConfirmed: allConfirmed,
+        requestStatusUpdated: allConfirmed && requestData?.status === 'pending_head',
       });
 
       return NextResponse.json({

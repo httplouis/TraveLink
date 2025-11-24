@@ -842,7 +842,32 @@ export async function GET(
     }
     
     console.error("[GET /api/requests/[id]] ========== RETURNING ERROR ==========");
-    return NextResponse.json(errorResponse, { status: 500 });
+    console.error("[GET /api/requests/[id]] Error details:", {
+      message: err?.message,
+      name: err?.name,
+      stack: err?.stack?.substring(0, 500)
+    });
+    
+    try {
+      return NextResponse.json(errorResponse, { 
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+    } catch (jsonErr: any) {
+      // If JSON serialization fails, return plain text
+      console.error("[GET /api/requests/[id]] Failed to serialize error response:", jsonErr);
+      return new Response(
+        JSON.stringify({ ok: false, error: "Internal server error" }),
+        { 
+          status: 500,
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+    }
   }
 }
 

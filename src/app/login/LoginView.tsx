@@ -47,7 +47,7 @@ export default function LoginView({
     >
       {/* University Name and Logo - Upper Left, Outside Panel */}
       <div className="absolute top-6 left-6 z-20">
-        <div className="logo flex items-center gap-5">
+        <div className="logo flex items-center gap-2">
           {/* Circular Seal Logo */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -59,14 +59,15 @@ export default function LoginView({
             }}
           />
           {/* University Name - Matching Official HTML Structure */}
-          <p className="notranslate text-white drop-shadow-lg leading-none" style={{
+          <p className="notranslate text-white drop-shadow-lg" style={{
             fontFamily: 'Arial, Helvetica, sans-serif',
             letterSpacing: '0.03em',
             fontWeight: 900,
-            fontSize: '2.5rem',
+            fontSize: '1.8rem',
             lineHeight: '1'
           }}>
-            <span style={{ fontSize: '3rem' }}>ENVERGA</span><br />UNIVERSITY
+            <span style={{ fontSize: '2rem', display: 'block' }}>ENVERGA</span>
+            <span style={{ fontSize: '1.8rem', display: 'block', marginTop: '0.05rem' }}>UNIVERSITY</span>
           </p>
         </div>
       </div>

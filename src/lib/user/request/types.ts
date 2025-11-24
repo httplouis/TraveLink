@@ -134,6 +134,7 @@ export interface SeminarApplication {
 
 export interface Transportation {
   transportation_type?: "pickup" | "self";
+  pickup_preference?: "pickup" | "self" | "gymnasium";
   pickup_location?: string;
   pickup_location_lat?: number;
   pickup_location_lng?: number;

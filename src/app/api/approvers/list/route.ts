@@ -383,6 +383,21 @@ export async function GET(req: NextRequest) {
       });
 
       if (filteredVps && filteredVps.length > 0) {
+        // Fetch department info for VPs
+        const vpDepartmentIds = [...new Set(filteredVps.map(v => v.department_id).filter(Boolean))];
+        let vpDeptMap = new Map();
+        
+        if (vpDepartmentIds.length > 0) {
+          const { data: vpDepartments } = await supabase
+            .from("departments")
+            .select("id, name, code")
+            .in("id", vpDepartmentIds);
+          
+          if (vpDepartments) {
+            vpDeptMap = new Map(vpDepartments.map(d => [d.id, d]));
+          }
+        }
+        
         approvers.push(...filteredVps.map((v: any) => {
           // Determine role label based on exec_type
           let roleLabel = "Vice President";
@@ -403,7 +418,8 @@ export async function GET(req: NextRequest) {
             profile_picture: v.profile_picture,
             phone: v.phone_number,
             position: v.position_title || "Vice President",
-            department: null,
+            department: v.department_id ? vpDeptMap.get(v.department_id)?.name : null,
+            department_id: v.department_id, // Include department_id for filtering
             role: "vp",
             roleLabel: roleLabel
           };

@@ -32,16 +32,16 @@ export default function NotificationDropdown() {
   const loadNotifications = async () => {
     // Don't show loading spinner - just update silently
     try {
-      console.log("[NotificationDropdown] Loading notifications...");
       // Load both in parallel for speed
       const [notificationsRes, inboxRes] = await Promise.all([
         fetch("/api/notifications?limit=50", { 
           cache: "no-store",
+          credentials: "include",
           headers: {
             'Cache-Control': 'no-cache'
           }
         }),
-        fetch("/api/user/inbox?limit=5", { cache: "no-store" })
+        fetch("/api/user/inbox?limit=5", { cache: "no-store", credentials: "include" })
       ]);
       
       const [notificationsData, inboxData] = await Promise.all([
@@ -49,19 +49,10 @@ export default function NotificationDropdown() {
         inboxRes.json()
       ]);
       
-      console.log("[NotificationDropdown] Notifications response:", {
-        ok: notificationsData.ok,
-        dataLength: notificationsData.data?.length || 0,
-        data: notificationsData.data
-      });
-      
       let notificationsList: Notification[] = [];
       
       if (notificationsData.ok) {
         notificationsList = Array.isArray(notificationsData.data) ? notificationsData.data : [];
-        console.log("[NotificationDropdown] Parsed notifications:", notificationsList.length);
-      } else {
-        console.error("[NotificationDropdown] Failed to load notifications:", notificationsData.error);
       }
 
       // Convert inbox items to notification format
@@ -109,19 +100,8 @@ export default function NotificationDropdown() {
       
       const unread = uniqueNotifications.filter((n: Notification) => !n.is_read || n.is_read === false);
       setUnreadCount(unread.length);
-      
-      console.log("[NotificationDropdown] Final notifications:", {
-        total: uniqueNotifications.length,
-        unread: unread.length,
-        notifications: uniqueNotifications.map(n => ({
-          id: n.id,
-          type: n.notification_type,
-          title: n.title,
-          is_read: n.is_read
-        }))
-      });
     } catch (error) {
-      console.error("[NotificationDropdown] Failed to load notifications:", error);
+      // Silently handle errors - don't spam console
       setNotifications([]);
       setUnreadCount(0);
     }
@@ -130,7 +110,7 @@ export default function NotificationDropdown() {
   // Load inbox count and items
   const loadInboxCount = async () => {
     try {
-      const res = await fetch("/api/user/inbox/count", { cache: "no-store" });
+      const res = await fetch("/api/user/inbox/count", { cache: "no-store", credentials: "include" });
       const data = await res.json();
       if (data.ok) {
         setInboxCount(data.pending_count || 0);
@@ -154,12 +134,10 @@ export default function NotificationDropdown() {
     // Set up real-time subscription for notifications
     const setupRealtime = async () => {
       const supabase = createSupabaseClient();
-      console.log("[NotificationDropdown] Setting up real-time subscription...");
       
       // Get current user profile ID first
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        console.log("[NotificationDropdown] No user found, skipping real-time subscription");
         return;
       }
       
@@ -170,12 +148,10 @@ export default function NotificationDropdown() {
         .single();
       
       if (!profile) {
-        console.log("[NotificationDropdown] No profile found, skipping real-time subscription");
         return;
       }
       
       const currentUserId = profile.id;
-      console.log("[NotificationDropdown] Current user ID:", currentUserId);
       
       // Subscribe to notifications table changes
       channel = supabase
@@ -196,12 +172,6 @@ export default function NotificationDropdown() {
               return; // Not for this user
             }
             
-            console.log("[NotificationDropdown] 🔔 Real-time notification change:", {
-              eventType: payload.eventType,
-              user_id: notificationUserId,
-              notification_id: payload.new?.id || payload.old?.id
-            });
-            
             // Reload notifications when there's a change
             if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
               loadNotifications();
@@ -209,9 +179,7 @@ export default function NotificationDropdown() {
             }
           }
         )
-        .subscribe((status: string) => {
-          console.log("[NotificationDropdown] Real-time subscription status:", status);
-        });
+        .subscribe();
       
       // Subscribe to requests table changes (for inbox items)
       requestsChannel = supabase
@@ -230,7 +198,6 @@ export default function NotificationDropdown() {
             // Only react to changes that affect user inbox (representative submissions)
             if (isRepresentative && (newStatus === "pending_requester_signature" || 
                 payload.eventType === "INSERT")) {
-              console.log("[NotificationDropdown] 🔔 Real-time inbox request change");
               loadNotifications();
               loadInboxCount();
             }
@@ -282,6 +249,7 @@ export default function NotificationDropdown() {
       await fetch("/api/notifications", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ id: notificationId, is_read: true }),
       });
       loadNotifications();
@@ -297,6 +265,7 @@ export default function NotificationDropdown() {
       await fetch("/api/notifications", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ ids: unreadIds, is_read: true }),
       });
       loadNotifications();

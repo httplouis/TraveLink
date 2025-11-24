@@ -30,11 +30,28 @@ export async function GET(request: NextRequest) {
     
     // Fetch requests WITHOUT foreign key relationships first to avoid RLS filtering issues
     // Use service role client directly to bypass RLS
+    // OPTIMIZED: Use specific columns and add limit to minimize egress
     console.log("[API /requests/list] Fetching requests with service role client...");
     let query = supabaseServiceRole
       .from("requests")
-      .select("*")
-      .order("created_at", { ascending: false });
+      .select(`
+        id,
+        request_number,
+        status,
+        requester_id,
+        requester_name,
+        department_id,
+        travel_start_date,
+        travel_end_date,
+        destination,
+        purpose,
+        created_at,
+        updated_at,
+        current_approver_role,
+        workflow_metadata
+      `)
+      .order("created_at", { ascending: false })
+      .limit(100); // OPTIMIZED: Added limit to prevent fetching all records
 
     // Apply filters
     if (status && status !== "All") {
@@ -116,8 +133,8 @@ export async function GET(request: NextRequest) {
       // If no comptrollerId provided, show all pending_comptroller requests (data = allRequests)
       
       console.log("[API /requests/list] Filtered pending_comptroller requests:", {
-        filteredCount: data.length,
-        totalCount: allRequests.length
+        filteredCount: data?.length || 0,
+        totalCount: allRequests?.length || 0
       });
     }
 
@@ -128,11 +145,12 @@ export async function GET(request: NextRequest) {
 
     // Log sample data for debugging
     if (data && data.length > 0) {
+      const firstReq = data[0] as any;
       console.log("[/api/requests/list] Sample request data:", 
-        JSON.stringify(data[0], null, 2)
+        JSON.stringify(firstReq, null, 2)
       );
-      console.log("[/api/requests/list] Requester:", data[0].requester);
-      console.log("[/api/requests/list] Head approver:", data[0].head_approver);
+      console.log("[/api/requests/list] Requester:", firstReq.requester);
+      console.log("[/api/requests/list] Head approver:", firstReq.head_approver);
     }
 
     // Now fetch related data separately to avoid RLS filtering issues
@@ -204,13 +222,14 @@ export async function GET(request: NextRequest) {
 
     // Log sample data for debugging
     if (data && data.length > 0) {
+      const firstReq = data[0] as any;
       console.log("📊 Sample request data from DB:");
-      console.log("  - ID:", data[0].id);
-      console.log("  - Status:", data[0].status);
-      console.log("  - Requester:", data[0].requester?.name || data[0].requester?.email);
-      console.log("  - Head:", data[0].head_approver?.name || data[0].head_approver?.email);
-      console.log("  - Total budget:", data[0].total_budget);
-      console.log("  - Expense breakdown items:", data[0].expense_breakdown?.length || 0);
+      console.log("  - ID:", firstReq.id);
+      console.log("  - Status:", firstReq.status);
+      console.log("  - Requester:", firstReq.requester?.name || firstReq.requester?.email);
+      console.log("  - Head:", firstReq.head_approver?.name || firstReq.head_approver?.email);
+      console.log("  - Total budget:", firstReq.total_budget);
+      console.log("  - Expense breakdown items:", firstReq.expense_breakdown?.length || 0);
     }
 
     // Return just the data array

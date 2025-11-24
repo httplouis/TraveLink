@@ -1413,19 +1413,10 @@ export async function POST(req: Request) {
       } : {}),
     };
 
-    // CRITICAL VALIDATION: Faculty alone cannot travel - must have head included
-    // This applies to travel orders only (not seminars)
-    if (!isSeminar && requestedStatus !== "draft") {
-      const headIncluded = participants.some((p: any) => p.is_head) || requestingPersonIsHead || requesterIsHead;
-      
-      if (!requesterIsHead && !requestingPersonIsHead && !headIncluded) {
-        console.error("[/api/requests/submit] ❌ VALIDATION FAILED: Faculty alone cannot travel");
-        return NextResponse.json({
-          ok: false,
-          error: "Faculty members cannot travel alone. The department head must be included in the travel participants. Please add the department head to the participants list."
-        }, { status: 400 });
-      }
-    }
+    // UPDATED VALIDATION: Faculty can travel alone as long as head endorses/approves
+    // Head doesn't need to be in participants list - their endorsement/approval is sufficient
+    // This validation is removed - faculty can submit solo requests, head will approve/endorse separately
+    // No validation needed here - head approval happens in the workflow, not at submission
 
     // VALIDATION: For multiple requesters, check if all are confirmed (for final submission, not draft)
     if (hasMultipleRequesters && requestedStatus !== "draft" && Array.isArray(travelOrder.requesters)) {

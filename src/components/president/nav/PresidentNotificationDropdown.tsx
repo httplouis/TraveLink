@@ -31,9 +31,10 @@ export default function PresidentNotificationDropdown() {
       const [notificationsRes, inboxRes] = await Promise.all([
         fetch("/api/notifications?limit=10", { 
           cache: "no-store",
+          credentials: "include",
           headers: { 'Cache-Control': 'no-cache' }
         }),
-        fetch("/api/president/inbox?limit=5", { cache: "no-store" })
+        fetch("/api/president/inbox?limit=5", { cache: "no-store", credentials: "include" })
       ]);
       
       const [notificationsData, inboxData] = await Promise.all([
@@ -202,6 +203,7 @@ export default function PresidentNotificationDropdown() {
       await fetch("/api/notifications", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ id: notificationId, is_read: true }),
       });
       loadNotifications();
@@ -216,6 +218,7 @@ export default function PresidentNotificationDropdown() {
       await fetch("/api/notifications", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ ids: unreadIds, is_read: true }),
       });
       loadNotifications();

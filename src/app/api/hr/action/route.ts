@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 import { getPhilippineTimestamp } from "@/lib/datetime";
 
 /**
@@ -8,22 +9,45 @@ import { getPhilippineTimestamp } from "@/lib/datetime";
  */
 export async function POST(request: Request) {
   try {
-    const supabase = await createSupabaseServerClient(true); // Use service role
+    // Use regular client for auth (with cookies)
+    const authSupabase = await createSupabaseServerClient(false);
     
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser();
     if (authError || !user) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    // Get HR user info
+    // Use service role client for queries (bypasses RLS completely)
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return NextResponse.json({
+        ok: false,
+        error: "Missing Supabase configuration"
+      }, { status: 500 });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+
+    // Get HR user info and verify HR role
     const { data: hrUser } = await supabase
       .from("users")
-      .select("id, name, email")
+      .select("id, name, email, is_hr")
       .eq("auth_user_id", user.id)
       .single();
 
     if (!hrUser) {
       return NextResponse.json({ ok: false, error: "User not found" }, { status: 404 });
+    }
+
+    if (!hrUser.is_hr) {
+      return NextResponse.json({ ok: false, error: "Access denied. HR role required." }, { status: 403 });
     }
 
     const body = await request.json();
@@ -164,10 +188,8 @@ export async function POST(request: Request) {
         // Multiple VPs selected - store all VP IDs
         workflowMetadata.assigned_vp_ids = vpIds;
         workflowMetadata.vp_signature_required_count = vpIds.length;
+        workflowMetadata.next_vp_id = vpIds[0]; // Store first VP ID in metadata for inbox filtering
         updateData.vp_signature_required_count = vpIds.length;
-        
-        // Set first VP ID for backward compatibility (for inbox filtering)
-        updateData.next_vp_id = vpIds[0];
         approverRole = "vp";
         
         console.log(`[HR Action] Multiple VPs assigned: ${vpIds.length} VPs`, vpIds);
@@ -185,10 +207,8 @@ export async function POST(request: Request) {
             // Determine approver role based on user's actual role
             if (approverUser.is_president || approverUser.exec_type === "president") {
               approverRole = "president";
-              updateData.next_president_id = nextApproverId;
             } else if (approverUser.is_vp || approverUser.role === "exec" || approverUser.exec_type?.startsWith("vp_") || approverUser.exec_type?.startsWith("svp_")) {
               approverRole = "vp";
-              updateData.next_vp_id = nextApproverId;
             } else if (approverUser.is_admin || approverUser.role === "admin") {
               approverRole = "admin";
             } else if (approverUser.is_hr || approverUser.role === "hr") {
@@ -197,34 +217,16 @@ export async function POST(request: Request) {
               approverRole = "comptroller";
             } else {
               // Use role from selection
-              if (nextApproverRole === "vp") {
-                approverRole = "vp";
-                updateData.next_vp_id = nextApproverId;
-              } else if (nextApproverRole === "president") {
-                approverRole = "president";
-                updateData.next_president_id = nextApproverId;
-              }
+              approverRole = nextApproverRole || "vp";
             }
           } else {
             // User not found - use role from selection
-            if (nextApproverRole === "vp") {
-              approverRole = "vp";
-              updateData.next_vp_id = nextApproverId;
-            } else if (nextApproverRole === "president") {
-              approverRole = "president";
-              updateData.next_president_id = nextApproverId;
-            }
+            approverRole = nextApproverRole || "vp";
           }
         } catch (err) {
           console.error("[HR Action] Error fetching approver user:", err);
           // Fallback to role from selection
-          if (nextApproverRole === "vp") {
-            approverRole = "vp";
-            updateData.next_vp_id = nextApproverId;
-          } else if (nextApproverRole === "president") {
-            approverRole = "president";
-            updateData.next_president_id = nextApproverId;
-          }
+          approverRole = nextApproverRole || "vp";
         }
         
         // Store in workflow_metadata for single selection too

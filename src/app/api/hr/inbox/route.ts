@@ -47,10 +47,32 @@ export async function GET() {
     }
 
     // Fetch all pending_hr requests WITHOUT foreign key relationships first to avoid RLS filtering issues
+    // OPTIMIZED: Use specific columns instead of select(*) to minimize egress
     console.log("[HR Inbox API] Fetching requests with service role client...");
     const { data: allRequests, error} = await supabaseServiceRole
       .from("requests")
-      .select("*")
+      .select(`
+        id,
+        request_number,
+        status,
+        requester_id,
+        requester_name,
+        department_id,
+        travel_start_date,
+        travel_end_date,
+        destination,
+        purpose,
+        created_at,
+        updated_at,
+        head_approved_at,
+        head_approved_by,
+        parent_head_approved_by,
+        admin_processed_by,
+        hr_approved_by,
+        workflow_metadata,
+        requester_is_head,
+        total_budget
+      `)
       .eq("status", "pending_hr")
       .order("created_at", { ascending: false })
       .limit(100);
@@ -63,7 +85,7 @@ export async function GET() {
     console.log("[HR Inbox API] Fetched requests:", {
       count: allRequests?.length || 0,
       hasError: !!error,
-      errorMessage: error?.message
+      errorMessage: error ? (error as any).message : null
     });
 
     // Now fetch related data separately to avoid RLS filtering issues

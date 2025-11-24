@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createNotification } from "@/lib/notifications/helpers";
 
 /**
  * Approve or reject a head role request
@@ -13,7 +14,8 @@ export async function POST(
     const resolvedParams = await params;
     const requestId = resolvedParams.id;
 
-    const supabase = await createSupabaseServerClient(true); // Use service role for admin operations
+    // First, get authenticated user using regular client (has access to cookies/session)
+    const supabase = await createSupabaseServerClient(false);
     
     // Get current user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -40,6 +42,9 @@ export async function POST(
       }, { status: 403 });
     }
 
+    // Now use service role client for database operations that need elevated permissions
+    const supabaseServiceRole = await createSupabaseServerClient(true);
+
     // Parse request body
     const body = await req.json();
     const { action, comments } = body; // action: "approve" | "reject"
@@ -51,16 +56,23 @@ export async function POST(
       }, { status: 400 });
     }
 
-    // Get the request
-    const { data: request, error: requestError } = await supabase
+    // Get the request (using service role for RLS bypass)
+    const { data: request, error: requestError } = await supabaseServiceRole
       .from("head_role_requests")
       .select(`
         *,
         user:users!head_role_requests_user_id_fkey(
           id,
+          name,
+          email,
           role,
           is_head,
           department_id
+        ),
+        department:departments(
+          id,
+          name,
+          code
         )
       `)
       .eq("id", requestId)
@@ -83,8 +95,8 @@ export async function POST(
 
     const newStatus = action === "approve" ? "approved" : "rejected";
 
-    // Update request status
-    const { error: updateError } = await supabase
+    // Update request status (using service role for RLS bypass)
+    const { error: updateError } = await supabaseServiceRole
       .from("head_role_requests")
       .update({
         status: newStatus,
@@ -101,6 +113,43 @@ export async function POST(
         ok: false, 
         error: updateError.message || "Failed to update request" 
       }, { status: 500 });
+    }
+
+    // Create notification for the user
+    try {
+      const targetUserId = request.user_id;
+      const userName = request.user?.name || request.user?.email || "User";
+      const departmentName = request.department?.name || request.department?.code || "department";
+      
+      if (action === "approve") {
+        await createNotification({
+          user_id: targetUserId,
+          notification_type: "head_role_approved",
+          title: "Head Role Request Approved",
+          message: `Your request to become a department head${request.department_id ? ` for ${departmentName}` : ""} has been approved. You now have head role privileges.`,
+          related_type: "head_role_request",
+          related_id: requestId,
+          action_url: "/user/request-head-role",
+          action_label: "View Request",
+          priority: "high",
+        });
+      } else {
+        // Rejected
+        await createNotification({
+          user_id: targetUserId,
+          notification_type: "head_role_rejected",
+          title: "Head Role Request Rejected",
+          message: `Your request to become a department head${request.department_id ? ` for ${departmentName}` : ""} has been rejected.${comments ? ` Reason: ${comments}` : ""}`,
+          related_type: "head_role_request",
+          related_id: requestId,
+          action_url: "/user/request-head-role",
+          action_label: "View Request",
+          priority: "high",
+        });
+      }
+    } catch (notifError) {
+      // Don't fail the request if notification fails
+      console.error("[head-role-requests/approve] Failed to create notification:", notifError);
     }
 
     // If approved, update user role and create department_heads mapping
@@ -121,7 +170,7 @@ export async function POST(
         updateData.department_id = departmentId;
       }
 
-      const { error: userUpdateError } = await supabase
+      const { error: userUpdateError } = await supabaseServiceRole
         .from("users")
         .update(updateData)
         .eq("id", targetUserId);
@@ -151,7 +200,7 @@ export async function POST(
         const oldGrantRole = roleMapping[currentUserRole];
         if (oldGrantRole) {
           // Revoke existing old role grant if it's still active
-          await supabase
+          await supabaseServiceRole
             .from("role_grants")
             .update({
               revoked_at: new Date().toISOString(),
@@ -165,7 +214,7 @@ export async function POST(
       }
 
       // Create new role grant for audit trail
-      const { error: grantError } = await supabase
+      const { error: grantError } = await supabaseServiceRole
         .from("role_grants")
         .upsert({
           user_id: targetUserId,
@@ -186,7 +235,7 @@ export async function POST(
       // Create department_heads mapping if department_id is provided
       if (departmentId) {
         // Check if mapping already exists
-        const { data: existingMapping } = await supabase
+        const { data: existingMapping } = await supabaseServiceRole
           .from("department_heads")
           .select("id")
           .eq("department_id", departmentId)
@@ -195,7 +244,7 @@ export async function POST(
           .maybeSingle();
 
         if (!existingMapping) {
-          const { error: mappingError } = await supabase
+          const { error: mappingError } = await supabaseServiceRole
             .from("department_heads")
             .insert({
               department_id: departmentId,
@@ -213,13 +262,16 @@ export async function POST(
       }
 
       // Log to audit_logs
-      await supabase.from("audit_logs").insert({
+      await supabaseServiceRole.from("audit_logs").insert({
         action: "head_role_granted",
         user_id: targetUserId,
-        performed_by: profile.id,
+        entity_type: "head_role_request",
+        entity_id: requestId,
         old_value: { role: currentUserRole, is_head: currentIsHead },
-        new_value: { role: "head", is_head: true, department_id: departmentId },
-        metadata: { request_id: requestId },
+        new_value: { role: "head", is_head: true, department_id: departmentId, granted_by: profile.id },
+      }).catch((err) => {
+        // Don't fail the request if audit log fails
+        console.error("[head-role-requests/approve] Audit log insert failed:", err);
       });
     }
 

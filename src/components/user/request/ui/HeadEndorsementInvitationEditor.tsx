@@ -207,9 +207,9 @@ export default function HeadEndorsementInvitationEditor({
       }
     };
 
-    // Poll immediately, then every 5 seconds
+    // OPTIMIZED: Reduced frequency from 5s to 30s to minimize egress
     pollStatus();
-    const interval = setInterval(pollStatus, 5000);
+    const interval = setInterval(pollStatus, 30000);
     setPollingInterval(interval);
 
     return () => {

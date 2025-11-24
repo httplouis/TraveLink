@@ -258,6 +258,23 @@ export function canSubmit(
       errors["travelOrder.costs.justification"] =
         "Please provide a justification for renting / hiring.";
     }
+
+    // Validate contact number if pickup is required (pickup or gymnasium)
+    const transportation = data.transportation;
+    const pickupPreference = transportation?.pickup_preference;
+    if (pickupPreference === "pickup" || pickupPreference === "gymnasium") {
+      const contactNumber = transportation?.pickup_contact_number;
+      if (!req(contactNumber)) {
+        errors["transportation.pickup_contact_number"] = "Contact number is required for driver coordination";
+      } else {
+        // Validate phone number format (Philippines: +63XXXXXXXXXX or 09XXXXXXXXX)
+        const cleaned = String(contactNumber).replace(/[\s\-\(\)]/g, '');
+        const phMobileRegex = /^(\+63|0)?9\d{9}$/;
+        if (!phMobileRegex.test(cleaned)) {
+          errors["transportation.pickup_contact_number"] = "Please enter a valid Philippines mobile number (e.g., +639123456789 or 09123456789)";
+        }
+      }
+    }
   }
 
   return { ok: Object.keys(errors).length === 0, errors };

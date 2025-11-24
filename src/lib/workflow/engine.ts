@@ -20,7 +20,7 @@ import type { RequestStatus, ApproverRole, RequestType } from './types';
  * SPECIAL RULES:
  * - If department has parent_department_id, approval goes: office head → parent head → admin
  * - If no parent_department_id, approval goes: dept head → admin (original flow)
- * - Head must be included in faculty travel requests
+ * - Faculty can travel alone - head endorsement/approval is sufficient (head doesn't need to be in participants)
  * - Head can send representative
  * - Comptroller only if has_budget = true
  * - 5 requests per day limit
@@ -182,7 +182,8 @@ export class WorkflowEngine {
 
   /**
    * Validate if a request can be created based on business rules
-   * CRITICAL RULE: Faculty alone cannot travel - must have head included
+   * UPDATED RULE: Faculty can travel alone as long as head endorses/approves the request
+   * Head doesn't need to be in participants list - their endorsement/approval is sufficient
    */
   static async validateNewRequest(params: {
     requestDate: Date;
@@ -196,10 +197,8 @@ export class WorkflowEngine {
   }): Promise<{ valid: boolean; errors: string[] }> {
     const errors: string[] = [];
 
-    // Rule 1: Faculty requests MUST include department head (cannot travel alone)
-    if (!params.requesterIsHead && !params.headIncluded) {
-      errors.push('Faculty members cannot travel alone. The department head must be included in travel participants.');
-    }
+    // Rule 1: REMOVED - Faculty can travel alone as long as head endorses/approves
+    // Head endorsement/approval is sufficient, head doesn't need to be in participants
 
     // Rule 2: Check daily VEHICLE request limit (5 per day)
     // NOTE: This limit only applies to requests that need vehicles!

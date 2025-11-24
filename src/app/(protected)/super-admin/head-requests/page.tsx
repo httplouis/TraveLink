@@ -93,6 +93,7 @@ export default function HeadRequestsPage() {
       const response = await fetch(`/api/head-role-requests/${requestId}/approve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           action: "approve",
           comments: reviewComments[requestId] || null,
@@ -129,6 +130,7 @@ export default function HeadRequestsPage() {
       const response = await fetch(`/api/head-role-requests/${requestId}/approve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           action: "reject",
           comments: reviewComments[requestId].trim(),

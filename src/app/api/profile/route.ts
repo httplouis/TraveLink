@@ -30,16 +30,61 @@ export async function GET(request: Request) {
     const supabase = await createSupabaseServerClient(false); // Use user auth
     
     // Get current authenticated user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    let user, authError;
+    try {
+      const result = await supabase.auth.getUser();
+      user = result.data.user;
+      authError = result.error;
+    } catch (getUserErr: any) {
+      console.error("[GET /api/profile] ❌ Exception during getUser:", {
+        message: getUserErr?.message,
+        name: getUserErr?.name
+      });
+      
+      // If it's a JSON parse error, Supabase returned HTML
+      if (getUserErr?.message?.includes('not valid JSON') || getUserErr?.name === 'SyntaxError') {
+        console.error("[GET /api/profile] ❌ CRITICAL: Supabase auth endpoint returned HTML!");
+        return NextResponse.json({ 
+          ok: false, 
+          error: "Authentication service unavailable. Please check if your Supabase project is active." 
+        }, { 
+          status: 503,
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+      }
+      
+      // Re-throw other errors
+      throw getUserErr;
+    }
     
     if (authError) {
       console.error("[GET /api/profile] Auth error:", authError.message, authError.status);
-      return NextResponse.json({ ok: false, error: `Not authenticated: ${authError.message}` }, { status: 401 });
+      // Return proper JSON error, not HTML
+      return NextResponse.json({ 
+        ok: false, 
+        error: `Not authenticated: ${authError.message}` 
+      }, { 
+        status: 401,
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
     }
     
     if (!user) {
       console.error("[GET /api/profile] No user found after auth check");
-      return NextResponse.json({ ok: false, error: "Not authenticated: No user found" }, { status: 401 });
+      // Return proper JSON error, not HTML
+      return NextResponse.json({ 
+        ok: false, 
+        error: "Not authenticated: No user found" 
+      }, { 
+        status: 401,
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
     }
     
     // Fetch user profile from database

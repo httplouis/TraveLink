@@ -46,12 +46,41 @@ export async function GET() {
 
     // First, get all requests without foreign key relationships to avoid filtering issues
     // Use service role client directly to bypass RLS policies
-    console.log("[Admin Inbox API] Fetching all requests with service role client...");
+    // OPTIMIZED: Reduced limit and use specific columns to minimize egress
+    console.log("[Admin Inbox API] Fetching requests with service role client...");
     const { data: allRequests, error } = await supabaseServiceRole
       .from("requests")
-      .select("*")
+      .select(`
+        id,
+        request_number,
+        status,
+        requester_id,
+        requester_name,
+        department_id,
+        travel_start_date,
+        travel_end_date,
+        destination,
+        purpose,
+        created_at,
+        updated_at,
+        head_approved_at,
+        head_approved_by,
+        parent_head_approved_by,
+        admin_processed_by,
+        comptroller_approved_by,
+        hr_approved_by,
+        vp_approved_by,
+        vp2_approved_by,
+        president_approved_by,
+        exec_approved_by,
+        workflow_metadata,
+        requester_is_head,
+        total_budget,
+        assigned_driver_id,
+        assigned_vehicle_id
+      `)
       .order("created_at", { ascending: false })
-      .limit(1000); // Increased limit to ensure all requests are fetched
+      .limit(100); // OPTIMIZED: Reduced from 1000 to 100 to minimize egress
 
     if (error) {
       console.error("[Admin Inbox API] Fetch error:", error);
@@ -287,10 +316,11 @@ export async function GET() {
       workflow_metadata: r.workflow_metadata
     })));
     if (requests && requests.length > 0) {
-      console.log("[Admin Inbox API] First request:", requests[0]);
-      console.log("[Admin Inbox API] First request department:", requests[0].department);
-      console.log("[Admin Inbox API] First request department_id:", requests[0].department_id);
-      console.log("[Admin Inbox API] First request requester:", requests[0].requester);
+      const firstReq = requests[0] as any;
+      console.log("[Admin Inbox API] First request:", firstReq);
+      console.log("[Admin Inbox API] First request department:", firstReq.department);
+      console.log("[Admin Inbox API] First request department_id:", firstReq.department_id);
+      console.log("[Admin Inbox API] First request requester:", firstReq.requester);
     } else {
       console.warn("[Admin Inbox API] ⚠️ No requests returned after filtering!");
       console.log("[Admin Inbox API] Sample of all requests:", allRequests?.slice(0, 3).map((r: any) => ({
@@ -341,7 +371,8 @@ export async function GET() {
             );
             
             // Get requester name
-            const requestingPersonName = req.requester_name || req.requester?.name || req.requester?.email || "Requester";
+            const reqAny = req as any;
+            const requestingPersonName = reqAny.requester_name || reqAny.requester?.name || reqAny.requester?.email || "Requester";
             
             // Create notifications for admins that don't have one yet
             const notificationsToCreate = allAdmins

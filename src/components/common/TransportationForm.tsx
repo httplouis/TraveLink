@@ -28,12 +28,61 @@ export default function TransportationForm({
   className = "",
 }: TransportationFormProps) {
   const transportType = value.transportation_type;
+  const [phoneError, setPhoneError] = useState<string>("");
 
   const handleChange = (field: string, fieldValue: any) => {
     onChange({
       ...value,
       [field]: fieldValue,
     });
+  };
+
+  // Format phone number with spaces for +63 format
+  const formatPhoneNumber = (phone: string): string => {
+    // Remove all spaces first
+    const cleaned = phone.replace(/[\s\-\(\)]/g, '');
+    
+    // If starts with +63, format with spaces: +63 912 345 6789
+    if (cleaned.startsWith('+63')) {
+      const digits = cleaned.substring(3); // Get digits after +63
+      if (digits.length <= 3) {
+        return `+63 ${digits}`;
+      } else if (digits.length <= 6) {
+        return `+63 ${digits.substring(0, 3)} ${digits.substring(3)}`;
+      } else if (digits.length <= 10) {
+        return `+63 ${digits.substring(0, 3)} ${digits.substring(3, 6)} ${digits.substring(6)}`;
+      } else {
+        return `+63 ${digits.substring(0, 3)} ${digits.substring(3, 6)} ${digits.substring(6, 10)}`;
+      }
+    }
+    
+    // Otherwise, return as is (for 09 format, no spaces)
+    return cleaned;
+  };
+
+  // Mobile number validation (Philippines format: +63XXXXXXXXXX or 09XXXXXXXXX)
+  const validatePhoneNumber = (phone: string): boolean => {
+    if (!phone) {
+      setPhoneError("Contact number is required");
+      return false;
+    }
+    
+    // Remove spaces, dashes, and parentheses for validation
+    const cleaned = phone.replace(/[\s\-\(\)]/g, '');
+    
+    // Check for Philippines mobile number formats:
+    // +63XXXXXXXXXX (11 digits after +63)
+    // 09XXXXXXXXX (11 digits starting with 09)
+    // 9XXXXXXXXX (10 digits starting with 9)
+    const phMobileRegex = /^(\+63|0)?9\d{9}$/;
+    
+    if (!phMobileRegex.test(cleaned)) {
+      setPhoneError("Please enter a valid Philippines mobile number (e.g., +639123456789 or 09123456789)");
+      return false;
+    }
+    
+    setPhoneError("");
+    return true;
   };
 
   // If transportation_type is already set, don't show the selection buttons
@@ -278,17 +327,36 @@ export default function TransportationForm({
               <input
                 type="tel"
                 value={value.pickup_contact_number || ""}
-                onChange={(e) =>
-                  handleChange("pickup_contact_number", e.target.value)
-                }
-                placeholder="+63 XXX XXX XXXX"
-                className="
-                  w-full px-4 py-2 rounded-lg border-2 border-gray-200
-                  focus:border-[#7a0019] focus:ring-2 focus:ring-[#7a0019]/20
-                  transition-all outline-none
-                "
+                onChange={(e) => {
+                  // Get raw input and format it
+                  const rawValue = e.target.value.replace(/[\s\-\(\)]/g, '');
+                  const formatted = formatPhoneNumber(rawValue);
+                  handleChange("pickup_contact_number", formatted);
+                  // Clear error on change
+                  if (phoneError) {
+                    validatePhoneNumber(formatted);
+                  }
+                }}
+                onBlur={(e) => {
+                  // Format on blur as well
+                  const rawValue = e.target.value.replace(/[\s\-\(\)]/g, '');
+                  const formatted = formatPhoneNumber(rawValue);
+                  handleChange("pickup_contact_number", formatted);
+                  validatePhoneNumber(formatted);
+                }}
+                placeholder="+63 912 345 6789 or 09123456789"
+                className={`
+                  w-full px-4 py-2 rounded-lg border-2 transition-all outline-none
+                  ${phoneError
+                    ? "border-red-300 bg-red-50/50 focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
+                    : "border-gray-200 focus:border-[#7a0019] focus:ring-2 focus:ring-[#7a0019]/20"
+                  }
+                `}
                 required
               />
+              {phoneError && (
+                <p className="mt-1 text-sm text-red-600">{phoneError}</p>
+              )}
             </div>
 
             {/* Special Instructions */}

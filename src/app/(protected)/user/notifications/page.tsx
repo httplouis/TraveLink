@@ -80,7 +80,7 @@ export default function UserNotificationsPage() {
   const fetchNotifications = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/notifications?limit=50');
+      const response = await fetch('/api/notifications?limit=50', { credentials: 'include' });
       const data = await response.json();
       
       if (data.ok) {
@@ -132,6 +132,7 @@ export default function UserNotificationsPage() {
 
     try {
       const response = await fetch('/api/notifications', {
+        credentials: 'include',
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: unreadIds, is_read: true })

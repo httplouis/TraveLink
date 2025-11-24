@@ -100,7 +100,7 @@ export function useRequestsFromSupabase() {
     "/api/admin/inbox",
     fetcher,
     {
-      refreshInterval: 5000, // Auto-refresh every 5 seconds for backup
+      refreshInterval: 30000, // OPTIMIZED: Reduced frequency from 5s to 30s to minimize egress
       revalidateOnFocus: true, // Re-fetch when window gains focus
       revalidateOnReconnect: true, // Refresh when internet reconnects
       dedupingInterval: 1000, // Prevent duplicate requests within 1 second

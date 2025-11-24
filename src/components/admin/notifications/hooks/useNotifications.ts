@@ -59,9 +59,13 @@ export function useNotifications() {
       const limitParam = unreadParam ? "&limit=50" : "?limit=50";
       const res = await fetch(`/api/notifications${unreadParam}${limitParam}`, {
         cache: "no-store",
+        credentials: "include",
       });
       if (!res.ok) {
-        console.error("[useNotifications] API response not OK:", res.status, res.statusText);
+        // Only log non-404 errors (404 might be temporary during build/hot reload)
+        if (res.status !== 404) {
+          console.error("[useNotifications] API response not OK:", res.status, res.statusText);
+        }
         setItems([]);
         setUnread(0);
         return;
@@ -99,8 +103,8 @@ export function useNotifications() {
   React.useEffect(() => {
     refresh();
     
-    // Poll for updates every 10 seconds
-    const interval = setInterval(refresh, 10000);
+    // OPTIMIZED: Reduced frequency from 10s to 60s to minimize egress
+    const interval = setInterval(refresh, 60000);
     return () => clearInterval(interval);
   }, [refresh]);
 
@@ -109,6 +113,7 @@ export function useNotifications() {
       const res = await fetch("/api/notifications", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ id, is_read: true }),
       });
       
@@ -131,6 +136,7 @@ export function useNotifications() {
       const res = await fetch("/api/notifications", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ ids: unreadIds, is_read: true }),
       });
       

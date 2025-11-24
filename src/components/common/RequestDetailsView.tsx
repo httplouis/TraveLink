@@ -19,7 +19,6 @@ import {
   CheckCircle2,
   PenTool,
   Download,
-  FileDown,
   Upload
 } from 'lucide-react';
 import { WowCard, WowButton } from './Modal';
@@ -2448,56 +2447,6 @@ export default function RequestDetailsView({
 
 
           {/* Moved signatures to bottom */}
-
-          {/* Actions */}
-          <WowCard className="p-6">
-            <h3 className="text-xl font-bold text-gray-900 mb-6 pb-3 border-b-2 border-gray-200">Actions</h3>
-            <div className="space-y-4">
-              <button
-                onClick={async () => {
-                  try {
-                    // Use API route for PDF generation (more reliable)
-                    // PDF can be generated at any stage (pending, approved, rejected, returned)
-                    const res = await fetch(`/api/requests/${request.id}/pdf`);
-                    if (!res.ok) {
-                      const errorText = await res.text();
-                      console.error('PDF API error:', res.status, errorText);
-                      throw new Error(`Failed to generate PDF: ${res.status}`);
-                    }
-                    
-                    // Get the PDF blob
-                    const blob = await res.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    
-                    // Get filename from Content-Disposition header if available, otherwise use default
-                    const contentDisposition = res.headers.get('Content-Disposition');
-                    let filename = `travel-order-${request.request_number || request.id}.pdf`;
-                    if (contentDisposition) {
-                      const filenameMatch = contentDisposition.match(/filename="?(.+?)"?$/);
-                      if (filenameMatch) {
-                        filename = filenameMatch[1];
-                      }
-                    }
-                    
-                    a.download = filename;
-                    document.body.appendChild(a);
-                    a.click();
-                    window.URL.revokeObjectURL(url);
-                    document.body.removeChild(a);
-                  } catch (err) {
-                    console.error('Failed to generate PDF:', err);
-                    alert(`Failed to generate PDF: ${err instanceof Error ? err.message : 'Unknown error'}. Please try again.`);
-                  }
-                }}
-                className="flex items-center gap-2 w-full justify-center rounded-md bg-[#7A0010] hover:bg-[#5c000c] px-4 py-2.5 text-sm font-medium text-white transition"
-              >
-                <FileDown className="h-4 w-4" />
-                {request.request_type === 'seminar' ? 'Seminar Application PDF' : 'Travel Order PDF'}
-              </button>
-            </div>
-          </WowCard>
         </div>
       </div>
       
