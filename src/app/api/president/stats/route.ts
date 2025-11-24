@@ -3,6 +3,9 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 
+// Force dynamic rendering (API routes should always be dynamic)
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/president/stats
  * Get real-time dashboard statistics for President

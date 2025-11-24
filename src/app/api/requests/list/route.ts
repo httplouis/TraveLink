@@ -3,6 +3,8 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
 
+// Force dynamic rendering (API routes should always be dynamic)
+export const dynamic = 'force-dynamic';
 // Performance: Cache list for 10 seconds
 export const revalidate = 10;
 
