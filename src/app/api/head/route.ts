@@ -45,7 +45,9 @@ export async function GET() {
       return NextResponse.json({ ok: true, data: [] });
     }
 
-    console.log(`[GET /api/head] Fetching requests for head: ${profile.email}, dept: ${profile.department_id}`);
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[GET /api/head] Fetching requests for head: ${profile.email}, dept: ${profile.department_id}`);
+    }
 
     // Get requests for THIS head's department with status = pending_head or pending_parent_head
     // ALSO get requests from child departments (where request's department has parent_department_id = this head's department)
@@ -99,10 +101,11 @@ export async function GET() {
         
         if (!childError && childRequests) {
           childDeptRequests = childRequests;
-          console.log(`[GET /api/head] Found ${childDeptRequests.length} requests from child departments`);
         } else if (childError) {
           childDeptError = childError;
-          console.error("[GET /api/head] Error fetching child department requests:", childError);
+          if (process.env.NODE_ENV === 'development') {
+            console.error("[GET /api/head] Error fetching child department requests:", childError);
+          }
         }
       }
     } catch (err: any) {
@@ -169,8 +172,8 @@ export async function GET() {
     const data = [...(directRequests || []), ...uniqueMultiDeptRequests, ...uniqueChildDeptRequests];
     const error = directError || multiDeptError || childDeptError;
 
-    // Debug: Log profile picture data from database
-    if (data && data.length > 0) {
+    // Debug: Log profile picture data from database (development only)
+    if (process.env.NODE_ENV === 'development' && data && data.length > 0) {
       console.log("[GET /api/head] Sample requester data (first request):", {
         requester_id: data[0].requester_id,
         requester: data[0].requester,
@@ -221,17 +224,8 @@ export async function GET() {
       // Continue with just direct requests
     }
 
-    console.log(`[GET /api/head] Found ${data?.length || 0} pending requests (${directRequests?.length || 0} direct, ${uniqueMultiDeptRequests.length} multi-dept)`);
-    
-    // Additional debug: Log all request IDs and requester info
-    if (data && data.length > 0) {
-      console.log(`[GET /api/head] Request IDs:`, data.map((r: any) => ({
-        id: r.id,
-        request_number: r.request_number,
-        requester_id: r.requester_id,
-        has_requester: !!r.requester,
-        requester_name: r.requester?.name || r.requester_name || 'Unknown'
-      })));
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[GET /api/head] Found ${data?.length || 0} pending requests (${directRequests?.length || 0} direct, ${uniqueMultiDeptRequests.length} multi-dept)`);
     }
 
     return NextResponse.json({ ok: true, data: data || [] });
@@ -342,7 +336,9 @@ export async function PATCH(req: Request) {
       
       if (requesterInvitations && requesterInvitations.length > 0) {
         isAuthorized = true;
-        console.log(`[PATCH /api/head] Multi-department request authorized for head ${profile.id}`);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[PATCH /api/head] Multi-department request authorized for head ${profile.id}`);
+        }
       }
     }
     
@@ -525,12 +521,14 @@ export async function PATCH(req: Request) {
         // Check if all departments have been approved
         allHeadsApproved = uniqueDeptIds.every(deptId => approvedDeptIds.has(deptId));
         
-        console.log(`[PATCH /api/head] Multi-department check:`, {
-          uniqueDeptIds,
-          approvedDeptIds: Array.from(approvedDeptIds),
-          allHeadsApproved,
-          currentHeadDept: profile.department_id
-        });
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[PATCH /api/head] Multi-department check:`, {
+            uniqueDeptIds,
+            approvedDeptIds: Array.from(approvedDeptIds),
+            allHeadsApproved,
+            currentHeadDept: profile.department_id
+          });
+        }
       }
       
       // If multi-department and not all heads have approved, keep status as pending_head
@@ -542,7 +540,9 @@ export async function PATCH(req: Request) {
         ? "head"
         : nextApproverRole;
       
-      console.log(`[PATCH /api/head] Approving request ${id}: ${request.status} → ${finalNextStatus} (multi-dept: ${isMultiDepartment}, all approved: ${allHeadsApproved})`);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[PATCH /api/head] Approving request ${id}: ${request.status} → ${finalNextStatus} (multi-dept: ${isMultiDepartment}, all approved: ${allHeadsApproved})`);
+      }
 
       // Update request with approval
       const updateData: any = {
@@ -595,14 +595,16 @@ export async function PATCH(req: Request) {
         updateData.parent_head_comments = comments;
       }
 
-      console.log(`[PATCH /api/head] Updating request with:`, {
-        id,
-        updateData,
-        profile_id: profile.id,
-        workflow_metadata: updateData.workflow_metadata,
-        next_vp_id: updateData.workflow_metadata?.next_vp_id,
-        next_approver_role: updateData.workflow_metadata?.next_approver_role
-      });
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[PATCH /api/head] Updating request with:`, {
+          id,
+          updateData,
+          profile_id: profile.id,
+          workflow_metadata: updateData.workflow_metadata,
+          next_vp_id: updateData.workflow_metadata?.next_vp_id,
+          next_approver_role: updateData.workflow_metadata?.next_approver_role
+        });
+      }
 
       const { error: updateError } = await supabase
         .from("requests")
@@ -621,14 +623,16 @@ export async function PATCH(req: Request) {
         .eq("id", id)
         .single();
       
-      console.log(`[PATCH /api/head] Verification after update:`, {
-        id: verifyData?.id,
-        status: verifyData?.status,
-        workflow_metadata: verifyData?.workflow_metadata,
-        next_vp_id: verifyData?.workflow_metadata?.next_vp_id,
-        next_admin_id: verifyData?.workflow_metadata?.next_admin_id,
-        verifyError
-      });
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[PATCH /api/head] Verification after update:`, {
+          id: verifyData?.id,
+          status: verifyData?.status,
+          workflow_metadata: verifyData?.workflow_metadata,
+          next_vp_id: verifyData?.workflow_metadata?.next_vp_id,
+          next_admin_id: verifyData?.workflow_metadata?.next_admin_id,
+          verifyError
+        });
+      }
       
       // If workflow_metadata was supposed to be set but isn't, log a warning
       if (updateData.workflow_metadata && (!verifyData?.workflow_metadata || Object.keys(verifyData.workflow_metadata).length === 0)) {
@@ -747,8 +751,6 @@ export async function PATCH(req: Request) {
 
         // If request goes to admin (pending_admin), notify ALL admins
         if (finalNextStatus === "pending_admin") {
-          console.log("[PATCH /api/head] 📧 Notifying all admins about new pending request");
-          
           // Find all active admin users
           const { data: admins, error: adminsError } = await supabase
             .from("users")
@@ -758,10 +760,10 @@ export async function PATCH(req: Request) {
             .eq("status", "active");
 
           if (adminsError) {
-            console.error("[PATCH /api/head] ❌ Failed to fetch admins:", adminsError);
+            if (process.env.NODE_ENV === 'development') {
+              console.error("[PATCH /api/head] Failed to fetch admins:", adminsError);
+            }
           } else if (admins && admins.length > 0) {
-            console.log(`[PATCH /api/head] ✅ Found ${admins.length} admin(s) to notify`);
-            
             // Get requester name for notification
             const requestingPersonName = request.requester_name || request.requester?.name || "Requester";
             
@@ -781,9 +783,6 @@ export async function PATCH(req: Request) {
             );
 
             await Promise.allSettled(adminNotifications);
-            console.log("[PATCH /api/head] ✅ Admin notifications sent");
-          } else {
-            console.warn("[PATCH /api/head] ⚠️ No active admins found to notify");
           }
         }
       } catch (notifError: any) {
@@ -791,13 +790,17 @@ export async function PATCH(req: Request) {
         // Don't fail the request if notifications fail
       }
 
-      console.log(`[PATCH /api/head] Success! Next status: ${finalNextStatus}`);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[PATCH /api/head] Success! Next status: ${finalNextStatus}`);
+      }
 
       return NextResponse.json({ ok: true, nextStatus: finalNextStatus, data: { status: finalNextStatus } });
       
     } else {
       // Reject
-      console.log(`[PATCH /api/head] Rejecting request ${id}`);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[PATCH /api/head] Rejecting request ${id}`);
+      }
 
       const now = getPhilippineTimestamp();
       const { error: updateError } = await supabase

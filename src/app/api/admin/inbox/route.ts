@@ -80,7 +80,7 @@ export async function GET() {
         assigned_vehicle_id
       `)
       .order("created_at", { ascending: false })
-      .limit(500); // Increased limit for Pro Plan - can handle more data
+      .limit(100); // Reduced from 500 to 100 to reduce IO on Nano instance // Increased limit for Pro Plan - can handle more data
 
     if (error) {
       console.error("[Admin Inbox API] Fetch error:", error);

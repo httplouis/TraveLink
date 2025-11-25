@@ -20,11 +20,9 @@ export async function createSupabaseServerClient(useServiceRole = false) {
     console.warn("Supabase key is missing - using placeholder for build");
   }
 
-  // Log what key type we're using for debugging
-  if (useServiceRole) {
+  // Log what key type we're using for debugging (only in development)
+  if (useServiceRole && process.env.NODE_ENV === 'development') {
     console.log("[createSupabaseServerClient] Using SERVICE ROLE key");
-    console.log("[createSupabaseServerClient] Service role key present:", !!key);
-    console.log("[createSupabaseServerClient] Service role key length:", key?.length || 0);
   }
 
   // Use placeholders during build, real values at runtime
@@ -34,7 +32,6 @@ export async function createSupabaseServerClient(useServiceRole = false) {
   // CRITICAL FIX: For service role, use createClient directly (bypasses RLS completely)
   // createServerClient is for authenticated requests with cookies, which doesn't work well with service role
   if (useServiceRole) {
-    console.log("[createSupabaseServerClient] Creating direct client with service role (bypasses RLS)");
     return createClient(finalUrl, finalKey, {
       auth: {
         persistSession: false,
@@ -48,6 +45,32 @@ export async function createSupabaseServerClient(useServiceRole = false) {
   const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
   
   return createServerClient(finalUrl, finalKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: false,
+      flowType: 'pkce',
+    },
+    global: {
+      fetch: (url, options = {}) => {
+        // Add timeout to prevent long waits (10 seconds)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        
+        return fetch(url, {
+          ...options,
+          signal: controller.signal,
+        }).catch((error) => {
+          // Handle timeout errors gracefully
+          if (error.name === 'AbortError') {
+            throw new Error('Request timeout - Supabase service may be slow');
+          }
+          throw error;
+        }).finally(() => {
+          clearTimeout(timeoutId);
+        });
+      },
+    },
     cookies: {
       get(name: string) {
         return cookieStore.get(name)?.value;

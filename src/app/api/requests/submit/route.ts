@@ -16,25 +16,27 @@ export const maxDuration = 60;
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    console.log("[/api/requests/submit] ========== REQUEST RECEIVED ==========");
-    console.log("[/api/requests/submit] Body keys:", Object.keys(body));
-    console.log("[/api/requests/submit] Status:", body.status);
-    console.log("[/api/requests/submit] Reason:", body.reason);
-    console.log("[/api/requests/submit] Transportation data present:", !!body.transportation);
-    if (body.transportation) {
-      console.log("[/api/requests/submit] Transportation keys:", Object.keys(body.transportation || {}));
-      console.log("[/api/requests/submit] Transportation data:", JSON.stringify(body.transportation, null, 2));
+    if (process.env.NODE_ENV === 'development') {
+      console.log("[/api/requests/submit] ========== REQUEST RECEIVED ==========");
+      console.log("[/api/requests/submit] Body keys:", Object.keys(body));
+      console.log("[/api/requests/submit] Status:", body.status);
+      console.log("[/api/requests/submit] Reason:", body.reason);
+      console.log("[/api/requests/submit] Transportation data present:", !!body.transportation);
+      if (body.transportation) {
+        console.log("[/api/requests/submit] Transportation keys:", Object.keys(body.transportation || {}));
+        console.log("[/api/requests/submit] Transportation data:", JSON.stringify(body.transportation, null, 2));
+      }
+      console.log("[/api/requests/submit] Attachments data present:", !!body.attachments);
+      if (body.attachments) {
+        console.log("[/api/requests/submit] Attachments count:", Array.isArray(body.attachments) ? body.attachments.length : 'not array');
+      }
+      console.log("[/api/requests/submit] Seminar data present:", !!body.seminar);
+      console.log("[/api/requests/submit] Seminar data type:", typeof body.seminar);
+      if (body.seminar) {
+        console.log("[/api/requests/submit] Seminar keys:", Object.keys(body.seminar || {}));
+      }
+      console.log("[/api/requests/submit] ======================================");
     }
-    console.log("[/api/requests/submit] Attachments data present:", !!body.attachments);
-    if (body.attachments) {
-      console.log("[/api/requests/submit] Attachments count:", Array.isArray(body.attachments) ? body.attachments.length : 'not array');
-    }
-    console.log("[/api/requests/submit] Seminar data present:", !!body.seminar);
-    console.log("[/api/requests/submit] Seminar data type:", typeof body.seminar);
-    if (body.seminar) {
-      console.log("[/api/requests/submit] Seminar keys:", Object.keys(body.seminar || {}));
-    }
-    console.log("[/api/requests/submit] ======================================");
     
     // CRITICAL FIX: First authenticate with user's session (anon key + cookies)
     // Service role doesn't have user context, so we can't use it for auth.getUser()

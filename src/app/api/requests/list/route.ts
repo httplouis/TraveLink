@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
         workflow_metadata
       `)
       .order("created_at", { ascending: false })
-      .limit(500); // Increased limit for Pro Plan - can handle more data
+      .limit(100); // Reduced to 100 to reduce IO on Nano instance
 
     // Apply filters
     if (status && status !== "All") {

@@ -42,7 +42,6 @@ export default function ExecInboxContainer() {
     
     // Set up real-time subscription
     const supabase = createSupabaseClient();
-    console.log("[ExecInboxContainer] Setting up real-time subscription...");
     
     channel = supabase
       .channel("exec-inbox-changes")
@@ -56,28 +55,23 @@ export default function ExecInboxContainer() {
         (payload) => {
           if (!isMounted) return;
           
+          // Only react to relevant status changes
           const newStatus = (payload.new as any)?.status;
           const oldStatus = (payload.old as any)?.status;
+          const relevantStatuses = ['pending_vp', 'pending_president', 'pending_exec', 'approved', 'rejected'];
           
-          // Only react to changes that affect exec inbox statuses
-          const execStatuses = ['pending_vp', 'pending_president', 'pending_exec', 'approved', 'rejected'];
-          if (execStatuses.includes(newStatus) || execStatuses.includes(oldStatus)) {
-            console.log("[ExecInboxContainer] 🔄 Real-time change detected:", payload.eventType, newStatus, (payload.new as any)?.id || 'unknown');
-            
+          if (relevantStatuses.includes(newStatus) || relevantStatuses.includes(oldStatus)) {
             // Debounce: only trigger refetch after 500ms of no changes
             if (mutateTimeout) clearTimeout(mutateTimeout);
             mutateTimeout = setTimeout(() => {
               if (isMounted) {
-                console.log("[ExecInboxContainer] ⚡ Triggering refetch after debounce");
                 load(false); // Silent refresh
               }
             }, 500);
           }
         }
       )
-      .subscribe((status) => {
-        console.log("[ExecInboxContainer] Subscription status:", status);
-      });
+      .subscribe();
 
     // Cleanup
     return () => {

@@ -26,7 +26,7 @@ export default function HRInboxContainer() {
       logger.info("Loading HR requests...");
       const res = await fetch("/api/hr/inbox", { cache: "no-store" });
       if (!res.ok) {
-        logger.error("API response not OK:", res.status, res.statusText);
+        logger.error("API response not OK:", { status: res.status, statusText: res.statusText });
         setItems([]);
         return;
       }
@@ -75,24 +75,23 @@ export default function HRInboxContainer() {
           table: "requests",
         },
         (payload: any) => {
-          // Debounce: only trigger refetch after 500ms
-          if (mutateTimeout) clearTimeout(mutateTimeout);
-          mutateTimeout = setTimeout(() => {
-            load(false); // Silent refresh
-          }, 500);
+          // Only react to relevant status changes
+          const newStatus = payload.new?.status;
+          const oldStatus = payload.old?.status;
+          const relevantStatuses = ['pending_hr', 'approved', 'rejected'];
+          
+          if (relevantStatuses.includes(newStatus) || relevantStatuses.includes(oldStatus)) {
+            // Debounce: only trigger refetch after 500ms
+            if (mutateTimeout) clearTimeout(mutateTimeout);
+            mutateTimeout = setTimeout(() => {
+              load(false); // Silent refresh
+            }, 500);
+          }
         }
       )
-      .subscribe((status: string) => {
-        console.log("[HR Inbox] Realtime subscription status:", status);
-      });
-
-    // Fallback polling every 30 seconds
-    const interval = setInterval(() => {
-      load(false);
-    }, 30000);
+      .subscribe();
 
     return () => {
-      clearInterval(interval);
       if (mutateTimeout) clearTimeout(mutateTimeout);
       supabase.removeChannel(channel);
     };

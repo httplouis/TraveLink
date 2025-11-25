@@ -155,11 +155,12 @@ export async function GET(req: NextRequest) {
           names: directAdmins?.map((a: any) => a.name)
         });
         
-        // Strategy A: Query by is_admin flag
+        // Strategy A: Query by is_admin flag (with limit to reduce IO)
         const { data: adminsByFlag, error: flagError } = await supabase
           .from("users")
           .select("id, name, email, profile_picture, phone_number, position_title, department_id, role, is_admin, status")
-          .eq("is_admin", true);
+          .eq("is_admin", true)
+          .limit(50); // Limit to reduce IO on Nano instance
         
         console.log("[GET /api/approvers/list] Strategy A (is_admin=true):", {
           count: adminsByFlag?.length || 0,

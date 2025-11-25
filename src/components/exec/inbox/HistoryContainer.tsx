@@ -38,7 +38,6 @@ export default function ExecHistoryContainer() {
     
     // Set up real-time subscription for history updates
     const supabase = createSupabaseClient();
-    console.log("[ExecHistoryContainer] Setting up real-time subscription...");
     
     let mutateTimeout: NodeJS.Timeout | null = null;
     
@@ -60,22 +59,17 @@ export default function ExecHistoryContainer() {
           // Only react to approvals/rejections
           if (newStatus === "approved" || newStatus === "rejected" || 
               (oldStatus && (oldStatus === "pending_vp" || oldStatus === "pending_president" || oldStatus === "pending_exec"))) {
-            console.log("[ExecHistoryContainer] 🔄 Real-time history change detected:", newStatus);
-            
             // Debounce: only trigger refetch after 500ms
             if (mutateTimeout) clearTimeout(mutateTimeout);
             mutateTimeout = setTimeout(() => {
               if (isMounted) {
-                console.log("[ExecHistoryContainer] ⚡ Refreshing history");
                 load();
               }
             }, 500);
           }
         }
       )
-      .subscribe((status: string) => {
-        console.log("[ExecHistoryContainer] Subscription status:", status);
-      });
+      .subscribe();
 
     // Cleanup
     return () => {

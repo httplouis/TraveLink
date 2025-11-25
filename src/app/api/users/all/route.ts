@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const search = searchParams.get("search"); // Optional search query
-    const limit = parseInt(searchParams.get("limit") || "100");
+    const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100); // Reduced default from 100 to 50, max 100
 
     // Fetch all active users with their department info
     let query = supabase

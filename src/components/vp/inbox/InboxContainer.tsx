@@ -68,20 +68,20 @@ export default function VPInboxContainer() {
   }
 
   React.useEffect(() => {
-    console.log("[VPInboxContainer] 🔄 useEffect running, starting load...");
     let isMounted = true;
     let mutateTimeout: NodeJS.Timeout | null = null;
     let channel: any = null;
     
     // Initial load
     load().catch((err) => {
-      console.error("[VPInboxContainer] ❌ Error in initial load:", err);
+      if (process.env.NODE_ENV === 'development') {
+        console.error("[VPInboxContainer] Error in initial load:", err);
+      }
       setLoading(false);
     });
     
     // Set up real-time subscription
     const supabase = createSupabaseClient();
-    console.log("[VPInboxContainer] Setting up real-time subscription...");
     
     channel = supabase
       .channel("vp-inbox-changes")
@@ -95,21 +95,13 @@ export default function VPInboxContainer() {
         (payload) => {
           if (!isMounted) return;
           
-          const newStatus = (payload.new as any)?.status;
-          const oldStatus = (payload.old as any)?.status;
-          
-          // Only react to changes that affect VP inbox statuses
-          const vpStatuses = ['pending_vp', 'pending_president', 'approved', 'rejected'];
-          if (vpStatuses.includes(newStatus) || vpStatuses.includes(oldStatus)) {
-            console.log("[VPInboxContainer] 🔄 Real-time change detected:", payload.eventType, newStatus);
-            
-            if (mutateTimeout) clearTimeout(mutateTimeout);
-            mutateTimeout = setTimeout(() => {
-              if (isMounted) {
-                load(false);
-              }
-            }, 500);
-          }
+          // Debounce: only trigger refetch after 500ms
+          if (mutateTimeout) clearTimeout(mutateTimeout);
+          mutateTimeout = setTimeout(() => {
+            if (isMounted) {
+              load(false);
+            }
+          }, 500);
         }
       )
       .subscribe();

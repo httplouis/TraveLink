@@ -13,6 +13,26 @@ export async function GET(request: NextRequest) {
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: false,
+          flowType: 'pkce',
+        },
+        global: {
+          fetch: (url, options = {}) => {
+            // Add timeout to prevent long waits
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+            
+            return fetch(url, {
+              ...options,
+              signal: controller.signal,
+            }).finally(() => {
+              clearTimeout(timeoutId);
+            });
+          },
+        },
         cookies: {
           get(name: string) {
             return cookieStore.get(name)?.value;
@@ -51,10 +71,42 @@ export async function GET(request: NextRequest) {
       }
     );
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    // Add timeout wrapper for getUser
+    let user, authError;
+    try {
+      const getUserPromise = supabase.auth.getUser();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Auth request timeout')), 10000)
+      );
+      
+      const result = await Promise.race([getUserPromise, timeoutPromise]) as any;
+      user = result?.data?.user;
+      authError = result?.error;
+    } catch (timeoutError: any) {
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[/api/me] Auth timeout:', timeoutError);
+      }
+      return NextResponse.json({ 
+        ok: false, 
+        error: "Authentication service timeout. Please try again." 
+      }, { status: 504 });
+    }
     
     if (authError) {
-      console.error('[/api/me] Auth error:', authError);
+      // Check if it's a timeout/504 error
+      if (authError.status === 504 || authError.message?.includes('timeout') || authError.message?.includes('504')) {
+        if (process.env.NODE_ENV === 'development') {
+          console.error('[/api/me] Supabase auth timeout (504):', authError);
+        }
+        return NextResponse.json({ 
+          ok: false, 
+          error: "Authentication service is temporarily unavailable. Please try again in a moment." 
+        }, { status: 503 }); // Service Unavailable
+      }
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[/api/me] Auth error:', authError);
+      }
       return NextResponse.json({ ok: false, error: "Auth error: " + authError.message }, { status: 401 });
     }
     

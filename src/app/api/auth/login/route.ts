@@ -30,7 +30,9 @@ export async function POST(request: NextRequest) {
         }
       );
       await tempSupabase.auth.signOut();
-      console.log('[/api/auth/login] 🧹 Cleared existing session');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[/api/auth/login] 🧹 Cleared existing session');
+      }
     }
     
     // Validate environment variables
@@ -58,12 +60,10 @@ export async function POST(request: NextRequest) {
     const cookieStore = await cookies();
     const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
     
-    console.log('[/api/auth/login] 🔧 Creating Supabase client with:', {
-      url: supabaseUrl.substring(0, 30) + '...',
-      hasAnonKey: !!supabaseAnonKey,
-      anonKeyLength: supabaseAnonKey?.length || 0,
-      isProduction
-    });
+    // Reduce logging in production to save IO
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[/api/auth/login] 🔧 Creating Supabase client');
+    }
     
     // Create Supabase client for auth (uses anon key) with production cookie settings
     const supabase = createServerClient(
@@ -102,37 +102,9 @@ export async function POST(request: NextRequest) {
       }
     );
 
-    // Sign in
-    console.log('[/api/auth/login] 🔐 Attempting sign in for:', email);
-    
-    // First, test if Supabase auth endpoint is accessible
-    try {
-      const testUrl = `${supabaseUrl}/auth/v1/health`;
-      console.log('[/api/auth/login] 🏥 Testing Supabase auth endpoint health...');
-      const healthCheck = await fetch(testUrl, {
-        method: 'GET',
-        headers: {
-          'apikey': supabaseAnonKey,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      const contentType = healthCheck.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const responseText = await healthCheck.text();
-        console.error('[/api/auth/login] ❌ Auth endpoint returned non-JSON:', {
-          status: healthCheck.status,
-          contentType,
-          preview: responseText.substring(0, 200)
-        });
-        return NextResponse.json({ 
-          error: "Supabase authentication service is not responding correctly. Please check your Supabase project status in the dashboard." 
-        }, { status: 503 });
-      }
-      console.log('[/api/auth/login] ✅ Auth endpoint is accessible');
-    } catch (healthErr: any) {
-      console.error('[/api/auth/login] ❌ Health check failed:', healthErr.message);
-      // Continue anyway - might be a network issue
+    // Sign in (removed health check to reduce IO operations)
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[/api/auth/login] 🔐 Attempting sign in for:', email);
     }
     
     // Try to sign in with better error handling
@@ -170,26 +142,24 @@ export async function POST(request: NextRequest) {
     }
 
     if (error) {
-      console.error('[/api/auth/login] ❌ Sign in error:', {
-        message: error.message,
-        status: error.status,
-        name: error.name,
-        originalError: (error as any).originalError?.message
-      });
+      // Reduce logging in production
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[/api/auth/login] ❌ Sign in error:', error.message);
+      }
       
       // Check if it's a JSON parsing error (Supabase returning HTML)
       if (error.message.includes('not valid JSON') || (error as any).originalError?.message?.includes('not valid JSON')) {
-        console.error('[/api/auth/login] ❌ CRITICAL: Supabase is returning HTML instead of JSON!');
-        console.error('[/api/auth/login] This usually means:');
-        console.error('[/api/auth/login] 1. Supabase URL is incorrect');
-        console.error('[/api/auth/login] 2. Supabase project is paused/deleted');
-        console.error('[/api/auth/login] 3. Network/firewall issue');
+        if (process.env.NODE_ENV === 'development') {
+          console.error('[/api/auth/login] ❌ CRITICAL: Supabase is returning HTML instead of JSON!');
+        }
         return NextResponse.json({ 
+          success: false,
           error: "Authentication service error: Unable to connect to Supabase. Please check server configuration." 
         }, { status: 503 });
       }
       
       return NextResponse.json({ 
+        success: false,
         error: error.message || "Invalid email or password" 
       }, { 
         status: 401,
@@ -200,19 +170,20 @@ export async function POST(request: NextRequest) {
     }
 
     if (!data.user) {
-      console.error('[/api/auth/login] No user returned from sign in');
-      return NextResponse.json({ error: "Sign in failed" }, { status: 401 });
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[/api/auth/login] No user returned from sign in');
+      }
+      return NextResponse.json({ 
+        success: false,
+        error: "Sign in failed" 
+      }, { status: 401 });
     }
 
-    console.log('[/api/auth/login] User signed in:', data.user.id, data.user.email);
-    
-    // CRITICAL: Verify session was created and cookies are set
-    const { data: { session: verifySession }, error: sessionVerifyError } = await supabase.auth.getSession();
-    if (sessionVerifyError || !verifySession) {
-      console.error('[/api/auth/login] ❌ Session verification failed after sign in!', sessionVerifyError);
-      return NextResponse.json({ error: "Session creation failed" }, { status: 500 });
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[/api/auth/login] User signed in:', data.user.id, data.user.email);
     }
-    console.log('[/api/auth/login] ✅ Session verified, cookies should be set');
+    
+    // Session is automatically created by signInWithPassword - no need to verify (reduces IO)
 
     // Get user profile using service role to bypass RLS
     // Performance: Use specific columns only (not *) and use index on auth_user_id
@@ -224,82 +195,75 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (profileError) {
-      console.error('[/api/auth/login] Profile query error:', profileError);
-      console.error('[/api/auth/login] Auth user ID:', data.user.id);
-      console.error('[/api/auth/login] Email:', email);
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[/api/auth/login] Profile query error:', profileError);
+      }
       return NextResponse.json({ 
+        success: false,
         error: "Profile not found", 
         details: profileError.message 
       }, { status: 404 });
     }
 
     if (!profile) {
-      console.error('[/api/auth/login] Profile is null for user:', data.user.id);
-      return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[/api/auth/login] Profile is null for user:', data.user.id);
+      }
+      return NextResponse.json({ 
+        success: false,
+        error: "Profile not found" 
+      }, { status: 404 });
     }
 
-    console.log('[/api/auth/login] Profile found:', profile.id, profile.role, profile.is_admin);
-
-    // Log login to audit_logs
-    try {
-      let clientIp = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || null;
-      // Handle comma-separated IPs (x-forwarded-for can have multiple)
-      if (clientIp) {
-        clientIp = clientIp.split(",")[0].trim();
-      }
-      // Validate IP format for INET type
-      if (clientIp && !clientIp.match(/^(\d{1,3}\.){3}\d{1,3}$/)) {
-        clientIp = null; // Set to null if invalid format
-      }
-      const userAgent = request.headers.get("user-agent") || null;
-      
-      const auditInsertData: any = {
-        user_id: profile.id,
-        action: "login",
-        entity_type: "auth",
-        entity_id: profile.id,
-        new_value: {
-          method: "email_password",
-          email: email,
-          role: profile.role,
-          is_admin: profile.is_admin,
-        },
-        user_agent: userAgent,
-      };
-      
-      // Only add ip_address if it's valid, otherwise set to null
-      if (clientIp) {
-        auditInsertData.ip_address = clientIp;
-      }
-
-      console.log('[/api/auth/login] 📝 Attempting to insert audit log:', {
-        user_id: auditInsertData.user_id,
-        action: auditInsertData.action,
-        has_ip: !!auditInsertData.ip_address,
-      });
-
-      const { error: auditError, data: auditData } = await supabaseAdmin
-        .from("audit_logs")
-        .insert(auditInsertData)
-        .select();
-
-      if (auditError) {
-        console.error('[/api/auth/login] ❌ Failed to log to audit_logs:', auditError);
-        console.error('[/api/auth/login] Audit error code:', auditError.code);
-        console.error('[/api/auth/login] Audit error message:', auditError.message);
-        console.error('[/api/auth/login] Audit error details:', JSON.stringify(auditError, null, 2));
-        console.error('[/api/auth/login] Profile ID:', profile.id);
-        console.error('[/api/auth/login] Client IP:', clientIp);
-        console.error('[/api/auth/login] Insert data:', JSON.stringify(auditInsertData, null, 2));
-      } else {
-        console.log('[/api/auth/login] ✅ Login logged to audit_logs successfully');
-        console.log('[/api/auth/login] Audit log ID:', auditData?.[0]?.id);
-        console.log('[/api/auth/login] Audit log created_at:', auditData?.[0]?.created_at);
-      }
-    } catch (auditErr: any) {
-      console.error('[/api/auth/login] ❌ Exception logging to audit_logs:', auditErr);
-      // Don't fail login if audit logging fails
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[/api/auth/login] Profile found:', profile.id, profile.role);
     }
+
+    // Log login to audit_logs (non-blocking - don't fail login if this fails)
+    // Performance: Run audit log asynchronously to not block login response
+    Promise.resolve().then(async () => {
+      try {
+        let clientIp = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || null;
+        if (clientIp) {
+          clientIp = clientIp.split(",")[0].trim();
+        }
+        if (clientIp && !clientIp.match(/^(\d{1,3}\.){3}\d{1,3}$/)) {
+          clientIp = null;
+        }
+        const userAgent = request.headers.get("user-agent") || null;
+        
+        const auditInsertData: any = {
+          user_id: profile.id,
+          action: "login",
+          entity_type: "auth",
+          entity_id: profile.id,
+          new_value: {
+            method: "email_password",
+            email: email,
+            role: profile.role,
+            is_admin: profile.is_admin,
+          },
+          user_agent: userAgent,
+        };
+        
+        if (clientIp) {
+          auditInsertData.ip_address = clientIp;
+        }
+
+        const { error: auditError } = await supabaseAdmin
+          .from("audit_logs")
+          .insert(auditInsertData);
+
+        if (auditError && process.env.NODE_ENV === 'development') {
+          console.error('[/api/auth/login] ⚠️ Audit log failed (non-blocking):', auditError.message);
+        }
+      } catch (auditErr: any) {
+        // Silently fail - don't block login
+        if (process.env.NODE_ENV === 'development') {
+          console.error('[/api/auth/login] ⚠️ Audit log exception (non-blocking):', auditErr.message);
+        }
+      }
+    });
 
     // Determine redirect path based on role
     const userRole = profile.role?.toLowerCase() || "faculty";

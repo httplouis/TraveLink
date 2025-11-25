@@ -90,24 +90,22 @@ export default function HeadHistoryPage() {
           table: "requests",
         },
         (payload: any) => {
-          // Debounce: only trigger refetch after 500ms
-          if (mutateTimeout) clearTimeout(mutateTimeout);
-          mutateTimeout = setTimeout(() => {
-            loadHistory(false); // Silent refresh
-          }, 500);
+          // Only react to final status changes for history
+          const newStatus = payload.new?.status;
+          const relevantStatuses = ['approved', 'rejected'];
+          
+          if (relevantStatuses.includes(newStatus)) {
+            // Debounce: only trigger refetch after 500ms
+            if (mutateTimeout) clearTimeout(mutateTimeout);
+            mutateTimeout = setTimeout(() => {
+              loadHistory(false); // Silent refresh
+            }, 500);
+          }
         }
       )
-      .subscribe((status: string) => {
-        console.log("[Head History] Realtime subscription status:", status);
-      });
-
-    // Fallback polling every 30 seconds
-    const interval = setInterval(() => {
-      loadHistory(false);
-    }, 30000);
+      .subscribe();
 
     return () => {
-      clearInterval(interval);
       if (mutateTimeout) clearTimeout(mutateTimeout);
       if (channel) {
         supabase.removeChannel(channel);

@@ -87,7 +87,7 @@ export default function HeadInboxPage() {
       logger.info("Loading head requests...");
       const res = await fetch("/api/head", { cache: "no-store" });
       if (!res.ok) {
-        logger.error("API response not OK:", res.status, res.statusText);
+        logger.error("API response not OK:", { status: res.status, statusText: res.statusText });
         setItems([]);
         return;
       }
@@ -131,14 +131,20 @@ export default function HeadInboxPage() {
           event: "*",
           schema: "public",
           table: "requests",
-          filter: "status=in.(pending_head,pending_parent_head)", // Only listen to relevant statuses
         },
         (payload: any) => {
-          // Debounce: only trigger refetch after 500ms
-          if (mutateTimeout) clearTimeout(mutateTimeout);
-          mutateTimeout = setTimeout(() => {
-            load(false); // Silent refresh
-          }, 500);
+          // Only react to relevant status changes
+          const newStatus = payload.new?.status;
+          const oldStatus = payload.old?.status;
+          const relevantStatuses = ['pending_head', 'pending_parent_head'];
+          
+          if (relevantStatuses.includes(newStatus) || relevantStatuses.includes(oldStatus)) {
+            // Debounce: only trigger refetch after 500ms
+            if (mutateTimeout) clearTimeout(mutateTimeout);
+            mutateTimeout = setTimeout(() => {
+              load(false); // Silent refresh
+            }, 500);
+          }
         }
       )
       .subscribe();
