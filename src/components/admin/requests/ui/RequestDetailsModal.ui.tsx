@@ -762,7 +762,10 @@ export default function RequestDetailsModalUI({
 
       if (!result.ok) {
         console.error('[Admin Approve] Error:', result.error);
-        alert(`Error: ${result.error}`);
+        toast.error(
+          "Approval Failed",
+          result.error || "Unable to approve request. Please try again."
+        );
         setIsApproving(false); // Re-enable button on error
         return;
       }
@@ -773,6 +776,12 @@ export default function RequestDetailsModalUI({
       const approverLabel = selectedApproverRole === 'comptroller' ? 'Comptroller' : 
                             selectedApproverRole === 'hr' ? 'HR' :
                             requiresComptroller ? 'Comptroller' : 'HR';
+      
+      // Show toast notification
+      toast.success(
+        "Approved Successfully!",
+        `Request has been sent to ${approverLabel} for approval`
+      );
       
       // Also update localStorage for offline support
       const nowIso = new Date().toISOString();
@@ -810,7 +819,10 @@ export default function RequestDetailsModalUI({
       
     } catch (error) {
       console.error('[Admin Approve] Network error:', error);
-      alert('Network error. Please try again.');
+      toast.error(
+        "Network Error",
+        "Unable to process approval. Please check your connection and try again."
+      );
       setIsApproving(false); // Re-enable button on error
     }
   }

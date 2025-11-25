@@ -298,21 +298,39 @@ export async function POST(request: Request) {
           // Send SMS to driver if assigned and not already sent
           if (request.assigned_driver_id && !request.sms_notification_sent) {
             try {
+              console.log(`[President Approve] 📱 Attempting to send SMS to driver ${request.assigned_driver_id}`);
+              
               // Fetch driver details
-              const { data: driver } = await supabaseServiceRole
+              const { data: driver, error: driverError } = await supabaseServiceRole
                 .from("users")
                 .select("id, name, phone_number")
                 .eq("id", request.assigned_driver_id)
                 .single();
 
+              if (driverError) {
+                console.error(`[President Approve] ❌ Error fetching driver:`, driverError);
+              }
+
               // Fetch requester details
-              const { data: requester } = await supabaseServiceRole
+              const { data: requester, error: requesterError } = await supabaseServiceRole
                 .from("users")
                 .select("id, name")
                 .eq("id", request.requester_id)
                 .single();
 
-              if (driver && driver.phone_number && requester) {
+              if (requesterError) {
+                console.error(`[President Approve] ❌ Error fetching requester:`, requesterError);
+              }
+
+              if (!driver) {
+                console.warn(`[President Approve] ⚠️ Driver not found: ${request.assigned_driver_id}`);
+              } else if (!driver.phone_number) {
+                console.warn(`[President Approve] ⚠️ Driver ${driver.name || request.assigned_driver_id} has no phone number - SMS not sent`);
+              } else if (!requester) {
+                console.warn(`[President Approve] ⚠️ Requester not found: ${request.requester_id}`);
+              } else if (driver && driver.phone_number && requester) {
+                console.log(`[President Approve] 📱 Sending SMS to driver ${driver.name} (${driver.phone_number})`);
+                
                 const { sendDriverTravelNotification } = await import("@/lib/sms/sms-service");
                 
                 const smsResult = await sendDriverTravelNotification({
@@ -339,17 +357,19 @@ export async function POST(request: Request) {
                     })
                     .eq("id", requestId);
 
-                  console.log(`[President Approve] ✅ SMS sent to driver ${driver.name} (${driver.phone_number})`);
+                  console.log(`[President Approve] ✅ SMS sent successfully to driver ${driver.name} (${driver.phone_number})`);
                 } else {
                   console.error(`[President Approve] ❌ Failed to send SMS to driver:`, smsResult.error);
                 }
-              } else if (!driver?.phone_number) {
-                console.warn(`[President Approve] ⚠️ Driver ${driver?.name || request.assigned_driver_id} has no phone number - SMS not sent`);
               }
             } catch (smsError: any) {
-              console.error("[President Approve] Error sending SMS to driver:", smsError);
+              console.error("[President Approve] ❌ Exception sending SMS to driver:", smsError);
               // Don't fail the approval if SMS fails
             }
+          } else if (!request.assigned_driver_id) {
+            console.log(`[President Approve] ℹ️ No driver assigned yet - SMS will be sent when driver is assigned`);
+          } else if (request.sms_notification_sent) {
+            console.log(`[President Approve] ℹ️ SMS already sent previously - skipping`);
           }
         }
       } catch (notifError: any) {

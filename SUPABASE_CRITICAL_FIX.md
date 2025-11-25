@@ -21,7 +21,7 @@ When Disk IO Budget is exhausted, the database:
 
 ## ✅ **IMMEDIATE FIXES:**
 
-### 1. Upgrade Supabase Plan (RECOMMENDED) ⚡
+### 1. Upgrade Supabase Plan (FASTEST FIX - 2-5 MINUTES) ⚡⚡⚡
 **Free Upgrade Available:**
 - Go to Supabase Dashboard → **Add ons** → **Compute size**
 - Click **"Free compute upgrade to Micro"**
@@ -31,11 +31,13 @@ When Disk IO Budget is exhausted, the database:
   - **Higher IO limits**
   - **More connections**
 
-**Steps:**
-1. Open Supabase Dashboard
-2. Go to **Settings** → **Add ons**
-3. Find **"Free compute upgrade to Micro"**
-4. Click **Upgrade** (it's free!)
+**Quick Steps (2-5 minutes):**
+1. Open Supabase Dashboard: https://supabase.com/dashboard
+2. Select **Travilink** project
+3. Go to **Settings** → **Add ons** → **Compute size**
+4. Click **"Free compute upgrade to Micro"** button
+5. Wait 2-5 minutes for upgrade to complete
+6. **DONE!** Database should load normally ✅
 
 ### 2. Enable Connection Pooling (IF AVAILABLE)
 - Go to **Settings** → **Database** → **Connection Pooling**
