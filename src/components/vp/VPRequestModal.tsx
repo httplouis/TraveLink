@@ -1,12 +1,13 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { X, Check, CheckCircle2, XCircle, Users, Car, UserCog, MapPin, Calendar, FileText, Clock, Paperclip, ExternalLink } from "lucide-react";
+import { X, Check, CheckCircle2, XCircle, Users, Car, UserCog, MapPin, Calendar, FileText, Clock, Paperclip, ExternalLink, ArrowLeft } from "lucide-react";
 import { useToast } from "@/components/common/ui/Toast";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import { NameWithProfile } from "@/components/common/ProfileHoverCard";
 import ApproverSelectionModal from "@/components/common/ApproverSelectionModal";
 import SuccessModal from "@/components/common/SuccessModal";
+import ReturnToSenderModal from "@/components/common/ReturnToSenderModal";
 
 interface VPRequestModalProps {
   request: any;
@@ -48,6 +49,8 @@ export default function VPRequestModal({
   const [mainRequesterSignature, setMainRequesterSignature] = React.useState<string | null>(null);
   const [showSuccessModal, setShowSuccessModal] = React.useState(false);
   const [successMessage, setSuccessMessage] = React.useState("");
+  const [showReturnModal, setShowReturnModal] = React.useState(false);
+  const [isReturning, setIsReturning] = React.useState(false);
 
   const [fullRequest, setFullRequest] = React.useState<any>(null);
   const t = fullRequest || request;
@@ -640,6 +643,41 @@ export default function VPRequestModal({
       toast.error("Error", "An error occurred");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleReturnToSender = async (returnReason: string, comments: string) => {
+    if (submitting || isReturning) return;
+
+    try {
+      setIsReturning(true);
+      const response = await fetch(`/api/requests/${request.id}/return`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ return_reason: returnReason, comments }),
+      });
+
+      const result = await response.json();
+
+      if (!result.ok) {
+        throw new Error(result.error || "Failed to return request");
+      }
+
+      setShowReturnModal(false);
+      setSuccessMessage("The request has been returned to the requester for revision.");
+      setShowSuccessModal(true);
+      setTimeout(() => {
+        onRejected(request.id);
+        onClose();
+      }, 3000);
+    } catch (error: any) {
+      console.error("[Return Request] Error:", error);
+      toast.error(
+        "Return Failed",
+        error.message || "Failed to return request. Please try again."
+      );
+    } finally {
+      setIsReturning(false);
     }
   };
 
@@ -1736,15 +1774,25 @@ export default function VPRequestModal({
             <div className="sticky bottom-0 bg-white border-t-2 border-gray-200 px-6 py-4 flex gap-3 flex-shrink-0 shadow-lg">
               <button
                 onClick={handleReject}
-                disabled={submitting}
+                disabled={submitting || isReturning}
                 className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-semibold py-3 px-6 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg transform hover:scale-[1.02] active:scale-[0.98]"
               >
                 <XCircle className="h-5 w-5" />
                 {submitting ? "Rejecting..." : "Reject & Return to User"}
               </button>
               <button
+                onClick={() => setShowReturnModal(true)}
+                disabled={submitting || isReturning}
+                className="flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-semibold py-3 px-6 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg transform hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+                Return to Sender
+              </button>
+              <button
                 onClick={doApprove}
-                disabled={submitting}
+                disabled={submitting || isReturning}
                 className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 active:bg-green-800 text-white font-semibold py-3 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg transform hover:scale-[1.02] active:scale-[0.98]"
               >
                 <Check className="h-5 w-5" />
@@ -1924,6 +1972,15 @@ export default function VPRequestModal({
           </div>
         </div>
       )}
+
+      {/* Return to Sender Modal */}
+      <ReturnToSenderModal
+        open={showReturnModal}
+        onClose={() => setShowReturnModal(false)}
+        onConfirm={handleReturnToSender}
+        isLoading={isReturning}
+        requestNumber={request.request_number || request.id}
+      />
 
       {/* Approver Selection Modal */}
       {showApproverSelection && (

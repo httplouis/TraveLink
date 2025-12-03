@@ -346,6 +346,7 @@ export async function POST(request: Request) {
     }
 
     // Send SMS to driver if driver is assigned
+    let smsStatus: { success: boolean; error?: string; message?: string } | null = null;
     if (driver) {
       try {
         // Fetch driver and requester info for SMS
@@ -366,7 +367,7 @@ export async function POST(request: Request) {
           const requesterName = requesterInfo?.name || req.requester_name || "Requester";
           const requesterPhone = requesterInfo?.phone_number || requesterInfo?.contact_number || req.requester_contact_number || "";
 
-          await sendDriverTravelNotification({
+          const smsResult = await sendDriverTravelNotification({
             driverPhone,
             requesterName,
             requesterPhone,
@@ -378,13 +379,56 @@ export async function POST(request: Request) {
             requestNumber: req.request_number || `TO-${requestId.substring(0, 8)}`,
           });
 
-          console.log(`[Admin Approve] 📱 SMS sent to driver ${driverInfo.name} (${driverPhone})`);
+          if (smsResult.success) {
+            smsStatus = {
+              success: true,
+              message: `SMS sent successfully to driver ${driverInfo.name}`
+            };
+            if (process.env.NODE_ENV === 'development') {
+              console.log(`[Admin Approve] 📱 SMS sent successfully to driver ${driverInfo.name} (${driverPhone})`);
+            }
+          } else {
+            // Log detailed error for debugging
+            console.error(`[Admin Approve] ❌ SMS failed for driver ${driverInfo.name} (${driverPhone}):`, smsResult.error);
+            
+            // Check if it's a configuration issue
+            let errorMessage = smsResult.error || 'Unknown error';
+            if (smsResult.error?.includes('not configured') || smsResult.error?.includes('console mode')) {
+              errorMessage = 'SMS provider not configured. Please configure TWILIO_* or SEMAPHORE_API_KEY environment variables.';
+              console.warn(`[Admin Approve] ⚠️ SMS provider not configured. SMS is in console mode (development only).`);
+              console.warn(`[Admin Approve] ⚠️ To enable SMS, configure either:`);
+              console.warn(`[Admin Approve]    - TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER (for Twilio)`);
+              console.warn(`[Admin Approve]    - SEMAPHORE_API_KEY (for Semaphore)`);
+            } else if (smsResult.error?.includes('Invalid phone number')) {
+              errorMessage = `Invalid phone number format: ${driverPhone}`;
+              console.error(`[Admin Approve] ❌ Invalid phone number format: ${driverPhone}`);
+            }
+            
+            smsStatus = {
+              success: false,
+              error: errorMessage
+            };
+          }
         } else {
-          console.warn(`[Admin Approve] ⚠️ Driver ${driver} has no phone number, SMS not sent`);
+          smsStatus = {
+            success: false,
+            error: `Driver ${driverInfo?.name || driver} has no phone number in database. Please add phone_number or contact_number to driver profile.`
+          };
+          console.warn(`[Admin Approve] ⚠️ Driver ${driverInfo?.name || driver} has no phone number in database. SMS not sent.`);
+          console.warn(`[Admin Approve] ⚠️ Please add phone_number or contact_number to driver profile.`);
         }
       } catch (smsError: any) {
-        // Don't fail the approval if SMS fails
-        console.error("[Admin Approve] Failed to send SMS to driver:", smsError);
+        // Don't fail the approval if SMS fails, but log the error
+        smsStatus = {
+          success: false,
+          error: `Exception while sending SMS: ${smsError?.message || 'Unknown error'}`
+        };
+        console.error("[Admin Approve] ❌ Exception while sending SMS to driver:", smsError);
+        console.error("[Admin Approve] Error details:", {
+          message: smsError?.message,
+          stack: smsError?.stack,
+          name: smsError?.name
+        });
       }
     }
 
@@ -457,11 +501,12 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ 
       ok: true, 
+      message: `Request approved and sent to ${nextApproverRoleFinal === 'comptroller' ? 'Comptroller' : 'HR'}`,
       data: { 
         id: requestId, 
-        status: nextStatus,
-        message: `Request approved and sent to ${nextApproverRoleFinal === 'comptroller' ? 'Comptroller' : 'HR'}`
-      } 
+        status: nextStatus
+      },
+      sms: smsStatus, // Include SMS status in response
     });
 
   } catch (error: any) {

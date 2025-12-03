@@ -1,12 +1,13 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { X, CheckCircle2, XCircle, Users, Car, UserCog, MapPin, Calendar, FileText, Check, Clock, Paperclip, ExternalLink } from "lucide-react";
+import { X, CheckCircle2, XCircle, Users, Car, UserCog, MapPin, Calendar, FileText, Check, Clock, Paperclip, ExternalLink, ArrowLeft } from "lucide-react";
 import { useToast } from "@/components/common/ui/Toast";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import { NameWithProfile } from "@/components/common/ProfileHoverCard";
 import ApproverSelectionModal from "@/components/common/ApproverSelectionModal";
 import SuccessModal from "@/components/common/SuccessModal";
+import ReturnToSenderModal from "@/components/common/ReturnToSenderModal";
 
 interface HRRequestModalProps {
   request: any;
@@ -43,6 +44,8 @@ export default function HRRequestModal({
   const [showVPSelection, setShowVPSelection] = useState(false);
   const [vpOptions, setVPOptions] = useState<any[]>([]);
   const [selectedApproverId, setSelectedApproverId] = useState<string | null>(null);
+  const [showReturnModal, setShowReturnModal] = useState(false);
+  const [isReturning, setIsReturning] = useState(false);
   const [selectedApproverRole, setSelectedApproverRole] = useState<string | null>(null);
   const [defaultApproverId, setDefaultApproverId] = useState<string | undefined>(undefined);
   const [defaultApproverName, setDefaultApproverName] = useState<string | undefined>(undefined);
@@ -726,6 +729,41 @@ export default function HRRequestModal({
       toast.error("Error", "Failed to approve request. Please try again.");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleReturnToSender = async (returnReason: string, comments: string) => {
+    if (submitting || isReturning) return;
+
+    try {
+      setIsReturning(true);
+      const response = await fetch(`/api/requests/${request.id}/return`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ return_reason: returnReason, comments }),
+      });
+
+      const result = await response.json();
+
+      if (!result.ok) {
+        throw new Error(result.error || "Failed to return request");
+      }
+
+      setShowReturnModal(false);
+      setSuccessMessage("The request has been returned to the requester for revision.");
+      setShowSuccessModal(true);
+      setTimeout(() => {
+        onRejected(request.id);
+        onClose();
+      }, 3000);
+    } catch (error: any) {
+      console.error("[Return Request] Error:", error);
+      toast.error(
+        "Return Failed",
+        error.message || "Failed to return request. Please try again."
+      );
+    } finally {
+      setIsReturning(false);
     }
   };
 
@@ -1659,15 +1697,25 @@ export default function HRRequestModal({
             <div className="sticky bottom-0 bg-gradient-to-r from-gray-50 to-white border-t-2 border-gray-200 px-6 py-4 flex gap-3 flex-shrink-0 shadow-lg">
               <button
                 onClick={handleReject}
-                disabled={submitting}
+                disabled={submitting || isReturning}
                 className="flex items-center justify-center gap-2 bg-white border-2 border-red-500 text-red-600 hover:bg-red-50 hover:border-red-600 font-semibold py-3 px-6 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
               >
                 <XCircle className="h-5 w-5" />
                 {submitting ? "Rejecting..." : "Reject & Return"}
               </button>
               <button
+                onClick={() => setShowReturnModal(true)}
+                disabled={submitting || isReturning}
+                className="flex items-center justify-center gap-2 bg-white border-2 border-amber-500 text-amber-600 hover:bg-amber-50 hover:border-amber-600 font-semibold py-3 px-6 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+                Return to Sender
+              </button>
+              <button
                 onClick={doApprove}
-                disabled={submitting}
+                disabled={submitting || isReturning}
                 className="flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-bold py-3.5 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transform hover:scale-[1.01]"
               >
                 <Check className="h-5 w-5" />
@@ -1925,6 +1973,15 @@ export default function HRRequestModal({
           }}
         />
       )}
+
+      {/* Return to Sender Modal */}
+      <ReturnToSenderModal
+        open={showReturnModal}
+        onClose={() => setShowReturnModal(false)}
+        onConfirm={handleReturnToSender}
+        isLoading={isReturning}
+        requestNumber={request.request_number || request.id}
+      />
 
       {/* Success Modal */}
       <SuccessModal

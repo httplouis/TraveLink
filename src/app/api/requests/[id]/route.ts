@@ -984,12 +984,13 @@ export async function PATCH(
     const isReturned = request.status === "returned";
     
     // Allow cancellation if user is requester AND request is still pending
-    // Allow editing if user is requester AND request is returned
+    // Allow editing if user is requester AND request is returned (preserves signatures)
     // Admin can edit requests at ANY stage (pending, processing, approved)
-    if (isCancellation && isRequester && (request.status.startsWith("pending_") || request.status === "draft")) {
-      // Requester can cancel their own pending requests - allow this
+    if (isCancellation && isRequester && (request.status.startsWith("pending_") || request.status === "draft" || request.status === "returned")) {
+      // Requester can cancel their own pending/draft/returned requests - allow this
     } else if (isReturned && isRequester) {
       // Requester can edit returned requests - allow this
+      // Note: Signatures are preserved when request is returned
     } else if (!isAdmin) {
       return NextResponse.json({ 
         ok: false, 

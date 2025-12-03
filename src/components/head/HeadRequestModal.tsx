@@ -8,6 +8,7 @@ import { useToast } from "@/components/common/ui/Toast";
 import ApproverSelectionModal from "@/components/common/ApproverSelectionModal";
 import { NameWithProfile } from "@/components/common/ProfileHoverCard";
 import SuccessModal from "@/components/common/SuccessModal";
+import ReturnToSenderModal from "@/components/common/ReturnToSenderModal";
 
 type Props = {
   request: any;
@@ -36,6 +37,8 @@ export default function HeadRequestModal({
   // Comments/rejection reason
   const [comments, setComments] = React.useState("");
   const [showRejectDialog, setShowRejectDialog] = React.useState(false);
+  const [showReturnModal, setShowReturnModal] = React.useState(false);
+  const [isReturning, setIsReturning] = React.useState(false);
   const [headName, setHeadName] = React.useState<string>(
     request.head_signed_by ?? ""
   );
@@ -473,6 +476,41 @@ export default function HeadRequestModal({
   function initiateReject() {
     setShowRejectDialog(true);
   }
+
+  const handleReturnToSender = async (returnReason: string, comments: string) => {
+    if (submitting || isReturning) return;
+
+    try {
+      setIsReturning(true);
+      const response = await fetch(`/api/requests/${request.id}/return`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ return_reason: returnReason, comments }),
+      });
+
+      const result = await response.json();
+
+      if (!result.ok) {
+        throw new Error(result.error || "Failed to return request");
+      }
+
+      setShowReturnModal(false);
+      setSuccessMessage("The request has been returned to the requester for revision.");
+      setShowSuccessModal(true);
+      setTimeout(() => {
+        onRejected(request.id); // Refresh the list
+        onClose();
+      }, 3000);
+    } catch (error: any) {
+      console.error("[Return Request] Error:", error);
+      toast.error(
+        "Return Failed",
+        error.message || "Failed to return request. Please try again."
+      );
+    } finally {
+      setIsReturning(false);
+    }
+  };
 
   return (
     <>
@@ -1220,18 +1258,30 @@ export default function HeadRequestModal({
             </button>
           </div>
         ) : (
-          // Edit mode footer: Reject, Close, and Approve buttons
+          // Edit mode footer: Reject, Return to Sender, Close, and Approve buttons
           <div className="flex items-center justify-between border-t bg-slate-50 px-6 py-4 flex-shrink-0 rounded-b-3xl">
-            <button
-              onClick={initiateReject}
-              disabled={submitting}
-              className="rounded-md border border-red-200 bg-white px-4 py-2 text-sm text-red-600 hover:bg-red-50 disabled:opacity-60 flex items-center gap-2"
-            >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-              Reject
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={initiateReject}
+                disabled={submitting || isReturning}
+                className="rounded-md border border-red-200 bg-white px-4 py-2 text-sm text-red-600 hover:bg-red-50 disabled:opacity-60 flex items-center gap-2"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Reject
+              </button>
+              <button
+                onClick={() => setShowReturnModal(true)}
+                disabled={submitting || isReturning}
+                className="rounded-md border border-amber-200 bg-white px-4 py-2 text-sm text-amber-600 hover:bg-amber-50 disabled:opacity-60 flex items-center gap-2"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+                Return to Sender
+              </button>
+            </div>
             <div className="flex gap-3">
               <button
                 onClick={onClose}
@@ -1242,7 +1292,7 @@ export default function HeadRequestModal({
               </button>
               <button
                 onClick={doApprove}
-                disabled={submitting || !headSignature}
+                disabled={submitting || isReturning || !headSignature}
                 className="rounded-md bg-[#7A0010] px-5 py-2 text-sm font-semibold text-white hover:bg-[#5e000d] disabled:opacity-50"
               >
                 {submitting ? "Saving…" : "Approve"}
@@ -1251,6 +1301,15 @@ export default function HeadRequestModal({
           </div>
         )}
       </div>
+
+      {/* Return to Sender Modal */}
+      <ReturnToSenderModal
+        open={showReturnModal}
+        onClose={() => setShowReturnModal(false)}
+        onConfirm={handleReturnToSender}
+        isLoading={isReturning}
+        requestNumber={request.request_number || request.id}
+      />
 
       {/* Approver Selection Modal */}
       {showApproverSelection && (

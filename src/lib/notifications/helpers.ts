@@ -127,6 +127,32 @@ export async function notifyRequestRejected(
 }
 
 /**
+ * Create notifications for request returned for revision
+ */
+export async function notifyRequestReturned(
+  requestId: string,
+  requestNumber: string,
+  requesterId: string,
+  approverRole: string,
+  returnReason: string,
+  comments?: string
+): Promise<void> {
+  const message = `Your travel order request ${requestNumber} has been returned for revision by ${approverRole}. Reason: ${returnReason}${comments ? ` - ${comments}` : ""}`;
+  
+  await createNotification({
+    user_id: requesterId,
+    notification_type: "request_returned",
+    title: "Request Returned for Revision",
+    message: message,
+    related_type: "request",
+    related_id: requestId,
+    action_url: `/user/drafts?requestId=${requestId}`,
+    action_label: "View Request",
+    priority: "high",
+  });
+}
+
+/**
  * Create notifications for request status change
  */
 export async function notifyRequestStatusChange(

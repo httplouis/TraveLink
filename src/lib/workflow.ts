@@ -11,7 +11,8 @@ export type WorkflowStage =
   | "pending_exec"
   | "approved"
   | "rejected"
-  | "cancelled";
+  | "cancelled"
+  | "returned";
 
 export interface Request {
   id: string;
@@ -327,6 +328,7 @@ export function getStageName(stage: WorkflowStage): string {
     approved: "Approved",
     rejected: "Rejected",
     cancelled: "Cancelled",
+    returned: "Returned for Revision",
   };
 
   return stageNames[stage] || stage;
@@ -369,4 +371,11 @@ export function isPending(status: WorkflowStage): boolean {
  */
 export function isFinal(status: WorkflowStage): boolean {
   return ["approved", "rejected", "cancelled"].includes(status);
+}
+
+/**
+ * Check if request is returned for revision
+ */
+export function isReturned(status: WorkflowStage): boolean {
+  return status === "returned";
 }

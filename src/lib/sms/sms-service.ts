@@ -173,9 +173,13 @@ async function sendViaConsole(to: string, message: string): Promise<SMSResponse>
   console.log(`To: ${normalizedTo}`);
   console.log(`Message: ${message}`);
   console.log('============================================================');
+  console.log('⚠️  NOTE: This is console mode - SMS was NOT actually sent!');
+  console.log('⚠️  To enable real SMS, configure SMS provider in environment variables');
+  console.log('============================================================');
   
   return {
-    success: true,
+    success: false, // Changed to false so caller knows SMS wasn't actually sent
+    error: 'SMS provider not configured. Running in console mode (development only). Configure TWILIO_* or SEMAPHORE_API_KEY to enable real SMS.',
     messageId: `console-${Date.now()}`,
   };
 }
@@ -188,7 +192,9 @@ export async function sendSMS({
   message,
   provider,
 }: SendSMSOptions): Promise<SMSResponse> {
-  console.log(`[sendSMS] 📱 Sending SMS to ${to}`);
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`[sendSMS] 📱 Sending SMS to ${to}`);
+  }
 
   // Validate phone number
   if (!isValidPhoneNumber(to)) {
@@ -205,10 +211,22 @@ export async function sendSMS({
     // Auto-detect based on environment variables
     if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
       smsProvider = 'twilio';
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[sendSMS] ✅ Using Twilio provider`);
+      }
     } else if (process.env.SEMAPHORE_API_KEY) {
       smsProvider = 'semaphore';
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[sendSMS] ✅ Using Semaphore provider`);
+      }
     } else {
       smsProvider = 'console'; // Development mode
+      if (process.env.NODE_ENV === 'development') {
+        console.warn(`[sendSMS] ⚠️ No SMS provider configured - using console mode (SMS will only be logged, not sent)`);
+        console.warn(`[sendSMS] ⚠️ To enable real SMS, configure either:`);
+        console.warn(`[sendSMS]    - TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER`);
+        console.warn(`[sendSMS]    - SEMAPHORE_API_KEY`);
+      }
     }
   }
 

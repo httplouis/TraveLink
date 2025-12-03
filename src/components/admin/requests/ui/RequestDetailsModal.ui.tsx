@@ -3,7 +3,7 @@
 
 import * as React from "react";
 import { Dialog } from "@headlessui/react";
-import { X, FileDown, CheckCircle, AlertTriangle, MapPin, User, Car, CheckCircle2, PenTool, Clock, Users, XCircle } from "lucide-react";
+import { X, FileDown, CheckCircle, AlertTriangle, MapPin, User, Car, CheckCircle2, PenTool, Clock, Users, XCircle, ArrowLeft } from "lucide-react";
 
 import type { AdminRequest } from "@/lib/admin/requests/store";
 import { AdminRequestsRepo } from "@/lib/admin/requests/store";
@@ -27,6 +27,7 @@ import ApproverSelectionModal from "@/components/common/ApproverSelectionModal";
 // 🔹 Cancel request modal
 import CancelRequestModal from "@/components/common/CancelRequestModal";
 import SuccessModal from "@/components/common/SuccessModal";
+import ReturnToSenderModal from "@/components/common/ReturnToSenderModal";
 
 // Drivers and vehicles will be fetched from API
 
@@ -112,6 +113,10 @@ export default function RequestDetailsModalUI({
   const [isCancelling, setIsCancelling] = React.useState(false);
   const [showSuccessModal, setShowSuccessModal] = React.useState(false);
   const [successMessage, setSuccessMessage] = React.useState("");
+
+  // Return to sender modal
+  const [showReturnModal, setShowReturnModal] = React.useState(false);
+  const [isReturning, setIsReturning] = React.useState(false);
 
   // Hydrate local assignment state from the selected row (robust over many shapes)
   React.useEffect(() => {
@@ -726,13 +731,47 @@ export default function RequestDetailsModalUI({
       }, 3000);
     } catch (error: any) {
       console.error("[Cancel Request] Error:", error);
-      toast({
-        kind: "error",
-        title: "Cancellation Failed",
-        message: error.message || "Failed to cancel request. Please try again.",
-      });
+      toast.error(
+        "Cancellation Failed",
+        error.message || "Failed to cancel request. Please try again."
+      );
     } finally {
       setIsCancelling(false);
+    }
+  };
+
+  const handleReturnToSender = async (returnReason: string, comments: string) => {
+    if (!row?.id) return;
+
+    try {
+      setIsReturning(true);
+      const response = await fetch(`/api/requests/${row.id}/return`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ return_reason: returnReason, comments }),
+      });
+
+      const result = await response.json();
+
+      if (!result.ok) {
+        throw new Error(result.error || "Failed to return request");
+      }
+
+      setShowReturnModal(false);
+      setSuccessMessage("The request has been returned to the requester for revision.");
+      setShowSuccessModal(true);
+      setTimeout(() => {
+        onApprove?.(); // Refresh the list
+        onClose(); // Close the modal
+      }, 3000);
+    } catch (error: any) {
+      console.error("[Return Request] Error:", error);
+      toast.error(
+        "Return Failed",
+        error.message || "Failed to return request. Please try again."
+      );
+    } finally {
+      setIsReturning(false);
     }
   };
 
@@ -777,11 +816,26 @@ export default function RequestDetailsModalUI({
                             selectedApproverRole === 'hr' ? 'HR' :
                             requiresComptroller ? 'Comptroller' : 'HR';
       
-      // Show toast notification
+      // Show toast notification for approval
       toast.success(
         "Approved Successfully!",
         `Request has been sent to ${approverLabel} for approval`
       );
+
+      // Show SMS status toast if SMS was attempted
+      if (result.sms) {
+        if (result.sms.success) {
+          toast.success(
+            "SMS Sent",
+            result.sms.message || "Driver has been notified via SMS"
+          );
+        } else {
+          toast.warning(
+            "SMS Not Sent",
+            result.sms.error || "Driver notification SMS could not be sent"
+          );
+        }
+      }
       
       // Also update localStorage for offline support
       const nowIso = new Date().toISOString();
@@ -2311,6 +2365,16 @@ export default function RequestDetailsModalUI({
                         Reject
                       </button>
                     )}
+                    {/* Return to Sender button - only show for pending requests */}
+                    {row?.status && row.status.startsWith("pending_") && (
+                      <button
+                        onClick={() => setShowReturnModal(true)}
+                        className="flex items-center gap-2 rounded-md bg-amber-600 hover:bg-amber-700 px-4 py-2 text-sm text-white transition"
+                      >
+                        <ArrowLeft className="h-4 w-4" />
+                        Return to Sender
+                      </button>
+                    )}
                   </>
                 ) : (
                   <div className="flex items-center gap-2 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-sm text-green-700">
@@ -2386,6 +2450,15 @@ export default function RequestDetailsModalUI({
         onConfirm={handleCancelRequest}
         isAdmin={true}
         isLoading={isCancelling}
+        requestNumber={row?.requestNumber || row?.request_number}
+      />
+
+      {/* Return to Sender Modal */}
+      <ReturnToSenderModal
+        open={showReturnModal}
+        onClose={() => setShowReturnModal(false)}
+        onConfirm={handleReturnToSender}
+        isLoading={isReturning}
         requestNumber={row?.requestNumber || row?.request_number}
       />
 

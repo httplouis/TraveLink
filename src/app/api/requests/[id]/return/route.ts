@@ -90,15 +90,16 @@ export async function POST(
 
     const now = new Date().toISOString();
 
-    // Update request: set status to "draft" (rejected, goes back to drafts)
+    // Update request: set status to "returned" (preserve all signatures)
+    // DO NOT clear any signature fields - they should be preserved
     const updateData: any = {
-      status: "draft",
+      status: "returned",
       returned_at: now,
       returned_by: profile.id,
       return_reason: return_reason,
-      rejected_at: now,
-      rejected_by: profile.id,
       updated_at: now,
+      // Note: We do NOT set rejected_at or rejected_by to preserve the request state
+      // All signatures remain intact for when requester edits and resubmits
     };
 
     // Store return comments in appropriate field based on role
@@ -133,7 +134,7 @@ export async function POST(
     // Log to request_history
     await supabaseServiceRole.from("request_history").insert({
       request_id: requestId,
-      action: "rejected",
+      action: "returned",
       actor_id: profile.id,
       actor_role: profile.is_head
         ? "head"
@@ -145,12 +146,12 @@ export async function POST(
         ? "hr"
         : "executive",
       previous_status: request.status,
-      new_status: "draft",
-      comments: `Request rejected and returned to drafts. Reason: ${return_reason}${comments ? ` - ${comments}` : ""}`,
+      new_status: "returned",
+      comments: `Request returned to requester for revision. Reason: ${return_reason}${comments ? ` - ${comments}` : ""}`,
       metadata: {
         return_reason,
-        rejected_at: now,
-        rejected_by: profile.id,
+        returned_at: now,
+        returned_by: profile.id,
       },
     });
 
@@ -161,26 +162,26 @@ export async function POST(
       if (request.requester_id) {
         await createNotification({
           user_id: request.requester_id,
-          notification_type: "request_rejected",
-          title: "Request Rejected",
-          message: `Your request ${request.request_number || ""} has been rejected and returned to your drafts. Reason: ${return_reason}${comments ? ` - ${comments}` : ""}`,
+          notification_type: "request_returned",
+          title: "Request Returned for Revision",
+          message: `Your request ${request.request_number || ""} has been returned for revision. Reason: ${return_reason}${comments ? ` - ${comments}` : ""}`,
           related_type: "request",
           related_id: requestId,
           action_url: `/user/drafts?requestId=${requestId}`,
-          action_label: "View in Drafts",
+          action_label: "View Request",
           priority: "high",
         });
       }
     } catch (notifError: any) {
-      console.error("[Reject Request] Failed to create notification:", notifError);
+      console.error("[Return Request] Failed to create notification:", notifError);
     }
 
     return NextResponse.json({
       ok: true,
       data: {
         id: requestId,
-        status: "draft",
-        message: "Request rejected and returned to drafts. Requester has been notified.",
+        status: "returned",
+        message: "Request returned to requester for revision. Requester has been notified.",
       },
     });
   } catch (error: any) {
