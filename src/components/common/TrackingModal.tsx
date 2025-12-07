@@ -347,6 +347,7 @@ export default function TrackingModal({ isOpen, onClose, requestId }: TrackingMo
                   rejectedAt={data.rejected_at}
                   rejectedBy={data.rejected_by}
                   rejectionStage={data.rejection_stage}
+                  createdAt={data.created_at}
                 />
               </div>
 

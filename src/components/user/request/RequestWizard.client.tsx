@@ -34,6 +34,7 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import SuccessModal from "@/components/user/request/SuccessModal";
 import SubmitConfirmationDialog from "@/components/user/request/SubmitConfirmationDialog";
 import ApproverSelectionModal from "@/components/common/ApproverSelectionModal";
+import FilingDateDisplay from "@/components/common/FilingDateDisplay";
 
 // Note: AdminRequestsRepo import removed - no longer needed (using API now)
 
@@ -97,6 +98,13 @@ function RequestWizardContent() {
     name: string;
     department: string;
     departmentId: string;
+  } | null>(null);
+  
+  // Store request metadata for Date of Filing display
+  const [requestMetadata, setRequestMetadata] = React.useState<{
+    createdAt?: string | null;
+    requestNumber?: string | null;
+    status?: string;
   } | null>(null);
   const [isRepresentativeSubmission, setIsRepresentativeSubmission] = React.useState(false);
   
@@ -293,6 +301,12 @@ function RequestWizardContent() {
             hardSet(formData);
             clearIds();
             setCurrentSubmissionId(idToLoad);
+            // Store request metadata for Date of Filing display
+            setRequestMetadata({
+              createdAt: dbReq.created_at || null,
+              requestNumber: dbReq.request_number || null,
+              status: dbReq.status || null,
+            });
             // Also save to localStorage draft for persistence
             await saveDraft(formData, currentDraftId || undefined);
             toast({ kind: "info", title: "Draft restored", message: "Form populated from saved draft with signatures." });
@@ -398,6 +412,12 @@ function RequestWizardContent() {
             };
             
             hardSet(formData);
+            // Store request metadata for Date of Filing display
+            setRequestMetadata({
+              createdAt: dbReq.created_at || null,
+              requestNumber: dbReq.request_number || null,
+              status: dbReq.status || null,
+            });
             // Also save to localStorage draft for persistence
             await saveDraft(formData, currentDraftId || undefined);
             toast({ kind: "info", title: "Draft restored", message: "Form populated from saved draft with signatures." });
@@ -1246,6 +1266,8 @@ function RequestWizardContent() {
   }, [data]);
 
   function afterSuccessfulSubmitReset() {
+    // Clear request metadata when resetting
+    setRequestMetadata(null);
     clearAutosave();
     hardSet({
       requesterRole: data.requesterRole,
@@ -1689,6 +1711,15 @@ function RequestWizardContent() {
       setSubmittedData(result.data);
       setShowSuccessModal(true);
       
+      // Store request metadata for Date of Filing display
+      if (result.data) {
+        setRequestMetadata({
+          createdAt: result.data.created_at || null,
+          requestNumber: result.data.request_number || null,
+          status: result.data.status || null,
+        });
+      }
+      
       // Store request ID for participant invitations (if seminar)
       // This allows sending invitations even after submission
       // Always reset form after successful submission (data is persisted in database)
@@ -1878,23 +1909,34 @@ function RequestWizardContent() {
 
           {/* Show Travel Order form only if NOT seminar */}
           {!showSeminar && (
-            <TravelOrderForm
-              onAutoSaveRequest={handleAutoSaveRequest}
-              data={data.travelOrder}
-              onChange={onChangeTravelOrder}
-              onChangeCosts={onChangeCosts}
-              errors={errors}
-              vehicleMode={data.vehicleMode}
-              isHeadRequester={isHeadRequester}
-              isRepresentativeSubmission={isRepresentativeSubmission}
-              requestingPersonHeadName={requestingPersonHeadInfo?.name}
-              currentUserName={currentUser?.name}
-              requesterRole={data.requesterRole}
-              requestId={currentSubmissionId || currentDraftId || undefined} // Pass request ID for invitations (from submission or draft)
-              currentUserEmail={currentUserEmail} // Pass current user email for auto-confirm
-              onRequestersStatusChange={setAllRequestersConfirmed}
-              onHeadEndorsementsStatusChange={setAllHeadEndorsementsConfirmed}
-            />
+            <>
+              {/* Date of Filing Display */}
+              {requestMetadata && (
+                <FilingDateDisplay
+                  createdAt={requestMetadata.createdAt}
+                  requestNumber={requestMetadata.requestNumber}
+                  status={requestMetadata.status}
+                  className="mb-6"
+                />
+              )}
+              <TravelOrderForm
+                onAutoSaveRequest={handleAutoSaveRequest}
+                data={data.travelOrder}
+                onChange={onChangeTravelOrder}
+                onChangeCosts={onChangeCosts}
+                errors={errors}
+                vehicleMode={data.vehicleMode}
+                isHeadRequester={isHeadRequester}
+                isRepresentativeSubmission={isRepresentativeSubmission}
+                requestingPersonHeadName={requestingPersonHeadInfo?.name}
+                currentUserName={currentUser?.name}
+                requesterRole={data.requesterRole}
+                requestId={currentSubmissionId || currentDraftId || undefined} // Pass request ID for invitations (from submission or draft)
+                currentUserEmail={currentUserEmail} // Pass current user email for auto-confirm
+                onRequestersStatusChange={setAllRequestersConfirmed}
+                onHeadEndorsementsStatusChange={setAllHeadEndorsementsConfirmed}
+              />
+            </>
           )}
 
           {/* Show School Service for institutional vehicles (both travel orders and seminars) */}
@@ -1922,13 +1964,24 @@ function RequestWizardContent() {
 
           {/* Show Seminar form only when seminar is selected */}
           {showSeminar && (
-            <SeminarApplicationForm
-              data={data.seminar}
-              onChange={onChangeSeminar}
-              errors={errors}
-              onParticipantsStatusChange={setAllParticipantsConfirmed}
-              onAutoSaveRequest={handleAutoSaveRequest}
-            />
+            <>
+              {/* Date of Filing Display */}
+              {requestMetadata && (
+                <FilingDateDisplay
+                  createdAt={requestMetadata.createdAt}
+                  requestNumber={requestMetadata.requestNumber}
+                  status={requestMetadata.status}
+                  className="mb-6"
+                />
+              )}
+              <SeminarApplicationForm
+                data={data.seminar}
+                onChange={onChangeSeminar}
+                errors={errors}
+                onParticipantsStatusChange={setAllParticipantsConfirmed}
+                onAutoSaveRequest={handleAutoSaveRequest}
+              />
+            </>
           )}
 
           <SubmitBar

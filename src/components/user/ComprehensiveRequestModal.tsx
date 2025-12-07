@@ -278,6 +278,7 @@ export default function ComprehensiveRequestModal({ isOpen, onClose, requestId }
                   rejectedAt={data.rejected_at}
                   rejectedBy={data.rejected_by}
                   rejectionStage={data.rejection_stage}
+                  createdAt={data.created_at}
                 />
               </div>
 

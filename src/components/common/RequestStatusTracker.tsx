@@ -73,6 +73,9 @@ interface RequestStatusTrackerProps {
   rejectedBy?: string | null | undefined;
   rejectionStage?: string | null | undefined;
   
+  // For processing time calculation
+  createdAt?: string | null | undefined;
+  
   compact?: boolean;
 }
 
@@ -124,6 +127,7 @@ export default function RequestStatusTracker({
   rejectedAt,
   rejectedBy,
   rejectionStage,
+  createdAt,
   compact = false,
 }: RequestStatusTrackerProps) {
   
@@ -315,6 +319,64 @@ export default function RequestStatusTracker({
     return { date, time };
   };
 
+  // Calculate processing time between stages
+  const calculateProcessingTime = (startTime: string | null | undefined, endTime: string | null | undefined): string | null => {
+    if (!startTime || !endTime) return null;
+    
+    try {
+      let startIso = startTime;
+      let endIso = endTime;
+      
+      // Ensure both dates have timezone info
+      if (!startTime.endsWith('Z') && !startTime.includes('+') && !startTime.includes('-', 10)) {
+        startIso = startTime + 'Z';
+      }
+      if (!endTime.endsWith('Z') && !endTime.includes('+') && !endTime.includes('-', 10)) {
+        endIso = endTime + 'Z';
+      }
+      
+      const start = new Date(startIso);
+      const end = new Date(endIso);
+      
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
+      
+      const diffMs = end.getTime() - start.getTime();
+      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+      const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+      const diffDays = Math.floor(diffHours / 24);
+      
+      if (diffDays > 0) {
+        return `${diffDays}d ${diffHours % 24}h`;
+      } else if (diffHours > 0) {
+        return `${diffHours}h ${diffMinutes}m`;
+      } else if (diffMinutes > 0) {
+        return `${diffMinutes}m`;
+      } else {
+        return '< 1m';
+      }
+    } catch {
+      return null;
+    }
+  };
+
+  // Get previous stage approval time for processing time calculation
+  const getPreviousStageTime = (currentStageKey: string): string | null | undefined => {
+    const stageOrder = ["head", "parent_head", "admin", "comptroller", "hr", "vp", "vp2", "president", "exec"];
+    const currentIndex = stageOrder.indexOf(currentStageKey);
+    
+    if (currentIndex <= 0) return createdAt || null;
+    
+    // Find the most recent previous stage that was approved
+    for (let i = currentIndex - 1; i >= 0; i--) {
+      const prevStageKey = stageOrder[i];
+      const prevTime = getApprovedAt(prevStageKey);
+      if (prevTime) return prevTime;
+    }
+    
+    // If no previous stage, use created_at (submission time)
+    return createdAt || null;
+  };
+
   if (compact) {
     return (
       <div className="flex items-center gap-2">
@@ -442,10 +504,17 @@ export default function RequestStatusTracker({
                             )}
                             {approvedAt ? (() => {
                               const { date, time } = formatDate(approvedAt);
+                              const prevTime = getPreviousStageTime(stage.key);
+                              const processingTime = calculateProcessingTime(prevTime, approvedAt);
                               return (
                                 <>
                                   <p className="text-xs text-gray-600">{date}</p>
                                   <p className="text-xs text-gray-500">{time}</p>
+                                  {processingTime && (
+                                    <p className="text-xs text-blue-600 font-medium mt-0.5">
+                                      ⏱️ {processingTime}
+                                    </p>
+                                  )}
                                 </>
                               );
                             })() : approverName ? (

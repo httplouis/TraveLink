@@ -1364,12 +1364,14 @@ export default function PageInner() {
                 dateTo={pendingDateTo}
                 onDateToChange={setPendingDateTo}
                 onClear={() => {
+                  setTableSearch("");
                   setPendingStatusFilter("All");
                   setPendingDeptFilter("All");
                   setPendingDateFrom("");
                   setPendingDateTo("");
                 }}
                 hasActiveFilters={
+                  !!tableSearch ||
                   pendingStatusFilter !== "All" ||
                   pendingDeptFilter !== "All" ||
                   !!pendingDateFrom ||
@@ -1377,6 +1379,7 @@ export default function PageInner() {
                 }
                 resultsCount={postFilterRows.length}
                 totalCount={filteredRows.length}
+                filteredRows={postFilterRows}
               />
 
               {/* Requests List */}
@@ -1415,11 +1418,12 @@ export default function PageInner() {
 
           {/* Tracking Unified Filter Bar */}
           <UnifiedFilterBar
-            search={historySearch}
+            searchValue={historySearch}
             onSearchChange={setHistorySearch}
-            status={historyStatusFilter}
+            searchPlaceholder="Search tracked requests..."
+            statusValue={historyStatusFilter}
             onStatusChange={setHistoryStatusFilter}
-            dept={historyDeptFilter}
+            deptValue={historyDeptFilter}
             onDeptChange={setHistoryDeptFilter}
             departments={uniqueHistoryDepts}
             dateFrom={historyDateFrom}
@@ -1442,6 +1446,7 @@ export default function PageInner() {
             }
             resultsCount={filteredTrackedRows.length}
             totalCount={trackedRows.length}
+            filteredRows={filteredTrackedRows}
           />
           
           {filteredTrackedRows.length === 0 ? (
@@ -1762,6 +1767,7 @@ export default function PageInner() {
             }
             resultsCount={filteredHistoryRows.length}
             totalCount={historyRows.length}
+            filteredRows={filteredHistoryRows}
           />
           
           {filteredHistoryRows.length === 0 ? (

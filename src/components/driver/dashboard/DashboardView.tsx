@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, CalendarDays, Users, Clock } from "lucide-react";
+import { ArrowRight, CalendarDays, Users, Clock, Star, MessageSquare } from "lucide-react";
 import { FleetSnapshot, type FleetVehicle } from "@/components/driver/FleetSnapshot"; // ✅ named import
 
 export type Status = "Pending" | "Approved" | "Assigned";
@@ -64,12 +64,17 @@ function MetricCard({ icon, label, value }:{
 const SHOW_SNAPSHOT = true;
 
 export default function DashboardView({
-  metrics, upcoming, actions, fleet,
+  metrics, upcoming, actions, fleet, feedbackSummary,
 }:{
   metrics: Metrics;
   upcoming: UpcomingRow[];
   actions: Array<{ icon: React.ReactNode; title: string; desc: string; href: string }>;
   fleet?: FleetVehicle[];
+  feedbackSummary?: {
+    total: number;
+    averageRating: string;
+    recentFeedback: Array<{ rating: number; message: string; userName: string; date: string }>;
+  } | null;
 }) {
   const cleanActions = actions.filter((a) => {
     const t = a.title?.toLowerCase?.() ?? "";
@@ -111,10 +116,89 @@ export default function DashboardView({
         </div>
       )}
 
-      {/* Upcoming + Quick note */}
-      <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
-        {/* ... unchanged ... */}
-      </div>
+      {/* Upcoming Trips */}
+      {upcoming.length > 0 && (
+        <div className="mt-6">
+          <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm">
+            <h2 className="mb-4 text-lg font-semibold text-gray-900">Upcoming Trips</h2>
+            <div className="space-y-3">
+              {upcoming.map((trip) => (
+                <div
+                  key={trip.id}
+                  className="flex items-center justify-between rounded-lg border border-neutral-200 bg-neutral-50 p-4"
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3">
+                      <CalendarDays className="h-5 w-5 text-[#7a0019]" />
+                      <div>
+                        <p className="font-medium text-gray-900">{trip.location}</p>
+                        <p className="text-sm text-gray-600">{trip.date}</p>
+                        <p className="text-xs text-gray-500">{trip.vehicle}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <span className={`rounded-full px-3 py-1 text-xs font-medium ${tone(trip.status)}`}>
+                    {trip.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Feedback Summary */}
+      {feedbackSummary && feedbackSummary.total > 0 && (
+        <div className="mt-6">
+          <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900">Feedback Summary</h2>
+              <div className="flex items-center gap-2">
+                <Star className="h-5 w-5 fill-yellow-400 text-yellow-400" />
+                <span className="text-lg font-bold text-gray-900">{feedbackSummary.averageRating}</span>
+                <span className="text-sm text-gray-500">({feedbackSummary.total} reviews)</span>
+              </div>
+            </div>
+            
+            {feedbackSummary.recentFeedback.length > 0 && (
+              <div className="space-y-3">
+                <p className="text-sm font-medium text-gray-700 mb-3">Recent Feedback:</p>
+                {feedbackSummary.recentFeedback.map((feedback, idx) => (
+                  <div key={idx} className="rounded-lg border border-neutral-200 bg-neutral-50 p-4">
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="flex">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <Star
+                              key={star}
+                              className={`h-4 w-4 ${
+                                star <= feedback.rating
+                                  ? "fill-yellow-400 text-yellow-400"
+                                  : "text-gray-300"
+                              }`}
+                            />
+                          ))}
+                        </div>
+                        <span className="text-sm font-medium text-gray-900">
+                          {feedback.userName || "Anonymous"}
+                        </span>
+                      </div>
+                      <span className="text-xs text-gray-500">
+                        {new Date(feedback.date).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric'
+                        })}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-700">{feedback.message}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

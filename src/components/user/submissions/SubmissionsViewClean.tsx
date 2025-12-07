@@ -376,6 +376,7 @@ export default function SubmissionsView() {
                   presidentApprovedBy={(req as any).president_approved_by}
                   execApprovedAt={(req as any).exec_approved_at}
                   execApprovedBy={(req as any).exec_approved_by}
+                  createdAt={(req as any).created_at}
                   compact={true}
                 />
               </div>

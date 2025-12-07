@@ -1979,6 +1979,7 @@ export default function RequestDetailsView({
                       rejectedAt={request.rejectedAt}
                       rejectedBy={request.rejectedBy}
                       rejectionStage={request.rejectionStage}
+                      createdAt={request.created_at}
                       compact={false}
                     />
                   </div>
