@@ -1,4 +1,4 @@
-# TraviLink
+# TraveLink
 
 > A comprehensive travel order and seminar application management system for Manuel S. Enverga University Foundation (MSEUF)
 
@@ -9,7 +9,7 @@
 
 ## 📋 Overview
 
-TraviLink is a smart web application designed to streamline and automate the entire travel order request process for MSEUF. The system handles request submission, multi-level approval workflows, vehicle/driver assignment, budget management, and post-trip feedback collection.
+TraveLink is a smart web application designed to streamline and automate the entire travel order request process for MSEUF. The system handles request submission, multi-level approval workflows, vehicle/driver assignment, budget management, and post-trip feedback collection.
 
 ### Key Features
 
@@ -119,19 +119,7 @@ TraviLink/
 
 For detailed documentation, please refer to the `documents/` directory.
 
-## 🤝 Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## 📝 License
-
-This project is licensed under the MIT License.
-
-## 👨‍💻 Contributors
-
-- [@httplouis](https://github.com/httplouis)
-- [@Hans-Madridano25](https://github.com/Hans-Madridano25)
-- [@Gaboogsh](https://github.com/Gaboogsh)
 
 ## 🔗 Links
 
