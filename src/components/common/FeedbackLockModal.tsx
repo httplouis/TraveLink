@@ -62,6 +62,9 @@ export default function FeedbackLockModal({
                   <p className="text-xs text-blue-700">
                     Your feedback helps us improve our transport services. This step is required before you can continue using the system.
                   </p>
+                  <p className="text-xs text-blue-800 font-semibold mt-2">
+                    → Click "Provide Feedback Now" button below to proceed
+                  </p>
                 </div>
               </div>
             </div>
@@ -77,14 +80,26 @@ export default function FeedbackLockModal({
           </div>
 
           {/* Actions */}
-          <div className="bg-gray-50 px-6 py-4 border-t border-gray-200 flex items-center justify-end gap-3">
-            <Link
-              href={`/user/feedback?request_id=${requestId}&locked=true`}
-              className="px-6 py-3 bg-gradient-to-r from-[#7A0010] to-[#9c2a3a] text-white font-semibold rounded-lg hover:shadow-lg transition-all duration-200 flex items-center gap-2"
-            >
-              <MessageSquare className="h-4 w-4" />
-              Provide Feedback
-            </Link>
+          <div className="bg-gray-50 px-6 py-4 border-t border-gray-200">
+            <div className="mb-3">
+              <p className="text-sm text-gray-600 text-center">
+                <strong className="text-[#7A0010]">Click the button below</strong> to provide your feedback and continue using the system.
+              </p>
+            </div>
+            <div className="flex items-center justify-center">
+              <Link
+                href={`/user/feedback?request_id=${requestId}&locked=true`}
+                className="px-8 py-4 bg-gradient-to-r from-[#7A0010] to-[#9c2a3a] text-white font-semibold rounded-lg hover:shadow-xl hover:scale-105 active:scale-95 transition-all duration-200 flex items-center gap-3 text-lg relative z-10 cursor-pointer"
+                onClick={(e) => {
+                  // Ensure navigation happens
+                  console.log('[FeedbackLockModal] Navigating to feedback page');
+                }}
+              >
+                <MessageSquare className="h-5 w-5" />
+                Provide Feedback Now
+                <span className="ml-2 animate-pulse">→</span>
+              </Link>
+            </div>
           </div>
 
           {/* Note: Modal cannot be closed until feedback is provided */}
