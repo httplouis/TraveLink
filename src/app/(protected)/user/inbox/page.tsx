@@ -5,6 +5,9 @@ import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Inbox, Search, FileText, Calendar, MapPin, CheckCircle, Clock } from "lucide-react";
 import UserRequestModal from "@/components/user/UserRequestModal";
+import RequestCardEnhanced from "@/components/common/RequestCardEnhanced";
+import RequestsTable from "@/components/common/RequestsTable";
+import ViewToggle, { useViewMode } from "@/components/common/ViewToggle";
 import { useToast } from "@/components/common/ui/Toast";
 import { createSupabaseClient } from "@/lib/supabase/client";
 import { SkeletonRequestCard } from "@/components/common/SkeletonLoader";
@@ -31,6 +34,7 @@ function UserInboxPageContent() {
   const [searchQuery, setSearchQuery] = React.useState("");
   const [selectedRequest, setSelectedRequest] = React.useState<Request | null>(null);
   const [showModal, setShowModal] = React.useState(false);
+  const [viewMode, setViewMode] = useViewMode("user_inbox_view", "cards");
   const toast = useToast();
   const searchParams = useSearchParams();
 
@@ -308,20 +312,47 @@ function UserInboxPageContent() {
           </div>
         </div>
 
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search by request number, purpose, or destination..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border-2 border-gray-200 rounded-lg focus:border-[#7A0010] focus:outline-none"
-          />
+        {/* Search + View Toggle */}
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search by request number, purpose, or destination..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border-2 border-gray-200 rounded-lg focus:border-[#7A0010] focus:outline-none"
+            />
+          </div>
+          <ViewToggle view={viewMode} onChange={setViewMode} />
         </div>
 
         {/* Requests List */}
-        {displayRequests.length === 0 ? (
+        {viewMode === "table" ? (
+          <RequestsTable
+            requests={displayRequests
+              .filter(req => {
+                const query = searchQuery.toLowerCase();
+                return req.request_number?.toLowerCase().includes(query) ||
+                       req.purpose?.toLowerCase().includes(query) ||
+                       req.destination?.toLowerCase().includes(query) ||
+                       req.submitted_by_name?.toLowerCase().includes(query);
+              })
+              .map(req => ({
+                ...req,
+                requester: {
+                  name: (req as any).requester_name || "Unknown",
+                  email: (req as any).requester?.email,
+                  position: (req as any).requester?.position_title,
+                  profile_picture: (req as any).requester?.profile_picture,
+                },
+              }))}
+            onView={handleReviewClick}
+            showBudget={true}
+            showDepartment={true}
+            emptyMessage={searchQuery ? "No requests match your search" : "No pending requests"}
+          />
+        ) : displayRequests.length === 0 ? (
           <div className="bg-white rounded-xl border-2 border-gray-200 shadow-sm text-center py-12">
             <Inbox className="h-12 w-12 text-gray-300 mx-auto mb-4" />
             <p className="text-gray-500 font-medium">

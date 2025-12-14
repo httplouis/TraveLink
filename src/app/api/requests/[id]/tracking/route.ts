@@ -71,14 +71,14 @@ export async function GET(
       try {
         const { data, error } = await supabase
         .from("users")
-          .select("name, full_name")
+          .select("name, name_full")
         .eq("id", userId)
         .single();
         if (error) {
           console.error('[fetchUserName] Error:', error);
           return null;
         }
-        return data?.name || data?.full_name || null;
+        return data?.name || data?.name_full || null;
       } catch (err) {
         console.error('[fetchUserName] Exception:', err);
         return null;
@@ -156,7 +156,7 @@ export async function GET(
       try {
         const { data, error } = await supabase
         .from("users")
-          .select("name, full_name, department_id, departments:department_id(id, name, code)")
+          .select("name, name_full, department_id, departments:department_id(id, name, code)")
         .eq("id", userId)
         .single();
         
@@ -165,13 +165,14 @@ export async function GET(
           return null;
         }
         
-        // Normalize name field
-        if (data && !data.full_name && data.name) {
-          data.full_name = data.name;
-        }
+        // Normalize name field - use name_full as fallback
+        const normalizedData = data ? {
+          ...data,
+          full_name: data.name || data.name_full
+        } : null;
         
-      console.log('[Tracking API] Requester data:', data);
-      return data || null;
+      console.log('[Tracking API] Requester data:', normalizedData);
+      return normalizedData || null;
       } catch (err) {
         console.error('[fetchRequesterData] Exception:', err);
         return null;
@@ -184,7 +185,7 @@ export async function GET(
       try {
         const { data, error } = await supabase
           .from("users")
-          .select("id, name, full_name, email, profile_picture, position_title, department_id, departments:department_id(id, name, code)")
+          .select("id, name, name_full, email, profile_picture, position_title, department_id, departments:department_id(id, name, code)")
           .eq("id", userId)
           .single();
         
@@ -195,7 +196,7 @@ export async function GET(
         
         return data ? {
           id: data.id,
-          name: data.name || data.full_name || 'Unknown',
+          name: data.name || data.name_full || 'Unknown',
           email: data.email || null,
           profile_picture: data.profile_picture || null,
           position_title: data.position_title || 'Department Head',

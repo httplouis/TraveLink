@@ -18,7 +18,7 @@ export default function ProfileMenu({ name = "Profile", avatarUrl }: Props) {
       {/* Trigger (unchanged behavior, now with icon/avatar) */}
       <button
         onClick={() => setOpenSheet(true)}
-        className="inline-flex h-9 items-center gap-2 rounded-full border border-white/60 bg-white/90 px-3 text-sm text-neutral-900 shadow-inner transition hover:bg-white focus:outline-none focus:ring-2 focus:ring-white/70"
+        className="inline-flex h-9 items-center gap-2 rounded-full bg-white px-4 text-sm font-medium text-[#7a0019] shadow transition hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-white/50"
         aria-label="Open profile"
         suppressHydrationWarning
       >
@@ -26,7 +26,7 @@ export default function ProfileMenu({ name = "Profile", avatarUrl }: Props) {
           <img
             src={avatarUrl}
             alt={name}
-            className="h-5 w-5 rounded-full object-cover"
+            className="h-6 w-6 rounded-full object-cover ring-2 ring-[#7a0019]/20"
           />
         ) : (
           <User className="h-4 w-4" aria-hidden />

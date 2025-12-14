@@ -5,6 +5,7 @@ import React from "react";
 import { LogOut } from "lucide-react";
 import ChatbotWidget from "@/components/ai/ChatbotWidget";
 import HelpButton from "@/components/common/HelpButton";
+import { LogoutConfirmDialog } from "@/components/common/LogoutConfirmDialog";
 import ComptrollerLeftNav from "@/components/comptroller/nav/ComptrollerLeftNav";
 import ComptrollerTopBar from "@/components/comptroller/nav/ComptrollerTopBar";
 import FeedbackLockModal from "@/components/common/FeedbackLockModal";
@@ -20,6 +21,8 @@ export default function ComptrollerLayout({
 }) {
   const router = useRouter();
   const pathname = usePathname();
+  const [showLogoutConfirm, setShowLogoutConfirm] = React.useState(false);
+  const [loggingOut, setLoggingOut] = React.useState(false);
   const [feedbackLock, setFeedbackLock] = React.useState<{
     locked: boolean;
     requestId?: string;
@@ -39,11 +42,13 @@ export default function ComptrollerLayout({
   }, [pathname]);
 
   const handleLogout = async () => {
+    setLoggingOut(true);
     try {
       await fetch("/api/auth/logout", { method: "POST" });
       router.push("/login");
     } catch (error) {
       console.error("Logout failed:", error);
+      setLoggingOut(false);
     }
   };
 
@@ -60,7 +65,7 @@ export default function ComptrollerLayout({
           {/* Logout Button */}
           <div className="flex-shrink-0 p-4 border-t border-gray-200">
             <button
-              onClick={handleLogout}
+              onClick={() => setShowLogoutConfirm(true)}
               className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors text-sm font-medium"
             >
               <LogOut className="h-5 w-5" />
@@ -68,6 +73,14 @@ export default function ComptrollerLayout({
             </button>
           </div>
         </aside>
+
+        {/* Logout Confirmation Dialog */}
+        <LogoutConfirmDialog
+          isOpen={showLogoutConfirm}
+          onClose={() => setShowLogoutConfirm(false)}
+          onConfirm={handleLogout}
+          isLoading={loggingOut}
+        />
 
         {/* Main Content Area */}
         <div className="flex-1 flex flex-col overflow-hidden">

@@ -8,6 +8,8 @@ import TrackingModal from "@/components/common/TrackingModal";
 import StatusBadge from "@/components/common/StatusBadge";
 import PersonDisplay from "@/components/common/PersonDisplay";
 import RequestCardEnhanced from "@/components/common/RequestCardEnhanced";
+import RequestsTable from "@/components/common/RequestsTable";
+import ViewToggle, { useViewMode } from "@/components/common/ViewToggle";
 import { Eye, Search, FileText } from "lucide-react";
 import { createSupabaseClient } from "@/lib/supabase/client";
 
@@ -18,6 +20,7 @@ export default function ExecInboxContainer() {
   const [trackingRequest, setTrackingRequest] = React.useState<any | null>(null);
   const [showTrackingModal, setShowTrackingModal] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
+  const [viewMode, setViewMode] = useViewMode("exec_inbox_view", "cards");
 
   async function load(showLoader = true) {
     if (showLoader) setLoading(true);
@@ -116,20 +119,39 @@ export default function ExecInboxContainer() {
 
   return (
     <div className="space-y-4">
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search by request number, purpose, or destination..."
-          className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-transparent"
-        />
+      {/* Search + View Toggle */}
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by request number, purpose, or destination..."
+            className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-transparent"
+          />
+        </div>
+        <ViewToggle view={viewMode} onChange={setViewMode} />
       </div>
 
       {/* Request List */}
-      {filteredItems.length === 0 ? (
+      {viewMode === "table" ? (
+        <RequestsTable
+          requests={filteredItems.map(item => ({
+            ...item,
+            requester: {
+              name: item.requester_name || item.requester?.name || "Unknown",
+              email: item.requester?.email,
+              position: item.requester?.position_title,
+              profile_picture: item.requester?.profile_picture,
+            },
+          }))}
+          onView={setSelected}
+          showBudget={true}
+          showDepartment={true}
+          emptyMessage={searchQuery ? "No results found" : "No pending requests"}
+        />
+      ) : filteredItems.length === 0 ? (
         <div className="text-center py-16 bg-white rounded-xl border border-gray-200">
           <FileText className="h-16 w-16 text-gray-300 mx-auto mb-4" />
           <h3 className="text-lg font-semibold text-gray-900 mb-2">

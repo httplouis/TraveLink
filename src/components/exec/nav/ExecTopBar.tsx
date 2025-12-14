@@ -4,9 +4,11 @@ import Link from "next/link";
 import Image from "next/image";
 import { Bell, LogOut } from "lucide-react";
 import { useState } from "react";
+import { LogoutConfirmDialog } from "@/components/common/LogoutConfirmDialog";
 
 export default function ExecTopBar() {
   const [loggingOut, setLoggingOut] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -20,43 +22,52 @@ export default function ExecTopBar() {
   };
 
   return (
-    <header className="fixed inset-x-0 top-0 z-50 h-14 bg-[#7a0019] text-white">
-      <div className="flex h-full items-center justify-between px-4 md:px-6">
-        <div className="flex items-center gap-3">
-          <Link href="/exec/dashboard" className="inline-flex items-center gap-3">
-            <div className="relative h-10 w-10 rounded-lg bg-white p-1.5 shadow-md">
-              <Image
-                src="/travelink.png"
-                alt="Travelink Logo"
-                width={32}
-                height={32}
-                className="h-full w-full object-contain"
-                priority
-              />
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="text-xl font-bold tracking-tight">Travelink</span>
-              <span className="h-6 w-px bg-white/30" />
-              <span className="opacity-90 text-sm font-medium">Executive</span>
-            </div>
-          </Link>
-        </div>
+    <>
+      <header className="fixed inset-x-0 top-0 z-50 h-14 bg-[#7a0019] text-white">
+        <div className="flex h-full items-center justify-between px-4 md:px-6">
+          <div className="flex items-center gap-3">
+            <Link href="/exec/dashboard" className="inline-flex items-center gap-3">
+              <div className="relative h-10 w-10 rounded-lg bg-white p-1.5 shadow-md">
+                <Image
+                  src="/travelink.png"
+                  alt="Travelink Logo"
+                  width={32}
+                  height={32}
+                  className="h-full w-full object-contain"
+                  priority
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xl font-bold tracking-tight">Travelink</span>
+                <span className="h-6 w-px bg-white/30" />
+                <span className="opacity-90 text-sm font-medium">Executive</span>
+              </div>
+            </Link>
+          </div>
 
-        <div className="flex items-center gap-1">
-          <Link href="/exec/notifications" className="relative rounded-full p-2 hover:bg-white/10" aria-label="Notifications">
-            <Bell className="h-5 w-5" />
-          </Link>
-          <button
-            onClick={handleLogout}
-            disabled={loggingOut}
-            className="rounded-full p-2 hover:bg-white/10 disabled:opacity-50"
-            aria-label="Logout"
-            title="Logout"
-          >
-            <LogOut className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-1">
+            <Link href="/exec/notifications" className="relative rounded-full p-2 hover:bg-white/10" aria-label="Notifications">
+              <Bell className="h-5 w-5" />
+            </Link>
+            <button
+              onClick={() => setShowLogoutConfirm(true)}
+              disabled={loggingOut}
+              className="rounded-full p-2 hover:bg-white/10 disabled:opacity-50"
+              aria-label="Logout"
+              title="Logout"
+            >
+              <LogOut className="h-5 w-5" />
+            </button>
+          </div>
         </div>
-      </div>
-    </header>
+      </header>
+
+      <LogoutConfirmDialog
+        isOpen={showLogoutConfirm}
+        onClose={() => setShowLogoutConfirm(false)}
+        onConfirm={handleLogout}
+        isLoading={loggingOut}
+      />
+    </>
   );
 }

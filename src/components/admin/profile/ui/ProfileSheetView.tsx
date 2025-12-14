@@ -100,7 +100,7 @@ export default function ProfileSheetView({ open, brand, departments, state, fmt,
                     <Dialog.Title className="text-base font-semibold">User Profile</Dialog.Title>
                     <div className="flex items-center gap-2">
                       <button
-                        className="rounded-lg bg-white/10 px-3 py-1.5 text-sm hover:bg-white/15"
+                        className="rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-[#7a0019] hover:bg-gray-100 transition-colors"
                         onClick={() => handlers.setShowLogout(true)}
                       >
                         <span className="inline-flex items-center gap-1.5">

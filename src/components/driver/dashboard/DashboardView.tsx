@@ -86,12 +86,12 @@ export default function DashboardView({
       {/* Header */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Driver Transport Portal</h1>
-          <p className="text-sm text-neutral-600">See upcoming trips and update your status.</p>
+          <h1 className="text-2xl font-semibold">Driver Portal</h1>
+          <p className="text-sm text-neutral-600">View your assigned trips and schedules.</p>
         </div>
         <div className="flex gap-2">
-          <Link href="/driver/status" className="btn btn-primary">Update Status</Link>
-          <Link href="/driver/schedule" className="btn btn-outline">View Schedule</Link>
+          <Link href="/driver/schedule" className="btn btn-primary">View Schedule</Link>
+          <Link href="/driver/history" className="btn btn-outline">Trip History</Link>
         </div>
       </div>
 

@@ -26,8 +26,7 @@ export async function GET() {
       return NextResponse.json({ ok: false, error: "User profile not found" }, { status: 404 });
     }
 
-    // Fetch assigned trips for this driver (upcoming and ongoing)
-    // assigned_driver_id references users.id, not drivers.user_id
+    // Fetch completed trips for this driver
     const { data: trips, error: tripsError } = await supabase
       .from("requests")
       .select(`
@@ -37,11 +36,8 @@ export async function GET() {
         destination,
         departure_date,
         return_date,
-        departure_time,
         status,
-        purpose,
-        passenger_count,
-        requester_name,
+        completed_date,
         vehicles!requests_assigned_vehicle_id_fkey (
           vehicle_name,
           plate_number
@@ -49,39 +45,48 @@ export async function GET() {
         users!requests_user_id_fkey (
           name,
           department
+        ),
+        feedback (
+          rating,
+          message
         )
       `)
       .eq("assigned_driver_id", userProfile.id)
-      .eq("status", "approved")
-      .gte("departure_date", new Date().toISOString().split("T")[0])
-      .order("departure_date", { ascending: true });
+      .eq("status", "completed")
+      .order("completed_date", { ascending: false })
+      .limit(50);
 
     if (tripsError) {
-      console.error("Error fetching driver schedule:", tripsError);
-      return NextResponse.json({ ok: false, error: "Failed to fetch schedule" }, { status: 500 });
+      console.error("Error fetching driver history:", tripsError);
+      return NextResponse.json({ ok: false, error: "Failed to fetch history" }, { status: 500 });
     }
 
     // Transform data
-    const formattedTrips = (trips || []).map((trip: any) => ({
-      id: trip.id,
-      request_number: trip.request_number || "N/A",
-      title: trip.title || "Untitled Trip",
-      destination: trip.destination || "N/A",
-      departure_date: trip.departure_date,
-      return_date: trip.return_date,
-      departure_time: trip.departure_time || "",
-      status: trip.status,
-      purpose: trip.purpose || "",
-      passenger_count: trip.passenger_count || 0,
-      vehicle_name: trip.vehicles?.vehicle_name || "N/A",
-      plate_number: trip.vehicles?.plate_number || "N/A",
-      requester_name: trip.users?.name || trip.requester_name || "N/A",
-      department: trip.users?.department || "N/A",
-    }));
+    const formattedTrips = (trips || []).map((trip: any) => {
+      // Get the first feedback if exists
+      const feedback = Array.isArray(trip.feedback) ? trip.feedback[0] : trip.feedback;
+      
+      return {
+        id: trip.id,
+        request_number: trip.request_number || "N/A",
+        title: trip.title || "Untitled Trip",
+        destination: trip.destination || "N/A",
+        departure_date: trip.departure_date,
+        return_date: trip.return_date,
+        status: trip.status,
+        completed_at: trip.completed_date,
+        vehicle_name: trip.vehicles?.vehicle_name || "N/A",
+        plate_number: trip.vehicles?.plate_number || "N/A",
+        requester_name: trip.users?.name || "N/A",
+        department: trip.users?.department || "N/A",
+        feedback_rating: feedback?.rating || null,
+        feedback_comment: feedback?.message || null,
+      };
+    });
 
     return NextResponse.json({ ok: true, data: formattedTrips });
   } catch (error) {
-    console.error("Driver schedule API error:", error);
+    console.error("Driver history API error:", error);
     return NextResponse.json({ ok: false, error: "Internal server error" }, { status: 500 });
   }
 }

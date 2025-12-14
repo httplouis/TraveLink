@@ -7,6 +7,8 @@ import { SkeletonRequestCard } from "@/components/common/SkeletonLoader";
 import StatusBadge from "@/components/common/StatusBadge";
 import PersonDisplay from "@/components/common/PersonDisplay";
 import RequestCardEnhanced from "@/components/common/RequestCardEnhanced";
+import RequestsTable from "@/components/common/RequestsTable";
+import ViewToggle, { useViewMode } from "@/components/common/ViewToggle";
 import { createSupabaseClient } from "@/lib/supabase/client";
 import { createLogger } from "@/lib/debug";
 import { shouldShowPendingAlert, getAlertSeverity, getAlertMessage } from "@/lib/notifications/pending-alerts";
@@ -32,6 +34,9 @@ export default function HeadInboxPage() {
   const [selected, setSelected] = React.useState<any | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [lastUpdate, setLastUpdate] = React.useState<Date>(new Date());
+  
+  // View mode toggle
+  const [viewMode, setViewMode] = useViewMode("head_inbox_view", "cards");
   
   // Search and filter
   const [searchQuery, setSearchQuery] = React.useState("");
@@ -274,11 +279,14 @@ export default function HeadInboxPage() {
               </div>
             )}
           </div>
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 border border-green-200 rounded-lg text-xs text-green-700">
-            <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
-            <span className="font-medium" suppressHydrationWarning>
-              Auto-refresh • {lastUpdate.toLocaleTimeString()}
-            </span>
+          <div className="flex items-center gap-3">
+            <ViewToggle view={viewMode} onChange={setViewMode} />
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 border border-green-200 rounded-lg text-xs text-green-700">
+              <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
+              <span className="font-medium" suppressHydrationWarning>
+                Auto-refresh • {lastUpdate.toLocaleTimeString()}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -434,6 +442,25 @@ export default function HeadInboxPage() {
             <SkeletonRequestCard key={i} />
           ))}
         </div>
+      ) : viewMode === "table" ? (
+        <RequestsTable
+          requests={filteredItems.map(item => ({
+            ...item,
+            requester: {
+              name: item.requester?.name || item.requester_name || "Unknown",
+              email: item.requester?.email,
+              position: item.requester?.position_title,
+              profile_picture: item.requester?.profile_picture || item.requester?.avatar_url,
+            },
+          }))}
+          onView={(item) => {
+            setSelected(item);
+            markAsViewed(item.id);
+          }}
+          showBudget={true}
+          showDepartment={true}
+          emptyMessage={searchQuery ? "No matching requests" : "No requests pending"}
+        />
       ) : filteredItems.length === 0 ? (
         <div className="rounded-lg border-2 border-dashed border-slate-200 bg-white px-8 py-12 text-center">
           <svg className="mx-auto h-12 w-12 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">

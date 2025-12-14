@@ -4,23 +4,30 @@
 import "@/app/globals.css";
 import "@/app/styles/admin/admin.css";
 
+import { useState } from "react";
 import AdminLeftNav from "@/components/admin/nav/AdminLeftNav";
 import Breadcrumbs from "@/components/admin/nav/Breadcrumbs";
 import ProfileMenu from "@/components/admin/nav/ProfileMenu";
 import NotificationBell from "@/components/admin/nav/NotificationBell";
 import PageTitle from "@/components/common/PageTitle";
+import { LogoutConfirmDialog } from "@/components/common/LogoutConfirmDialog";
 import { Search, LogOut } from "lucide-react";
 import ProfileContainer from "@/components/admin/profile/containers/ProfileContainer";
 import ChatbotWidget from "@/components/ai/ChatbotWidget";
 import HelpButton from "@/components/common/HelpButton";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+
   const handleLogout = async () => {
+    setLoggingOut(true);
     try {
       await fetch("/api/auth/logout", { method: "POST" });
       window.location.href = "/login";
     } catch (error) {
       console.error("Logout failed:", error);
+      setLoggingOut(false);
     }
   };
 
@@ -105,8 +112,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <NotificationBell variant="onMaroon" />
             <ProfileMenu />
             <button
-              onClick={handleLogout}
-              className="inline-flex h-9 items-center gap-2 rounded-full border border-white/60 bg-red-600 px-3 text-sm text-white shadow-inner transition hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500/70"
+              onClick={() => setShowLogoutConfirm(true)}
+              className="inline-flex h-9 items-center gap-2 rounded-full bg-white px-4 text-sm font-medium text-[#7a0019] shadow transition hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-white/50"
               aria-label="Logout"
               title="Logout"
               suppressHydrationWarning
@@ -116,6 +123,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </button>
           </div>
         </div>
+
+        {/* Logout Confirmation Dialog */}
+        <LogoutConfirmDialog
+          isOpen={showLogoutConfirm}
+          onClose={() => setShowLogoutConfirm(false)}
+          onConfirm={handleLogout}
+          isLoading={loggingOut}
+        />
 
         {/* ===== Main content frame ===== */}
         <main className="mt-4">

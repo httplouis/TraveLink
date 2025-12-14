@@ -6,6 +6,8 @@ import HRRequestModal from "@/components/hr/HRRequestModal";
 import StatusBadge from "@/components/common/StatusBadge";
 import PersonDisplay from "@/components/common/PersonDisplay";
 import RequestCardEnhanced from "@/components/common/RequestCardEnhanced";
+import RequestsTable from "@/components/common/RequestsTable";
+import ViewToggle, { useViewMode } from "@/components/common/ViewToggle";
 import { Eye } from "lucide-react";
 import { createSupabaseClient } from "@/lib/supabase/client";
 import { createLogger } from "@/lib/debug";
@@ -17,6 +19,7 @@ export default function HRInboxContainer() {
   const [loading, setLoading] = React.useState(true);
   const [selected, setSelected] = React.useState<any | null>(null);
   const [lastUpdate, setLastUpdate] = React.useState<Date>(new Date());
+  const [viewMode, setViewMode] = useViewMode("hr_inbox_view", "cards");
 
   const logger = createLogger("HRInbox");
 
@@ -133,11 +136,14 @@ export default function HRInboxContainer() {
               </div>
             )}
           </div>
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 border border-green-200 rounded-lg text-xs text-green-700">
-            <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
-            <span className="font-medium" suppressHydrationWarning>
-              Auto-refresh • {lastUpdate.toLocaleTimeString()}
-            </span>
+          <div className="flex items-center gap-3">
+            <ViewToggle view={viewMode} onChange={setViewMode} />
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 border border-green-200 rounded-lg text-xs text-green-700">
+              <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
+              <span className="font-medium" suppressHydrationWarning>
+                Auto-refresh • {lastUpdate.toLocaleTimeString()}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -148,6 +154,22 @@ export default function HRInboxContainer() {
             <SkeletonRequestCard key={i} />
           ))}
         </div>
+      ) : viewMode === "table" ? (
+        <RequestsTable
+          requests={items.map(item => ({
+            ...item,
+            requester: {
+              name: item.requester_name || item.requester?.name || "Unknown",
+              email: item.requester?.email,
+              position: item.requester?.position_title,
+              profile_picture: item.requester?.profile_picture,
+            },
+          }))}
+          onView={setSelected}
+          showBudget={true}
+          showDepartment={true}
+          emptyMessage="No requests pending HR review"
+        />
       ) : items.length === 0 ? (
         <div className="rounded-lg border-2 border-dashed border-slate-200 bg-white px-8 py-12 text-center">
           <svg className="mx-auto h-12 w-12 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">

@@ -2,21 +2,27 @@
 "use client";
 
 import "@/app/globals.css";
+import { useState } from "react";
 import SuperAdminNav from "@/components/super-admin/nav/SuperAdminNav";
 import HelpButton from "@/components/common/HelpButton";
+import { LogoutConfirmDialog } from "@/components/common/LogoutConfirmDialog";
 import { Shield, Search, LogOut } from "lucide-react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 
 export default function SuperAdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   const handleLogout = async () => {
+    setLoggingOut(true);
     try {
       await fetch("/api/auth/logout", { method: "POST" });
       window.location.href = "/login";
     } catch (error) {
       console.error("Logout failed:", error);
+      setLoggingOut(false);
     }
   };
 
@@ -61,7 +67,7 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
                   Transport Admin →
                 </Link>
                 <button
-                  onClick={handleLogout}
+                  onClick={() => setShowLogoutConfirm(true)}
                   className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors text-sm font-medium"
                   title="Logout"
                   suppressHydrationWarning
@@ -73,6 +79,14 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
             </div>
           </div>
         </div>
+
+        {/* Logout Confirmation Dialog */}
+        <LogoutConfirmDialog
+          isOpen={showLogoutConfirm}
+          onClose={() => setShowLogoutConfirm(false)}
+          onConfirm={handleLogout}
+          isLoading={loggingOut}
+        />
 
         <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex gap-4">

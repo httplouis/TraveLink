@@ -5,6 +5,8 @@ import React from "react";
 import { Search, Clock, User, Building2, MapPin, Calendar, FileText } from "lucide-react";
 import ComptrollerReviewModal from "@/components/comptroller/ComptrollerReviewModal";
 import RequestCardEnhanced from "@/components/common/RequestCardEnhanced";
+import RequestsTable from "@/components/common/RequestsTable";
+import ViewToggle, { useViewMode } from "@/components/common/ViewToggle";
 import { motion } from "framer-motion";
 import PageTitle from "@/components/common/PageTitle";
 import { createSupabaseClient } from "@/lib/supabase/client";
@@ -39,6 +41,7 @@ export default function ComptrollerInboxPage() {
   const [searchQuery, setSearchQuery] = React.useState("");
   const [selectedRequest, setSelectedRequest] = React.useState<Request | null>(null);
   const [showModal, setShowModal] = React.useState(false);
+  const [viewMode, setViewMode] = useViewMode("comptroller_inbox_view", "cards");
 
   // Set page title
   React.useEffect(() => {
@@ -223,6 +226,7 @@ export default function ComptrollerInboxPage() {
           )}
         </div>
         <div className="flex items-center gap-4">
+          <ViewToggle view={viewMode} onChange={setViewMode} />
           <div className={`px-6 py-3 rounded-xl shadow-lg text-white ${
             shouldShowPendingAlert(filteredRequests.length)
               ? getAlertSeverity(filteredRequests.length) === 'danger'
@@ -256,61 +260,79 @@ export default function ComptrollerInboxPage() {
       </motion.div>
 
       {/* Requests List */}
-      <div className="space-y-4">
-        {filteredRequests.length === 0 ? (
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-2xl shadow-lg border border-gray-200 p-16 text-center"
-          >
-            <div className="h-20 w-20 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
-              <FileText className="h-10 w-10 text-gray-400" />
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No Pending Reviews</h3>
-            <p className="text-gray-500">All budget requests have been reviewed!</p>
-          </motion.div>
-        ) : (
-          filteredRequests.map((req, index) => (
-            <motion.div
-              key={req.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05 }}
+      {viewMode === "table" ? (
+        <RequestsTable
+          requests={filteredRequests.map(req => ({
+            ...req,
+            requester: {
+              name: req.requester_name || req.requester?.name || "Unknown",
+              email: req.requester?.email,
+              position: req.requester?.position_title,
+              profile_picture: req.requester?.profile_picture,
+            },
+          }))}
+          onView={handleReviewClick}
+          showBudget={true}
+          showDepartment={true}
+          emptyMessage="All budget requests have been reviewed!"
+        />
+      ) : (
+        <div className="space-y-4">
+          {filteredRequests.length === 0 ? (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="bg-white rounded-2xl shadow-lg border border-gray-200 p-16 text-center"
             >
-              <RequestCardEnhanced
-                request={{
-                  id: req.id,
-                  request_number: req.request_number || "—",
-                  file_code: req.file_code,
-                  title: req.title,
-                  purpose: req.purpose || "No purpose indicated",
-                  destination: req.destination,
-                  travel_start_date: req.travel_start_date,
-                  travel_end_date: req.travel_end_date,
-                  status: req.status,
-                  created_at: req.created_at,
-                  admin_processed_at: req.admin_processed_at,
-                  comptroller_approved_at: req.comptroller_approved_at,
-                  total_budget: req.total_budget,
-                  request_type: req.request_type,
-                  requester_name: req.requester_name || req.requester?.name,
-                  requester: {
-                    name: req.requester_name || req.requester?.name || "Unknown",
-                    email: req.requester?.email,
-                    profile_picture: req.requester?.profile_picture,
-                    department: req.department?.name || req.department?.code,
-                    position: req.requester?.position_title,
-                  },
-                  department: req.department,
-                }}
-                showActions={true}
-                onView={() => handleReviewClick(req)}
-                className="border-blue-200 bg-blue-50/20"
-              />
+              <div className="h-20 w-20 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
+                <FileText className="h-10 w-10 text-gray-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">No Pending Reviews</h3>
+              <p className="text-gray-500">All budget requests have been reviewed!</p>
             </motion.div>
-          ))
-        )}
-      </div>
+          ) : (
+            filteredRequests.map((req, index) => (
+              <motion.div
+                key={req.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.05 }}
+              >
+                <RequestCardEnhanced
+                  request={{
+                    id: req.id,
+                    request_number: req.request_number || "—",
+                    file_code: req.file_code,
+                    title: req.title,
+                    purpose: req.purpose || "No purpose indicated",
+                    destination: req.destination,
+                    travel_start_date: req.travel_start_date,
+                    travel_end_date: req.travel_end_date,
+                    status: req.status,
+                    created_at: req.created_at,
+                    admin_processed_at: req.admin_processed_at,
+                    comptroller_approved_at: req.comptroller_approved_at,
+                    total_budget: req.total_budget,
+                    request_type: req.request_type,
+                    requester_name: req.requester_name || req.requester?.name,
+                    requester: {
+                      name: req.requester_name || req.requester?.name || "Unknown",
+                      email: req.requester?.email,
+                      profile_picture: req.requester?.profile_picture,
+                      department: req.department?.name || req.department?.code,
+                      position: req.requester?.position_title,
+                    },
+                    department: req.department,
+                  }}
+                  showActions={true}
+                  onView={() => handleReviewClick(req)}
+                  className="border-blue-200 bg-blue-50/20"
+                />
+              </motion.div>
+            ))
+          )}
+        </div>
+      )}
 
       {/* Review Modal */}
       {showModal && selectedRequest && (

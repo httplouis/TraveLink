@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { createSupabaseClient } from "@/lib/supabase/client";
 import RequestDetailsView from "@/components/common/RequestDetailsView";
 import RequestCardEnhanced from "@/components/common/RequestCardEnhanced";
+import RequestsTable from "@/components/common/RequestsTable";
+import ViewToggle, { ViewMode, useViewMode } from "@/components/common/ViewToggle";
 import type { RequestData } from "@/components/common/RequestDetailsView";
 import { SkeletonRequestCard } from "@/components/common/SkeletonLoader";
 import { createLogger } from "@/lib/debug";
@@ -44,6 +46,7 @@ export default function AdminInboxPage() {
   const [viewedIds, setViewedIds] = React.useState<Set<string>>(new Set());
   const [showApprovalModal, setShowApprovalModal] = React.useState(false);
   const [approvingRequestId, setApprovingRequestId] = React.useState<string | null>(null);
+  const [viewMode, setViewMode] = useViewMode("admin_inbox_view", "cards");
 
   const logger = createLogger("AdminInbox");
 
@@ -843,46 +846,49 @@ export default function AdminInboxPage() {
             </div>
           )}
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setActiveTab("pending")}
-            className={`px-4 py-2 rounded-lg relative ${
-              activeTab === "pending"
-                ? "bg-[#7a1f2a] text-white"
-                : "bg-gray-200 text-gray-700"
-            }`}
-          >
-            Pending ({items.length})
-            {shouldShowPendingAlert(items.length) && (
-              <span className={`absolute -top-1 -right-1 h-3 w-3 rounded-full ${
-                getAlertSeverity(items.length) === 'danger'
-                  ? 'bg-red-500'
-                  : getAlertSeverity(items.length) === 'warning'
-                  ? 'bg-orange-500'
-                  : 'bg-amber-500'
-              } animate-pulse`} />
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab("approved")}
-            className={`px-4 py-2 rounded-lg ${
-              activeTab === "approved"
-                ? "bg-[#7a1f2a] text-white"
-                : "bg-gray-200 text-gray-700"
-            }`}
-          >
-            Approved ({approvedItems.length})
-          </button>
-          <button
-            onClick={() => setActiveTab("history")}
-            className={`px-4 py-2 rounded-lg ${
-              activeTab === "history"
-                ? "bg-[#7a1f2a] text-white"
-                : "bg-gray-200 text-gray-700"
-            }`}
-          >
-            History ({historyItems.length})
-          </button>
+        <div className="flex items-center gap-3">
+          <ViewToggle view={viewMode} onChange={setViewMode} />
+          <div className="flex gap-2">
+            <button
+              onClick={() => setActiveTab("pending")}
+              className={`px-4 py-2 rounded-lg relative ${
+                activeTab === "pending"
+                  ? "bg-[#7a1f2a] text-white"
+                  : "bg-gray-200 text-gray-700"
+              }`}
+            >
+              Pending ({items.length})
+              {shouldShowPendingAlert(items.length) && (
+                <span className={`absolute -top-1 -right-1 h-3 w-3 rounded-full ${
+                  getAlertSeverity(items.length) === 'danger'
+                    ? 'bg-red-500'
+                    : getAlertSeverity(items.length) === 'warning'
+                    ? 'bg-orange-500'
+                    : 'bg-amber-500'
+                } animate-pulse`} />
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab("approved")}
+              className={`px-4 py-2 rounded-lg ${
+                activeTab === "approved"
+                  ? "bg-[#7a1f2a] text-white"
+                  : "bg-gray-200 text-gray-700"
+              }`}
+            >
+              Approved ({approvedItems.length})
+            </button>
+            <button
+              onClick={() => setActiveTab("history")}
+              className={`px-4 py-2 rounded-lg ${
+                activeTab === "history"
+                  ? "bg-[#7a1f2a] text-white"
+                  : "bg-gray-200 text-gray-700"
+              }`}
+            >
+              History ({historyItems.length})
+            </button>
+          </div>
         </div>
       </div>
 
@@ -894,6 +900,22 @@ export default function AdminInboxPage() {
         </div>
       ) : currentItems.length === 0 ? (
         <div className="text-center py-8 text-gray-500">No requests found</div>
+      ) : viewMode === "table" ? (
+        <RequestsTable
+          requests={currentItems.map(req => ({
+            ...req,
+            requester: {
+              name: req.requester?.name || "Unknown",
+              email: req.requester?.email,
+              position: (req as any).requester?.position_title,
+              profile_picture: (req as any).requester?.profile_picture,
+            },
+          }))}
+          onView={(req) => handleViewDetails(req as Request)}
+          showBudget={true}
+          showDepartment={true}
+          emptyMessage="No requests found"
+        />
       ) : (
         <div className="space-y-4">
           {currentItems.map((req) => {

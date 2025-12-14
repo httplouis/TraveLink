@@ -31,18 +31,11 @@ type Expense = {
 };
 
 export default function OrgRequestPage() {
+  // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
+  const toast = useToast();
+  
   // Prevent SSR to avoid build errors
   const [mounted, setMounted] = React.useState(false);
-  
-  React.useEffect(() => {
-    setMounted(true);
-  }, []);
-  
-  if (!mounted) {
-    return null; // Return nothing during SSR
-  }
-  
-  const toast = useToast();
   
   // Form state
   const [requestingPerson, setRequestingPerson] = React.useState("");
@@ -125,6 +118,16 @@ export default function OrgRequestPage() {
   const totalBudget = React.useMemo(() => {
     return expenses.reduce((sum, exp) => sum + exp.amount, 0);
   }, [expenses]);
+
+  // Set mounted after all hooks
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Early return AFTER all hooks are called
+  if (!mounted) {
+    return null;
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

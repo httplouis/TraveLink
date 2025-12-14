@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { PageHeader, PageBody } from "@/components/common/Page";
@@ -40,7 +40,20 @@ const validate = (f: Form): Errors => {
   return e;
 };
 
+// Wrapper component to handle Suspense for useSearchParams
 export default function UserFeedbackPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#7A0010]"></div>
+      </div>
+    }>
+      <UserFeedbackContent />
+    </Suspense>
+  );
+}
+
+function UserFeedbackContent() {
   const searchParams = useSearchParams();
   const requestIdFromUrl = searchParams?.get("request_id") ?? null;
   const [requestNumber, setRequestNumber] = useState<string | null>(null);

@@ -199,34 +199,122 @@ export default function RequestDetailsModalUI({
     if (row?.id && row.status !== "approved") AdminRequestsRepo.setTmNote(row.id, adminNotes || null);
   }, [adminNotes, row?.id, row?.status]);
   
-  // Fetch real drivers and vehicles
+  // Enhanced driver/vehicle types with availability info
+  type DriverWithAvailability = {
+    id: string;
+    name: string;
+    email?: string;
+    isAvailable: boolean;
+    conflicts: { requestNumber: string; destination: string; dates: string; requesterName: string }[];
+    canShare: boolean;
+    sharedTrips: { requestNumber: string; destination: string; dates: string; requesterName: string }[];
+  };
+  
+  type VehicleWithAvailability = {
+    id: string;
+    label: string;
+    plateNumber: string;
+    vehicleName: string;
+    type: string;
+    capacity: number;
+    isAvailable: boolean;
+    isCodingDay: boolean;
+    codingDay?: string;
+    conflicts: { requestNumber: string; destination: string; dates: string; requesterName: string }[];
+    canShare: boolean;
+    sharedTrips: { requestNumber: string; destination: string; dates: string; requesterName: string }[];
+  };
+  
+  const [driversWithAvailability, setDriversWithAvailability] = React.useState<DriverWithAvailability[]>([]);
+  const [vehiclesWithAvailability, setVehiclesWithAvailability] = React.useState<VehicleWithAvailability[]>([]);
+  
+  // Fetch real drivers and vehicles with availability status
   React.useEffect(() => {
     async function fetchOptions() {
       try {
         setLoadingOptions(true);
         
-        // Get travel date from request for coding day filtering
-        const travelDate = (row as any)?.travel_start_date 
+        // Get travel dates and destination from request
+        const startDate = (row as any)?.travel_start_date 
           ? new Date((row as any).travel_start_date).toISOString().split('T')[0]
           : null;
+        const endDate = (row as any)?.travel_end_date 
+          ? new Date((row as any).travel_end_date).toISOString().split('T')[0]
+          : startDate;
+        const destination = (row as any)?.destination || '';
+        const requestId = (row as any)?.id;
         
+        // Use the new availability API if we have dates
+        if (startDate && endDate) {
+          const params = new URLSearchParams({
+            start_date: startDate,
+            end_date: endDate,
+          });
+          if (destination) params.append('destination', destination);
+          if (requestId) params.append('exclude_request_id', requestId);
+          
+          const availabilityRes = await fetch(`/api/admin/availability?${params.toString()}`);
+          
+          if (availabilityRes.ok) {
+            const availabilityData = await availabilityRes.json();
+            if (availabilityData.ok && availabilityData.data) {
+              setDriversWithAvailability(availabilityData.data.drivers || []);
+              setVehiclesWithAvailability(availabilityData.data.vehicles || []);
+              
+              // Also set the basic arrays for backwards compatibility
+              setDrivers((availabilityData.data.drivers || []).map((d: DriverWithAvailability) => ({ id: d.id, name: d.name })));
+              setVehicles((availabilityData.data.vehicles || []).map((v: VehicleWithAvailability) => ({ id: v.id, label: v.label })));
+              
+              console.log(`[RequestDetailsModal] Loaded ${availabilityData.data.drivers?.length || 0} drivers and ${availabilityData.data.vehicles?.length || 0} vehicles with availability`);
+              return;
+            }
+          }
+        }
+        
+        // Fallback to original API if availability API fails or no dates
         const [driversRes, vehiclesRes] = await Promise.all([
           fetch('/api/drivers'),
-          fetch(travelDate 
-            ? `/api/vehicles?status=available&date=${encodeURIComponent(travelDate)}`
+          fetch(startDate 
+            ? `/api/vehicles?status=available&date=${encodeURIComponent(startDate)}`
             : '/api/vehicles?status=available'
           )
         ]);
         
         if (driversRes.ok) {
           const driversData = await driversRes.json();
-          setDrivers(driversData.ok && driversData.data ? driversData.data : []);
+          const driversList = driversData.ok && driversData.data ? driversData.data : [];
+          setDrivers(driversList);
+          // Create availability wrapper with all available
+          setDriversWithAvailability(driversList.map((d: any) => ({
+            id: d.id,
+            name: d.name,
+            email: d.email,
+            isAvailable: true,
+            conflicts: [],
+            canShare: false,
+            sharedTrips: [],
+          })));
         }
         
         if (vehiclesRes.ok) {
           const vehiclesData = await vehiclesRes.json();
-          setVehicles(vehiclesData.ok && vehiclesData.data ? vehiclesData.data : []);
-          console.log(`[RequestDetailsModal] Loaded ${vehiclesData.data?.length || 0} vehicles${travelDate ? ` for date ${travelDate}` : ''}`);
+          const vehiclesList = vehiclesData.ok && vehiclesData.data ? vehiclesData.data : [];
+          setVehicles(vehiclesList);
+          // Create availability wrapper with all available
+          setVehiclesWithAvailability(vehiclesList.map((v: any) => ({
+            id: v.id,
+            label: v.label,
+            plateNumber: v.plate_number || v.plateNumber || '',
+            vehicleName: v.vehicle_name || v.vehicleName || '',
+            type: v.type || '',
+            capacity: v.capacity || 0,
+            isAvailable: true,
+            isCodingDay: false,
+            conflicts: [],
+            canShare: false,
+            sharedTrips: [],
+          })));
+          console.log(`[RequestDetailsModal] Loaded ${vehiclesList.length || 0} vehicles (fallback)`);
         }
       } catch (err) {
         console.error('[RequestDetailsModal] Failed to fetch options:', err);
@@ -1933,13 +2021,58 @@ export default function RequestDetailsModalUI({
                       {loadingOptions ? (
                         <option disabled>Loading...</option>
                       ) : (
-                        drivers.map((d) => (
-                          <option key={d.id} value={d.id}>
-                            {d.name}
-                          </option>
-                        ))
+                        driversWithAvailability.map((d) => {
+                          const statusIcon = d.isAvailable ? "✅" : d.canShare ? "🔄" : "🚫";
+                          const statusText = d.isAvailable 
+                            ? "" 
+                            : d.canShare 
+                              ? ` [Can share: ${d.sharedTrips[0]?.requestNumber || 'trip'}]`
+                              : ` [Busy: ${d.conflicts[0]?.requestNumber || 'assigned'}]`;
+                          return (
+                            <option 
+                              key={d.id} 
+                              value={d.id}
+                              style={{ 
+                                color: d.isAvailable ? 'inherit' : d.canShare ? '#0066cc' : '#999',
+                                fontWeight: d.canShare ? 'bold' : 'normal'
+                              }}
+                            >
+                              {statusIcon} {d.name}{statusText}
+                            </option>
+                          );
+                        })
                       )}
                     </select>
+                    {/* Show conflict/share info for selected driver */}
+                    {driver && (() => {
+                      const selectedDriver = driversWithAvailability.find(d => d.id === driver);
+                      if (selectedDriver && !selectedDriver.isAvailable) {
+                        if (selectedDriver.canShare) {
+                          return (
+                            <div className="mt-1 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
+                              <p className="font-medium text-blue-700">🔄 Can share trip with:</p>
+                              {selectedDriver.sharedTrips.map((trip, i) => (
+                                <p key={i} className="text-blue-600 mt-0.5">
+                                  {trip.requestNumber} → {trip.destination} ({trip.dates})
+                                </p>
+                              ))}
+                            </div>
+                          );
+                        } else {
+                          return (
+                            <div className="mt-1 p-2 bg-amber-50 border border-amber-200 rounded text-xs">
+                              <p className="font-medium text-amber-700">⚠️ Driver has conflicting assignments:</p>
+                              {selectedDriver.conflicts.map((c, i) => (
+                                <p key={i} className="text-amber-600 mt-0.5">
+                                  {c.requestNumber} → {c.destination} ({c.dates})
+                                </p>
+                              ))}
+                            </div>
+                          );
+                        }
+                      }
+                      return null;
+                    })()}
                     {isApproved && (driver !== ((row as any)?.assigned_driver_id || "")) && (
                       <p className="text-xs text-amber-600 mt-1">⚠️ Changes will update assignment</p>
                     )}
@@ -1955,13 +2088,69 @@ export default function RequestDetailsModalUI({
                       {loadingOptions ? (
                         <option disabled>Loading...</option>
                       ) : (
-                        vehicles.map((v) => (
-                          <option key={v.id} value={v.id}>
-                            {v.label}
-                          </option>
-                        ))
+                        vehiclesWithAvailability.map((v) => {
+                          const statusIcon = v.isCodingDay ? "🚫" : v.isAvailable ? "✅" : v.canShare ? "🔄" : "🚫";
+                          const statusText = v.isCodingDay 
+                            ? ` [Coding Day: ${v.codingDay}]`
+                            : v.isAvailable 
+                              ? "" 
+                              : v.canShare 
+                                ? ` [Can share: ${v.sharedTrips[0]?.requestNumber || 'trip'}]`
+                                : ` [Busy: ${v.conflicts[0]?.requestNumber || 'assigned'}]`;
+                          return (
+                            <option 
+                              key={v.id} 
+                              value={v.id}
+                              style={{ 
+                                color: v.isCodingDay ? '#cc0000' : v.isAvailable ? 'inherit' : v.canShare ? '#0066cc' : '#999',
+                                fontWeight: v.canShare ? 'bold' : 'normal'
+                              }}
+                            >
+                              {statusIcon} {v.label}{statusText}
+                            </option>
+                          );
+                        })
                       )}
                     </select>
+                    {/* Show conflict/share info for selected vehicle */}
+                    {vehicle && (() => {
+                      const selectedVehicle = vehiclesWithAvailability.find(v => v.id === vehicle);
+                      if (selectedVehicle) {
+                        if (selectedVehicle.isCodingDay) {
+                          return (
+                            <div className="mt-1 p-2 bg-red-50 border border-red-200 rounded text-xs">
+                              <p className="font-medium text-red-700">🚫 Vehicle has coding day on {selectedVehicle.codingDay}</p>
+                              <p className="text-red-600 mt-0.5">This vehicle cannot be used on this date.</p>
+                            </div>
+                          );
+                        } else if (!selectedVehicle.isAvailable) {
+                          if (selectedVehicle.canShare) {
+                            return (
+                              <div className="mt-1 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
+                                <p className="font-medium text-blue-700">🔄 Can share trip with:</p>
+                                {selectedVehicle.sharedTrips.map((trip, i) => (
+                                  <p key={i} className="text-blue-600 mt-0.5">
+                                    {trip.requestNumber} → {trip.destination} ({trip.dates})
+                                  </p>
+                                ))}
+                              </div>
+                            );
+                          } else {
+                            return (
+                              <div className="mt-1 p-2 bg-amber-50 border border-amber-200 rounded text-xs">
+                                <p className="font-medium text-amber-700">⚠️ Vehicle has conflicting assignments:</p>
+                                {selectedVehicle.conflicts.map((c, i) => (
+                                  <p key={i} className="text-amber-600 mt-0.5">
+                                    {c.requestNumber} → {c.destination} ({c.dates})
+                                  </p>
+                                ))}
+                              </div>
+                            );
+                          }
+                        }
+                      }
+                      return null;
+                    })()}
                     {isApproved && (vehicle !== ((row as any)?.assigned_vehicle_id || "")) && (
                       <p className="text-xs text-amber-600 mt-1">⚠️ Changes will update assignment</p>
                     )}
