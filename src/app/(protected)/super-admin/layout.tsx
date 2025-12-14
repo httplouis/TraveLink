@@ -3,6 +3,7 @@
 
 import "@/app/globals.css";
 import SuperAdminNav from "@/components/super-admin/nav/SuperAdminNav";
+import HelpButton from "@/components/common/HelpButton";
 import { Shield, Search, LogOut } from "lucide-react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
@@ -88,6 +89,9 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
             </main>
           </div>
         </div>
+
+        {/* Help Button */}
+        <HelpButton role="admin" />
       </div>
     </>
   );

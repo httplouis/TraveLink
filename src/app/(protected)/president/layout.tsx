@@ -5,11 +5,33 @@ import PresidentTopBar from "@/components/president/nav/PresidentTopBar";
 import PresidentLeftNav from "@/components/president/nav/PresidentLeftNav";
 import PageTitle from "@/components/common/PageTitle";
 import ChatbotWidget from "@/components/ai/ChatbotWidget";
+import HelpButton from "@/components/common/HelpButton";
+import FeedbackLockModal from "@/components/common/FeedbackLockModal";
+import { checkFeedbackLock } from "@/lib/feedback/lock";
+import { usePathname } from "next/navigation";
 import ToastProvider from "@/components/common/ui/ToastProvider.ui";
 import "leaflet/dist/leaflet.css";
 
 export default function PresidentLayout({ children }: { children: React.ReactNode }) {
   const topbarH = "56px";
+  const pathname = usePathname();
+  const [feedbackLock, setFeedbackLock] = React.useState<{
+    locked: boolean;
+    requestId?: string;
+    requestNumber?: string;
+    message?: string;
+  }>({ locked: false });
+
+  // Check for feedback lock
+  React.useEffect(() => {
+    const checkLock = async () => {
+      const lockStatus = await checkFeedbackLock();
+      setFeedbackLock(lockStatus);
+    };
+    checkLock();
+    const interval = setInterval(checkLock, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [pathname]);
 
   return (
     <ToastProvider>
@@ -38,6 +60,19 @@ export default function PresidentLayout({ children }: { children: React.ReactNod
 
         {/* AI Chatbot Widget */}
         <ChatbotWidget />
+
+        {/* Help Button */}
+        <HelpButton role="president" />
+
+        {/* Feedback Lock Modal */}
+        {feedbackLock.locked && feedbackLock.requestId && pathname && !pathname.startsWith("/user/feedback") && (
+          <FeedbackLockModal
+            open={true}
+            requestId={feedbackLock.requestId}
+            requestNumber={feedbackLock.requestNumber}
+            message={feedbackLock.message}
+          />
+        )}
       </div>
     </ToastProvider>
   );

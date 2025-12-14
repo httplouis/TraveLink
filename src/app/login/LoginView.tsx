@@ -46,38 +46,56 @@ export default function LoginView({
       }}
     >
       {/* University Name and Logo - Upper Left, Outside Panel */}
-      <div className="absolute top-3 left-3 sm:top-6 sm:left-6 z-20">
-        <div className="logo flex items-center gap-1 sm:gap-2">
+      {/* Hidden until xl breakpoint (1280px+) to prevent overlap with login form */}
+      <div className="absolute top-6 left-6 z-20 hidden xl:block">
+        <div className="logo flex items-center gap-2">
           {/* Circular Seal Logo */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/eulogo.png"
             alt="Logo"
-            className="h-12 w-12 sm:h-16 sm:w-16 md:h-20 md:w-20 lg:h-24 lg:w-24 object-contain drop-shadow-lg"
+            className="h-20 w-20 2xl:h-24 2xl:w-24 object-contain drop-shadow-lg"
             onError={(e) => {
               (e.target as HTMLImageElement).style.display = 'none';
             }}
           />
           {/* University Name - Matching Official HTML Structure */}
-          <p className="notranslate text-white drop-shadow-lg hidden sm:block" style={{
+          <p className="notranslate text-white drop-shadow-lg" style={{
             fontFamily: 'Arial, Helvetica, sans-serif',
             letterSpacing: '0.03em',
             fontWeight: 900,
-            fontSize: 'clamp(0.9rem, 2vw, 1.8rem)',
+            fontSize: 'clamp(1rem, 1.5vw, 1.8rem)',
             lineHeight: '1'
           }}>
-            <span style={{ fontSize: 'clamp(1rem, 2.2vw, 2rem)', display: 'block' }}>ENVERGA</span>
-            <span style={{ fontSize: 'clamp(0.9rem, 2vw, 1.8rem)', display: 'block', marginTop: '0.05rem' }}>UNIVERSITY</span>
+            <span style={{ fontSize: 'clamp(1.1rem, 1.6vw, 2rem)', display: 'block' }}>ENVERGA</span>
+            <span style={{ fontSize: 'clamp(1rem, 1.5vw, 1.8rem)', display: 'block', marginTop: '0.05rem' }}>UNIVERSITY</span>
           </p>
         </div>
       </div>
 
-      <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-0 rounded-xl sm:rounded-2xl shadow-2xl overflow-hidden bg-white mt-12 sm:mt-0">
+      <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-0 rounded-xl sm:rounded-2xl shadow-2xl overflow-hidden bg-white my-4 sm:my-0">
         {/* LEFT: Login Form */}
         <div className="flex flex-col justify-center p-4 sm:p-6 md:p-8 lg:p-10 bg-white max-w-md mx-auto w-full">
+          {/* University Logo - shown inside form on screens below xl (1280px) */}
+          <div className="flex items-center justify-center gap-2 mb-3 xl:hidden">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/eulogo.png"
+              alt="University Logo"
+              className="h-10 w-10 object-contain"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = 'none';
+              }}
+            />
+            <p className="notranslate text-[#7A0010] font-bold text-sm leading-tight">
+              <span className="block">ENVERGA</span>
+              <span className="block">UNIVERSITY</span>
+            </p>
+          </div>
+
           {/* Logo and Branding */}
           <div className="mb-4 sm:mb-6">
-            <div className="flex items-center gap-2 sm:gap-3 mb-2 sm:mb-3">
+            <div className="flex items-center justify-center xl:justify-start gap-2 sm:gap-3 mb-2 sm:mb-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src="/travelink.png"
@@ -97,7 +115,7 @@ export default function LoginView({
           </div>
 
           {/* Welcome Text */}
-          <div className="mb-4 sm:mb-6">
+          <div className="mb-4 sm:mb-6 text-center xl:text-left">
             <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-1 sm:mb-2">Welcome back</h2>
             <p className="text-sm sm:text-base text-gray-600">Sign in to access your account</p>
           </div>

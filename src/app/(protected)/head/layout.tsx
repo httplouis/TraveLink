@@ -6,11 +6,38 @@ import HeadTopBar from "@/components/head/nav/HeadTopBar";
 import HeadLeftNav from "@/components/head/nav/HeadLeftNav";
 import PageTitle from "@/components/common/PageTitle";
 import ChatbotWidget from "@/components/ai/ChatbotWidget";
+import HelpButton from "@/components/common/HelpButton";
+import FeedbackLockModal from "@/components/common/FeedbackLockModal";
+import { checkFeedbackLock } from "@/lib/feedback/lock";
+import { usePathname } from "next/navigation";
 import ToastProvider from "@/components/common/ui/ToastProvider.ui";
 import "leaflet/dist/leaflet.css";
 
 export default function HeadLayout({ children }: { children: React.ReactNode }) {
   const topbarH = "56px";
+  const pathname = usePathname();
+  const [feedbackLock, setFeedbackLock] = React.useState<{
+    locked: boolean;
+    requestId?: string;
+    requestNumber?: string;
+    message?: string;
+  }>({ locked: false });
+
+  // Check for feedback lock on mount, on pathname change, and periodically
+  React.useEffect(() => {
+    const checkLock = async () => {
+      console.log("[Head Layout] Checking feedback lock status...");
+      const lockStatus = await checkFeedbackLock();
+      console.log("[Head Layout] Lock status:", lockStatus);
+      setFeedbackLock(lockStatus);
+    };
+
+    checkLock();
+    // Check every 5 minutes
+    const interval = setInterval(checkLock, 5 * 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, [pathname]);
 
   return (
     <ToastProvider>
@@ -39,6 +66,22 @@ export default function HeadLayout({ children }: { children: React.ReactNode }) 
 
         {/* AI Chatbot Widget */}
         <ChatbotWidget />
+
+        {/* Help Button */}
+        <HelpButton role="head" />
+
+        {/* Feedback Lock Modal - Forces feedback before continuing */}
+        {feedbackLock.locked &&
+          feedbackLock.requestId &&
+          pathname &&
+          !pathname.startsWith("/user/feedback") && (
+            <FeedbackLockModal
+              open={true}
+              requestId={feedbackLock.requestId}
+              requestNumber={feedbackLock.requestNumber}
+              message={feedbackLock.message}
+            />
+          )}
       </div>
     </ToastProvider>
   );

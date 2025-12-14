@@ -6,11 +6,33 @@ import ExecTopBar from "@/components/exec/nav/ExecTopBar";
 import ExecLeftNav from "@/components/exec/nav/ExecLeftNav";
 import PageTitle from "@/components/common/PageTitle";
 import ChatbotWidget from "@/components/ai/ChatbotWidget";
+import HelpButton from "@/components/common/HelpButton";
+import FeedbackLockModal from "@/components/common/FeedbackLockModal";
+import { checkFeedbackLock } from "@/lib/feedback/lock";
+import { usePathname } from "next/navigation";
 import ToastProvider from "@/components/common/ui/ToastProvider.ui";
 import "leaflet/dist/leaflet.css";
 
 export default function ExecLayout({ children }: { children: React.ReactNode }) {
   const topbarH = "56px";
+  const pathname = usePathname();
+  const [feedbackLock, setFeedbackLock] = React.useState<{
+    locked: boolean;
+    requestId?: string;
+    requestNumber?: string;
+    message?: string;
+  }>({ locked: false });
+
+  // Check for feedback lock on mount, on pathname change, and periodically
+  React.useEffect(() => {
+    const checkLock = async () => {
+      const lockStatus = await checkFeedbackLock();
+      setFeedbackLock(lockStatus);
+    };
+    checkLock();
+    const interval = setInterval(checkLock, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [pathname]);
 
   return (
     <ToastProvider>
@@ -39,6 +61,19 @@ export default function ExecLayout({ children }: { children: React.ReactNode }) 
 
       {/* AI Chatbot Widget */}
       <ChatbotWidget />
+
+      {/* Help Button */}
+      <HelpButton role="exec" />
+
+      {/* Feedback Lock Modal */}
+      {feedbackLock.locked && feedbackLock.requestId && pathname && !pathname.startsWith("/user/feedback") && (
+        <FeedbackLockModal
+          open={true}
+          requestId={feedbackLock.requestId}
+          requestNumber={feedbackLock.requestNumber}
+          message={feedbackLock.message}
+        />
+      )}
     </div>
     </ToastProvider>
   );

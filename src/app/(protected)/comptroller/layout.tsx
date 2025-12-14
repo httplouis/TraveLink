@@ -1,10 +1,15 @@
 // src/app/(protected)/comptroller/layout.tsx
 "use client";
 
+import React from "react";
 import { LogOut } from "lucide-react";
 import ChatbotWidget from "@/components/ai/ChatbotWidget";
+import HelpButton from "@/components/common/HelpButton";
 import ComptrollerLeftNav from "@/components/comptroller/nav/ComptrollerLeftNav";
 import ComptrollerTopBar from "@/components/comptroller/nav/ComptrollerTopBar";
+import FeedbackLockModal from "@/components/common/FeedbackLockModal";
+import { checkFeedbackLock } from "@/lib/feedback/lock";
+import { usePathname } from "next/navigation";
 import ToastProvider from "@/components/common/ui/ToastProvider.ui";
 import { useRouter } from "next/navigation";
 
@@ -14,6 +19,24 @@ export default function ComptrollerLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const [feedbackLock, setFeedbackLock] = React.useState<{
+    locked: boolean;
+    requestId?: string;
+    requestNumber?: string;
+    message?: string;
+  }>({ locked: false });
+
+  // Check for feedback lock
+  React.useEffect(() => {
+    const checkLock = async () => {
+      const lockStatus = await checkFeedbackLock();
+      setFeedbackLock(lockStatus);
+    };
+    checkLock();
+    const interval = setInterval(checkLock, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [pathname]);
 
   const handleLogout = async () => {
     try {
@@ -59,6 +82,19 @@ export default function ComptrollerLayout({
 
         {/* AI Chatbot Widget */}
         <ChatbotWidget />
+
+        {/* Help Button */}
+        <HelpButton role="comptroller" />
+
+        {/* Feedback Lock Modal */}
+        {feedbackLock.locked && feedbackLock.requestId && pathname && !pathname.startsWith("/user/feedback") && (
+          <FeedbackLockModal
+            open={true}
+            requestId={feedbackLock.requestId}
+            requestNumber={feedbackLock.requestNumber}
+            message={feedbackLock.message}
+          />
+        )}
       </div>
     </ToastProvider>
   );

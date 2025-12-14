@@ -7,9 +7,8 @@
 "use client";
 
 import React from "react";
-import { X, AlertCircle, MessageSquare } from "lucide-react";
+import { AlertCircle, MessageSquare } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import Link from "next/link";
 
 interface FeedbackLockModalProps {
   open: boolean;
@@ -87,18 +86,17 @@ export default function FeedbackLockModal({
               </p>
             </div>
             <div className="flex items-center justify-center">
-              <Link
-                href={`/user/feedback?request_id=${requestId}&locked=true`}
-                className="px-8 py-4 bg-gradient-to-r from-[#7A0010] to-[#9c2a3a] text-white font-semibold rounded-lg hover:shadow-xl hover:scale-105 active:scale-95 transition-all duration-200 flex items-center gap-3 text-lg relative z-10 cursor-pointer"
-                onClick={(e) => {
-                  // Ensure navigation happens
+              <button
+                onClick={() => {
                   console.log('[FeedbackLockModal] Navigating to feedback page');
+                  window.location.href = `/user/feedback?request_id=${requestId}&locked=true`;
                 }}
+                className="px-8 py-4 bg-gradient-to-r from-[#7A0010] to-[#9c2a3a] text-white font-semibold rounded-lg hover:shadow-xl hover:scale-105 active:scale-95 transition-all duration-200 flex items-center gap-3 text-lg relative z-10 cursor-pointer"
               >
                 <MessageSquare className="h-5 w-5" />
                 Provide Feedback Now
                 <span className="ml-2 animate-pulse">→</span>
-              </Link>
+              </button>
             </div>
           </div>
 

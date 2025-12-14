@@ -12,6 +12,7 @@ import PageTitle from "@/components/common/PageTitle";
 import { Search, LogOut } from "lucide-react";
 import ProfileContainer from "@/components/admin/profile/containers/ProfileContainer";
 import ChatbotWidget from "@/components/ai/ChatbotWidget";
+import HelpButton from "@/components/common/HelpButton";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const handleLogout = async () => {
@@ -132,6 +133,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       {/* AI Chatbot Widget */}
       <ChatbotWidget />
+
+      {/* Help Button */}
+      <HelpButton role="admin" />
     </div>
     </>
   );

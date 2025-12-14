@@ -19,7 +19,7 @@ export async function GET(request: Request) {
     // Get user profile
     const { data: profile } = await supabase
       .from("users")
-      .select("id, name, email, is_admin")
+      .select("id, name, email, role, is_admin")
       .eq("auth_user_id", user.id)
       .single();
 
@@ -27,8 +27,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: false, error: "Profile not found" }, { status: 404 });
     }
 
-    // Only admin can access this
-    if (!profile.is_admin) {
+    // Only admin can access this (check both role and flag)
+    const isAdmin = profile.is_admin || (profile as any).role === 'admin';
+    if (!isAdmin) {
       return NextResponse.json({ ok: false, error: "Admin access required" }, { status: 403 });
     }
 

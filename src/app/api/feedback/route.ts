@@ -55,27 +55,48 @@ export async function POST(request: Request) {
     const supabase = await createSupabaseServerClient(true);
     const body = await request.json();
     
+    // Log incoming data for debugging
+    console.log("[POST /api/feedback] Received body:", {
+      user_id: body.user_id || body.userId,
+      trip_id: body.trip_id || body.tripId,
+      category: body.category,
+      rating: body.rating,
+      message: body.message?.substring(0, 50) + "...",
+    });
+    
+    // Validate required fields
+    if (!body.message || body.message.trim().length < 10) {
+      return NextResponse.json({ ok: false, error: "Message must be at least 10 characters" }, { status: 400 });
+    }
+    
+    const insertData: any = {
+      user_id: body.user_id || body.userId || null,
+      user_name: body.user_name || body.userName || "Anonymous",
+      user_email: body.user_email || body.userEmail || null,
+      trip_id: body.trip_id || body.tripId || null,
+      driver_id: body.driver_id || body.driverId || null,
+      vehicle_id: body.vehicle_id || body.vehicleId || null,
+      rating: body.rating || null,
+      message: body.message,
+      category: body.category || "general",
+      status: "new",
+    };
+    
+    // Log what we're inserting
+    console.log("[POST /api/feedback] Inserting:", insertData);
+    
     const { data, error } = await supabase
       .from("feedback")
-      .insert({
-        user_id: body.user_id || body.userId,
-        user_name: body.user_name || body.userName || "Anonymous",
-        user_email: body.user_email || body.userEmail,
-        trip_id: body.trip_id || body.tripId,
-        driver_id: body.driver_id || body.driverId,
-        vehicle_id: body.vehicle_id || body.vehicleId,
-        rating: body.rating,
-        message: body.message,
-        category: body.category || "general",
-        status: "new",
-      })
+      .insert(insertData)
       .select()
       .single();
     
     if (error) {
-      console.error("[POST /api/feedback] Error:", error);
+      console.error("[POST /api/feedback] Supabase error:", error);
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
+    
+    console.log("[POST /api/feedback] Success! Inserted feedback ID:", data?.id);
     
     return NextResponse.json({ ok: true, data });
   } catch (err: any) {

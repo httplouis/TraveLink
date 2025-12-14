@@ -68,6 +68,9 @@ function isAllowed(me: Me, path: string): boolean {
   // Check comptroller by role, flag, or email
   const isComptroller = me.role === "comptroller" || me.is_comptroller || comptrollerEmails.includes((me as any).email);
   
+  // Allow ALL authenticated users to access the feedback page (universal feature)
+  if (path.startsWith("/user/feedback")) return true;
+  
   // Strict role-based access - each role can ONLY access their designated pages
   // Super Admin: is_admin = true AND role = 'admin' → /super-admin
   if (path.startsWith("/super-admin")) return isSuperAdmin;

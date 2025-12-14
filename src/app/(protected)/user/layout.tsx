@@ -6,8 +6,10 @@ import TopBar from "@/components/user/nav/TopBar";
 import UserLeftNav from "@/components/user/nav/UserLeftNav";
 import PageTitle from "@/components/common/PageTitle";
 import ChatbotWidget from "@/components/ai/ChatbotWidget";
+import HelpButton from "@/components/common/HelpButton";
 import FeedbackLockModal from "@/components/common/FeedbackLockModal";
 import { checkFeedbackLock } from "@/lib/feedback/lock";
+import { usePathname } from "next/navigation";
 import "leaflet/dist/leaflet.css";
 
 // Keep Toasts at this level
@@ -15,6 +17,7 @@ import ToastProvider from "@/components/common/ui/ToastProvider.ui";
 
 export default function UserLayout({ children }: { children: React.ReactNode }) {
   const topbarH = "56px";
+  const pathname = usePathname();
   const [feedbackLock, setFeedbackLock] = React.useState<{
     locked: boolean;
     requestId?: string;
@@ -61,10 +64,12 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
     };
   }, []);
 
-  // Check for feedback lock on mount and periodically
+  // Check for feedback lock on mount, on pathname change, and periodically
   React.useEffect(() => {
     const checkLock = async () => {
+      console.log("[Layout] Checking feedback lock status...");
       const lockStatus = await checkFeedbackLock();
+      console.log("[Layout] Lock status:", lockStatus);
       setFeedbackLock(lockStatus);
     };
 
@@ -73,7 +78,7 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
     const interval = setInterval(checkLock, 5 * 60 * 1000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [pathname]); // Re-check when pathname changes (e.g., after submitting feedback)
 
   return (
     <ToastProvider>
@@ -103,15 +108,21 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
         {/* AI Chatbot Widget */}
         <ChatbotWidget />
 
+        {/* Help Button */}
+        <HelpButton role="user" />
+
         {/* Feedback Lock Modal - Forces feedback before continuing */}
-        {feedbackLock.locked && feedbackLock.requestId && (
-          <FeedbackLockModal
-            open={true}
-            requestId={feedbackLock.requestId}
-            requestNumber={feedbackLock.requestNumber}
-            message={feedbackLock.message}
-          />
-        )}
+        {feedbackLock.locked &&
+          feedbackLock.requestId &&
+          pathname &&
+          !pathname.startsWith("/user/feedback") && (
+            <FeedbackLockModal
+              open={true}
+              requestId={feedbackLock.requestId}
+              requestNumber={feedbackLock.requestNumber}
+              message={feedbackLock.message}
+            />
+          )}
       </div>
     </ToastProvider>
   );

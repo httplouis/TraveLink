@@ -25,6 +25,7 @@ export async function checkFeedbackLock(): Promise<FeedbackLockStatus> {
     // Get current user
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
+      console.log("[Feedback Lock] No authenticated user");
       return { locked: false };
     }
 
@@ -36,8 +37,11 @@ export async function checkFeedbackLock(): Promise<FeedbackLockStatus> {
       .single();
 
     if (!profile) {
+      console.log("[Feedback Lock] No profile found for user:", user.id);
       return { locked: false };
     }
+
+    console.log("[Feedback Lock] Checking for user profile.id:", profile.id);
 
     // Find completed trips that need feedback
     // Trip is completed if:
@@ -49,7 +53,7 @@ export async function checkFeedbackLock(): Promise<FeedbackLockStatus> {
     oneDayAgo.setDate(oneDayAgo.getDate() - 1);
 
     // Find approved requests where travel ended at least 1 day ago
-    const { data: completedRequests } = await supabase
+    const { data: completedRequests, error: requestsError } = await supabase
       .from("requests")
       .select("id, request_number, travel_end_date, status")
       .eq("requester_id", profile.id)
@@ -58,24 +62,59 @@ export async function checkFeedbackLock(): Promise<FeedbackLockStatus> {
       .order("travel_end_date", { ascending: false })
       .limit(1);
 
+    if (requestsError) {
+      console.error("[Feedback Lock] Error fetching requests:", requestsError);
+      return { locked: false };
+    }
+
     if (!completedRequests || completedRequests.length === 0) {
+      console.log("[Feedback Lock] No completed trips found for user");
       return { locked: false };
     }
 
     const latestRequest = completedRequests[0];
+    console.log("[Feedback Lock] Found completed trip:", {
+      id: latestRequest.id,
+      request_number: latestRequest.request_number,
+      travel_end_date: latestRequest.travel_end_date
+    });
 
-    // Check if feedback already exists
-    const { data: existingFeedback } = await supabase
+    // Check if feedback already exists for this completed trip
+    // First, let's see ALL feedback for debugging
+    const { data: allFeedback, error: allFeedbackError } = await supabase
       .from("feedback")
-      .select("id")
-      .eq("trip_id", latestRequest.id)
-      .eq("user_id", profile.id)
-      .maybeSingle();
+      .select("id, trip_id, user_id, created_at")
+      .order("created_at", { ascending: false })
+      .limit(5);
+    
+    console.log("[Feedback Lock] Recent feedback records:", allFeedback);
+    if (allFeedbackError) {
+      console.error("[Feedback Lock] Error fetching all feedback:", allFeedbackError);
+    }
 
-    if (existingFeedback) {
-      // Feedback already provided, no lock needed
+    // Now check for this specific trip (use limit(1) instead of maybeSingle to handle multiple records)
+    // We check if ANY feedback exists for this trip - the requester is responsible for providing it
+    const { data: existingFeedback, error: feedbackError } = await supabase
+      .from("feedback")
+      .select("id, trip_id, user_id, created_at")
+      .eq("trip_id", latestRequest.id)
+      .limit(1);
+
+    console.log("[Feedback Lock] Checking for trip_id:", latestRequest.id);
+    console.log("[Feedback Lock] Found feedback for this trip:", existingFeedback);
+
+    if (feedbackError) {
+      console.error("[Feedback Lock] Error checking feedback:", feedbackError.message || feedbackError);
       return { locked: false };
     }
+
+    if (existingFeedback && existingFeedback.length > 0) {
+      // Feedback already provided, no lock needed
+      console.log("[Feedback Lock] Feedback already exists:", existingFeedback[0]);
+      return { locked: false };
+    }
+
+    console.log("[Feedback Lock] No feedback found for trip, locking UI");
 
     // User needs to provide feedback - lock UI
     return {
