@@ -13,10 +13,25 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET() {
   try {
+    // Verify environment variables
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error("[GET /api/user/dashboard/stats] Missing environment variables:", {
+        hasUrl: !!supabaseUrl,
+        hasServiceKey: !!supabaseServiceKey
+      });
+      return NextResponse.json({ 
+        ok: false, 
+        error: "Server configuration error" 
+      }, { status: 500 });
+    }
+    
     // Use service role client to bypass RLS for stats queries
     const supabaseServiceRole = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      supabaseUrl,
+      supabaseServiceKey,
       {
         auth: {
           autoRefreshToken: false,
