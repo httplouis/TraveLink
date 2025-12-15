@@ -986,19 +986,39 @@ export async function PATCH(
     const isRequester = request.requester_id === profile.id || request.submitted_by_user_id === profile.id;
     const isReturned = request.status === "returned";
     
+    // Debug logging for permission check
+    console.log("[PATCH /api/requests] Permission check:", {
+      profileId: profile.id,
+      profileEmail: profile.email,
+      requesterId: request.requester_id,
+      submittedById: request.submitted_by_user_id,
+      requestStatus: request.status,
+      isAdmin,
+      isRequester,
+      isReturned,
+      isCancellation,
+    });
+    
     // Allow cancellation if user is requester AND request is still pending
     // Allow editing if user is requester AND request is returned (preserves signatures)
     // Admin can edit requests at ANY stage (pending, processing, approved)
     if (isCancellation && isRequester && (request.status.startsWith("pending_") || request.status === "draft" || request.status === "returned")) {
       // Requester can cancel their own pending/draft/returned requests - allow this
+      console.log("[PATCH /api/requests] ✅ Allowing cancellation by requester");
     } else if (isReturned && isRequester) {
       // Requester can edit returned requests - allow this
       // Note: Signatures are preserved when request is returned
+      console.log("[PATCH /api/requests] ✅ Allowing edit of returned request by requester");
     } else if (!isAdmin) {
+      console.log("[PATCH /api/requests] ❌ Blocking non-admin edit:", {
+        reason: isReturned ? "isRequester is false" : "request not returned and user not admin",
+      });
       return NextResponse.json({ 
         ok: false, 
         error: "Only admins can update requests" 
       }, { status: 403 });
+    } else {
+      console.log("[PATCH /api/requests] ✅ Allowing admin edit");
     }
     
     // Admin can edit requests regardless of status (pending, processing, approved)

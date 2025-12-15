@@ -73,6 +73,9 @@ export default function SubmissionsView() {
   const [showDetailsModal, setShowDetailsModal] = React.useState(false);
   const [loadingDetails, setLoadingDetails] = React.useState(false);
   const [lastUpdate, setLastUpdate] = React.useState(new Date());
+  
+  // Track if we've already handled the view parameter (to prevent re-opening on refresh)
+  const viewParamHandledRef = React.useRef(false);
 
   React.useEffect(() => {
     fetchSubmissions();
@@ -81,6 +84,67 @@ export default function SubmissionsView() {
     const interval = setInterval(fetchSubmissions, 3000);
     return () => clearInterval(interval);
   }, []);
+  
+  // Handle ?view=requestId query parameter to auto-open a specific request
+  React.useEffect(() => {
+    const viewRequestId = searchParams?.get('view');
+    
+    // Only handle once per page load and if we have requests loaded
+    if (viewRequestId && !viewParamHandledRef.current && requests.length > 0) {
+      viewParamHandledRef.current = true;
+      
+      // Find the request in the list
+      const requestToView = requests.find(r => r.id === viewRequestId);
+      
+      if (requestToView) {
+        console.log('[SubmissionsView] Auto-opening request from URL:', viewRequestId);
+        viewDetails(requestToView);
+        
+        // Clear the view parameter from URL to prevent re-opening on refresh
+        const newUrl = pathname || '/user/submissions';
+        router.replace(newUrl, { scroll: false });
+      } else {
+        // Request not in list - might need to fetch it directly
+        console.log('[SubmissionsView] Request not in list, fetching directly:', viewRequestId);
+        
+        // Fetch the request directly and open it
+        fetch(`/api/requests/${viewRequestId}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.ok && data.data) {
+              const req = data.data;
+              // Transform to match Request type
+              const requestObj: Request = {
+                id: req.id,
+                request_number: req.request_number,
+                title: req.title || req.purpose,
+                purpose: req.purpose,
+                destination: req.destination,
+                travel_start_date: req.travel_start_date,
+                travel_end_date: req.travel_end_date,
+                status: req.status,
+                created_at: req.created_at,
+                requester_name: req.requester_name || req.requester?.name,
+                department: req.department,
+                total_budget: req.total_budget,
+                has_budget: req.has_budget,
+                request_type: req.request_type,
+                seminar_data: req.seminar_data,
+                attachments: req.attachments,
+              };
+              viewDetails(requestObj);
+              
+              // Clear the view parameter from URL
+              const newUrl = pathname || '/user/submissions';
+              router.replace(newUrl, { scroll: false });
+            }
+          })
+          .catch(err => {
+            console.error('[SubmissionsView] Failed to fetch request:', err);
+          });
+      }
+    }
+  }, [searchParams, requests, pathname, router]);
 
   async function fetchSubmissions() {
     const logger = createLogger("SubmissionsView");

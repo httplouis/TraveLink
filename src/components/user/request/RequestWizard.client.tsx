@@ -348,7 +348,8 @@ function RequestWizardContent() {
           const response = await fetch(`/api/requests/${currentSubmissionId}`);
           const result = await response.json();
           
-          if (result.ok && result.data && result.data.status === "draft") {
+          // Allow loading draft OR returned requests (returned requests can be edited and resubmitted)
+          if (result.ok && result.data && (result.data.status === "draft" || result.data.status === "returned")) {
             const dbReq = result.data;
             
             // Transform expense_breakdown array to costs object (same logic as above)
