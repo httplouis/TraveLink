@@ -130,22 +130,41 @@ function RequestWizardContent() {
   const showSeminar = data.reason === "seminar";
   const showSchoolService = data.vehicleMode === "institutional";
   
+  // Track if we've already proposed budget for this session to prevent re-runs
+  const hasProposedBudgetRef = React.useRef(false);
+  
   // Auto-propose budget when institutional vehicle is selected
+  // Use ref to track costs to avoid object reference issues in dependency array
   React.useEffect(() => {
-    if (data.vehicleMode === "institutional" && data.travelOrder) {
-      // Import budget proposal utility
-      import("@/lib/user/request/budget-proposal").then(({ mergeProposedBudget, hasExistingBudget }) => {
-        const currentCosts = data.travelOrder?.costs;
-        
-        // Only auto-propose if no budget exists yet
-        if (!hasExistingBudget(currentCosts)) {
+    // Only run once when switching to institutional and haven't proposed yet
+    if (data.vehicleMode === "institutional" && !hasProposedBudgetRef.current) {
+      const currentCosts = data.travelOrder?.costs;
+      
+      // Quick check if budget already exists (without dynamic import)
+      const hasBudget = currentCosts && (
+        (currentCosts.driversAllowance && currentCosts.driversAllowance > 0) ||
+        (currentCosts.food && currentCosts.food > 0) ||
+        (currentCosts.accommodation && currentCosts.accommodation > 0)
+      );
+      
+      if (!hasBudget) {
+        // Only do dynamic import if we actually need to propose budget
+        import("@/lib/user/request/budget-proposal").then(({ mergeProposedBudget }) => {
           const proposedCosts = mergeProposedBudget(currentCosts);
           console.log('[RequestWizard] 💰 Auto-proposing budget for institutional vehicle:', proposedCosts);
           patchCosts(proposedCosts);
-        }
-      });
+          hasProposedBudgetRef.current = true;
+        });
+      } else {
+        hasProposedBudgetRef.current = true;
+      }
     }
-  }, [data.vehicleMode, data.travelOrder, patchCosts]);
+    
+    // Reset flag when switching away from institutional
+    if (data.vehicleMode !== "institutional") {
+      hasProposedBudgetRef.current = false;
+    }
+  }, [data.vehicleMode]); // Only depend on vehicleMode, not the whole travelOrder object
   
   // Check if current user is head requester
   // CRITICAL: If current user is a head AND they are the requesting person, they are a head requester

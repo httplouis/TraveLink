@@ -4,6 +4,17 @@
 import * as React from "react";
 import { SelectInput } from "@/components/user/request/ui/controls";
 
+// Cache for drivers and vehicles to prevent repeated API calls
+const dataCache: {
+  drivers: { value: string; label: string; id: string }[] | null;
+  vehicles: Map<string, { value: string; label: string; id: string }[]>;
+  driversLoaded: boolean;
+} = {
+  drivers: null,
+  vehicles: new Map(),
+  driversLoaded: false,
+};
+
 export default function SchoolServiceSection({
   data,
   onChange,
@@ -15,57 +26,79 @@ export default function SchoolServiceSection({
   errors: Record<string, string>;
   departureDate?: string; // Optional: travel departure date
 }) {
-  const [drivers, setDrivers] = React.useState<{ value: string; label: string; id: string }[]>([]);
-  const [vehicles, setVehicles] = React.useState<{ value: string; label: string; id: string }[]>([]);
-  const [loading, setLoading] = React.useState(true);
+  const [drivers, setDrivers] = React.useState<{ value: string; label: string; id: string }[]>(
+    dataCache.drivers || []
+  );
+  const [vehicles, setVehicles] = React.useState<{ value: string; label: string; id: string }[]>(
+    dataCache.vehicles.get(departureDate || 'default') || []
+  );
+  const [loading, setLoading] = React.useState(!dataCache.driversLoaded);
 
-  // Fetch drivers and vehicles from API
+  // Fetch drivers and vehicles from API with caching
   // Re-fetch vehicles when departureDate changes (for coding day filtering)
   React.useEffect(() => {
+    let isMounted = true;
+    
     async function fetchData() {
       try {
-        setLoading(true);
-
-        // Fetch drivers
-        const driversRes = await fetch("/api/drivers");
-        const driversData = await driversRes.json();
-        
-        if (driversData.ok && driversData.data) {
-          const driverOptions = driversData.data.map((driver: any) => ({
-            value: driver.id, // Use ID as value for DB storage
-            label: driver.name,
-            id: driver.id,
-          }));
-          setDrivers(driverOptions);
+        // Check cache first for drivers
+        if (dataCache.drivers && dataCache.driversLoaded) {
+          if (isMounted) setDrivers(dataCache.drivers);
+        } else {
+          // Fetch drivers only if not cached
+          const driversRes = await fetch("/api/drivers");
+          const driversData = await driversRes.json();
+          
+          if (driversData.ok && driversData.data && isMounted) {
+            const driverOptions = driversData.data.map((driver: any) => ({
+              value: driver.id,
+              label: driver.name,
+              id: driver.id,
+            }));
+            dataCache.drivers = driverOptions;
+            dataCache.driversLoaded = true;
+            setDrivers(driverOptions);
+          }
         }
 
-        // Fetch vehicles - include date parameter if available for coding day filtering
-        const vehiclesUrl = departureDate 
-          ? `/api/vehicles?status=available&date=${encodeURIComponent(departureDate)}`
-          : `/api/vehicles?status=available`;
+        // Check cache for vehicles with this date
+        const cacheKey = departureDate || 'default';
+        const cachedVehicles = dataCache.vehicles.get(cacheKey);
         
-        const vehiclesRes = await fetch(vehiclesUrl);
-        const vehiclesData = await vehiclesRes.json();
-        
-        if (vehiclesData.ok && vehiclesData.data) {
-          const vehicleOptions = vehiclesData.data.map((vehicle: any) => ({
-            value: vehicle.id, // Use ID as value for DB storage
-            label: `${vehicle.name} • ${vehicle.plate_number}`,
-            id: vehicle.id,
-          }));
-          setVehicles(vehicleOptions);
-          console.log(`[SchoolServiceSection] Loaded ${vehicleOptions.length} vehicles${departureDate ? ` for date ${departureDate}` : ''}`);
+        if (cachedVehicles) {
+          if (isMounted) setVehicles(cachedVehicles);
+        } else {
+          // Fetch vehicles - include date parameter if available for coding day filtering
+          const vehiclesUrl = departureDate 
+            ? `/api/vehicles?status=available&date=${encodeURIComponent(departureDate)}`
+            : `/api/vehicles?status=available`;
+          
+          const vehiclesRes = await fetch(vehiclesUrl);
+          const vehiclesData = await vehiclesRes.json();
+          
+          if (vehiclesData.ok && vehiclesData.data && isMounted) {
+            const vehicleOptions = vehiclesData.data.map((vehicle: any) => ({
+              value: vehicle.id,
+              label: `${vehicle.name} • ${vehicle.plate_number}`,
+              id: vehicle.id,
+            }));
+            dataCache.vehicles.set(cacheKey, vehicleOptions);
+            setVehicles(vehicleOptions);
+          }
         }
       } catch (error) {
         console.error("Error fetching drivers/vehicles:", error);
-        // Fallback to empty arrays if fetch fails
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     }
 
     fetchData();
-  }, [departureDate]); // Re-fetch when departureDate changes
+    
+    return () => {
+      isMounted = false;
+    };
+  }, [departureDate]);
   return (
     <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
       <div className="mb-4">

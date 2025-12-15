@@ -13,7 +13,13 @@ type Props = {
   needsJustif: boolean;
   errors: Record<string, string>;
   onChangeCosts: (patch: any) => void;
+  /** If true, food and driver's allowance are fixed/read-only (for requesters) */
+  isRequester?: boolean;
 };
+
+// Fixed amounts for showcase (in PHP)
+const FIXED_FOOD_ALLOWANCE = 500; // ₱500 per day food allowance
+const FIXED_DRIVERS_ALLOWANCE = 800; // ₱800 driver's allowance
 
 type ConfirmModalProps = {
   amount: string;
@@ -65,6 +71,7 @@ export default function CostsSection({
   needsJustif,
   errors,
   onChangeCosts,
+  isRequester = true, // Default to requester mode (fixed food/driver's allowance)
 }: Props) {
   // Modal state for large amount confirmation
   const [showModal, setShowModal] = React.useState(false);
@@ -76,27 +83,42 @@ export default function CostsSection({
   } | null>(null);
 
   // CRITICAL FIX: Initialize costs values on mount if they are undefined
-  // This ensures that displayed default values (0) are actually stored in the Zustand store
-  // Without this, the user sees "0" but the store has undefined, causing empty costs on submit
+  // This ensures that displayed default values are actually stored in the Zustand store
+  // For requesters: food and driver's allowance are fixed amounts
   const didInitRef = React.useRef(false);
   React.useEffect(() => {
     if (didInitRef.current) return;
     didInitRef.current = true;
     
-    // Initialize any undefined cost fields to 0
+    // Initialize any undefined cost fields
     const initialPatch: any = {};
-    if (costs?.food === undefined) initialPatch.food = 0;
-    if (costs?.driversAllowance === undefined) initialPatch.driversAllowance = 0;
+    
+    // For requesters, use fixed amounts for food and driver's allowance
+    if (isRequester) {
+      if (costs?.food === undefined || costs?.food === 0) {
+        initialPatch.food = FIXED_FOOD_ALLOWANCE;
+        initialPatch.foodDescription = "Standard food allowance";
+      }
+      if (costs?.driversAllowance === undefined || costs?.driversAllowance === 0) {
+        initialPatch.driversAllowance = FIXED_DRIVERS_ALLOWANCE;
+        initialPatch.driversAllowanceDescription = "Standard driver's allowance";
+      }
+    } else {
+      // For comptroller/admin, initialize to 0 if undefined
+      if (costs?.food === undefined) initialPatch.food = 0;
+      if (costs?.driversAllowance === undefined) initialPatch.driversAllowance = 0;
+    }
+    
     if (costs?.rentVehicles === undefined) initialPatch.rentVehicles = 0;
     if (costs?.hiredDrivers === undefined) initialPatch.hiredDrivers = 0;
     if (costs?.accommodation === undefined) initialPatch.accommodation = 0;
     
     // Only patch if there are undefined fields
     if (Object.keys(initialPatch).length > 0) {
-      console.log('[CostsSection] 🔧 Initializing undefined cost fields:', initialPatch);
+      console.log('[CostsSection] 🔧 Initializing cost fields:', initialPatch, isRequester ? '(requester mode - fixed allowances)' : '(admin mode)');
       onChangeCosts(initialPatch);
     }
-  }, [costs, onChangeCosts]);
+  }, [costs, onChangeCosts, isRequester]);
 
 
 
@@ -216,43 +238,77 @@ export default function CostsSection({
       <div className="grid gap-4 md:grid-cols-2">
         {/* Food */}
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-gray-700">{TXT.food}</label>
-          <CurrencyInput
-            label=""
-            placeholder={TXT.amountPh}
-            value={costs?.food ?? 0}
-            onChange={(e) => {
-              handleValidation(e.target.value, "Food", (validated) => {
-                onChangeCosts({ food: validated });
-              });
-            }}
-          />
+          <label className="text-sm font-semibold text-gray-700">
+            {TXT.food}
+            {isRequester && (
+              <span className="ml-2 text-xs font-normal text-blue-600">(Fixed rate)</span>
+            )}
+          </label>
+          {isRequester ? (
+            // Fixed amount display for requesters
+            <div className="relative">
+              <div className="flex h-10 items-center rounded-lg border-2 border-blue-200 bg-blue-50/50 px-3 text-gray-700">
+                <span className="text-gray-500 mr-1">₱</span>
+                <span className="font-medium">{(costs?.food ?? FIXED_FOOD_ALLOWANCE).toLocaleString()}</span>
+              </div>
+              <p className="mt-1 text-xs text-blue-600">Standard food allowance (fixed)</p>
+            </div>
+          ) : (
+            <CurrencyInput
+              label=""
+              placeholder={TXT.amountPh}
+              value={costs?.food ?? 0}
+              onChange={(e) => {
+                handleValidation(e.target.value, "Food", (validated) => {
+                  onChangeCosts({ food: validated });
+                });
+              }}
+            />
+          )}
           <TextInput
             label=""
             placeholder="e.g., Lunch during seminar, Meals for 2 days"
             value={costs?.foodDescription ?? ""}
             onChange={(e) => onChangeCosts({ foodDescription: e.target.value })}
+            disabled={isRequester}
           />
         </div>
 
         {/* Driver's Allowance */}
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-gray-700">{TXT.driversAllowance}</label>
-          <CurrencyInput
-            label=""
-            placeholder={TXT.amountPh}
-            value={costs?.driversAllowance ?? 0}
-            onChange={(e) => {
-              handleValidation(e.target.value, "Driver's Allowance", (validated) => {
-                onChangeCosts({ driversAllowance: validated });
-              });
-            }}
-          />
+          <label className="text-sm font-semibold text-gray-700">
+            {TXT.driversAllowance}
+            {isRequester && (
+              <span className="ml-2 text-xs font-normal text-blue-600">(Fixed rate)</span>
+            )}
+          </label>
+          {isRequester ? (
+            // Fixed amount display for requesters
+            <div className="relative">
+              <div className="flex h-10 items-center rounded-lg border-2 border-blue-200 bg-blue-50/50 px-3 text-gray-700">
+                <span className="text-gray-500 mr-1">₱</span>
+                <span className="font-medium">{(costs?.driversAllowance ?? FIXED_DRIVERS_ALLOWANCE).toLocaleString()}</span>
+              </div>
+              <p className="mt-1 text-xs text-blue-600">Standard driver's allowance (fixed)</p>
+            </div>
+          ) : (
+            <CurrencyInput
+              label=""
+              placeholder={TXT.amountPh}
+              value={costs?.driversAllowance ?? 0}
+              onChange={(e) => {
+                handleValidation(e.target.value, "Driver's Allowance", (validated) => {
+                  onChangeCosts({ driversAllowance: validated });
+                });
+              }}
+            />
+          )}
           <TextInput
             label=""
             placeholder="e.g., Daily allowance for driver"
             value={costs?.driversAllowanceDescription ?? ""}
             onChange={(e) => onChangeCosts({ driversAllowanceDescription: e.target.value })}
+            disabled={isRequester}
           />
         </div>
 
