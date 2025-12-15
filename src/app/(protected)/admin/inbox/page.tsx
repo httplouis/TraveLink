@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { createSupabaseClient } from "@/lib/supabase/client";
 import RequestDetailsView from "@/components/common/RequestDetailsView";
@@ -36,6 +37,14 @@ type Request = {
 };
 
 export default function AdminInboxPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><Loader2 className="h-8 w-8 animate-spin text-[#7A0019]" /></div>}>
+      <AdminInboxContent />
+    </Suspense>
+  );
+}
+
+function AdminInboxContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const pathname = usePathname();
