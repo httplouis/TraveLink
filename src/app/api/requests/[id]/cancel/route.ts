@@ -87,7 +87,12 @@ export async function POST(
     // Check permissions
     const adminEmails = ["admin@mseuf.edu.ph", "admin.cleofe@mseuf.edu.ph", "comptroller@mseuf.edu.ph"];
     const isAdmin = adminEmails.includes(profile.email) || profile.is_admin;
-    const isRequester = request.requester_id === profile.id || request.submitted_by_user_id === profile.id;
+    
+    // IMPORTANT: Use String() to ensure consistent comparison (UUIDs might be objects in some cases)
+    const profileIdStr = String(profile.id);
+    const requesterIdStr = request.requester_id ? String(request.requester_id) : null;
+    const submittedByIdStr = request.submitted_by_user_id ? String(request.submitted_by_user_id) : null;
+    const isRequester = profileIdStr === requesterIdStr || profileIdStr === submittedByIdStr;
 
     // Admin requires password confirmation
     if (isAdmin) {

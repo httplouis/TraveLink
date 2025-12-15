@@ -63,7 +63,17 @@ export async function POST(
     }
 
     // Check if user is the requester
-    if (request.requester_id !== profile.id && request.submitted_by_user_id !== profile.id) {
+    // IMPORTANT: Use String() to ensure consistent comparison (UUIDs might be objects in some cases)
+    const profileIdStr = String(profile.id);
+    const requesterIdStr = request.requester_id ? String(request.requester_id) : null;
+    const submittedByIdStr = request.submitted_by_user_id ? String(request.submitted_by_user_id) : null;
+    
+    if (profileIdStr !== requesterIdStr && profileIdStr !== submittedByIdStr) {
+      console.log("[Resubmit Request] ❌ Permission denied:", {
+        profileIdStr,
+        requesterIdStr,
+        submittedByIdStr,
+      });
       return NextResponse.json({ ok: false, error: "Only the requester can resubmit" }, { status: 403 });
     }
 

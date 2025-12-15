@@ -983,35 +983,51 @@ export async function PATCH(
     const adminEmails = ["admin@mseuf.edu.ph", "admin.cleofe@mseuf.edu.ph", "comptroller@mseuf.edu.ph"];
     const isAdmin = adminEmails.includes(profile.email) || profile.is_admin;
     
-    const isRequester = request.requester_id === profile.id || request.submitted_by_user_id === profile.id;
+    // IMPORTANT: Use String() to ensure consistent comparison (UUIDs might be objects in some cases)
+    const profileIdStr = String(profile.id);
+    const requesterIdStr = request.requester_id ? String(request.requester_id) : null;
+    const submittedByIdStr = request.submitted_by_user_id ? String(request.submitted_by_user_id) : null;
+    
+    const isRequester = profileIdStr === requesterIdStr || profileIdStr === submittedByIdStr;
     const isReturned = request.status === "returned";
+    const isDraft = request.status === "draft";
+    const isPending = request.status?.startsWith("pending_") || false;
     
     // Debug logging for permission check
     console.log("[PATCH /api/requests] Permission check:", {
-      profileId: profile.id,
+      profileId: profileIdStr,
       profileEmail: profile.email,
-      requesterId: request.requester_id,
-      submittedById: request.submitted_by_user_id,
+      requesterId: requesterIdStr,
+      submittedById: submittedByIdStr,
       requestStatus: request.status,
       isAdmin,
       isRequester,
       isReturned,
+      isDraft,
+      isPending,
       isCancellation,
     });
     
-    // Allow cancellation if user is requester AND request is still pending
+    // Allow cancellation if user is requester AND request is still pending/draft/returned
     // Allow editing if user is requester AND request is returned (preserves signatures)
+    // Allow editing if user is requester AND request is draft
     // Admin can edit requests at ANY stage (pending, processing, approved)
-    if (isCancellation && isRequester && (request.status.startsWith("pending_") || request.status === "draft" || request.status === "returned")) {
+    if (isCancellation && isRequester && (isPending || isDraft || isReturned)) {
       // Requester can cancel their own pending/draft/returned requests - allow this
       console.log("[PATCH /api/requests] ✅ Allowing cancellation by requester");
-    } else if (isReturned && isRequester) {
-      // Requester can edit returned requests - allow this
+    } else if ((isReturned || isDraft) && isRequester) {
+      // Requester can edit returned or draft requests - allow this
       // Note: Signatures are preserved when request is returned
-      console.log("[PATCH /api/requests] ✅ Allowing edit of returned request by requester");
+      console.log("[PATCH /api/requests] ✅ Allowing edit of returned/draft request by requester");
+    } else if (isRequester && isPending) {
+      // Requester can also edit their own pending requests (before approval)
+      console.log("[PATCH /api/requests] ✅ Allowing edit of pending request by requester");
     } else if (!isAdmin) {
       console.log("[PATCH /api/requests] ❌ Blocking non-admin edit:", {
-        reason: isReturned ? "isRequester is false" : "request not returned and user not admin",
+        reason: isReturned ? "isRequester is false" : "request not returned/draft and user not admin",
+        profileIdStr,
+        requesterIdStr,
+        submittedByIdStr,
       });
       return NextResponse.json({ 
         ok: false, 
@@ -1160,8 +1176,8 @@ export async function PATCH(
       });
     }
 
-    // If request is returned, allow requester to edit all fields
-    if (isReturned && isRequester) {
+    // If request is returned/draft/pending, allow requester to edit all fields
+    if ((isReturned || isDraft || isPending) && isRequester) {
       if (purpose !== undefined) updateData.purpose = purpose;
       if (destination !== undefined) updateData.destination = destination;
       if (travel_start_date !== undefined) updateData.travel_start_date = travel_start_date;
