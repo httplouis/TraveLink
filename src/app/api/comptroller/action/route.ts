@@ -323,8 +323,8 @@ export async function POST(request: Request) {
           await createNotification({
             user_id: nextApproverId,
             notification_type: "request_pending_signature",
-            title: "Request Requires Your Approval",
-            message: `A travel order request ${request.request_number || ''} has been sent to you for approval.`,
+            title: "New Request from Comptroller",
+            message: `Comptroller has approved request ${request.request_number || ''} and forwarded it to you for HR review.`,
             related_type: "request",
             related_id: requestId,
             action_url: `/hr/inbox?view=${requestId}`,

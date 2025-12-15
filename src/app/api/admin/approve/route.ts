@@ -478,11 +478,12 @@ export async function POST(request: Request) {
 
         // Notify next approver (Comptroller or HR)
         if (nextApproverId) {
+          const roleLabel = nextApproverRoleFinal === "comptroller" ? "Comptroller" : "HR";
           await createNotification({
             user_id: nextApproverId,
             notification_type: "request_pending_signature",
-            title: "Request Requires Your Approval",
-            message: `A travel order request ${req.request_number || ''} has been sent to you for approval.`,
+            title: "New Request from Admin",
+            message: `Admin has processed request ${req.request_number || ''} and forwarded it to you for ${roleLabel} review.`,
             related_type: "request",
             related_id: requestId,
             action_url: nextApproverRoleFinal === "comptroller" ? `/comptroller/inbox?view=${requestId}` : `/hr/inbox?view=${requestId}`,

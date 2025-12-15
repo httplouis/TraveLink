@@ -16,6 +16,12 @@ export async function POST(
     const resolvedParams = params instanceof Promise ? await params : params;
     const requestId = resolvedParams.id;
 
+    // Validate request ID
+    if (!requestId || requestId === 'undefined' || requestId === 'null') {
+      console.error("[POST /api/requests/[id]/return] Invalid request ID:", requestId);
+      return NextResponse.json({ ok: false, error: "Invalid or missing request ID" }, { status: 400 });
+    }
+
     // Use service role for database operations
     const supabaseServiceRole = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -28,10 +34,18 @@ export async function POST(
       }
     );
 
-    const supabase = await createSupabaseServerClient(true);
+    // Use anon client for auth (to read session cookies)
+    const authSupabase = await createSupabaseServerClient(false);
 
-    // Get current user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    // Get current user from session
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser();
+    
+    console.log("[Return Request] Auth check:", {
+      hasUser: !!user,
+      userId: user?.id,
+      authError: authError?.message,
+    });
+    
     if (authError || !user) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
@@ -79,7 +93,25 @@ export async function POST(
       profile.is_admin ||
       profile.is_comptroller ||
       profile.is_hr ||
-      profile.is_executive;
+      profile.is_vp ||
+      profile.is_president ||
+      profile.is_executive ||
+      profile.role === "admin" ||
+      profile.role === "comptroller" ||
+      profile.role === "hr";
+
+    console.log("[Return Request] Permission check:", {
+      user_id: profile.id,
+      is_head: profile.is_head,
+      is_admin: profile.is_admin,
+      is_comptroller: profile.is_comptroller,
+      is_hr: profile.is_hr,
+      is_vp: profile.is_vp,
+      is_president: profile.is_president,
+      is_executive: profile.is_executive,
+      role: profile.role,
+      canReturn,
+    });
 
     if (!canReturn) {
       return NextResponse.json(
@@ -106,12 +138,16 @@ export async function POST(
     if (comments) {
       if (profile.is_head) {
         updateData.head_comments = comments;
-      } else if (profile.is_admin) {
+      } else if (profile.is_admin || profile.role === "admin") {
         updateData.admin_comments = comments;
-      } else if (profile.is_comptroller) {
+      } else if (profile.is_comptroller || profile.role === "comptroller") {
         updateData.comptroller_comments = comments;
-      } else if (profile.is_hr) {
+      } else if (profile.is_hr || profile.role === "hr") {
         updateData.hr_comments = comments;
+      } else if (profile.is_vp) {
+        updateData.vp_comments = comments;
+      } else if (profile.is_president) {
+        updateData.president_comments = comments;
       } else if (profile.is_executive) {
         updateData.exec_comments = comments;
       }
@@ -155,22 +191,35 @@ export async function POST(
       },
     });
 
-    // Create notification for requester - clickable, goes to drafts
+    // Create notification for requester - clickable, goes to submissions
     try {
       const { createNotification } = await import("@/lib/notifications/helpers");
 
       if (request.requester_id) {
+        // Check if requester is a head to determine the correct submissions URL
+        const { data: requesterProfile } = await supabaseServiceRole
+          .from("users")
+          .select("is_head, role")
+          .eq("id", request.requester_id)
+          .maybeSingle();
+        
+        const isRequesterHead = requesterProfile?.is_head || requesterProfile?.role === "head";
+        const submissionsUrl = isRequesterHead 
+          ? `/head/submissions?view=${requestId}` 
+          : `/user/submissions?view=${requestId}`;
+        
         await createNotification({
           user_id: request.requester_id,
           notification_type: "request_returned",
           title: "Request Returned for Revision",
-          message: `Your request ${request.request_number || ""} has been returned for revision. Reason: ${return_reason}${comments ? ` - ${comments}` : ""}`,
+          message: `Your request ${request.request_number || ""} has been returned for revision. Reason: ${return_reason}${comments ? ` - ${comments}` : ""}. Please edit and resubmit.`,
           related_type: "request",
           related_id: requestId,
-          action_url: `/user/drafts?requestId=${requestId}`,
-          action_label: "View Request",
+          action_url: submissionsUrl,
+          action_label: "Edit & Resubmit",
           priority: "high",
         });
+        console.log("[Return Request] ✅ Notification created for requester:", request.requester_id, "URL:", submissionsUrl);
       }
     } catch (notifError: any) {
       console.error("[Return Request] Failed to create notification:", notifError);

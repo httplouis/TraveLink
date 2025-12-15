@@ -21,8 +21,8 @@ export async function GET() {
       }
     );
     
-    // Use regular client for auth check
-    const supabase = await createSupabaseServerClient(true);
+    // Use regular client for auth check (NOT service role - it doesn't have session info)
+    const supabase = await createSupabaseServerClient(false);
 
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
@@ -40,7 +40,8 @@ export async function GET() {
       return NextResponse.json({ ok: false, error: "Profile not found" }, { status: 404 });
     }
 
-    // Get all draft requests for this user
+    // Get all draft AND returned requests for this user
+    // Returned requests should appear in drafts so user can edit and resubmit
     const { data: draftRequests, error } = await supabaseServiceRole
       .from("requests")
       .select(`
@@ -55,10 +56,12 @@ export async function GET() {
         created_at,
         updated_at,
         return_reason,
+        returned_at,
+        returned_by,
         rejected_at
       `)
       .eq("requester_id", profile.id)
-      .eq("status", "draft")
+      .in("status", ["draft", "returned"])
       .order("updated_at", { ascending: false });
 
     if (error) {

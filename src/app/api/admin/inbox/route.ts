@@ -77,7 +77,21 @@ export async function GET() {
         requester_is_head,
         total_budget,
         assigned_driver_id,
-        assigned_vehicle_id
+        assigned_vehicle_id,
+        preferred_driver_id,
+        preferred_vehicle_id,
+        preferred_driver_note,
+        preferred_vehicle_note,
+        transportation_type,
+        pickup_location,
+        pickup_time,
+        pickup_contact_number,
+        pickup_special_instructions,
+        requester_contact_number,
+        expense_breakdown,
+        cost_justification,
+        comptroller_edited_budget,
+        hr_edited_budget
       `)
       .order("created_at", { ascending: false })
       .limit(100); // Reduced from 500 to 100 to reduce IO on Nano instance // Increased limit for Pro Plan - can handle more data
@@ -126,9 +140,13 @@ export async function GET() {
           ...allRequests.map((r: any) => r.exec_approved_by).filter(Boolean),
         ])
       ];
+      
+      // Get preferred driver and vehicle IDs
+      const preferredDriverIds = [...new Set(allRequests.map((r: any) => r.preferred_driver_id).filter(Boolean))];
+      const preferredVehicleIds = [...new Set(allRequests.map((r: any) => r.preferred_vehicle_id).filter(Boolean))];
 
       // Fetch all related data in parallel using service role client
-      const [requesters, departments, approvers] = await Promise.all([
+      const [requesters, departments, approvers, preferredDrivers, preferredVehicles] = await Promise.all([
         requesterIds.length > 0
           ? supabaseServiceRole.from("users").select("id, email, name, role, is_comptroller, is_head").in("id", requesterIds)
           : Promise.resolve({ data: [], error: null }),
@@ -137,6 +155,12 @@ export async function GET() {
           : Promise.resolve({ data: [], error: null }),
         approverIds.length > 0
           ? supabaseServiceRole.from("users").select("id, email, name, department_id, is_head, is_vp").in("id", approverIds)
+          : Promise.resolve({ data: [], error: null }),
+        preferredDriverIds.length > 0
+          ? supabaseServiceRole.from("users").select("id, name, email").in("id", preferredDriverIds)
+          : Promise.resolve({ data: [], error: null }),
+        preferredVehicleIds.length > 0
+          ? supabaseServiceRole.from("vehicles").select("id, vehicle_name, plate_number, type, capacity").in("id", preferredVehicleIds)
           : Promise.resolve({ data: [], error: null }),
       ]);
 
@@ -151,6 +175,11 @@ export async function GET() {
         }
         return [u.id, approverWithDept];
       }));
+      const preferredDriverMap = new Map((preferredDrivers.data || []).map((d: any) => [d.id, d]));
+      const preferredVehicleMap = new Map((preferredVehicles.data || []).map((v: any) => [v.id, {
+        ...v,
+        label: `${v.vehicle_name || 'Vehicle'} (${v.plate_number || 'N/A'})`
+      }]));
 
       // Attach related data to requests
       allRequests.forEach((req: any) => {
@@ -165,6 +194,10 @@ export async function GET() {
         req.vp2_approver = req.vp2_approved_by ? approverMap.get(req.vp2_approved_by) : null;
         req.president_approver = req.president_approved_by ? approverMap.get(req.president_approved_by) : null;
         req.exec_approver = req.exec_approved_by ? approverMap.get(req.exec_approved_by) : null;
+        
+        // Attach preferred driver and vehicle
+        req.preferred_driver = req.preferred_driver_id ? preferredDriverMap.get(req.preferred_driver_id) : null;
+        req.preferred_vehicle = req.preferred_vehicle_id ? preferredVehicleMap.get(req.preferred_vehicle_id) : null;
         
         // Attach department info to approvers if they have department_id
         if (req.head_approver?.department_id) {

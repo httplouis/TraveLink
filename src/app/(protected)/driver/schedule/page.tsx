@@ -18,6 +18,14 @@ interface AssignedTrip {
   department: string;
   passenger_count: number;
   purpose: string;
+  // Additional details
+  pickup_location?: string | null;
+  pickup_time?: string | null;
+  pickup_contact_number?: string | null;
+  pickup_special_instructions?: string | null;
+  transportation_type?: string | null;
+  requester_email?: string | null;
+  requester_phone?: string | null;
 }
 
 export default function DriverSchedulePage() {
@@ -133,14 +141,18 @@ export default function DriverSchedulePage() {
                       <Car className="h-4 w-4 text-[#7a0019]" />
                       <span>{trip.vehicle_name}</span>
                     </div>
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <Users className="h-4 w-4 text-[#7a0019]" />
-                      <span>{trip.passenger_count || 1} passenger(s)</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <Phone className="h-4 w-4 text-[#7a0019]" />
-                      <span className="truncate">{trip.requester_name}</span>
-                    </div>
+                    {trip.pickup_location && (
+                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                        <MapPin className="h-4 w-4 text-blue-600" />
+                        <span className="truncate">Pickup: {trip.pickup_location}</span>
+                      </div>
+                    )}
+                    {trip.pickup_contact_number && (
+                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                        <Phone className="h-4 w-4 text-green-600" />
+                        <span>{trip.pickup_contact_number}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -183,6 +195,39 @@ export default function DriverSchedulePage() {
                 </div>
               </div>
 
+              {/* Pickup Details - Important for drivers */}
+              {(selectedTrip.pickup_location || selectedTrip.pickup_time) && (
+                <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
+                  <label className="text-xs text-blue-700 uppercase font-bold mb-3 block">Pickup Details</label>
+                  <div className="space-y-2">
+                    {selectedTrip.pickup_location && (
+                      <div className="flex items-start gap-2">
+                        <MapPin className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <p className="text-xs text-blue-600 font-medium">Pickup Location</p>
+                          <p className="font-semibold text-gray-900">{selectedTrip.pickup_location}</p>
+                        </div>
+                      </div>
+                    )}
+                    {selectedTrip.pickup_time && (
+                      <div className="flex items-start gap-2">
+                        <Clock className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <p className="text-xs text-blue-600 font-medium">Pickup Time</p>
+                          <p className="font-semibold text-gray-900">{selectedTrip.pickup_time}</p>
+                        </div>
+                      </div>
+                    )}
+                    {selectedTrip.pickup_special_instructions && (
+                      <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded">
+                        <p className="text-xs text-yellow-700 font-medium">Special Instructions:</p>
+                        <p className="text-sm text-gray-700">{selectedTrip.pickup_special_instructions}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Destination */}
               <div>
                 <label className="text-xs text-gray-500 uppercase font-medium flex items-center gap-2">
@@ -200,14 +245,40 @@ export default function DriverSchedulePage() {
                 <p className="text-gray-500">{selectedTrip.plate_number}</p>
               </div>
 
-              {/* Requester */}
-              <div>
-                <label className="text-xs text-gray-500 uppercase font-medium flex items-center gap-2">
-                  <Users className="h-4 w-4" /> Requester
-                </label>
-                <p className="font-semibold text-gray-900 mt-1">{selectedTrip.requester_name}</p>
-                <p className="text-gray-500">{selectedTrip.department}</p>
-                <p className="text-sm text-gray-500 mt-1">{selectedTrip.passenger_count || 1} passenger(s)</p>
+              {/* Requester & Contact */}
+              <div className="bg-green-50 rounded-xl p-4 border border-green-200">
+                <label className="text-xs text-green-700 uppercase font-bold mb-3 block">Requester Contact</label>
+                <div className="space-y-2">
+                  <div className="flex items-start gap-2">
+                    <Users className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="font-semibold text-gray-900">{selectedTrip.requester_name}</p>
+                      <p className="text-sm text-gray-500">{selectedTrip.department}</p>
+                    </div>
+                  </div>
+                  {(selectedTrip.pickup_contact_number || selectedTrip.requester_phone) && (
+                    <div className="flex items-center gap-2">
+                      <Phone className="h-4 w-4 text-green-600 flex-shrink-0" />
+                      <a 
+                        href={`tel:${selectedTrip.pickup_contact_number || selectedTrip.requester_phone}`}
+                        className="font-semibold text-green-700 hover:underline"
+                      >
+                        {selectedTrip.pickup_contact_number || selectedTrip.requester_phone}
+                      </a>
+                    </div>
+                  )}
+                  {selectedTrip.requester_email && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-green-600 text-sm">Email:</span>
+                      <a 
+                        href={`mailto:${selectedTrip.requester_email}`}
+                        className="text-sm text-green-700 hover:underline truncate"
+                      >
+                        {selectedTrip.requester_email}
+                      </a>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Purpose */}

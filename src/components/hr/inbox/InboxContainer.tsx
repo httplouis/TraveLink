@@ -8,60 +8,106 @@ import PersonDisplay from "@/components/common/PersonDisplay";
 import RequestCardEnhanced from "@/components/common/RequestCardEnhanced";
 import RequestsTable from "@/components/common/RequestsTable";
 import ViewToggle, { useViewMode } from "@/components/common/ViewToggle";
-import { Eye } from "lucide-react";
+import { Eye, Clock, CheckCircle, History } from "lucide-react";
 import { createSupabaseClient } from "@/lib/supabase/client";
 import { createLogger } from "@/lib/debug";
 import { shouldShowPendingAlert, getAlertSeverity, getAlertMessage } from "@/lib/notifications/pending-alerts";
 import { AlertCircle } from "lucide-react";
 
 export default function HRInboxContainer() {
-  const [items, setItems] = React.useState<any[]>([]);
+  const [pendingItems, setPendingItems] = React.useState<any[]>([]);
+  const [approvedItems, setApprovedItems] = React.useState<any[]>([]);
+  const [historyItems, setHistoryItems] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [selected, setSelected] = React.useState<any | null>(null);
   const [lastUpdate, setLastUpdate] = React.useState<Date>(new Date());
   const [viewMode, setViewMode] = useViewMode("hr_inbox_view", "cards");
+  const [activeTab, setActiveTab] = React.useState<"pending" | "approved" | "history">("pending");
 
   const logger = createLogger("HRInbox");
 
-  async function load(showLoader = true) {
-    if (showLoader) setLoading(true);
+  // Load pending requests
+  const loadPending = React.useCallback(async () => {
     try {
-      logger.info("Loading HR requests...");
+      logger.info("Loading pending HR requests...");
       const res = await fetch("/api/hr/inbox", { cache: "no-store" });
       if (!res.ok) {
         logger.error("API response not OK:", { status: res.status, statusText: res.statusText });
-        setItems([]);
+        setPendingItems([]);
         return;
       }
       const contentType = res.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
         logger.error("API returned non-JSON response. Content-Type:", contentType);
-        setItems([]);
+        setPendingItems([]);
         return;
       }
       const json = await res.json();
       if (json.ok) {
-        logger.debug("HR Inbox - Full Response:", { count: json.data?.length || 0 });
-        if (json.data && json.data.length > 0) {
-          logger.debug("HR Inbox - First Item:", { id: json.data[0].id, status: json.data[0].status });
-        }
-        setItems(json.data ?? []);
+        setPendingItems(json.data ?? []);
         setLastUpdate(new Date());
-        logger.success(`Loaded ${json.data?.length || 0} HR requests`);
+        logger.success(`Loaded ${json.data?.length || 0} pending HR requests`);
       } else {
         logger.warn("Failed to load HR requests:", json.error);
       }
     } catch (error) {
-      logger.error("Error loading HR requests:", error);
-    } finally {
-      if (showLoader) setLoading(false);
+      logger.error("Error loading pending HR requests:", error);
     }
-  }
+  }, []);
+
+  // Load approved requests (HR has approved, now at later stages)
+  const loadApproved = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/requests/list?hr_approved=true", { cache: "no-store" });
+      if (!res.ok) {
+        setApprovedItems([]);
+        return;
+      }
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        const approved = data.filter((req: any) => 
+          req.hr_approved_at && 
+          !["approved", "rejected", "cancelled"].includes(req.status)
+        );
+        setApprovedItems(approved);
+      }
+    } catch (err) {
+      logger.error("Failed to load approved requests:", err);
+      setApprovedItems([]);
+    }
+  }, []);
+
+  // Load history (final states)
+  const loadHistory = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/requests/list?hr_approved=true", { cache: "no-store" });
+      if (!res.ok) {
+        setHistoryItems([]);
+        return;
+      }
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        const history = data.filter((req: any) => 
+          req.hr_approved_at && 
+          ["approved", "rejected", "cancelled"].includes(req.status)
+        );
+        setHistoryItems(history);
+      }
+    } catch (err) {
+      logger.error("Failed to load history:", err);
+      setHistoryItems([]);
+    }
+  }, []);
 
   // Initial load
   React.useEffect(() => {
-    load();
-  }, []);
+    const loadAll = async () => {
+      setLoading(true);
+      await Promise.all([loadPending(), loadApproved(), loadHistory()]);
+      setLoading(false);
+    };
+    loadAll();
+  }, [loadPending, loadApproved, loadHistory]);
 
   // Real-time updates using Supabase Realtime
   React.useEffect(() => {
@@ -77,19 +123,13 @@ export default function HRInboxContainer() {
           schema: "public",
           table: "requests",
         },
-        (payload: any) => {
-          // Only react to relevant status changes
-          const newStatus = payload.new?.status;
-          const oldStatus = payload.old?.status;
-          const relevantStatuses = ['pending_hr', 'approved', 'rejected'];
-          
-          if (relevantStatuses.includes(newStatus) || relevantStatuses.includes(oldStatus)) {
-            // Debounce: only trigger refetch after 500ms
-            if (mutateTimeout) clearTimeout(mutateTimeout);
-            mutateTimeout = setTimeout(() => {
-              load(false); // Silent refresh
-            }, 500);
-          }
+        () => {
+          if (mutateTimeout) clearTimeout(mutateTimeout);
+          mutateTimeout = setTimeout(() => {
+            if (activeTab === "pending") loadPending();
+            else if (activeTab === "approved") loadApproved();
+            else loadHistory();
+          }, 500);
         }
       )
       .subscribe();
@@ -98,18 +138,29 @@ export default function HRInboxContainer() {
       if (mutateTimeout) clearTimeout(mutateTimeout);
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [activeTab, loadPending, loadApproved, loadHistory]);
+
+  // Get current items based on active tab
+  const items = activeTab === "pending" ? pendingItems : activeTab === "approved" ? approvedItems : historyItems;
 
   function handleApproved(id: string) {
-    setItems(prev => prev.filter(x => x.id !== id));
+    setPendingItems(prev => prev.filter(x => x.id !== id));
     setSelected(null);
-    setTimeout(() => load(false), 500);
+    setTimeout(() => {
+      loadPending();
+      loadApproved();
+      loadHistory();
+    }, 500);
   }
 
   function handleRejected(id: string) {
-    setItems(prev => prev.filter(x => x.id !== id));
+    setPendingItems(prev => prev.filter(x => x.id !== id));
     setSelected(null);
-    setTimeout(() => load(false), 500);
+    setTimeout(() => {
+      loadPending();
+      loadApproved();
+      loadHistory();
+    }, 500);
   }
 
   return (
@@ -121,18 +172,18 @@ export default function HRInboxContainer() {
               HR Approval Queue
             </h1>
             <p className="text-sm text-slate-600 mt-1">
-              {items.length} {items.length === 1 ? 'request' : 'requests'} awaiting HR review
+              {pendingItems.length} {pendingItems.length === 1 ? 'request' : 'requests'} awaiting HR review
             </p>
-            {shouldShowPendingAlert(items.length) && (
+            {activeTab === "pending" && shouldShowPendingAlert(pendingItems.length) && (
               <div className={`mt-2 flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${
-                getAlertSeverity(items.length) === 'danger'
+                getAlertSeverity(pendingItems.length) === 'danger'
                   ? 'bg-red-50 border border-red-200 text-red-700'
-                  : getAlertSeverity(items.length) === 'warning'
+                  : getAlertSeverity(pendingItems.length) === 'warning'
                   ? 'bg-orange-50 border border-orange-200 text-orange-700'
                   : 'bg-amber-50 border border-amber-200 text-amber-700'
               }`}>
                 <AlertCircle className="h-4 w-4" />
-                <span>{getAlertMessage(items.length, 'hr')}</span>
+                <span>{getAlertMessage(pendingItems.length, 'hr')}</span>
               </div>
             )}
           </div>
@@ -146,6 +197,43 @@ export default function HRInboxContainer() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Filter Tabs */}
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={() => setActiveTab("pending")}
+          className={`px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${
+            activeTab === "pending"
+              ? "bg-[#7A0010] text-white shadow-md"
+              : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
+          }`}
+        >
+          <Clock className="h-4 w-4" />
+          Pending ({pendingItems.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("approved")}
+          className={`px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${
+            activeTab === "approved"
+              ? "bg-[#7A0010] text-white shadow-md"
+              : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
+          }`}
+        >
+          <CheckCircle className="h-4 w-4" />
+          Approved ({approvedItems.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("history")}
+          className={`px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${
+            activeTab === "history"
+              ? "bg-[#7A0010] text-white shadow-md"
+              : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
+          }`}
+        >
+          <History className="h-4 w-4" />
+          History ({historyItems.length})
+        </button>
       </div>
 
       {loading ? (

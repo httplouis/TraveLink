@@ -23,6 +23,13 @@ export async function GET(
     // Handle both Promise and direct params (Next.js 15+ uses Promise)
     const resolvedParams = params instanceof Promise ? await params : params;
     const requestId = resolvedParams.id;
+    
+    // Validate request ID
+    if (!requestId || requestId === 'undefined' || requestId === 'null') {
+      console.error("[GET /api/requests/[id]/pdf] Invalid request ID:", requestId);
+      return NextResponse.json({ ok: false, error: "Invalid or missing request ID" }, { status: 400 });
+    }
+    
     const supabase = await createSupabaseServerClient(true);
 
     // Get full request details - use tracking API for consistency with submissions view

@@ -19,9 +19,9 @@ export async function GET(
       requestId = resolvedParams.id;
       console.log("[GET /api/requests/[id]] Step 1: ✅ Request ID:", requestId);
       
-      if (!requestId) {
-        console.error("[GET /api/requests/[id]] Step 1: ❌ Missing request ID");
-        return NextResponse.json({ ok: false, error: "Missing request ID" }, { status: 400 });
+      if (!requestId || requestId === 'undefined' || requestId === 'null') {
+        console.error("[GET /api/requests/[id]] Step 1: ❌ Invalid request ID:", requestId);
+        return NextResponse.json({ ok: false, error: "Invalid or missing request ID" }, { status: 400 });
       }
     } catch (paramsErr: any) {
       console.error("[GET /api/requests/[id]] Step 1: ❌ ERROR getting params:", {
@@ -938,9 +938,12 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Use regular client for auth (NOT service role - it doesn't have session info)
+    const authSupabase = await createSupabaseServerClient(false);
+    // Use service role for database operations
     const supabase = await createSupabaseServerClient(true);
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser();
     if (authError || !user) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }

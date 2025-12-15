@@ -733,8 +733,8 @@ export async function POST(request: Request) {
             await createNotification({
               user_id: nextApproverId,
               notification_type: "request_pending_signature",
-              title: "Request Requires Your Approval",
-              message: `A travel order request ${finalRequest.request_number || ''} has been sent to you for final approval.`,
+              title: "New Request from VP",
+              message: `VP has approved request ${finalRequest.request_number || ''} and forwarded it to you for President approval.`,
               related_type: "request",
               related_id: requestId,
               action_url: `/president/inbox?view=${requestId}`,
@@ -745,8 +745,8 @@ export async function POST(request: Request) {
             await createNotification({
               user_id: nextApproverId,
               notification_type: "request_pending_signature",
-              title: "Request Requires Your Review",
-              message: `A travel order request ${finalRequest.request_number || ''} has been sent to you for review.`,
+              title: "New Request from VP",
+              message: `VP has approved request ${finalRequest.request_number || ''} and forwarded it to you for Admin review.`,
               related_type: "request",
               related_id: requestId,
               action_url: `/admin/requests?view=${requestId}`,

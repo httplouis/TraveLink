@@ -285,19 +285,28 @@ export default function NotificationDropdown() {
     }
     
     // Navigate immediately - use prefetch for faster loading
+    // Priority 1: Signature required - go to inbox
     if (notification.notification_type === "request_pending_signature" && notification.related_id) {
-      // Prefetch the inbox page for instant loading
       router.prefetch(`/user/inbox?view=${notification.related_id}`);
       router.push(`/user/inbox?view=${notification.related_id}`);
     } 
-    // Otherwise, navigate to the action URL or submissions
+    // Priority 2: Request returned - go to drafts (use action_url)
+    else if (notification.notification_type === "request_returned" && notification.action_url) {
+      router.prefetch(notification.action_url);
+      router.push(notification.action_url);
+    }
+    // Priority 3: Has action_url - use it
+    else if (notification.action_url) {
+      router.prefetch(notification.action_url);
+      router.push(notification.action_url);
+    }
+    // Priority 4: Has related request - go to submissions
     else if (notification.related_id && notification.related_type === "request") {
       router.prefetch(`/user/submissions?view=${notification.related_id}`);
       router.push(`/user/submissions?view=${notification.related_id}`);
-    } else if (notification.action_url) {
-      router.prefetch(notification.action_url);
-      router.push(notification.action_url);
-    } else {
+    } 
+    // Fallback: go to submissions
+    else {
       router.prefetch(`/user/submissions`);
       router.push(`/user/submissions`);
     }
@@ -312,6 +321,10 @@ export default function NotificationDropdown() {
         return <XCircle className="h-5 w-5 text-red-600" />;
       case "request_pending":
         return <Clock className="h-5 w-5 text-yellow-600" />;
+      case "request_returned":
+        return <AlertCircle className="h-5 w-5 text-amber-600" />;
+      case "request_pending_signature":
+        return <AlertCircle className="h-5 w-5 text-purple-600" />;
       default:
         return <AlertCircle className="h-5 w-5 text-blue-600" />;
     }

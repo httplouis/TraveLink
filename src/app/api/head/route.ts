@@ -736,11 +736,12 @@ export async function PATCH(req: Request) {
 
         // Notify next approver (if specified)
         if (next_approver_id && next_approver_role && next_approver_role !== "requester") {
+          const roleLabel = next_approver_role === "admin" ? "Admin" : next_approver_role.charAt(0).toUpperCase() + next_approver_role.slice(1);
           await createNotification({
             user_id: next_approver_id,
             notification_type: "request_pending_signature",
-            title: "Request Requires Your Approval",
-            message: `A travel order request ${request.request_number || ''} has been sent to you for approval.`,
+            title: "New Request from Department Head",
+            message: `Department Head has endorsed request ${request.request_number || ''} and forwarded it to you for ${roleLabel} review.`,
             related_type: "request",
             related_id: id,
             action_url: next_approver_role === "admin" ? `/admin/requests?view=${id}` : `/inbox?view=${id}`,

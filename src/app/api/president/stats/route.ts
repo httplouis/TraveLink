@@ -13,9 +13,12 @@ export const revalidate = 30;
  */
 export async function GET() {
   try {
+    // Use regular client for auth (NOT service role - it doesn't have session info)
+    const authSupabase = await createSupabaseServerClient(false);
+    // Use service role for database operations
     const supabase = await createSupabaseServerClient(true);
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser();
     if (authError || !user) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }

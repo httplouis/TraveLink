@@ -9,7 +9,8 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET() {
   try {
-    const supabase = await createSupabaseServerClient(true);
+    // Use regular client for auth (NOT service role - it doesn't have session info)
+    const supabase = await createSupabaseServerClient(false);
 
     // Get current user
     const { data: { user }, error: authError } = await supabase.auth.getUser();

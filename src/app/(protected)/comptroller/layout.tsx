@@ -100,7 +100,7 @@ export default function ComptrollerLayout({
         <HelpButton role="comptroller" />
 
         {/* Feedback Lock Modal */}
-        {feedbackLock.locked && feedbackLock.requestId && pathname && !pathname.startsWith("/user/feedback") && (
+        {feedbackLock.locked && feedbackLock.requestId && pathname && !pathname.startsWith("/user/feedback") && !pathname.startsWith("/comptroller/feedback") && (
           <FeedbackLockModal
             open={true}
             requestId={feedbackLock.requestId}

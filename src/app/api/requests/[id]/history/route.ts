@@ -16,8 +16,10 @@ export async function GET(
 
     const { id: requestId } = await params;
 
-    if (!requestId) {
-      return NextResponse.json({ ok: false, error: "Missing request ID" }, { status: 400 });
+    // Validate request ID
+    if (!requestId || requestId === 'undefined' || requestId === 'null') {
+      console.error("[GET /api/requests/[id]/history] Invalid request ID:", requestId);
+      return NextResponse.json({ ok: false, error: "Invalid or missing request ID" }, { status: 400 });
     }
 
     // Get request details

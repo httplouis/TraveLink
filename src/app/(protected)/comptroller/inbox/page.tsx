@@ -2,7 +2,7 @@
 "use client";
 
 import React from "react";
-import { Search, Clock, User, Building2, MapPin, Calendar, FileText } from "lucide-react";
+import { Search, Clock, User, Building2, MapPin, Calendar, FileText, CheckCircle, History } from "lucide-react";
 import ComptrollerReviewModal from "@/components/comptroller/ComptrollerReviewModal";
 import RequestCardEnhanced from "@/components/common/RequestCardEnhanced";
 import RequestsTable from "@/components/common/RequestsTable";
@@ -18,16 +18,25 @@ import { AlertCircle } from "lucide-react";
 type Request = {
   id: string;
   request_number: string;
+  file_code?: string;
   title: string;
   purpose: string;
+  destination?: string;
   total_budget: number;
   comptroller_edited_budget?: number;
   travel_start_date: string;
+  travel_end_date?: string;
   created_at: string;
+  admin_processed_at?: string;
+  comptroller_approved_at?: string;
   status: string;
+  request_type?: string;
+  requester_name?: string;
   requester?: {
     name: string;
     email: string;
+    position_title?: string;
+    profile_picture?: string;
   };
   department?: {
     code: string;
@@ -36,28 +45,101 @@ type Request = {
 };
 
 export default function ComptrollerInboxPage() {
-  const [requests, setRequests] = React.useState<Request[]>([]);
+  const [pendingRequests, setPendingRequests] = React.useState<Request[]>([]);
+  const [approvedRequests, setApprovedRequests] = React.useState<Request[]>([]);
+  const [historyRequests, setHistoryRequests] = React.useState<Request[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [selectedRequest, setSelectedRequest] = React.useState<Request | null>(null);
   const [showModal, setShowModal] = React.useState(false);
-  const [viewMode, setViewMode] = useViewMode("comptroller_inbox_view", "cards");
+  const [viewMode, setViewMode] = useViewMode("comptroller_inbox_view", "table");
+  const [activeTab, setActiveTab] = React.useState<"pending" | "approved" | "history">("pending");
+
+  const logger = createLogger("ComptrollerInbox");
 
   // Set page title
   React.useEffect(() => {
     document.title = "TraviLink | Comptroller";
   }, []);
 
+  // Load pending requests
+  const loadPending = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/requests/list?status=pending_comptroller", { cache: "no-store" });
+      if (!res.ok) {
+        setPendingRequests([]);
+        return;
+      }
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setPendingRequests(data.filter((req: any) => req.status === "pending_comptroller"));
+      }
+    } catch (err) {
+      logger.error("Failed to load pending requests:", err);
+      setPendingRequests([]);
+    }
+  }, []);
+
+  // Load approved requests (comptroller has approved, now at HR or later stages)
+  const loadApproved = React.useCallback(async () => {
+    try {
+      // Get requests that comptroller has approved (have comptroller_approved_at)
+      const res = await fetch("/api/requests/list?comptroller_approved=true", { cache: "no-store" });
+      if (!res.ok) {
+        setApprovedRequests([]);
+        return;
+      }
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        // Filter to show requests that comptroller approved but are not yet final
+        const approved = data.filter((req: any) => 
+          req.comptroller_approved_at && 
+          !["approved", "rejected", "cancelled"].includes(req.status)
+        );
+        setApprovedRequests(approved);
+      }
+    } catch (err) {
+      logger.error("Failed to load approved requests:", err);
+      setApprovedRequests([]);
+    }
+  }, []);
+
+  // Load history (final states)
+  const loadHistory = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/requests/list?comptroller_approved=true", { cache: "no-store" });
+      if (!res.ok) {
+        setHistoryRequests([]);
+        return;
+      }
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        // Filter to show only final states
+        const history = data.filter((req: any) => 
+          req.comptroller_approved_at && 
+          ["approved", "rejected", "cancelled"].includes(req.status)
+        );
+        setHistoryRequests(history);
+      }
+    } catch (err) {
+      logger.error("Failed to load history:", err);
+      setHistoryRequests([]);
+    }
+  }, []);
+
   React.useEffect(() => {
-    // Initial load
-    loadRequests();
+    const loadAll = async () => {
+      setLoading(true);
+      await Promise.all([loadPending(), loadApproved(), loadHistory()]);
+      setLoading(false);
+    };
+    loadAll();
     
     // Real-time updates using Supabase Realtime
     const supabase = createSupabaseClient();
     let mutateTimeout: NodeJS.Timeout | null = null;
-    let channel: any = null;
     
-    channel = supabase
+    const channel = supabase
       .channel("comptroller-inbox-changes")
       .on(
         "postgres_changes",
@@ -66,95 +148,35 @@ export default function ComptrollerInboxPage() {
           schema: "public",
           table: "requests",
         },
-        (payload: any) => {
-          // Debounce: only trigger refetch after 500ms
+        () => {
           if (mutateTimeout) clearTimeout(mutateTimeout);
           mutateTimeout = setTimeout(() => {
-            loadRequests(); // Silent refresh
+            if (activeTab === "pending") loadPending();
+            else if (activeTab === "approved") loadApproved();
+            else loadHistory();
           }, 500);
         }
       )
-      .subscribe((status: string) => {
-        console.log("[Comptroller Inbox] Realtime subscription status:", status);
-      });
+      .subscribe();
 
-    // Cleanup: Remove realtime subscription on unmount
     return () => {
       if (mutateTimeout) clearTimeout(mutateTimeout);
-      if (channel) {
-        supabase.removeChannel(channel);
-      }
+      supabase.removeChannel(channel);
     };
-  }, []);
+  }, [loadPending, loadApproved, loadHistory, activeTab]);
 
-  const loadRequests = async () => {
-    const logger = createLogger("ComptrollerInbox");
-    try {
-      setLoading(true);
-      logger.info("Loading comptroller requests...");
-      
-      // Get current user's ID for filtering
-      const profileRes = await fetch("/api/profile", { cache: "no-store" });
-      let comptrollerId = null;
-      if (profileRes.ok) {
-        const contentType = profileRes.headers.get("content-type");
-        if (contentType && contentType.includes("application/json")) {
-          const profileData = await profileRes.json();
-          comptrollerId = profileData?.ok ? profileData.data?.id : null;
-        }
-      }
-      
-      // Fetch requests with comptroller_id filter if available
-      // IMPORTANT: Show ALL requests with status="pending_comptroller" regardless of assignment
-      // This allows any comptroller to see and process requests
-      const url = `/api/requests/list?status=pending_comptroller${comptrollerId ? `&comptroller_id=${comptrollerId}` : ''}`;
-      
-      logger.debug("Fetching requests from:", url);
-      const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) {
-        logger.error("API response not OK:", res.status, res.statusText);
-        setRequests([]);
-        return;
-      }
-      const contentType = res.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        logger.error("API returned non-JSON response. Content-Type:", contentType);
-        setRequests([]);
-        return;
-      }
-      const data = await res.json();
-      
-      logger.debug("Received data:", { isArray: Array.isArray(data), count: Array.isArray(data) ? data.length : 0 });
-      
-      if (Array.isArray(data)) {
-        // Filter to only show requests that are actually pending comptroller review
-        const pendingRequests = data.filter((req: any) => {
-          const status = req.status;
-          return status === "pending_comptroller";
-        });
-        logger.success(`Filtered to ${pendingRequests.length} pending requests`);
-        setRequests(pendingRequests);
-      } else {
-        logger.error("Invalid response format:", data);
-        setRequests([]);
-      }
-    } catch (err) {
-      logger.error("Failed to load requests:", err);
-      setRequests([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Get current items based on active tab
+  const currentItems = activeTab === "pending" ? pendingRequests : activeTab === "approved" ? approvedRequests : historyRequests;
 
   const filteredRequests = React.useMemo(() => {
     const query = searchQuery.toLowerCase();
-    return requests.filter(req => 
+    return currentItems.filter(req => 
       req.request_number?.toLowerCase().includes(query) ||
       req.requester?.name?.toLowerCase().includes(query) ||
       req.department?.name?.toLowerCase().includes(query) ||
       req.purpose?.toLowerCase().includes(query)
     );
-  }, [requests, searchQuery]);
+  }, [currentItems, searchQuery]);
 
   const handleReviewClick = (req: Request) => {
     setSelectedRequest(req);
@@ -164,13 +186,11 @@ export default function ComptrollerInboxPage() {
   const handleModalClose = () => {
     setShowModal(false);
     setSelectedRequest(null);
-    // Only refresh if modal was actually showing (to avoid unnecessary refreshes)
-    if (showModal) {
-      loadRequests(); // Refresh list without page reload
-    }
+    // Refresh all lists
+    loadPending();
+    loadApproved();
+    loadHistory();
   };
-
-  const logger = createLogger("ComptrollerInbox");
 
   if (loading) {
     return (
@@ -212,35 +232,72 @@ export default function ComptrollerInboxPage() {
             <Clock className="h-4 w-4" />
             Requests pending comptroller approval
           </p>
-          {shouldShowPendingAlert(filteredRequests.length) && (
+          {activeTab === "pending" && shouldShowPendingAlert(pendingRequests.length) && (
             <div className={`mt-3 flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${
-              getAlertSeverity(filteredRequests.length) === 'danger'
+              getAlertSeverity(pendingRequests.length) === 'danger'
                 ? 'bg-red-50 border border-red-200 text-red-700'
-                : getAlertSeverity(filteredRequests.length) === 'warning'
+                : getAlertSeverity(pendingRequests.length) === 'warning'
                 ? 'bg-orange-50 border border-orange-200 text-orange-700'
                 : 'bg-amber-50 border border-amber-200 text-amber-700'
             }`}>
               <AlertCircle className="h-4 w-4" />
-              <span>{getAlertMessage(filteredRequests.length, 'comptroller')}</span>
+              <span>{getAlertMessage(pendingRequests.length, 'comptroller')}</span>
             </div>
           )}
         </div>
         <div className="flex items-center gap-4">
           <ViewToggle view={viewMode} onChange={setViewMode} />
           <div className={`px-6 py-3 rounded-xl shadow-lg text-white ${
-            shouldShowPendingAlert(filteredRequests.length)
-              ? getAlertSeverity(filteredRequests.length) === 'danger'
+            activeTab === "pending" && shouldShowPendingAlert(pendingRequests.length)
+              ? getAlertSeverity(pendingRequests.length) === 'danger'
                 ? 'bg-gradient-to-br from-red-600 to-red-700'
-                : getAlertSeverity(filteredRequests.length) === 'warning'
+                : getAlertSeverity(pendingRequests.length) === 'warning'
                 ? 'bg-gradient-to-br from-orange-600 to-orange-700'
                 : 'bg-gradient-to-br from-amber-600 to-amber-700'
               : 'bg-gradient-to-br from-[#7A0010] to-[#9c2a3a]'
           }`}>
-            <div className="text-3xl font-bold">{filteredRequests.length}</div>
+            <div className="text-3xl font-bold">{pendingRequests.length}</div>
             <div className="text-xs text-white/80">pending reviews</div>
           </div>
         </div>
       </motion.div>
+
+      {/* Filter Tabs */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => setActiveTab("pending")}
+          className={`px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${
+            activeTab === "pending"
+              ? "bg-[#7A0010] text-white shadow-md"
+              : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
+          }`}
+        >
+          <Clock className="h-4 w-4" />
+          Pending ({pendingRequests.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("approved")}
+          className={`px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${
+            activeTab === "approved"
+              ? "bg-[#7A0010] text-white shadow-md"
+              : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
+          }`}
+        >
+          <CheckCircle className="h-4 w-4" />
+          Approved ({approvedRequests.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("history")}
+          className={`px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${
+            activeTab === "history"
+              ? "bg-[#7A0010] text-white shadow-md"
+              : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
+          }`}
+        >
+          <History className="h-4 w-4" />
+          History ({historyRequests.length})
+        </button>
+      </div>
 
       {/* Search */}
       <motion.div 
@@ -313,7 +370,7 @@ export default function ComptrollerInboxPage() {
                     admin_processed_at: req.admin_processed_at,
                     comptroller_approved_at: req.comptroller_approved_at,
                     total_budget: req.total_budget,
-                    request_type: req.request_type,
+                    request_type: req.request_type as "travel_order" | "seminar" | undefined,
                     requester_name: req.requester_name || req.requester?.name,
                     requester: {
                       name: req.requester_name || req.requester?.name || "Unknown",

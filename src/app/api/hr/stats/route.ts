@@ -7,9 +7,12 @@ import { createClient } from "@supabase/supabase-js";
 export const revalidate = 30;
 
 export async function GET() {
+  // Use regular client for auth (NOT service role - it doesn't have session info)
+  const authSupabase = await createSupabaseServerClient(false);
+  // Use service role for database operations
   const supabase = await createSupabaseServerClient(true);
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await authSupabase.auth.getUser();
   if (!user) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }

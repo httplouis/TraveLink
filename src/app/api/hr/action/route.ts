@@ -305,8 +305,8 @@ export async function POST(request: Request) {
             await createNotification({
               user_id: vpId,
               notification_type: "request_pending_signature",
-              title: "Request Requires Your Approval",
-              message: `A travel order request ${request.request_number || ''} has been sent to you for approval.`,
+              title: "New Request from HR",
+              message: `HR has approved request ${request.request_number || ''} and forwarded it to you for VP approval.`,
               related_type: "request",
               related_id: requestId,
               action_url: `/vp/inbox?view=${requestId}`,
@@ -316,11 +316,12 @@ export async function POST(request: Request) {
           }
         } else if (nextApproverId) {
           // Single approver (backward compatibility)
+          const roleLabel = approverRole === "president" ? "President" : "VP";
           await createNotification({
             user_id: nextApproverId,
             notification_type: "request_pending_signature",
-            title: "Request Requires Your Approval",
-            message: `A travel order request ${request.request_number || ''} has been sent to you for approval.`,
+            title: `New Request from HR`,
+            message: `HR has approved request ${request.request_number || ''} and forwarded it to you for ${roleLabel} approval.`,
             related_type: "request",
             related_id: requestId,
             action_url: approverRole === "president" ? `/president/inbox?view=${requestId}` : `/vp/inbox?view=${requestId}`,

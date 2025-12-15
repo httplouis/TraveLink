@@ -465,7 +465,7 @@ export default function ParticipantInvitationEditor({
           setLinkToShow(null);
           setCopied(false);
         }}
-        title="📧 Invitation Link"
+        title="Invitation Link"
         size="lg"
       >
         <div className="space-y-4">

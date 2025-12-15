@@ -5,11 +5,20 @@ import { WorkflowEngine } from "@/lib/workflow/engine";
 
 export async function POST(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
     const { reason } = await req.json();
-    const requestId = params.id;
+    
+    // Handle both Promise and direct params (Next.js 15+ uses Promise)
+    const resolvedParams = params instanceof Promise ? await params : params;
+    const requestId = resolvedParams.id;
+    
+    // Validate request ID
+    if (!requestId || requestId === 'undefined' || requestId === 'null') {
+      console.error("[POST /api/requests/[id]/reject] Invalid request ID:", requestId);
+      return NextResponse.json({ ok: false, error: "Invalid or missing request ID" }, { status: 400 });
+    }
     
     if (!reason || reason.trim() === "") {
       return NextResponse.json({ 
@@ -18,10 +27,13 @@ export async function POST(
       }, { status: 400 });
     }
     
+    // Use regular client for auth (NOT service role - it doesn't have session info)
+    const authSupabase = await createSupabaseServerClient(false);
+    // Use service role for database operations
     const supabase = await createSupabaseServerClient(true);
 
     // Get current user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser();
     if (authError || !user) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }

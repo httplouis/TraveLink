@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET() {
-  const supabase = await createSupabaseServerClient(true);
+  // Use regular client for auth (NOT service role - it doesn't have session info)
+  const supabase = await createSupabaseServerClient(false);
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
@@ -22,7 +23,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const supabase = await createSupabaseServerClient(true);
+  // Use regular client for auth (NOT service role - it doesn't have session info)
+  const supabase = await createSupabaseServerClient(false);
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {

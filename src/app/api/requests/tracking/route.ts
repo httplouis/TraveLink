@@ -9,7 +9,8 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET(request: Request) {
   try {
-    const supabase = await createSupabaseServerClient(true);
+    // Use regular client for auth (NOT service role - it doesn't have session info)
+    const supabase = await createSupabaseServerClient(false);
     const { searchParams } = new URL(request.url);
     const requestId = searchParams.get("requestId");
 

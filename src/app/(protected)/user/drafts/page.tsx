@@ -29,7 +29,7 @@ function DraftsPageContent() {
   const [loading, setLoading] = React.useState(true);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const requestIdParam = searchParams.get("requestId");
+  const requestIdParam = searchParams?.get("requestId") ?? null;
   const [highlightedId, setHighlightedId] = React.useState<string | null>(null);
 
   const { hardSet, setCurrentDraftId, clearIds } = useRequestStore();
@@ -174,20 +174,20 @@ function DraftsPageContent() {
               <motion.div
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="rounded-lg border-2 border-blue-200 bg-blue-50 p-4 flex items-center gap-3"
+                className="rounded-lg border-2 border-amber-300 bg-amber-50 p-4 flex items-center gap-3"
               >
-                <AlertCircle className="h-5 w-5 text-blue-600 flex-shrink-0" />
-                <p className="text-sm text-blue-800">
-                  Your request has been rejected and returned to drafts. Please review and make necessary changes.
+                <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0" />
+                <p className="text-sm text-amber-800">
+                  Your request has been returned for revision. Please review the feedback, make necessary changes, and resubmit.
                 </p>
               </motion.div>
             )}
 
-            {/* Database Drafts (Rejected Requests) */}
+            {/* Database Drafts (Returned/Draft Requests) */}
             {dbDrafts.length > 0 && (
               <div>
                 <h3 className="text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wide">
-                  Rejected Requests (Drafts)
+                  {dbDrafts.some(d => d.status === 'returned') ? 'Returned for Revision' : 'Saved Drafts'}
                 </h3>
                 <div className="grid gap-4 mb-6">
                   {dbDrafts.map((d, index) => {
@@ -222,9 +222,23 @@ function DraftsPageContent() {
                                     </span>
                                   )}
                                 </div>
-                                {d.return_reason && (
+                                {d.status === 'returned' && (
+                                  <div className="mb-2 rounded-lg bg-amber-100 border border-amber-300 p-3">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <AlertCircle className="h-4 w-4 text-amber-600" />
+                                      <p className="text-xs font-semibold text-amber-800">Returned for Revision</p>
+                                    </div>
+                                    {d.return_reason && (
+                                      <p className="text-xs text-amber-700 ml-6">{d.return_reason}</p>
+                                    )}
+                                    <p className="text-xs text-amber-600 mt-2 ml-6">
+                                      Please edit and resubmit this request.
+                                    </p>
+                                  </div>
+                                )}
+                                {d.status === 'draft' && d.return_reason && (
                                   <div className="mb-2 rounded-lg bg-red-100 border border-red-200 p-2">
-                                    <p className="text-xs font-semibold text-red-800 mb-1">Rejection Reason:</p>
+                                    <p className="text-xs font-semibold text-red-800 mb-1">Previous Rejection:</p>
                                     <p className="text-xs text-red-700">{d.return_reason}</p>
                                   </div>
                                 )}
@@ -251,9 +265,13 @@ function DraftsPageContent() {
                               onClick={() => {
                                 router.push(`/user/request/new?requestId=${d.id}`);
                               }}
-                              className="group/load inline-flex items-center gap-2 rounded-xl border-2 border-[#7A0010] bg-gradient-to-r from-[#7A0010] to-[#5A0010] px-4 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:shadow-lg hover:from-[#8A0010] hover:to-[#6A0010]"
+                              className={`group/load inline-flex items-center gap-2 rounded-xl border-2 px-4 py-2.5 text-sm font-semibold shadow-md transition-all hover:shadow-lg ${
+                                d.status === 'returned'
+                                  ? 'border-amber-500 bg-gradient-to-r from-amber-500 to-amber-600 text-white hover:from-amber-600 hover:to-amber-700'
+                                  : 'border-[#7A0010] bg-gradient-to-r from-[#7A0010] to-[#5A0010] text-white hover:from-[#8A0010] hover:to-[#6A0010]'
+                              }`}
                             >
-                              <span>Edit</span>
+                              <span>{d.status === 'returned' ? 'Edit & Resubmit' : 'Edit'}</span>
                               <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover/load:translate-x-0.5" strokeWidth={2.5} />
                             </motion.button>
                           </div>

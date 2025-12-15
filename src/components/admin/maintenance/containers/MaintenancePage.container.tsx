@@ -244,7 +244,7 @@ export default function MaintenancePage() {
                             />
                           ) : (
                             <div className="w-16 h-16 bg-neutral-100 rounded border flex items-center justify-center text-xs text-neutral-600">
-                              📄
+                              No Image
                             </div>
                           )}
                           <div className="flex-1 min-w-0">

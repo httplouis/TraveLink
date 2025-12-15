@@ -3,10 +3,22 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
-    const requestId = params.id;
+    // Handle both Promise and direct params (Next.js 15+ uses Promise)
+    const resolvedParams = params instanceof Promise ? await params : params;
+    const requestId = resolvedParams.id;
+    
+    // Validate request ID
+    if (!requestId || requestId === 'undefined' || requestId === 'null') {
+      console.error("[GET /api/requests/[id]/tracking] Invalid request ID:", requestId);
+      return NextResponse.json(
+        { ok: false, error: "Invalid or missing request ID" },
+        { status: 400 }
+      );
+    }
+    
     const supabase = await createSupabaseServerClient(true);
 
     // Get full request details with all approval information AND department

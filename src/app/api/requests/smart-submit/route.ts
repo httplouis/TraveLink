@@ -12,6 +12,9 @@ import { SmartWorkflowEngine, type SmartUser, type SmartDepartment, type Departm
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+    // Use regular client for auth (NOT service role - it doesn't have session info)
+    const authSupabase = await createSupabaseServerClient(false);
+    // Use service role for database operations
     const supabase = await createSupabaseServerClient(true);
 
     console.log("🚀 [SMART SUBMIT] Starting smart request submission...");
@@ -20,7 +23,7 @@ export async function POST(req: Request) {
     // AUTHENTICATION & PROFILE
     // ═══════════════════════════════════════════════════════════════════
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser();
     if (authError || !user) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }

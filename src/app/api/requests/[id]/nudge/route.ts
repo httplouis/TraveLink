@@ -18,8 +18,10 @@ export async function POST(
     const supabase = await createSupabaseServerClient(true);
     const { id: requestId } = await params;
 
-    if (!requestId) {
-      return NextResponse.json({ ok: false, error: "Missing request ID" }, { status: 400 });
+    // Validate request ID
+    if (!requestId || requestId === 'undefined' || requestId === 'null') {
+      console.error("[POST /api/requests/[id]/nudge] Invalid request ID:", requestId);
+      return NextResponse.json({ ok: false, error: "Invalid or missing request ID" }, { status: 400 });
     }
 
     // Authenticate user

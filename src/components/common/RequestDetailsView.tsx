@@ -258,6 +258,7 @@ interface RequestDetailsViewProps {
   onApprove?: () => void;
   onReturn?: () => void;
   onEdit?: () => void;
+  onEditResubmit?: () => void; // For returned requests - edit and resubmit
   onPrint?: () => void;
   onClose?: () => void;
   className?: string;
@@ -272,6 +273,7 @@ export default function RequestDetailsView({
   onApprove,
   onReturn,
   onEdit,
+  onEditResubmit,
   onPrint,
   onClose,
   className = ''
@@ -880,7 +882,7 @@ export default function RequestDetailsView({
       )}
 
       {/* Cancel Button for Requester */}
-      {isRequester && request.status !== "cancelled" && request.status !== "completed" && (
+      {isRequester && request.status !== "cancelled" && request.status !== "completed" && request.status !== "returned" && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -898,6 +900,31 @@ export default function RequestDetailsView({
               onClick={() => setShowCancelModal(true)}
             >
               Cancel Request
+            </WowButton>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Edit & Resubmit Button for Returned Requests */}
+      {isRequester && request.status === "returned" && onEditResubmit && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-center justify-center p-4 bg-amber-50 border-2 border-amber-300 rounded-xl"
+        >
+          <div className="flex items-center gap-3 w-full">
+            <div className="flex-1">
+              <p className="text-sm font-bold text-amber-900">Request Returned for Revision</p>
+              <p className="text-xs text-amber-700 mt-1">
+                This request was returned by an approver. Please review the feedback, make necessary changes, and resubmit.
+              </p>
+            </div>
+            <WowButton 
+              variant="primary" 
+              onClick={onEditResubmit}
+              className="bg-amber-500 hover:bg-amber-600"
+            >
+              Edit & Resubmit
             </WowButton>
           </div>
         </motion.div>
@@ -985,10 +1012,17 @@ export default function RequestDetailsView({
                           <p className="text-xs font-medium text-gray-500 mb-1">Date Requested</p>
                           <p className="text-gray-900 font-medium">{formatDate(request.created_at || request.travel_start_date)}</p>
                         </div>
-                        {request.total_budget > 0 && (
+                        {(request.comptroller_edited_budget || request.total_budget) > 0 && (
                           <div>
                             <p className="text-xs font-medium text-gray-500 mb-1">Budget</p>
-                            <p className="text-gray-900 font-medium">{formatCurrency(request.total_budget)}</p>
+                            {request.comptroller_edited_budget && request.comptroller_edited_budget !== request.total_budget ? (
+                              <div>
+                                <p className="text-gray-500 text-sm line-through">{formatCurrency(request.total_budget)}</p>
+                                <p className="text-[#7a0019] font-semibold">{formatCurrency(request.comptroller_edited_budget)}</p>
+                              </div>
+                            ) : (
+                              <p className="text-gray-900 font-medium">{formatCurrency(request.total_budget)}</p>
+                            )}
                           </div>
                         )}
                       </div>

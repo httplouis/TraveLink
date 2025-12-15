@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { X, CheckCircle2 } from "lucide-react";
+import { X, CheckCircle2, ArrowLeft } from "lucide-react";
 import { useToast } from "@/components/common/ui/ToastProvider.ui";
+import ReturnToSenderModal from "@/components/common/ReturnToSenderModal";
 
 interface ExecRequestModalProps {
   request: any;
@@ -25,6 +26,10 @@ export default function ExecRequestModal({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasSignature, setHasSignature] = useState(false);
+  
+  // Return to sender state
+  const [showReturnModal, setShowReturnModal] = useState(false);
+  const [isReturning, setIsReturning] = useState(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -161,6 +166,37 @@ export default function ExecRequestModal({
       toast({ message: "Failed to reject request. Please try again.", kind: "error" });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleReturnToSender = async (returnReason: string, comments: string) => {
+    if (submitting || isReturning) return;
+    
+    setIsReturning(true);
+    try {
+      const res = await fetch(`/api/requests/${request.id}/return`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          return_reason: returnReason,
+          comments: comments,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.ok) {
+        toast({ message: "Request returned to sender for revision", kind: "success" });
+        setShowReturnModal(false);
+        setTimeout(() => {
+          onRejected(request.id);
+        }, 1000);
+      } else {
+        toast({ message: data.error || "Failed to return request", kind: "error" });
+      }
+    } catch (err) {
+      toast({ message: "Failed to return request. Please try again.", kind: "error" });
+    } finally {
+      setIsReturning(false);
     }
   };
 
@@ -539,28 +575,43 @@ export default function ExecRequestModal({
 
         {/* Footer Actions */}
         {!readOnly && (
-          <div className="sticky bottom-0 bg-gray-50 px-6 py-4 flex gap-3 border-t rounded-b-xl">
-            <button
-              onClick={handleApprove}
-              disabled={submitting || !hasSignature}
-              className="flex-1 bg-green-600 text-white px-4 py-3 rounded-lg font-bold hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-lg"
-            >
-              {submitting ? "Approving..." : "✓ Approve Request (Final Approval)"}
-            </button>
-            <button
-              onClick={handleReject}
-              disabled={submitting || !notes.trim()}
-              className="flex-1 bg-red-600 text-white px-4 py-3 rounded-lg font-bold hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-lg"
-            >
-              {submitting ? "Rejecting..." : "✗ Reject Request"}
-            </button>
-            <button
-              onClick={onClose}
-              disabled={submitting}
-              className="px-6 py-3 border-2 border-gray-300 rounded-lg font-medium hover:bg-gray-100 disabled:opacity-50 transition-colors"
-            >
-              Cancel
-            </button>
+          <div className="sticky bottom-0 bg-gray-50 px-6 py-4 border-t rounded-b-xl">
+            <div className="flex items-center justify-between gap-3">
+              {/* Left side - Return to Sender */}
+              <button
+                onClick={() => setShowReturnModal(true)}
+                disabled={submitting || isReturning}
+                className="flex items-center gap-2 px-4 py-2.5 text-amber-700 bg-amber-50 border border-amber-300 rounded-lg font-medium hover:bg-amber-100 disabled:opacity-50 transition-colors"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Return to Sender
+              </button>
+              
+              {/* Right side - Main actions */}
+              <div className="flex gap-3">
+                <button
+                  onClick={handleReject}
+                  disabled={submitting || !notes.trim()}
+                  className="px-6 py-2.5 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                >
+                  {submitting ? "Rejecting..." : "✗ Reject"}
+                </button>
+                <button
+                  onClick={onClose}
+                  disabled={submitting}
+                  className="px-6 py-2.5 border-2 border-gray-300 rounded-lg font-medium hover:bg-gray-100 disabled:opacity-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleApprove}
+                  disabled={submitting || !hasSignature}
+                  className="px-6 py-2.5 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                >
+                  {submitting ? "Approving..." : "✓ Approve (Final)"}
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -576,6 +627,15 @@ export default function ExecRequestModal({
           </div>
         )}
       </div>
+
+      {/* Return to Sender Modal */}
+      <ReturnToSenderModal
+        open={showReturnModal}
+        onClose={() => setShowReturnModal(false)}
+        onConfirm={handleReturnToSender}
+        isLoading={isReturning}
+        requestNumber={request.request_number || request.id}
+      />
     </div>
   );
 }

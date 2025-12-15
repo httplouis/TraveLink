@@ -35,8 +35,8 @@ export async function GET() {
       }
     );
     
-    // Use regular client for auth check only
-    const supabase = await createSupabaseServerClient(true);
+    // Use regular client for auth check only (NOT service role - it doesn't have session info)
+    const supabase = await createSupabaseServerClient(false);
 
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
@@ -55,7 +55,17 @@ export async function GET() {
       return NextResponse.json({ ok: false, error: "Profile not found" }, { status: 404 });
     }
 
+    // Debug logging
+    console.log("[GET /api/head/stats] Profile found:", {
+      id: profile.id,
+      name: profile.name,
+      email: profile.email,
+      is_head: profile.is_head,
+      department_id: profile.department_id
+    });
+
     if (!profile.is_head || !profile.department_id) {
+      console.log("[GET /api/head/stats] User is not a head or has no department_id, returning zeros");
       return NextResponse.json({
         ok: true,
         data: {
@@ -68,6 +78,7 @@ export async function GET() {
 
     const userId = profile.id;
     const departmentId = profile.department_id;
+    console.log("[GET /api/head/stats] Querying stats for department:", departmentId);
 
     // 1. Pending Endorsements: Requests in pending_head or pending_parent_head status for this head's department
     // Also count requests from child departments (for parent heads like SVP)
@@ -130,6 +141,15 @@ export async function GET() {
     if (deptError) {
       console.error("[GET /api/head/stats] Department requests error:", deptError);
     }
+
+    // Debug logging
+    console.log("[GET /api/head/stats] Stats calculated:", {
+      pendingEndorsements: pendingEndorsements || 0,
+      activeRequests: activeRequests || 0,
+      departmentRequests: departmentRequests || 0,
+      directPending,
+      childPendingCount
+    });
 
     const response = NextResponse.json({
       ok: true,

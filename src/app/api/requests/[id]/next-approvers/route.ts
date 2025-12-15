@@ -15,6 +15,12 @@ export async function GET(
     const { id } = await params;
     const requestId = id;
 
+    // Validate request ID
+    if (!requestId || requestId === 'undefined' || requestId === 'null') {
+      console.error("[GET /api/requests/[id]/next-approvers] Invalid request ID:", requestId);
+      return NextResponse.json({ ok: false, error: "Invalid or missing request ID" }, { status: 400 });
+    }
+
     // Get authenticated user first (for authorization)
     const authSupabase = await createSupabaseServerClient(false);
     const { data: { user }, error: authError } = await authSupabase.auth.getUser();

@@ -10,7 +10,7 @@ import PersonDisplay from "@/components/common/PersonDisplay";
 import RequestCardEnhanced from "@/components/common/RequestCardEnhanced";
 import RequestsTable from "@/components/common/RequestsTable";
 import ViewToggle, { useViewMode } from "@/components/common/ViewToggle";
-import { Eye, Search, FileText } from "lucide-react";
+import { Eye, Search, FileText, Clock, CheckCircle, History } from "lucide-react";
 import { createSupabaseClient } from "@/lib/supabase/client";
 import { SkeletonRequestCard } from "@/components/common/SkeletonLoader";
 import { createLogger } from "@/lib/debug";
@@ -18,45 +18,90 @@ import { shouldShowPendingAlert, getAlertSeverity, getAlertMessage } from "@/lib
 import { AlertCircle } from "lucide-react";
 
 export default function PresidentInboxContainer() {
-  const [items, setItems] = React.useState<any[]>([]);
+  const [pendingItems, setPendingItems] = React.useState<any[]>([]);
+  const [approvedItems, setApprovedItems] = React.useState<any[]>([]);
+  const [historyItems, setHistoryItems] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [selected, setSelected] = React.useState<any | null>(null);
   const [trackingRequest, setTrackingRequest] = React.useState<any | null>(null);
   const [showTrackingModal, setShowTrackingModal] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [viewMode, setViewMode] = useViewMode("president_inbox_view", "cards");
+  const [activeTab, setActiveTab] = React.useState<"pending" | "approved" | "history">("pending");
 
   const logger = createLogger("PresidentInbox");
 
-  async function load(showLoader = true) {
-    if (showLoader) setLoading(true);
+  // Load pending requests
+  const loadPending = React.useCallback(async () => {
     try {
-      logger.info("Loading President requests...");
+      logger.info("Loading pending President requests...");
       const res = await fetch("/api/president/inbox", { cache: "no-store" });
       if (!res.ok) {
-        logger.error("API response not OK:", res.status, res.statusText);
-        setItems([]);
+        logger.error("API response not OK:", { status: res.status, statusText: res.statusText });
+        setPendingItems([]);
         return;
       }
       const contentType = res.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
         logger.error("API returned non-JSON response. Content-Type:", contentType);
-        setItems([]);
+        setPendingItems([]);
         return;
       }
       const json = await res.json();
       if (json.ok) {
-        setItems(json.data ?? []);
-        logger.success(`Loaded ${json.data?.length || 0} President requests`);
+        setPendingItems(json.data ?? []);
+        logger.success(`Loaded ${json.data?.length || 0} pending President requests`);
       } else {
         logger.warn("Failed to load President requests:", json.error);
       }
     } catch (error) {
-      logger.error("Error loading President requests:", error);
-    } finally {
-      if (showLoader) setLoading(false);
+      logger.error("Error loading pending President requests:", error);
     }
-  }
+  }, []);
+
+  // Load approved requests (President has approved, now at later stages)
+  const loadApproved = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/requests/list?president_approved=true", { cache: "no-store" });
+      if (!res.ok) {
+        setApprovedItems([]);
+        return;
+      }
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        const approved = data.filter((req: any) => 
+          req.president_approved_at && 
+          !["approved", "rejected", "cancelled"].includes(req.status)
+        );
+        setApprovedItems(approved);
+      }
+    } catch (err) {
+      logger.error("Failed to load approved requests:", err);
+      setApprovedItems([]);
+    }
+  }, []);
+
+  // Load history (final states)
+  const loadHistory = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/requests/list?president_approved=true", { cache: "no-store" });
+      if (!res.ok) {
+        setHistoryItems([]);
+        return;
+      }
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        const history = data.filter((req: any) => 
+          req.president_approved_at && 
+          ["approved", "rejected", "cancelled"].includes(req.status)
+        );
+        setHistoryItems(history);
+      }
+    } catch (err) {
+      logger.error("Failed to load history:", err);
+      setHistoryItems([]);
+    }
+  }, []);
 
   React.useEffect(() => {
     let isMounted = true;
@@ -64,11 +109,15 @@ export default function PresidentInboxContainer() {
     let channel: any = null;
     
     // Initial load
-    load();
+    const loadAll = async () => {
+      setLoading(true);
+      await Promise.all([loadPending(), loadApproved(), loadHistory()]);
+      setLoading(false);
+    };
+    loadAll();
     
     // Set up real-time subscription
     const supabase = createSupabaseClient();
-    console.log("[PresidentInboxContainer] Setting up real-time subscription...");
     
     channel = supabase
       .channel("president-inbox-changes")
@@ -79,24 +128,17 @@ export default function PresidentInboxContainer() {
           schema: "public",
           table: "requests",
         },
-        (payload) => {
+        () => {
           if (!isMounted) return;
           
-          const newStatus = (payload.new as any)?.status;
-          const oldStatus = (payload.old as any)?.status;
-          
-          // Only react to changes that affect President inbox statuses
-          const presidentStatuses = ['pending_president', 'approved', 'rejected'];
-          if (presidentStatuses.includes(newStatus) || presidentStatuses.includes(oldStatus)) {
-            console.log("[PresidentInboxContainer] 🔄 Real-time change detected:", payload.eventType, newStatus);
-            
-            if (mutateTimeout) clearTimeout(mutateTimeout);
-            mutateTimeout = setTimeout(() => {
-              if (isMounted) {
-                load(false);
-              }
-            }, 500);
-          }
+          if (mutateTimeout) clearTimeout(mutateTimeout);
+          mutateTimeout = setTimeout(() => {
+            if (isMounted) {
+              if (activeTab === "pending") loadPending();
+              else if (activeTab === "approved") loadApproved();
+              else loadHistory();
+            }
+          }, 500);
         }
       )
       .subscribe();
@@ -108,16 +150,29 @@ export default function PresidentInboxContainer() {
         supabase.removeChannel(channel);
       }
     };
-  }, []);
+  }, [activeTab, loadPending, loadApproved, loadHistory]);
+
+  // Get current items based on active tab
+  const items = activeTab === "pending" ? pendingItems : activeTab === "approved" ? approvedItems : historyItems;
 
   const handleApproved = (id: string) => {
+    setPendingItems(prev => prev.filter(x => x.id !== id));
     setSelected(null);
-    load();
+    setTimeout(() => {
+      loadPending();
+      loadApproved();
+      loadHistory();
+    }, 500);
   };
 
   const handleRejected = (id: string) => {
+    setPendingItems(prev => prev.filter(x => x.id !== id));
     setSelected(null);
-    load();
+    setTimeout(() => {
+      loadPending();
+      loadApproved();
+      loadHistory();
+    }, 500);
   };
 
   const filteredItems = items.filter((item) => {
@@ -156,18 +211,55 @@ export default function PresidentInboxContainer() {
   return (
     <div className="space-y-4">
       {/* Pending Alert */}
-      {shouldShowPendingAlert(items.length) && (
+      {activeTab === "pending" && shouldShowPendingAlert(pendingItems.length) && (
         <div className={`flex items-center gap-2 px-4 py-3 rounded-lg text-sm font-medium ${
-          getAlertSeverity(items.length) === 'danger'
+          getAlertSeverity(pendingItems.length) === 'danger'
             ? 'bg-red-50 border border-red-200 text-red-700'
-            : getAlertSeverity(items.length) === 'warning'
+            : getAlertSeverity(pendingItems.length) === 'warning'
             ? 'bg-orange-50 border border-orange-200 text-orange-700'
             : 'bg-amber-50 border border-amber-200 text-amber-700'
         }`}>
           <AlertCircle className="h-5 w-5" />
-          <span>{getAlertMessage(items.length, 'president')}</span>
+          <span>{getAlertMessage(pendingItems.length, 'president')}</span>
         </div>
       )}
+
+      {/* Filter Tabs */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => setActiveTab("pending")}
+          className={`px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${
+            activeTab === "pending"
+              ? "bg-[#7A0010] text-white shadow-md"
+              : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
+          }`}
+        >
+          <Clock className="h-4 w-4" />
+          Pending ({pendingItems.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("approved")}
+          className={`px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${
+            activeTab === "approved"
+              ? "bg-[#7A0010] text-white shadow-md"
+              : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
+          }`}
+        >
+          <CheckCircle className="h-4 w-4" />
+          Approved ({approvedItems.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("history")}
+          className={`px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${
+            activeTab === "history"
+              ? "bg-[#7A0010] text-white shadow-md"
+              : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
+          }`}
+        >
+          <History className="h-4 w-4" />
+          History ({historyItems.length})
+        </button>
+      </div>
       
       {/* Search + View Toggle */}
       <div className="flex items-center gap-3">
@@ -268,7 +360,7 @@ export default function PresidentInboxContainer() {
           request={selected}
           onClose={() => {
             setSelected(null);
-            load(false); // Refresh list when modal closes
+            loadPending(); // Refresh list when modal closes
           }}
           onApproved={handleApproved}
           onRejected={handleRejected}
@@ -278,6 +370,7 @@ export default function PresidentInboxContainer() {
       {/* Tracking Modal */}
       {showTrackingModal && trackingRequest && (
         <TrackingModal
+          isOpen={showTrackingModal}
           requestId={trackingRequest.id}
           onClose={() => {
             setShowTrackingModal(false);

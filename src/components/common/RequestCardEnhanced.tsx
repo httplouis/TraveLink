@@ -15,7 +15,9 @@ import {
   XCircle,
   AlertCircle,
   Download,
-  Printer
+  Printer,
+  Edit,
+  RotateCcw
 } from "lucide-react";
 import StatusBadge from "./StatusBadge";
 import PersonDisplay from "./PersonDisplay";
@@ -69,6 +71,8 @@ interface RequestCardEnhancedProps {
     is_representative?: boolean;
     requester_signed_at?: string;
     requester_signature?: string;
+    return_reason?: string;
+    return_comments?: string; // Additional comments from the approver who returned
   };
   showActions?: boolean;
   onView?: () => void;
@@ -77,6 +81,7 @@ interface RequestCardEnhancedProps {
   onReject?: () => void;
   onDownload?: () => void;
   onPrint?: () => void;
+  onEditResubmit?: () => void;
   variant?: 'default' | 'compact' | 'detailed';
   className?: string;
 }
@@ -90,6 +95,7 @@ function RequestCardEnhanced({
   onReject,
   onDownload,
   onPrint,
+  onEditResubmit,
   variant = 'default',
   className = "",
 }: RequestCardEnhancedProps) {
@@ -113,6 +119,7 @@ function RequestCardEnhanced({
   const isSeminar = useMemo(() => request.request_type === 'seminar', [request.request_type]);
   const isApproved = useMemo(() => request.status === 'approved', [request.status]);
   const isRejected = useMemo(() => request.status === 'rejected', [request.status]);
+  const isReturned = useMemo(() => request.status === 'returned', [request.status]);
 
   // Memoize date range formatting
   const dateRange = useMemo(() => {
@@ -127,8 +134,9 @@ function RequestCardEnhanced({
   const statusIcon = useMemo(() => {
     if (isApproved) return <CheckCircle2 className="h-4 w-4 text-green-600" />;
     if (isRejected) return <XCircle className="h-4 w-4 text-red-600" />;
+    if (isReturned) return <RotateCcw className="h-4 w-4 text-amber-600" />;
     return <Clock className="h-4 w-4 text-amber-600" />;
-  }, [isApproved, isRejected]);
+  }, [isApproved, isRejected, isReturned]);
 
   return (
     <motion.div
@@ -328,6 +336,26 @@ function RequestCardEnhanced({
             </span>
           </div>
         )}
+
+        {/* Returned for Revision Banner */}
+        {isReturned && (
+          <div className="p-4 bg-amber-50 rounded-lg border-2 border-amber-300">
+            <div className="flex items-start gap-3">
+              <RotateCcw className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <h4 className="text-sm font-bold text-amber-800">Returned for Revision</h4>
+                <p className="text-xs text-amber-700 mt-1">
+                  This request was returned by an approver. Please review and make necessary changes.
+                </p>
+                {(request.return_reason || request.return_comments) && (
+                  <p className="text-xs text-amber-600 mt-2 italic">
+                    Reason: {request.return_reason}{request.return_comments ? ` - ${request.return_comments}` : ''}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Actions Footer */}
@@ -344,6 +372,19 @@ function RequestCardEnhanced({
               >
                 <Eye className="h-4 w-4" />
                 View Details
+              </button>
+            )}
+            {/* Edit & Resubmit button for returned requests */}
+            {isReturned && onEditResubmit && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEditResubmit();
+                }}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 transition-colors"
+              >
+                <Edit className="h-4 w-4" />
+                Edit & Resubmit
               </button>
             )}
             {onTrack && (
@@ -433,7 +474,8 @@ export default React.memo(RequestCardEnhanced, (prevProps, nextProps) => {
     prevProps.onView === nextProps.onView &&
     prevProps.onTrack === nextProps.onTrack &&
     prevProps.onApprove === nextProps.onApprove &&
-    prevProps.onReject === nextProps.onReject
+    prevProps.onReject === nextProps.onReject &&
+    prevProps.onEditResubmit === nextProps.onEditResubmit
   );
 });
 

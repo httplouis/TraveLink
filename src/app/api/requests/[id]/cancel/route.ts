@@ -11,6 +11,13 @@ export async function POST(
 ) {
   try {
     const { id: requestId } = await Promise.resolve(params);
+    
+    // Validate request ID
+    if (!requestId || requestId === 'undefined' || requestId === 'null') {
+      console.error("[POST /api/requests/[id]/cancel] Invalid request ID:", requestId);
+      return NextResponse.json({ ok: false, error: "Invalid or missing request ID" }, { status: 400 });
+    }
+    
     const body = await req.json();
     const { reason, password } = body;
 

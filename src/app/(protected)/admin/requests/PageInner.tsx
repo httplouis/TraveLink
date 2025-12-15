@@ -773,6 +773,19 @@ export default function PageInner() {
       vehicle_mode: fullRequestData.transportation_type === 'pickup' ? 'institutional' : 
                     fullRequestData.transportation_type === 'self' ? 'owned' : 'rent',
       
+      // Transportation/Pickup details - important for admin view
+      transportation_type: fullRequestData.transportation_type,
+      pickup_location: fullRequestData.pickup_location,
+      pickup_time: fullRequestData.pickup_time,
+      pickup_contact_number: fullRequestData.pickup_contact_number,
+      pickup_special_instructions: fullRequestData.pickup_special_instructions,
+      requester_contact_number: fullRequestData.requester_contact_number,
+      
+      // Budget fields
+      total_budget: fullRequestData.total_budget,
+      comptroller_edited_budget: fullRequestData.comptroller_edited_budget,
+      hr_edited_budget: fullRequestData.hr_edited_budget,
+      
       // Transform request data to travelOrder format
       travelOrder: {
         date: fullRequestData.travel_start_date?.split('T')[0] || fullRequestData.created_at?.split('T')[0] || '',
@@ -1090,6 +1103,19 @@ export default function PageInner() {
         head_approved_by: remoteReq.head_approved_by || null,
         head_signature: remoteReq.head_signature || null,
         head_approver: (remoteReq as any).head_approver || null,
+        
+        // Transportation/Pickup details - important for admin view
+        transportation_type: (remoteReq as any).transportation_type,
+        pickup_location: (remoteReq as any).pickup_location,
+        pickup_time: (remoteReq as any).pickup_time,
+        pickup_contact_number: (remoteReq as any).pickup_contact_number,
+        pickup_special_instructions: (remoteReq as any).pickup_special_instructions,
+        requester_contact_number: (remoteReq as any).requester_contact_number,
+        
+        // Budget fields
+        total_budget: (remoteReq as any).total_budget,
+        comptroller_edited_budget: (remoteReq as any).comptroller_edited_budget,
+        hr_edited_budget: (remoteReq as any).hr_edited_budget,
         
         executiveSignature: remoteReq.executive_signature || null,
         executiveAt: remoteReq.executive_approved_at || null,

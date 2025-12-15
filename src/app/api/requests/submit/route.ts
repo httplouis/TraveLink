@@ -16,27 +16,31 @@ export const maxDuration = 60;
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    if (process.env.NODE_ENV === 'development') {
-      console.log("[/api/requests/submit] ========== REQUEST RECEIVED ==========");
-      console.log("[/api/requests/submit] Body keys:", Object.keys(body));
-      console.log("[/api/requests/submit] Status:", body.status);
-      console.log("[/api/requests/submit] Reason:", body.reason);
-      console.log("[/api/requests/submit] Transportation data present:", !!body.transportation);
-      if (body.transportation) {
-        console.log("[/api/requests/submit] Transportation keys:", Object.keys(body.transportation || {}));
-        console.log("[/api/requests/submit] Transportation data:", JSON.stringify(body.transportation, null, 2));
-      }
-      console.log("[/api/requests/submit] Attachments data present:", !!body.attachments);
-      if (body.attachments) {
-        console.log("[/api/requests/submit] Attachments count:", Array.isArray(body.attachments) ? body.attachments.length : 'not array');
-      }
-      console.log("[/api/requests/submit] Seminar data present:", !!body.seminar);
-      console.log("[/api/requests/submit] Seminar data type:", typeof body.seminar);
-      if (body.seminar) {
-        console.log("[/api/requests/submit] Seminar keys:", Object.keys(body.seminar || {}));
-      }
-      console.log("[/api/requests/submit] ======================================");
+    // Always log costs data for debugging budget issues
+    console.log("[/api/requests/submit] ========== REQUEST RECEIVED ==========");
+    console.log("[/api/requests/submit] Body keys:", Object.keys(body));
+    console.log("[/api/requests/submit] Reason:", body.reason);
+    console.log("[/api/requests/submit] TravelOrder present:", !!body.travelOrder);
+    if (body.travelOrder) {
+      console.log("[/api/requests/submit] TravelOrder keys:", Object.keys(body.travelOrder || {}));
+      console.log("[/api/requests/submit] 💰 COSTS DATA:", JSON.stringify(body.travelOrder?.costs, null, 2));
+      console.log("[/api/requests/submit] 💰 Costs keys:", Object.keys(body.travelOrder?.costs || {}));
+      console.log("[/api/requests/submit] 💰 Costs.food:", body.travelOrder?.costs?.food);
     }
+    console.log("[/api/requests/submit] Transportation data present:", !!body.transportation);
+    if (body.transportation) {
+      console.log("[/api/requests/submit] Transportation keys:", Object.keys(body.transportation || {}));
+      console.log("[/api/requests/submit] Transportation data:", JSON.stringify(body.transportation, null, 2));
+    }
+    console.log("[/api/requests/submit] Attachments data present:", !!body.attachments);
+    if (body.attachments) {
+      console.log("[/api/requests/submit] Attachments count:", Array.isArray(body.attachments) ? body.attachments.length : 'not array');
+    }
+    console.log("[/api/requests/submit] Seminar data present:", !!body.seminar);
+    if (body.seminar) {
+      console.log("[/api/requests/submit] Seminar keys:", Object.keys(body.seminar || {}));
+    }
+    console.log("[/api/requests/submit] ======================================");
     
     // CRITICAL FIX: First authenticate with user's session (anon key + cookies)
     // Service role doesn't have user context, so we can't use it for auth.getUser()
@@ -637,12 +641,13 @@ export async function POST(req: Request) {
       }
     }
     
-    // Calculate budget
-    const hasBudget = costs && Object.keys(costs).length > 0;
+    // Calculate budget - always try to build expense breakdown even if costs object seems empty
+    // This handles cases where individual cost fields might have values
+    console.log("[/api/requests/submit] 💰 Processing costs data:", JSON.stringify(costs, null, 2));
+    console.log("[/api/requests/submit] 💰 Costs object keys:", Object.keys(costs || {}));
     
-    console.log("[/api/requests/submit] Costs data:", costs);
-    console.log("[/api/requests/submit] Has budget:", hasBudget);
-    const expenseBreakdown = hasBudget ? [
+    // Build expense breakdown from all possible cost fields
+    const expenseBreakdown = [
       { 
         item: "Food", 
         amount: parseFloat(costs.food || 0), 
@@ -685,9 +690,14 @@ export async function POST(req: Request) {
           }]
         : []
       ),
-    ].filter(item => item.amount > 0) : [];
+    ].filter(item => item.amount > 0);
     
     const totalBudget = expenseBreakdown.reduce((sum, item) => sum + item.amount, 0);
+    const hasBudget = totalBudget > 0 || (costs && Object.keys(costs).length > 0);
+    
+    console.log("[/api/requests/submit] 💰 Expense breakdown:", JSON.stringify(expenseBreakdown, null, 2));
+    console.log("[/api/requests/submit] 💰 Total budget:", totalBudget);
+    console.log("[/api/requests/submit] 💰 Has budget:", hasBudget);
 
     // Determine if vehicle needed
     const needsVehicle = vehicleMode === "institutional" || vehicleMode === "rent";

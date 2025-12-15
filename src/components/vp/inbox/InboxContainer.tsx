@@ -8,7 +8,7 @@ import PersonDisplay from "@/components/common/PersonDisplay";
 import RequestCardEnhanced from "@/components/common/RequestCardEnhanced";
 import RequestsTable from "@/components/common/RequestsTable";
 import ViewToggle, { useViewMode } from "@/components/common/ViewToggle";
-import { Eye, Search, FileText } from "lucide-react";
+import { Eye, Search, FileText, Clock, CheckCircle, History } from "lucide-react";
 import { createSupabaseClient } from "@/lib/supabase/client";
 import { SkeletonRequestCard } from "@/components/common/SkeletonLoader";
 import { createLogger } from "@/lib/debug";
@@ -16,59 +16,88 @@ import { shouldShowPendingAlert, getAlertSeverity, getAlertMessage } from "@/lib
 import { AlertCircle } from "lucide-react";
 
 export default function VPInboxContainer() {
-  console.log("[VPInboxContainer] 🚀 Component mounting");
-  const [items, setItems] = React.useState<any[]>([]);
+  const [pendingItems, setPendingItems] = React.useState<any[]>([]);
+  const [approvedItems, setApprovedItems] = React.useState<any[]>([]);
+  const [historyItems, setHistoryItems] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [selected, setSelected] = React.useState<any | null>(null);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [viewMode, setViewMode] = useViewMode("vp_inbox_view", "cards");
+  const [activeTab, setActiveTab] = React.useState<"pending" | "approved" | "history">("pending");
   
   const logger = createLogger("VPInbox");
 
-  async function load(showLoader = true) {
-    if (showLoader) setLoading(true);
+  // Load pending requests
+  const loadPending = React.useCallback(async () => {
     try {
-      logger.info("Loading VP requests...");
-      console.log("[VPInboxContainer] 🔍 Starting fetch to /api/vp/inbox");
+      logger.info("Loading pending VP requests...");
       const res = await fetch("/api/vp/inbox", { cache: "no-store" });
-      console.log("[VPInboxContainer] 📡 Response received:", {
-        ok: res.ok,
-        status: res.status,
-        statusText: res.statusText,
-        contentType: res.headers.get("content-type"),
-        url: res.url
-      });
       if (!res.ok) {
         logger.error("API response not OK:", { status: res.status, statusText: res.statusText });
-        const errorText = await res.text();
-        console.error("[VPInboxContainer] ❌ Error response body:", errorText.substring(0, 500));
-        setItems([]);
+        setPendingItems([]);
         return;
       }
       const contentType = res.headers.get("content-type");
-      console.log("[VPInboxContainer] 📄 Content-Type:", contentType);
       if (!contentType || !contentType.includes("application/json")) {
         logger.error("API returned non-JSON response. Content-Type:", contentType);
-        const errorText = await res.text();
-        console.error("[VPInboxContainer] ❌ Non-JSON response body:", errorText.substring(0, 500));
-        setItems([]);
+        setPendingItems([]);
         return;
       }
-      console.log("[VPInboxContainer] ✅ Parsing JSON...");
       const json = await res.json();
-      console.log("[VPInboxContainer] ✅ JSON parsed successfully:", { ok: json.ok, dataLength: json.data?.length });
       if (json.ok) {
-        setItems(json.data ?? []);
-        logger.success(`Loaded ${json.data?.length || 0} VP requests`);
+        setPendingItems(json.data ?? []);
+        logger.success(`Loaded ${json.data?.length || 0} pending VP requests`);
       } else {
         logger.warn("Failed to load VP requests:", json.error);
       }
     } catch (error) {
-      logger.error("Error loading VP requests:", error);
-    } finally {
-      if (showLoader) setLoading(false);
+      logger.error("Error loading pending VP requests:", error);
     }
-  }
+  }, []);
+
+  // Load approved requests (VP has approved, now at later stages)
+  const loadApproved = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/requests/list?vp_approved=true", { cache: "no-store" });
+      if (!res.ok) {
+        setApprovedItems([]);
+        return;
+      }
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        const approved = data.filter((req: any) => 
+          req.vp_approved_at && 
+          !["approved", "rejected", "cancelled"].includes(req.status)
+        );
+        setApprovedItems(approved);
+      }
+    } catch (err) {
+      logger.error("Failed to load approved requests:", err);
+      setApprovedItems([]);
+    }
+  }, []);
+
+  // Load history (final states)
+  const loadHistory = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/requests/list?vp_approved=true", { cache: "no-store" });
+      if (!res.ok) {
+        setHistoryItems([]);
+        return;
+      }
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        const history = data.filter((req: any) => 
+          req.vp_approved_at && 
+          ["approved", "rejected", "cancelled"].includes(req.status)
+        );
+        setHistoryItems(history);
+      }
+    } catch (err) {
+      logger.error("Failed to load history:", err);
+      setHistoryItems([]);
+    }
+  }, []);
 
   React.useEffect(() => {
     let isMounted = true;
@@ -76,12 +105,12 @@ export default function VPInboxContainer() {
     let channel: any = null;
     
     // Initial load
-    load().catch((err) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.error("[VPInboxContainer] Error in initial load:", err);
-      }
+    const loadAll = async () => {
+      setLoading(true);
+      await Promise.all([loadPending(), loadApproved(), loadHistory()]);
       setLoading(false);
-    });
+    };
+    loadAll();
     
     // Set up real-time subscription
     const supabase = createSupabaseClient();
@@ -95,14 +124,15 @@ export default function VPInboxContainer() {
           schema: "public",
           table: "requests",
         },
-        (payload) => {
+        () => {
           if (!isMounted) return;
           
-          // Debounce: only trigger refetch after 500ms
           if (mutateTimeout) clearTimeout(mutateTimeout);
           mutateTimeout = setTimeout(() => {
             if (isMounted) {
-              load(false);
+              if (activeTab === "pending") loadPending();
+              else if (activeTab === "approved") loadApproved();
+              else loadHistory();
             }
           }, 500);
         }
@@ -116,16 +146,29 @@ export default function VPInboxContainer() {
         supabase.removeChannel(channel);
       }
     };
-  }, []);
+  }, [activeTab, loadPending, loadApproved, loadHistory]);
+
+  // Get current items based on active tab
+  const items = activeTab === "pending" ? pendingItems : activeTab === "approved" ? approvedItems : historyItems;
 
   const handleApproved = (id: string) => {
+    setPendingItems(prev => prev.filter(x => x.id !== id));
     setSelected(null);
-    load();
+    setTimeout(() => {
+      loadPending();
+      loadApproved();
+      loadHistory();
+    }, 500);
   };
 
   const handleRejected = (id: string) => {
+    setPendingItems(prev => prev.filter(x => x.id !== id));
     setSelected(null);
-    load();
+    setTimeout(() => {
+      loadPending();
+      loadApproved();
+      loadHistory();
+    }, 500);
   };
 
   const filteredItems = items.filter((item) => {
@@ -164,18 +207,55 @@ export default function VPInboxContainer() {
   return (
     <div className="space-y-4">
       {/* Pending Alert */}
-      {shouldShowPendingAlert(items.length) && (
+      {activeTab === "pending" && shouldShowPendingAlert(pendingItems.length) && (
         <div className={`flex items-center gap-2 px-4 py-3 rounded-lg text-sm font-medium ${
-          getAlertSeverity(items.length) === 'danger'
+          getAlertSeverity(pendingItems.length) === 'danger'
             ? 'bg-red-50 border border-red-200 text-red-700'
-            : getAlertSeverity(items.length) === 'warning'
+            : getAlertSeverity(pendingItems.length) === 'warning'
             ? 'bg-orange-50 border border-orange-200 text-orange-700'
             : 'bg-amber-50 border border-amber-200 text-amber-700'
         }`}>
           <AlertCircle className="h-5 w-5" />
-          <span>{getAlertMessage(items.length, 'vp')}</span>
+          <span>{getAlertMessage(pendingItems.length, 'vp')}</span>
         </div>
       )}
+
+      {/* Filter Tabs */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => setActiveTab("pending")}
+          className={`px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${
+            activeTab === "pending"
+              ? "bg-[#7A0010] text-white shadow-md"
+              : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
+          }`}
+        >
+          <Clock className="h-4 w-4" />
+          Pending ({pendingItems.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("approved")}
+          className={`px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${
+            activeTab === "approved"
+              ? "bg-[#7A0010] text-white shadow-md"
+              : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
+          }`}
+        >
+          <CheckCircle className="h-4 w-4" />
+          Approved ({approvedItems.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("history")}
+          className={`px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${
+            activeTab === "history"
+              ? "bg-[#7A0010] text-white shadow-md"
+              : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
+          }`}
+        >
+          <History className="h-4 w-4" />
+          History ({historyItems.length})
+        </button>
+      </div>
       
       {/* Search + View Toggle */}
       <div className="flex items-center gap-3">
@@ -272,7 +352,7 @@ export default function VPInboxContainer() {
           request={selected}
           onClose={() => {
             setSelected(null);
-            load(false); // Refresh list when modal closes
+            loadPending(); // Refresh list when modal closes
           }}
           onApproved={handleApproved}
           onRejected={handleRejected}

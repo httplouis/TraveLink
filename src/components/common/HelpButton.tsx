@@ -17,14 +17,14 @@ export default function HelpButton({ role = "user" }: HelpButtonProps) {
 
   return (
     <>
-      {/* Floating Help Button */}
+      {/* Floating Help Button - positioned outside sidebar (260px + 24px margin) */}
       <motion.button
         initial={{ scale: 0 }}
         animate={{ scale: 1 }}
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.95 }}
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 left-6 z-50 p-3 bg-white border-2 border-gray-200 rounded-full shadow-lg hover:shadow-xl hover:border-[#7a0019] transition-all group"
+        className="fixed bottom-6 left-[284px] z-50 p-3 bg-white border-2 border-gray-200 rounded-full shadow-lg hover:shadow-xl hover:border-[#7a0019] transition-all group"
         title="Help & User Manual"
         aria-label="Open Help Manual"
       >

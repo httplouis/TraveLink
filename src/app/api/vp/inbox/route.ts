@@ -578,8 +578,8 @@ export async function GET(req: NextRequest) {
                 createNotification({
                   user_id: vp.id,
                   notification_type: "request_pending_signature",
-                  title: "Request Requires Your Approval",
-                  message: `A travel order request ${req.request_number || ''} from ${requestingPersonName} requires your approval.`,
+                  title: "New Request Pending VP Approval",
+                  message: `Request ${req.request_number || ''} from ${requestingPersonName} is now pending your VP approval.`,
                   related_type: "request",
                   related_id: req.id,
                   action_url: `/vp/inbox?view=${req.id}`,

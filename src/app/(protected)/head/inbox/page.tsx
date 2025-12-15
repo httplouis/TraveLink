@@ -12,7 +12,7 @@ import ViewToggle, { useViewMode } from "@/components/common/ViewToggle";
 import { createSupabaseClient } from "@/lib/supabase/client";
 import { createLogger } from "@/lib/debug";
 import { shouldShowPendingAlert, getAlertSeverity, getAlertMessage } from "@/lib/notifications/pending-alerts";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, Clock, CheckCircle, History } from "lucide-react";
 
 // Format time ago helper
 function formatTimeAgo(date: Date): string {
@@ -30,10 +30,13 @@ function formatTimeAgo(date: Date): string {
 }
 
 export default function HeadInboxPage() {
-  const [items, setItems] = React.useState<any[]>([]);
+  const [pendingItems, setPendingItems] = React.useState<any[]>([]);
+  const [approvedItems, setApprovedItems] = React.useState<any[]>([]);
+  const [historyItems, setHistoryItems] = React.useState<any[]>([]);
   const [selected, setSelected] = React.useState<any | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [lastUpdate, setLastUpdate] = React.useState<Date>(new Date());
+  const [activeTab, setActiveTab] = React.useState<"pending" | "approved" | "history">("pending");
   
   // View mode toggle
   const [viewMode, setViewMode] = useViewMode("head_inbox_view", "cards");
@@ -74,6 +77,11 @@ export default function HeadInboxPage() {
     localStorage.setItem('head_viewed_requests', JSON.stringify(Array.from(newViewed)));
   };
   
+  const logger = createLogger("HeadInbox");
+
+  // Get current items based on active tab (defined early for use in useMemo)
+  const items = activeTab === "pending" ? pendingItems : activeTab === "approved" ? approvedItems : historyItems;
+
   // Extract unique departments for filter
   const departments = React.useMemo(() => {
     const depts = new Set<string>();
@@ -84,43 +92,88 @@ export default function HeadInboxPage() {
     return Array.from(depts).sort();
   }, [items]);
 
-  const logger = createLogger("HeadInbox");
-
-  async function load(showLoader = true) {
-    if (showLoader) setLoading(true);
+  // Load pending requests
+  const loadPending = React.useCallback(async () => {
     try {
-      logger.info("Loading head requests...");
+      logger.info("Loading pending head requests...");
       const res = await fetch("/api/head", { cache: "no-store" });
       if (!res.ok) {
         logger.error("API response not OK:", { status: res.status, statusText: res.statusText });
-        setItems([]);
+        setPendingItems([]);
         return;
       }
       const contentType = res.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
         logger.error("API returned non-JSON response. Content-Type:", contentType);
-        setItems([]);
+        setPendingItems([]);
         return;
       }
       const json = await res.json();
       if (json.ok) {
-        setItems(json.data ?? []);
+        setPendingItems(json.data ?? []);
         setLastUpdate(new Date());
-        logger.success(`Loaded ${json.data?.length || 0} requests`);
+        logger.success(`Loaded ${json.data?.length || 0} pending requests`);
       } else {
         logger.warn("Failed to load requests:", json.error);
       }
     } catch (error) {
-      logger.error("Error loading requests:", error);
-    } finally {
-      if (showLoader) setLoading(false);
+      logger.error("Error loading pending requests:", error);
     }
-  }
+  }, []);
+
+  // Load approved requests (head has approved, now at later stages)
+  const loadApproved = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/requests/list?head_approved=true", { cache: "no-store" });
+      if (!res.ok) {
+        setApprovedItems([]);
+        return;
+      }
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        const approved = data.filter((req: any) => 
+          req.head_approved_at && 
+          !["approved", "rejected", "cancelled"].includes(req.status)
+        );
+        setApprovedItems(approved);
+      }
+    } catch (err) {
+      logger.error("Failed to load approved requests:", err);
+      setApprovedItems([]);
+    }
+  }, []);
+
+  // Load history (final states)
+  const loadHistory = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/requests/list?head_approved=true", { cache: "no-store" });
+      if (!res.ok) {
+        setHistoryItems([]);
+        return;
+      }
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        const history = data.filter((req: any) => 
+          req.head_approved_at && 
+          ["approved", "rejected", "cancelled"].includes(req.status)
+        );
+        setHistoryItems(history);
+      }
+    } catch (err) {
+      logger.error("Failed to load history:", err);
+      setHistoryItems([]);
+    }
+  }, []);
 
   // Initial load
   React.useEffect(() => { 
-    load(); 
-  }, []);
+    const loadAll = async () => {
+      setLoading(true);
+      await Promise.all([loadPending(), loadApproved(), loadHistory()]);
+      setLoading(false);
+    };
+    loadAll();
+  }, [loadPending, loadApproved, loadHistory]);
 
   // Real-time updates using Supabase Realtime
   React.useEffect(() => {
@@ -138,18 +191,13 @@ export default function HeadInboxPage() {
           table: "requests",
         },
         (payload: any) => {
-          // Only react to relevant status changes
-          const newStatus = payload.new?.status;
-          const oldStatus = payload.old?.status;
-          const relevantStatuses = ['pending_head', 'pending_parent_head'];
-          
-          if (relevantStatuses.includes(newStatus) || relevantStatuses.includes(oldStatus)) {
-            // Debounce: only trigger refetch after 500ms
-            if (mutateTimeout) clearTimeout(mutateTimeout);
-            mutateTimeout = setTimeout(() => {
-              load(false); // Silent refresh
-            }, 500);
-          }
+          // Debounce: only trigger refetch after 500ms
+          if (mutateTimeout) clearTimeout(mutateTimeout);
+          mutateTimeout = setTimeout(() => {
+            if (activeTab === "pending") loadPending();
+            else if (activeTab === "approved") loadApproved();
+            else loadHistory();
+          }, 500);
         }
       )
       .subscribe();
@@ -160,27 +208,31 @@ export default function HeadInboxPage() {
         supabase.removeChannel(channel);
       }
     };
-  }, []);
+  }, [activeTab, loadPending, loadApproved, loadHistory]);
 
   function handleApproved(id: string) {
     // Optimistically remove from UI first
-    setItems(prev => prev.filter(x => x.id !== id));
+    setPendingItems(prev => prev.filter(x => x.id !== id));
     setSelected(null);
     
-    // Reload pending list to ensure fresh data
+    // Reload all lists to ensure fresh data
     setTimeout(() => {
-      load(false);  // Reload pending list (silent)
+      loadPending();
+      loadApproved();
+      loadHistory();
     }, 500);
   }
 
   function handleRejected(id: string) {
     // Optimistically remove from UI first
-    setItems(prev => prev.filter(x => x.id !== id));
+    setPendingItems(prev => prev.filter(x => x.id !== id));
     setSelected(null);
     
-    // Reload pending list to ensure fresh data
+    // Reload all lists to ensure fresh data
     setTimeout(() => {
-      load(false);  // Reload pending list (silent)
+      loadPending();
+      loadApproved();
+      loadHistory();
     }, 500);
   }
 
@@ -289,6 +341,43 @@ export default function HeadInboxPage() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Filter Tabs */}
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={() => setActiveTab("pending")}
+          className={`px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${
+            activeTab === "pending"
+              ? "bg-[#7A0010] text-white shadow-md"
+              : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
+          }`}
+        >
+          <Clock className="h-4 w-4" />
+          Pending ({pendingItems.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("approved")}
+          className={`px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${
+            activeTab === "approved"
+              ? "bg-[#7A0010] text-white shadow-md"
+              : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
+          }`}
+        >
+          <CheckCircle className="h-4 w-4" />
+          Approved ({approvedItems.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("history")}
+          className={`px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${
+            activeTab === "history"
+              ? "bg-[#7A0010] text-white shadow-md"
+              : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
+          }`}
+        >
+          <History className="h-4 w-4" />
+          History ({historyItems.length})
+        </button>
       </div>
 
       {/* Search and Filter Bar */}

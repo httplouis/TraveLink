@@ -3,7 +3,7 @@
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Clock, Eye, CheckCircle, XCircle, AlertCircle, FileDown } from "lucide-react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { WorkflowEngine } from "@/lib/workflow/engine";
 import { SkeletonRequestCard } from "@/components/common/SkeletonLoader";
 import RequestCard from "@/components/common/RequestCardWow";
@@ -54,10 +54,21 @@ type HistoryItem = {
 export default function SubmissionsView() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const pathname = usePathname();
   const [requests, setRequests] = React.useState<Request[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [selectedRequest, setSelectedRequest] = React.useState<Request | null>(null);
   const [fullRequestData, setFullRequestData] = React.useState<any>(null);
+  
+  // Determine the base path for navigation based on current route
+  // If we're in /head/submissions, navigate to /head/request
+  // If we're in /user/submissions, navigate to /user/request/new
+  const getEditRequestPath = React.useCallback((requestId: string) => {
+    if (pathname?.startsWith('/head')) {
+      return `/head/request?requestId=${requestId}`;
+    }
+    return `/user/request/new?requestId=${requestId}`;
+  }, [pathname]);
   const [history, setHistory] = React.useState<HistoryItem[]>([]);
   const [showDetailsModal, setShowDetailsModal] = React.useState(false);
   const [loadingDetails, setLoadingDetails] = React.useState(false);
@@ -324,12 +335,25 @@ export default function SubmissionsView() {
                   is_representative: (req as any).is_representative,
                   requester_signed_at: (req as any).requester_signed_at,
                   requester_signature: (req as any).requester_signature,
+                  return_reason: (req as any).return_reason,
+                  // Get return comments from the appropriate field based on who returned
+                  return_comments: (req as any).comptroller_comments || 
+                                   (req as any).head_comments || 
+                                   (req as any).admin_comments || 
+                                   (req as any).hr_comments || 
+                                   (req as any).vp_comments || 
+                                   (req as any).president_comments || 
+                                   (req as any).exec_comments || '',
                 }}
                 showActions={true}
                 onView={() => viewDetails(req)}
                 onDownload={isApproved ? () => {
                   // Download PDF
                   window.open(`/api/requests/${req.id}/pdf`, '_blank');
+                } : undefined}
+                onEditResubmit={req.status === 'returned' ? () => {
+                  // Navigate to edit form with request ID (role-aware)
+                  router.push(getEditRequestPath(req.id));
                 } : undefined}
               />
               
@@ -858,8 +882,13 @@ export default function SubmissionsView() {
               rejectedBy: fullRequestData?.rejected_by || null,
               rejectionStage: fullRequestData?.rejection_stage || null
             }}
+            isRequester={true}
             onPrint={() => window.print()}
             onClose={() => setShowDetailsModal(false)}
+            onEditResubmit={selectedRequest.status === 'returned' ? () => {
+              setShowDetailsModal(false);
+              router.push(getEditRequestPath(selectedRequest.id));
+            } : undefined}
           />
         ) : (
           <div className="p-8 text-center text-gray-500">

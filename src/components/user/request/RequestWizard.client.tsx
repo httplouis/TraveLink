@@ -3,7 +3,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, usePathname } from "next/navigation";
 
 import ChoicesBar from "@/components/user/request/ui/ChoicesBar.ui";
 import TravelOrderForm from "@/components/user/request/ui/TravelOrderForm.ui";
@@ -40,9 +40,18 @@ import FilingDateDisplay from "@/components/common/FilingDateDisplay";
 
 function RequestWizardContent() {
   const search = useSearchParams();
+  const pathname = usePathname();
   const toast = useToast();
   const { ask, ui: confirmUI } = useConfirm();
   const { user: currentUser, loading: userLoading } = useCurrentUser();
+  
+  // Determine the submissions page based on current route
+  const getSubmissionsPath = React.useCallback(() => {
+    if (pathname?.startsWith('/head')) {
+      return '/head/submissions';
+    }
+    return '/user/submissions';
+  }, [pathname]);
   const [currentUserEmail, setCurrentUserEmail] = React.useState<string | undefined>(currentUser?.email);
 
   // Fetch current user email if not available from hook
@@ -267,6 +276,18 @@ function RequestWizardContent() {
               ? transformExpenseBreakdown(expenseBreakdown)
               : (dbReq.expense_breakdown || {});
             
+            // Parse attachments from database
+            let attachments = dbReq.attachments || [];
+            if (typeof attachments === "string") {
+              try {
+                attachments = JSON.parse(attachments);
+              } catch (e) {
+                console.warn("[RequestWizard] Failed to parse attachments:", e);
+                attachments = [];
+              }
+            }
+            console.log("[RequestWizard] Loaded attachments from database:", attachments);
+            
             // Transform database request to form data format
             const formData: any = {
               requesterRole: dbReq.requester_is_head ? "head" : "faculty",
@@ -287,12 +308,16 @@ function RequestWizardContent() {
                 endorsedByHeadDate: dbReq.head_approved_at ? new Date(dbReq.head_approved_at).toISOString().split('T')[0] : "",
                 endorsedByHeadSignature: dbReq.head_signature || null,
                 requesters: dbReq.requesters || [],
+                // CRITICAL: Restore attachments from database
+                attachments: attachments,
               },
               // Restore seminar data if exists
               seminar: dbReq.seminar_details ? {
                 ...dbReq.seminar_details,
                 // CRITICAL: Restore seminar signature
                 requesterSignature: dbReq.requester_signature || dbReq.seminar_details.requesterSignature || null,
+                // CRITICAL: Restore attachments for seminar
+                attachments: attachments,
               } : undefined,
               schoolService: dbReq.school_service_details || undefined,
               transportation: dbReq.transportation || undefined,
@@ -380,6 +405,18 @@ function RequestWizardContent() {
               ? transformExpenseBreakdown(expenseBreakdown)
               : (dbReq.expense_breakdown || {});
             
+            // Parse attachments from database (for store ID restore)
+            let attachments2 = dbReq.attachments || [];
+            if (typeof attachments2 === "string") {
+              try {
+                attachments2 = JSON.parse(attachments2);
+              } catch (e) {
+                console.warn("[RequestWizard] Failed to parse attachments:", e);
+                attachments2 = [];
+              }
+            }
+            console.log("[RequestWizard] Loaded attachments from store ID:", attachments2);
+            
             // Transform database request to form data format
             const formData: any = {
               requesterRole: dbReq.requester_is_head ? "head" : "faculty",
@@ -400,12 +437,16 @@ function RequestWizardContent() {
                 endorsedByHeadDate: dbReq.head_approved_at ? new Date(dbReq.head_approved_at).toISOString().split('T')[0] : "",
                 endorsedByHeadSignature: dbReq.head_signature || null,
                 requesters: dbReq.requesters || [],
+                // CRITICAL: Restore attachments from database
+                attachments: attachments2,
               },
               // Restore seminar data if exists
               seminar: dbReq.seminar_details ? {
                 ...dbReq.seminar_details,
                 // CRITICAL: Restore seminar signature
                 requesterSignature: dbReq.requester_signature || dbReq.seminar_details.requesterSignature || null,
+                // CRITICAL: Restore attachments for seminar
+                attachments: attachments2,
               } : undefined,
               schoolService: dbReq.school_service_details || undefined,
               transportation: dbReq.transportation || undefined,
@@ -1501,6 +1542,85 @@ function RequestWizardContent() {
   const [allHeadEndorsementsConfirmed, setAllHeadEndorsementsConfirmed] = React.useState<boolean | undefined>(undefined);
   const [allParticipantsConfirmed, setAllParticipantsConfirmed] = React.useState<boolean | undefined>(undefined);
 
+  // Check if this is a returned request that needs resubmission
+  const isReturnedRequest = requestMetadata?.status === "returned";
+
+  // Handle resubmit for returned requests
+  async function handleResubmit() {
+    if (!currentSubmissionId) {
+      toast({ kind: "error", title: "Error", message: "No request ID found for resubmission." });
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      // First, save any edits to the request using PATCH
+      // Include all editable fields including attachments
+      const updateRes = await fetch(`/api/requests/${currentSubmissionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          purpose: data.travelOrder?.purposeOfTravel || data.seminar?.title,
+          destination: data.travelOrder?.destination || data.seminar?.venue,
+          travel_start_date: data.travelOrder?.departureDate || data.seminar?.dateFrom,
+          travel_end_date: data.travelOrder?.returnDate || data.seminar?.dateTo,
+          // Include attachments from form data
+          attachments: (data.travelOrder as any)?.attachments || (data.seminar as any)?.attachments || [],
+        }),
+      });
+
+      if (!updateRes.ok) {
+        // Try to parse error response, but handle empty body
+        let errorMessage = "Failed to save changes";
+        try {
+          const updateResult = await updateRes.json();
+          errorMessage = updateResult.error || errorMessage;
+        } catch {
+          // Response body might be empty or not JSON
+          errorMessage = `Failed to save changes (HTTP ${updateRes.status})`;
+        }
+        throw new Error(errorMessage);
+      }
+
+      // Then resubmit
+      const res = await fetch(`/api/requests/${currentSubmissionId}/resubmit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      // Handle potential empty response body
+      let result;
+      try {
+        result = await res.json();
+      } catch {
+        // If JSON parsing fails, check if request was successful
+        if (res.ok) {
+          result = { ok: true, data: { message: "Request resubmitted successfully" } };
+        } else {
+          throw new Error(`Resubmit failed (HTTP ${res.status})`);
+        }
+      }
+
+      if (result.ok) {
+        toast({ 
+          kind: "success", 
+          title: "Request Resubmitted", 
+          message: result.data?.message || "Your request has been resubmitted for review." 
+        });
+        // Clear form and redirect to role-aware submissions page
+        clearIds();
+        window.location.href = getSubmissionsPath();
+      } else {
+        throw new Error(result.error || "Failed to resubmit request");
+      }
+    } catch (err: any) {
+      console.error("[RequestWizard] Resubmit error:", err);
+      toast({ kind: "error", title: "Resubmit Failed", message: err.message });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   async function handleSubmit() {
     // library validation
     console.log('[RequestWizard] 🚀 handleSubmit called');
@@ -1684,6 +1804,12 @@ function RequestWizardContent() {
         travelOrderKeys: Object.keys(data.travelOrder || {}).filter((k: string) => k.toLowerCase().includes('signature'))
       });
       
+      // Debug: Log costs data before submit
+      console.log('[RequestWizard] 💰 COSTS DEBUG before submit:');
+      console.log('[RequestWizard] 💰 data.travelOrder.costs:', JSON.stringify(data.travelOrder?.costs, null, 2));
+      console.log('[RequestWizard] 💰 costs keys:', Object.keys(data.travelOrder?.costs || {}));
+      console.log('[RequestWizard] 💰 food value:', data.travelOrder?.costs?.food);
+      
       const response = await fetch("/api/requests/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1856,6 +1982,28 @@ function RequestWizardContent() {
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
         {/* Main Form Area */}
         <div className="space-y-6">
+          {/* Returned Request Banner */}
+          {isReturnedRequest && (
+            <div className="rounded-xl border-2 border-amber-300 bg-gradient-to-r from-amber-50 to-amber-100 p-4 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="flex-shrink-0 rounded-full bg-amber-200 p-2">
+                  <svg className="h-5 w-5 text-amber-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-sm font-bold text-amber-800">Request Returned for Revision</h3>
+                  <p className="mt-1 text-xs text-amber-700">
+                    This request was returned by an approver. Please review and make any necessary changes, then click "Resubmit Request" to send it back for approval.
+                  </p>
+                  <p className="mt-2 text-xs text-amber-600">
+                    <strong>Note:</strong> All existing signatures have been preserved.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Header Section - Enhanced */}
           <div className="rounded-xl border-2 border-gray-200 bg-gradient-to-br from-white to-gray-50/50 p-5 shadow-sm">
             <div className="flex items-center justify-between">
@@ -1989,7 +2137,8 @@ function RequestWizardContent() {
             saving={saving}
             submitting={submitting}
             onSaveDraft={handleSaveDraft}
-            onSubmit={handleSubmit}
+            onSubmit={isReturnedRequest ? handleResubmit : handleSubmit}
+            isResubmit={isReturnedRequest}
             headName={
               showSeminar
                 ? (requestingPersonIsHead === false && requestingPersonHeadInfo

@@ -19,6 +19,7 @@ export default function SubmitBar({
   vehicleMode,
   errors,
   onGoToField,
+  isResubmit,
 }: {
   invalid: boolean;
   saving: boolean;
@@ -34,6 +35,7 @@ export default function SubmitBar({
   vehicleMode?: "owned" | "institutional" | "rent";
   errors?: Record<string, string>;
   onGoToField?: (fieldKey: string) => void;
+  isResubmit?: boolean;
 }) {
   const [showErrorModal, setShowErrorModal] = React.useState(false);
 
@@ -53,7 +55,10 @@ export default function SubmitBar({
   // If representative submission (requesting person ≠ submitter), send to requesting person first
   // If requesting person is NOT a head, send to their department head first
   // If requesting person IS a head, show "Send to..." (will show approver selection modal)
-  const submitButtonText = isRepresentativeSubmission
+  // If resubmit mode, show "Resubmit Request"
+  const submitButtonText = isResubmit
+    ? "Resubmit Request"
+    : isRepresentativeSubmission
     ? `Send to ${requestingPersonName || "Requesting Person"}`
     : requestingPersonIsHead === true || isHeadRequester
     ? "Send to..." // Head requester will see approver selection modal
@@ -70,8 +75,14 @@ export default function SubmitBar({
     <div className="sticky bottom-3 z-30 mt-2 flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-lg">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-semibold text-gray-900">Ready to submit?</p>
-          {isRepresentativeSubmission ? (
+          <p className="text-sm font-semibold text-gray-900">{isResubmit ? "Ready to resubmit?" : "Ready to submit?"}</p>
+          {isResubmit ? (
+            <p className="flex items-center gap-1.5 text-xs text-gray-500">
+              <Send className="h-3.5 w-3.5" />
+              Your revised request will be sent back for review
+              <span className="text-gray-400 ml-1">(signatures preserved)</span>
+            </p>
+          ) : isRepresentativeSubmission ? (
             <p className="flex items-center gap-1.5 text-xs text-gray-500">
               <Send className="h-3.5 w-3.5" />
               Will be sent to: <span className="font-medium text-[#7A0010]">{requestingPersonName || "Requesting Person"}</span>

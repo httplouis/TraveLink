@@ -75,6 +75,31 @@ export default function CostsSection({
     callback: (value: number | null) => void;
   } | null>(null);
 
+  // CRITICAL FIX: Initialize costs values on mount if they are undefined
+  // This ensures that displayed default values (0) are actually stored in the Zustand store
+  // Without this, the user sees "0" but the store has undefined, causing empty costs on submit
+  const didInitRef = React.useRef(false);
+  React.useEffect(() => {
+    if (didInitRef.current) return;
+    didInitRef.current = true;
+    
+    // Initialize any undefined cost fields to 0
+    const initialPatch: any = {};
+    if (costs?.food === undefined) initialPatch.food = 0;
+    if (costs?.driversAllowance === undefined) initialPatch.driversAllowance = 0;
+    if (costs?.rentVehicles === undefined) initialPatch.rentVehicles = 0;
+    if (costs?.hiredDrivers === undefined) initialPatch.hiredDrivers = 0;
+    if (costs?.accommodation === undefined) initialPatch.accommodation = 0;
+    
+    // Only patch if there are undefined fields
+    if (Object.keys(initialPatch).length > 0) {
+      console.log('[CostsSection] 🔧 Initializing undefined cost fields:', initialPatch);
+      onChangeCosts(initialPatch);
+    }
+  }, [costs, onChangeCosts]);
+
+
+
   // Handle validation with modal
   const handleValidation = (value: string, fieldName: string, callback: (value: number | null) => void) => {
     const num = toNumOrNull(value);
@@ -195,7 +220,7 @@ export default function CostsSection({
           <CurrencyInput
             label=""
             placeholder={TXT.amountPh}
-            value={costs?.food ?? 500}
+            value={costs?.food ?? 0}
             onChange={(e) => {
               handleValidation(e.target.value, "Food", (validated) => {
                 onChangeCosts({ food: validated });

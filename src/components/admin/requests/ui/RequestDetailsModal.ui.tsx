@@ -162,15 +162,18 @@ export default function RequestDetailsModalUI({
       "";
     
     // Preferred driver/vehicle (from requester's preferences) - use joined data from API
+    // Handle both object format (from admin inbox API) and string format (from tracking API)
     const prefDrv = 
-      (row as any).preferred_driver?.name || 
+      (typeof (row as any).preferred_driver === 'object' && (row as any).preferred_driver?.name) ||
+      (typeof (row as any).preferred_driver === 'string' && (row as any).preferred_driver) ||
       (row as any).preferred_driver_name || 
       t.schoolService?.preferredDriverName || 
       t.preferredDriverName || 
       "";
     const prefVeh = 
-      (row as any).preferred_vehicle?.vehicle_name || 
-      (row as any).preferred_vehicle?.label || 
+      (typeof (row as any).preferred_vehicle === 'object' && ((row as any).preferred_vehicle?.vehicle_name || (row as any).preferred_vehicle?.label)) ||
+      (typeof (row as any).preferred_vehicle === 'string' && (row as any).preferred_vehicle) ||
+      (row as any).preferred_vehicle_name ||
       (row as any).preferred_vehicle_label || 
       t.schoolService?.preferredVehicleName || 
       t.preferredVehicleName || 
@@ -1178,11 +1181,25 @@ export default function RequestDetailsModalUI({
                     {(() => {
                       const payload = (row as any)?.payload;
                       const totalBudget = payload?.total_budget || (row as any)?.total_budget;
-                      if (totalBudget && parseFloat(totalBudget) > 0) {
+                      const comptrollerEditedBudget = payload?.comptroller_edited_budget || (row as any)?.comptroller_edited_budget;
+                      const finalBudget = comptrollerEditedBudget || totalBudget;
+                      const wasEdited = comptrollerEditedBudget && comptrollerEditedBudget !== totalBudget;
+                      
+                      if (finalBudget && parseFloat(finalBudget) > 0) {
                         return (
                           <>
                             <dt className="font-semibold text-slate-600">Budget</dt>
-                            <dd className="text-slate-900 font-semibold text-[#7A0010]">{peso(parseFloat(totalBudget))}</dd>
+                            <dd className="text-slate-900 font-semibold">
+                              {wasEdited ? (
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-slate-500 line-through">{peso(parseFloat(totalBudget))}</span>
+                                  <span className="text-[#7A0010]">{peso(parseFloat(comptrollerEditedBudget))}</span>
+                                  <span className="text-xs text-amber-600">(Edited by Comptroller)</span>
+                                </div>
+                              ) : (
+                                <span className="text-[#7A0010]">{peso(parseFloat(finalBudget))}</span>
+                              )}
+                            </dd>
                           </>
                         );
                       }
@@ -1229,12 +1246,12 @@ export default function RequestDetailsModalUI({
                             )}
                             {((row as any).requester?.email || (row as any).requester_email) && (
                               <p className="text-sm text-gray-600 mb-1 break-all">
-                                📧 {(row as any).requester?.email || (row as any).requester_email}
+                                {(row as any).requester?.email || (row as any).requester_email}
                               </p>
                             )}
                             {((row as any).requester?.department || (row as any).department?.name || (row as any).department_name) && (
                               <p className="text-sm text-gray-700 font-medium">
-                                🏢 {(row as any).requester?.department || (row as any).department?.name || (row as any).department_name}
+                                {(row as any).requester?.department || (row as any).department?.name || (row as any).department_name}
                               </p>
                             )}
                           </div>
@@ -1422,9 +1439,25 @@ export default function RequestDetailsModalUI({
                               <div className="mt-4 pt-4 border-t border-slate-300">
                                 <div className="flex justify-between items-center">
                                   <span className="text-sm font-bold text-slate-900">Total Budget</span>
-                                  <span className="text-lg font-bold text-[#7A0010]">
-                                    {peso(totalBudget)}
-                                  </span>
+                                  {(() => {
+                                    const comptrollerEditedBudget = payload?.comptroller_edited_budget || (row as any)?.comptroller_edited_budget;
+                                    const wasEdited = comptrollerEditedBudget && parseFloat(comptrollerEditedBudget) !== totalBudget;
+                                    
+                                    if (wasEdited) {
+                                      return (
+                                        <div className="text-right">
+                                          <div className="text-sm text-slate-500 line-through">{peso(totalBudget)}</div>
+                                          <div className="text-lg font-bold text-[#7A0010]">{peso(parseFloat(comptrollerEditedBudget))}</div>
+                                          <div className="text-xs text-amber-600">(Edited by Comptroller)</div>
+                                        </div>
+                                      );
+                                    }
+                                    return (
+                                      <span className="text-lg font-bold text-[#7A0010]">
+                                        {peso(totalBudget)}
+                                      </span>
+                                    );
+                                  })()}
                                 </div>
                               </div>
                             )}
@@ -2022,7 +2055,7 @@ export default function RequestDetailsModalUI({
                         <option disabled>Loading...</option>
                       ) : (
                         driversWithAvailability.map((d) => {
-                          const statusIcon = d.isAvailable ? "✅" : d.canShare ? "🔄" : "🚫";
+                          const statusIcon = d.isAvailable ? "[Available]" : d.canShare ? "[Shareable]" : "[Busy]";
                           const statusText = d.isAvailable 
                             ? "" 
                             : d.canShare 
@@ -2061,7 +2094,7 @@ export default function RequestDetailsModalUI({
                         } else {
                           return (
                             <div className="mt-1 p-2 bg-amber-50 border border-amber-200 rounded text-xs">
-                              <p className="font-medium text-amber-700">⚠️ Driver has conflicting assignments:</p>
+                              <p className="font-medium text-amber-700">Driver has conflicting assignments:</p>
                               {selectedDriver.conflicts.map((c, i) => (
                                 <p key={i} className="text-amber-600 mt-0.5">
                                   {c.requestNumber} → {c.destination} ({c.dates})
@@ -2074,7 +2107,7 @@ export default function RequestDetailsModalUI({
                       return null;
                     })()}
                     {isApproved && (driver !== ((row as any)?.assigned_driver_id || "")) && (
-                      <p className="text-xs text-amber-600 mt-1">⚠️ Changes will update assignment</p>
+                      <p className="text-xs text-amber-600 mt-1">Changes will update assignment</p>
                     )}
                   </div>
                   <div>
@@ -2089,7 +2122,7 @@ export default function RequestDetailsModalUI({
                         <option disabled>Loading...</option>
                       ) : (
                         vehiclesWithAvailability.map((v) => {
-                          const statusIcon = v.isCodingDay ? "🚫" : v.isAvailable ? "✅" : v.canShare ? "🔄" : "🚫";
+                          const statusIcon = v.isCodingDay ? "[Coding]" : v.isAvailable ? "[Available]" : v.canShare ? "[Shareable]" : "[Busy]";
                           const statusText = v.isCodingDay 
                             ? ` [Coding Day: ${v.codingDay}]`
                             : v.isAvailable 
@@ -2119,7 +2152,7 @@ export default function RequestDetailsModalUI({
                         if (selectedVehicle.isCodingDay) {
                           return (
                             <div className="mt-1 p-2 bg-red-50 border border-red-200 rounded text-xs">
-                              <p className="font-medium text-red-700">🚫 Vehicle has coding day on {selectedVehicle.codingDay}</p>
+                              <p className="font-medium text-red-700">Vehicle has coding day on {selectedVehicle.codingDay}</p>
                               <p className="text-red-600 mt-0.5">This vehicle cannot be used on this date.</p>
                             </div>
                           );
@@ -2127,7 +2160,7 @@ export default function RequestDetailsModalUI({
                           if (selectedVehicle.canShare) {
                             return (
                               <div className="mt-1 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
-                                <p className="font-medium text-blue-700">🔄 Can share trip with:</p>
+                                <p className="font-medium text-blue-700">Can share trip with:</p>
                                 {selectedVehicle.sharedTrips.map((trip, i) => (
                                   <p key={i} className="text-blue-600 mt-0.5">
                                     {trip.requestNumber} → {trip.destination} ({trip.dates})
@@ -2138,7 +2171,7 @@ export default function RequestDetailsModalUI({
                           } else {
                             return (
                               <div className="mt-1 p-2 bg-amber-50 border border-amber-200 rounded text-xs">
-                                <p className="font-medium text-amber-700">⚠️ Vehicle has conflicting assignments:</p>
+                                <p className="font-medium text-amber-700">Vehicle has conflicting assignments:</p>
                                 {selectedVehicle.conflicts.map((c, i) => (
                                   <p key={i} className="text-amber-600 mt-0.5">
                                     {c.requestNumber} → {c.destination} ({c.dates})
@@ -2152,7 +2185,7 @@ export default function RequestDetailsModalUI({
                       return null;
                     })()}
                     {isApproved && (vehicle !== ((row as any)?.assigned_vehicle_id || "")) && (
-                      <p className="text-xs text-amber-600 mt-1">⚠️ Changes will update assignment</p>
+                      <p className="text-xs text-amber-600 mt-1">Changes will update assignment</p>
                     )}
                   </div>
                 </div>
@@ -2699,14 +2732,15 @@ export default function RequestDetailsModalUI({
         />
       )}
 
-      {/* Success Modal */}
-      <SuccessModal
-        open={showSuccessModal}
-        onClose={() => setShowSuccessModal(false)}
-        message={successMessage}
-        title="Success"
-      />
     </Dialog>
+    
+    {/* Success Modal - MUST be outside main Dialog to display properly */}
+    <SuccessModal
+      open={showSuccessModal}
+      onClose={() => setShowSuccessModal(false)}
+      message={successMessage}
+      title="Success"
+    />
     </>
   );
 }

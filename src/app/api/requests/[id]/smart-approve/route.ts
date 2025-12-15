@@ -11,21 +11,33 @@ import { SmartWorkflowEngine, type SmartUser, type SmartRequest } from "@/lib/wo
 
 export async function POST(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
     const { comments, signature, budget_modifications } = await req.json();
-    const requestId = params.id;
+    
+    // Handle both Promise and direct params (Next.js 15+ uses Promise)
+    const resolvedParams = params instanceof Promise ? await params : params;
+    const requestId = resolvedParams.id;
+    
+    // Validate request ID
+    if (!requestId || requestId === 'undefined' || requestId === 'null') {
+      console.error("[POST /api/requests/[id]/smart-approve] Invalid request ID:", requestId);
+      return NextResponse.json({ ok: false, error: "Invalid or missing request ID" }, { status: 400 });
+    }
     
     console.log("🚀 [SMART APPROVE] Starting smart approval process...");
     
+    // Use regular client for auth (NOT service role - it doesn't have session info)
+    const authSupabase = await createSupabaseServerClient(false);
+    // Use service role for database operations
     const supabase = await createSupabaseServerClient(true);
 
     // ═══════════════════════════════════════════════════════════════════
     // AUTHENTICATION & AUTHORIZATION
     // ═══════════════════════════════════════════════════════════════════
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser();
     if (authError || !user) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
@@ -317,18 +329,30 @@ export async function POST(
 
 export async function DELETE(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
     const { reason, comments } = await req.json();
-    const requestId = params.id;
+    
+    // Handle both Promise and direct params (Next.js 15+ uses Promise)
+    const resolvedParams = params instanceof Promise ? await params : params;
+    const requestId = resolvedParams.id;
+    
+    // Validate request ID
+    if (!requestId || requestId === 'undefined' || requestId === 'null') {
+      console.error("[DELETE /api/requests/[id]/smart-approve] Invalid request ID:", requestId);
+      return NextResponse.json({ ok: false, error: "Invalid or missing request ID" }, { status: 400 });
+    }
     
     console.log("🚫 [SMART REJECT] Starting smart rejection process...");
     
+    // Use regular client for auth (NOT service role - it doesn't have session info)
+    const authSupabase = await createSupabaseServerClient(false);
+    // Use service role for database operations
     const supabase = await createSupabaseServerClient(true);
 
     // Get user and request (similar to approval flow)
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser();
     if (authError || !user) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }

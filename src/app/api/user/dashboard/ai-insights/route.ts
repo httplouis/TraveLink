@@ -9,7 +9,8 @@ import { generateAnalyticsInsights } from "@/lib/ai/gemini";
  */
 export async function GET() {
   try {
-    const supabase = await createSupabaseServerClient(true);
+    // Use regular client for auth (NOT service role - it doesn't have session info)
+    const supabase = await createSupabaseServerClient(false);
 
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {

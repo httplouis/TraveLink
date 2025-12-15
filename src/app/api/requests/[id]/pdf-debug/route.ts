@@ -24,8 +24,10 @@ export async function GET(
     const resolvedParams = params instanceof Promise ? await params : params;
     const requestId = resolvedParams.id;
     
-    if (!requestId) {
-      return NextResponse.json({ ok: false, error: "Request ID is required" }, { status: 400 });
+    // Validate request ID
+    if (!requestId || requestId === 'undefined' || requestId === 'null') {
+      console.error("[GET /api/requests/[id]/pdf-debug] Invalid request ID:", requestId);
+      return NextResponse.json({ ok: false, error: "Invalid or missing request ID" }, { status: 400 });
     }
 
     const supabase = await createSupabaseServerClient(true);

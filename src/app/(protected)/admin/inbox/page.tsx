@@ -14,6 +14,7 @@ import { shouldShowPendingAlert, getAlertSeverity, getAlertMessage } from "@/lib
 import { AlertCircle, X, CheckCircle2, Loader2, Mail, Clock } from "lucide-react";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import { Dialog } from "@headlessui/react";
+import SuccessModal from "@/components/common/SuccessModal";
 
 type Request = {
   id: string;
@@ -1061,6 +1062,8 @@ function AdminApprovalModal({
   const [requiresComptroller, setRequiresComptroller] = React.useState(false);
   const [showNextApproverModal, setShowNextApproverModal] = React.useState(false);
   const [nextApproverRole, setNextApproverRole] = React.useState<'comptroller' | 'hr' | null>(null);
+  const [showSuccessModal, setShowSuccessModal] = React.useState(false);
+  const [successMessage, setSuccessMessage] = React.useState("");
 
   // Reset state when modal closes
   React.useEffect(() => {
@@ -1174,8 +1177,12 @@ function AdminApprovalModal({
       }
 
       const approverName = nextApproverRole === 'comptroller' ? 'Comptroller' : 'HR';
-      alert(`Request approved and sent to ${approverName}!`);
-      onApproved();
+      setSuccessMessage(`Request approved and sent to ${approverName}!`);
+      setShowSuccessModal(true);
+      // Delay onApproved to let user see the success modal
+      setTimeout(() => {
+        onApproved();
+      }, 2000);
     } catch (error) {
       console.error('Approval error:', error);
       alert('Network error. Please try again.');
@@ -1535,6 +1542,15 @@ function AdminApprovalModal({
           </Dialog.Panel>
         </Dialog>
       )}
+
+      {/* Success Modal */}
+      <SuccessModal
+        open={showSuccessModal}
+        onClose={() => setShowSuccessModal(false)}
+        title="Request Approved"
+        message={successMessage}
+        autoCloseDelay={2500}
+      />
     </Dialog>
   );
 }

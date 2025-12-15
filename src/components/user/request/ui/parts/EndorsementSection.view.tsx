@@ -156,7 +156,7 @@ export default function EndorsementSection({
               </ol>
               <div className="mt-3 p-2 bg-blue-100 rounded border border-blue-200">
                 <p className="text-xs font-medium text-blue-900">
-                  📧 Email invitations will be sent automatically when you click "Submit Request"
+                  Email invitations will be sent automatically when you click "Submit Request"
                 </p>
               </div>
             </div>

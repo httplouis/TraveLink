@@ -10,30 +10,80 @@ import PersonDisplay from "@/components/common/PersonDisplay";
 import RequestCardEnhanced from "@/components/common/RequestCardEnhanced";
 import RequestsTable from "@/components/common/RequestsTable";
 import ViewToggle, { useViewMode } from "@/components/common/ViewToggle";
-import { Eye, Search, FileText } from "lucide-react";
+import { Eye, Search, FileText, Clock, CheckCircle, History } from "lucide-react";
 import { createSupabaseClient } from "@/lib/supabase/client";
+import { createLogger } from "@/lib/debug";
 
 export default function ExecInboxContainer() {
-  const [items, setItems] = React.useState<any[]>([]);
+  const [pendingItems, setPendingItems] = React.useState<any[]>([]);
+  const [approvedItems, setApprovedItems] = React.useState<any[]>([]);
+  const [historyItems, setHistoryItems] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [selected, setSelected] = React.useState<any | null>(null);
   const [trackingRequest, setTrackingRequest] = React.useState<any | null>(null);
   const [showTrackingModal, setShowTrackingModal] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [viewMode, setViewMode] = useViewMode("exec_inbox_view", "cards");
+  const [activeTab, setActiveTab] = React.useState<"pending" | "approved" | "history">("pending");
 
-  async function load(showLoader = true) {
-    if (showLoader) setLoading(true);
+  const logger = createLogger("ExecInbox");
+
+  // Load pending requests
+  const loadPending = React.useCallback(async () => {
     try {
       const res = await fetch("/api/exec/inbox", { cache: "no-store" });
       const json = await res.json();
       if (json.ok) {
-        setItems(json.data ?? []);
+        setPendingItems(json.data ?? []);
       }
-    } finally {
-      if (showLoader) setLoading(false);
+    } catch (error) {
+      logger.error("Error loading pending exec requests:", error);
     }
-  }
+  }, []);
+
+  // Load approved requests (Exec has approved, now at later stages)
+  const loadApproved = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/requests/list?exec_approved=true", { cache: "no-store" });
+      if (!res.ok) {
+        setApprovedItems([]);
+        return;
+      }
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        const approved = data.filter((req: any) => 
+          req.exec_approved_at && 
+          !["approved", "rejected", "cancelled"].includes(req.status)
+        );
+        setApprovedItems(approved);
+      }
+    } catch (err) {
+      logger.error("Failed to load approved requests:", err);
+      setApprovedItems([]);
+    }
+  }, []);
+
+  // Load history (final states)
+  const loadHistory = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/requests/list?exec_approved=true", { cache: "no-store" });
+      if (!res.ok) {
+        setHistoryItems([]);
+        return;
+      }
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        const history = data.filter((req: any) => 
+          req.exec_approved_at && 
+          ["approved", "rejected", "cancelled"].includes(req.status)
+        );
+        setHistoryItems(history);
+      }
+    } catch (err) {
+      logger.error("Failed to load history:", err);
+      setHistoryItems([]);
+    }
+  }, []);
 
   React.useEffect(() => {
     let isMounted = true;
@@ -41,7 +91,12 @@ export default function ExecInboxContainer() {
     let channel: any = null;
     
     // Initial load
-    load();
+    const loadAll = async () => {
+      setLoading(true);
+      await Promise.all([loadPending(), loadApproved(), loadHistory()]);
+      setLoading(false);
+    };
+    loadAll();
     
     // Set up real-time subscription
     const supabase = createSupabaseClient();
@@ -55,23 +110,17 @@ export default function ExecInboxContainer() {
           schema: "public",
           table: "requests",
         },
-        (payload) => {
+        () => {
           if (!isMounted) return;
           
-          // Only react to relevant status changes
-          const newStatus = (payload.new as any)?.status;
-          const oldStatus = (payload.old as any)?.status;
-          const relevantStatuses = ['pending_vp', 'pending_president', 'pending_exec', 'approved', 'rejected'];
-          
-          if (relevantStatuses.includes(newStatus) || relevantStatuses.includes(oldStatus)) {
-            // Debounce: only trigger refetch after 500ms of no changes
-            if (mutateTimeout) clearTimeout(mutateTimeout);
-            mutateTimeout = setTimeout(() => {
-              if (isMounted) {
-                load(false); // Silent refresh
-              }
-            }, 500);
-          }
+          if (mutateTimeout) clearTimeout(mutateTimeout);
+          mutateTimeout = setTimeout(() => {
+            if (isMounted) {
+              if (activeTab === "pending") loadPending();
+              else if (activeTab === "approved") loadApproved();
+              else loadHistory();
+            }
+          }, 500);
         }
       )
       .subscribe();
@@ -84,16 +133,29 @@ export default function ExecInboxContainer() {
         supabase.removeChannel(channel);
       }
     };
-  }, []); // Empty deps - only run once on mount
+  }, [activeTab, loadPending, loadApproved, loadHistory]);
+
+  // Get current items based on active tab
+  const items = activeTab === "pending" ? pendingItems : activeTab === "approved" ? approvedItems : historyItems;
 
   const handleApproved = (id: string) => {
+    setPendingItems(prev => prev.filter(x => x.id !== id));
     setSelected(null);
-    load();
+    setTimeout(() => {
+      loadPending();
+      loadApproved();
+      loadHistory();
+    }, 500);
   };
 
   const handleRejected = (id: string) => {
+    setPendingItems(prev => prev.filter(x => x.id !== id));
     setSelected(null);
-    load();
+    setTimeout(() => {
+      loadPending();
+      loadApproved();
+      loadHistory();
+    }, 500);
   };
 
   const filteredItems = items.filter((item) => {
@@ -119,6 +181,43 @@ export default function ExecInboxContainer() {
 
   return (
     <div className="space-y-4">
+      {/* Filter Tabs */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => setActiveTab("pending")}
+          className={`px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${
+            activeTab === "pending"
+              ? "bg-[#7A0010] text-white shadow-md"
+              : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
+          }`}
+        >
+          <Clock className="h-4 w-4" />
+          Pending ({pendingItems.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("approved")}
+          className={`px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${
+            activeTab === "approved"
+              ? "bg-[#7A0010] text-white shadow-md"
+              : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
+          }`}
+        >
+          <CheckCircle className="h-4 w-4" />
+          Approved ({approvedItems.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("history")}
+          className={`px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${
+            activeTab === "history"
+              ? "bg-[#7A0010] text-white shadow-md"
+              : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
+          }`}
+        >
+          <History className="h-4 w-4" />
+          History ({historyItems.length})
+        </button>
+      </div>
+
       {/* Search + View Toggle */}
       <div className="flex items-center gap-3">
         <div className="relative flex-1">

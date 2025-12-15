@@ -31,6 +31,12 @@ export async function GET(request: NextRequest) {
     const departmentId = searchParams.get("department_id");
     const userId = searchParams.get("user_id"); // Get user's own requests
     const comptrollerId = searchParams.get("comptroller_id"); // For filtering by next_comptroller_id
+    const comptrollerApproved = searchParams.get("comptroller_approved"); // Filter by comptroller approval
+    const headApproved = searchParams.get("head_approved"); // Filter by head approval
+    const hrApproved = searchParams.get("hr_approved"); // Filter by HR approval
+    const vpApproved = searchParams.get("vp_approved"); // Filter by VP approval
+    const presidentApproved = searchParams.get("president_approved"); // Filter by president approval
+    const execApproved = searchParams.get("exec_approved"); // Filter by exec approval
     
     // Fetch requests WITHOUT foreign key relationships first to avoid RLS filtering issues
     // Use service role client directly to bypass RLS
@@ -41,6 +47,7 @@ export async function GET(request: NextRequest) {
       .select(`
         id,
         request_number,
+        file_code,
         status,
         requester_id,
         requester_name,
@@ -52,7 +59,16 @@ export async function GET(request: NextRequest) {
         created_at,
         updated_at,
         current_approver_role,
-        workflow_metadata
+        workflow_metadata,
+        total_budget,
+        request_type,
+        admin_processed_at,
+        comptroller_approved_at,
+        head_approved_at,
+        hr_approved_at,
+        vp_approved_at,
+        president_approved_at,
+        exec_approved_at
       `)
       .order("created_at", { ascending: false })
       .limit(100); // Reduced to 100 to reduce IO on Nano instance
@@ -72,6 +88,36 @@ export async function GET(request: NextRequest) {
 
     if (userId) {
       query = query.eq("requester_id", userId);
+    }
+
+    // Filter by comptroller approval (for approved/history tabs)
+    if (comptrollerApproved === "true") {
+      query = query.not("comptroller_approved_at", "is", null);
+    }
+
+    // Filter by head approval
+    if (headApproved === "true") {
+      query = query.not("head_approved_at", "is", null);
+    }
+
+    // Filter by HR approval
+    if (hrApproved === "true") {
+      query = query.not("hr_approved_at", "is", null);
+    }
+
+    // Filter by VP approval
+    if (vpApproved === "true") {
+      query = query.not("vp_approved_at", "is", null);
+    }
+
+    // Filter by president approval
+    if (presidentApproved === "true") {
+      query = query.not("president_approved_at", "is", null);
+    }
+
+    // Filter by exec approval
+    if (execApproved === "true") {
+      query = query.not("exec_approved_at", "is", null);
     }
 
     const { data: allRequests, error } = await query;

@@ -17,6 +17,12 @@ export async function POST(
     const resolvedParams = params instanceof Promise ? await params : params;
     const requestId = resolvedParams.id;
 
+    // Validate request ID
+    if (!requestId || requestId === 'undefined' || requestId === 'null') {
+      console.error("[POST /api/requests/[id]/duplicate] Invalid request ID:", requestId);
+      return NextResponse.json({ ok: false, error: "Invalid or missing request ID" }, { status: 400 });
+    }
+
     // Use service role for database operations
     const supabaseServiceRole = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,

@@ -10,10 +10,13 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
  */
 export async function GET() {
   try {
-    const supabase = await createSupabaseServerClient(true); // Use service role
+    // Use regular client for auth (with cookies)
+    const authSupabase = await createSupabaseServerClient(false);
+    // Use service role for database operations
+    const supabase = await createSupabaseServerClient(true);
     
     // Get authenticated user to check their role
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser();
     if (authError || !user) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
