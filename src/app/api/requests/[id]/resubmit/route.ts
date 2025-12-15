@@ -158,6 +158,9 @@ export async function POST(
     
     console.log("[Resubmit Request] Determined next status:", { nextStatus, nextApproverRole });
 
+    // IMPORTANT: Save returned_by BEFORE clearing it (for notifications)
+    const originalReturnedBy = request.returned_by;
+    
     // Update request status
     const updateData: any = {
       status: nextStatus,
@@ -200,12 +203,13 @@ export async function POST(
       const { createNotification } = await import("@/lib/notifications/helpers");
 
       // 1. Notify the person who returned the request (the returner)
-      if (request.returned_by) {
+      // Use originalReturnedBy since we cleared returned_by in the update
+      if (originalReturnedBy) {
         // Get returner's role to determine correct inbox URL
         const { data: returner } = await supabaseServiceRole
           .from("users")
           .select("id, is_head, is_admin, is_comptroller, is_hr, is_vp, is_president, is_executive, role")
-          .eq("id", request.returned_by)
+          .eq("id", originalReturnedBy)
           .maybeSingle();
 
         if (returner) {
@@ -266,7 +270,7 @@ export async function POST(
         if (approvers && approvers.length > 0) {
           for (const approver of approvers) {
             // Skip if this approver is the same as the returner (already notified above)
-            if (request.returned_by && approver.id === request.returned_by) {
+            if (originalReturnedBy && approver.id === originalReturnedBy) {
               continue;
             }
             
