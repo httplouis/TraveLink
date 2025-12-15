@@ -1,9 +1,9 @@
 // src/app/(protected)/comptroller/inbox/page.tsx
 "use client";
 
-import React from "react";
+import React, { Suspense } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { Search, Clock, User, Building2, MapPin, Calendar, FileText, CheckCircle, History } from "lucide-react";
+import { Search, Clock, User, Building2, MapPin, Calendar, FileText, CheckCircle, History, Loader2 } from "lucide-react";
 import ComptrollerReviewModal from "@/components/comptroller/ComptrollerReviewModal";
 import RequestCardEnhanced from "@/components/common/RequestCardEnhanced";
 import RequestsTable from "@/components/common/RequestsTable";
@@ -46,6 +46,14 @@ type Request = {
 };
 
 export default function ComptrollerInboxPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><Loader2 className="h-8 w-8 animate-spin text-[#7A0019]" /></div>}>
+      <ComptrollerInboxContent />
+    </Suspense>
+  );
+}
+
+function ComptrollerInboxContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
