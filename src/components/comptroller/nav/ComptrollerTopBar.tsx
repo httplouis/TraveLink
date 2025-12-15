@@ -47,15 +47,6 @@ export default function ComptrollerTopBar() {
         <div className="flex items-center gap-3">
           {/* Notifications Dropdown */}
           <ComptrollerNotificationDropdown />
-
-          {/* Logout */}
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors text-gray-700 text-sm font-medium"
-          >
-            <LogOut className="h-4 w-4" />
-            <span>Logout</span>
-          </button>
         </div>
       </div>
     </header>
