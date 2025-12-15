@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { createSupabaseClient } from "@/lib/supabase/client";
 import RequestDetailsView from "@/components/common/RequestDetailsView";
 import RequestCardEnhanced from "@/components/common/RequestCardEnhanced";
@@ -37,6 +37,8 @@ type Request = {
 
 export default function AdminInboxPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
   const [items, setItems] = React.useState<Request[]>([]);
   const [approvedItems, setApprovedItems] = React.useState<Request[]>([]);
   const [historyItems, setHistoryItems] = React.useState<Request[]>([]);
@@ -50,6 +52,9 @@ export default function AdminInboxPage() {
   const [viewMode, setViewMode] = useViewMode("admin_inbox_view", "cards");
 
   const logger = createLogger("AdminInbox");
+  
+  // Track if we've already handled the view parameter
+  const viewParamHandledRef = React.useRef(false);
 
   // Load pending requests - Admin can see ALL pending requests
   const loadPending = React.useCallback(async () => {
@@ -217,6 +222,54 @@ export default function AdminInboxPage() {
       console.error("[Admin Inbox] Error loading history:", error);
     }
   }, []);
+
+  // Handle ?view=requestId query parameter to auto-open a specific request
+  React.useEffect(() => {
+    const viewRequestId = searchParams?.get('view');
+    
+    // Only handle once per page load and if we have items loaded
+    if (viewRequestId && !viewParamHandledRef.current && items.length > 0) {
+      viewParamHandledRef.current = true;
+      
+      // Find the request in pending items
+      const requestToView = items.find(r => r.id === viewRequestId);
+      
+      if (requestToView) {
+        logger.info('Auto-opening request from URL:', viewRequestId);
+        // Fetch full request details directly
+        fetch(`/api/requests/${viewRequestId}/tracking`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.ok && data.data) {
+              setSelectedRequest(data.data);
+            }
+          })
+          .catch(err => {
+            logger.error('Failed to fetch request details:', err);
+          });
+        
+        // Clear the view parameter from URL
+        const newUrl = pathname || '/admin/inbox';
+        router.replace(newUrl, { scroll: false });
+      } else {
+        // Request not in pending - try to fetch it directly
+        logger.info('Request not in pending list, fetching directly:', viewRequestId);
+        
+        fetch(`/api/requests/${viewRequestId}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.ok && data.data) {
+              setSelectedRequest(data.data);
+              const newUrl = pathname || '/admin/inbox';
+              router.replace(newUrl, { scroll: false });
+            }
+          })
+          .catch(err => {
+            logger.error('Failed to fetch request:', err);
+          });
+      }
+    }
+  }, [searchParams, items, pathname, router, logger]);
 
   React.useEffect(() => {
     loadPending();

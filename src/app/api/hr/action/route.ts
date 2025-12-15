@@ -341,6 +341,13 @@ export async function POST(request: Request) {
       });
 
     } else if (action === "reject") {
+      // Get request details for notification
+      const { data: reqDetails } = await supabase
+        .from("requests")
+        .select("requester_id, request_number")
+        .eq("id", requestId)
+        .single();
+
       // Reject request
       const { error: updateError } = await supabase
         .from("requests")
@@ -369,6 +376,26 @@ export async function POST(request: Request) {
         new_status: "rejected",
         comments: notes || "Rejected by HR",
       });
+
+      // Notify requester about rejection
+      try {
+        const { createNotification } = await import("@/lib/notifications/helpers");
+        if (reqDetails?.requester_id) {
+          await createNotification({
+            user_id: reqDetails.requester_id,
+            notification_type: "request_rejected",
+            title: "Request Rejected by HR",
+            message: `Your travel order request ${reqDetails.request_number || ''} has been rejected by HR.${notes ? ` Reason: ${notes}` : ""}`,
+            related_type: "request",
+            related_id: requestId,
+            action_url: `/user/submissions?view=${requestId}`,
+            action_label: "View Request",
+            priority: "high",
+          });
+        }
+      } catch (notifError: any) {
+        console.error("[HR Reject] Failed to create notification:", notifError);
+      }
 
       console.log(`[HR Reject] ❌ Request ${requestId} rejected`);
       

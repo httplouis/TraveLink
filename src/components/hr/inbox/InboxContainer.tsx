@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { SkeletonRequestCard } from "@/components/common/SkeletonLoader";
 import HRRequestModal from "@/components/hr/HRRequestModal";
 import StatusBadge from "@/components/common/StatusBadge";
@@ -15,6 +16,9 @@ import { shouldShowPendingAlert, getAlertSeverity, getAlertMessage } from "@/lib
 import { AlertCircle } from "lucide-react";
 
 export default function HRInboxContainer() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const [pendingItems, setPendingItems] = React.useState<any[]>([]);
   const [approvedItems, setApprovedItems] = React.useState<any[]>([]);
   const [historyItems, setHistoryItems] = React.useState<any[]>([]);
@@ -25,6 +29,9 @@ export default function HRInboxContainer() {
   const [activeTab, setActiveTab] = React.useState<"pending" | "approved" | "history">("pending");
 
   const logger = createLogger("HRInbox");
+  
+  // Track if we've already handled the view parameter
+  const viewParamHandledRef = React.useRef(false);
 
   // Load pending requests
   const loadPending = React.useCallback(async () => {
@@ -108,6 +115,44 @@ export default function HRInboxContainer() {
     };
     loadAll();
   }, [loadPending, loadApproved, loadHistory]);
+
+  // Handle ?view=requestId query parameter to auto-open a specific request
+  React.useEffect(() => {
+    const viewRequestId = searchParams?.get('view');
+    
+    // Only handle once per page load and if we have items loaded
+    if (viewRequestId && !viewParamHandledRef.current && pendingItems.length > 0) {
+      viewParamHandledRef.current = true;
+      
+      // Find the request in pending items
+      const requestToView = pendingItems.find(r => r.id === viewRequestId);
+      
+      if (requestToView) {
+        logger.info('Auto-opening request from URL:', viewRequestId);
+        setSelected(requestToView);
+        
+        // Clear the view parameter from URL
+        const newUrl = pathname || '/hr/inbox';
+        router.replace(newUrl, { scroll: false });
+      } else {
+        // Request not in pending - try to fetch it directly
+        logger.info('Request not in pending list, fetching directly:', viewRequestId);
+        
+        fetch(`/api/requests/${viewRequestId}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.ok && data.data) {
+              setSelected(data.data);
+              const newUrl = pathname || '/hr/inbox';
+              router.replace(newUrl, { scroll: false });
+            }
+          })
+          .catch(err => {
+            logger.error('Failed to fetch request:', err);
+          });
+      }
+    }
+  }, [searchParams, pendingItems, pathname, router, logger]);
 
   // Real-time updates using Supabase Realtime
   React.useEffect(() => {

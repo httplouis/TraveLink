@@ -151,6 +151,81 @@ export async function POST(
       metadata: { signature: signature ? "provided" : "none" },
     });
 
+    // Create notifications
+    try {
+      const { createNotification } = await import("@/lib/notifications/helpers");
+      const approverRole = request.current_approver_role || "Approver";
+      const approverRoleLabel = approverRole.charAt(0).toUpperCase() + approverRole.slice(1);
+      
+      // Notify requester
+      if (request.requester_id) {
+        const isFinalApproval = nextStatus === "approved";
+        await createNotification({
+          user_id: request.requester_id,
+          notification_type: isFinalApproval ? "request_approved" : "request_status_change",
+          title: isFinalApproval ? "Request Fully Approved" : `Request Approved by ${approverRoleLabel}`,
+          message: isFinalApproval 
+            ? `Your travel order request ${request.request_number || ""} has been fully approved!`
+            : `Your travel order request ${request.request_number || ""} has been approved by ${approverRoleLabel} and is moving to the next stage.`,
+          related_type: "request",
+          related_id: requestId,
+          action_url: `/user/submissions?view=${requestId}`,
+          action_label: "View Request",
+          priority: isFinalApproval ? "high" : "normal",
+        });
+      }
+
+      // Notify next approvers based on next status
+      const nextApproverRole = WorkflowEngine.getApproverRole(nextStatus) as string;
+      if (nextApproverRole && nextStatus !== "approved") {
+        let roleFilter: any = {};
+        let inboxUrl = "/inbox";
+        
+        if (nextApproverRole === "admin") {
+          roleFilter = { is_admin: true };
+          inboxUrl = `/admin/inbox?view=${requestId}`;
+        } else if (nextApproverRole === "comptroller") {
+          roleFilter = { is_comptroller: true };
+          inboxUrl = `/comptroller/inbox?view=${requestId}`;
+        } else if (nextApproverRole === "hr") {
+          roleFilter = { is_hr: true };
+          inboxUrl = `/hr/inbox?view=${requestId}`;
+        } else if (nextApproverRole === "vp") {
+          roleFilter = { is_vp: true };
+          inboxUrl = `/vp/inbox?view=${requestId}`;
+        } else if (nextApproverRole === "president" || nextApproverRole === "exec") {
+          roleFilter = { is_president: true };
+          inboxUrl = `/president/inbox?view=${requestId}`;
+        }
+
+        if (Object.keys(roleFilter).length > 0) {
+          const { data: nextApprovers } = await supabase
+            .from("users")
+            .select("id")
+            .match(roleFilter)
+            .eq("status", "active");
+
+          if (nextApprovers && nextApprovers.length > 0) {
+            for (const approver of nextApprovers) {
+              await createNotification({
+                user_id: approver.id,
+                notification_type: "request_pending_signature",
+                title: `New Request from ${approverRoleLabel}`,
+                message: `Request ${request.request_number || ""} has been approved by ${approverRoleLabel} and forwarded to you for review.`,
+                related_type: "request",
+                related_id: requestId,
+                action_url: inboxUrl,
+                action_label: "Review Request",
+                priority: "high",
+              });
+            }
+          }
+        }
+      }
+    } catch (notifError: any) {
+      console.error("[/api/requests/[id]/approve] Failed to create notifications:", notifError);
+    }
+
     console.log("[/api/requests/[id]/approve] Request approved:", requestId, "New status:", nextStatus);
 
     return NextResponse.json({ 

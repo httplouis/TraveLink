@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import ExecRequestModal from "@/components/exec/ExecRequestModal";
 import RequestStatusTracker from "@/components/common/RequestStatusTracker";
 import TrackingModal from "@/components/common/TrackingModal";
@@ -15,6 +16,9 @@ import { createSupabaseClient } from "@/lib/supabase/client";
 import { createLogger } from "@/lib/debug";
 
 export default function ExecInboxContainer() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const [pendingItems, setPendingItems] = React.useState<any[]>([]);
   const [approvedItems, setApprovedItems] = React.useState<any[]>([]);
   const [historyItems, setHistoryItems] = React.useState<any[]>([]);
@@ -27,6 +31,9 @@ export default function ExecInboxContainer() {
   const [activeTab, setActiveTab] = React.useState<"pending" | "approved" | "history">("pending");
 
   const logger = createLogger("ExecInbox");
+  
+  // Track if we've already handled the view parameter
+  const viewParamHandledRef = React.useRef(false);
 
   // Load pending requests
   const loadPending = React.useCallback(async () => {
@@ -84,6 +91,44 @@ export default function ExecInboxContainer() {
       setHistoryItems([]);
     }
   }, []);
+
+  // Handle ?view=requestId query parameter to auto-open a specific request
+  React.useEffect(() => {
+    const viewRequestId = searchParams?.get('view');
+    
+    // Only handle once per page load and if we have items loaded
+    if (viewRequestId && !viewParamHandledRef.current && pendingItems.length > 0) {
+      viewParamHandledRef.current = true;
+      
+      // Find the request in pending items
+      const requestToView = pendingItems.find(r => r.id === viewRequestId);
+      
+      if (requestToView) {
+        logger.info('Auto-opening request from URL:', viewRequestId);
+        setSelected(requestToView);
+        
+        // Clear the view parameter from URL
+        const newUrl = pathname || '/exec/inbox';
+        router.replace(newUrl, { scroll: false });
+      } else {
+        // Request not in pending - try to fetch it directly
+        logger.info('Request not in pending list, fetching directly:', viewRequestId);
+        
+        fetch(`/api/requests/${viewRequestId}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.ok && data.data) {
+              setSelected(data.data);
+              const newUrl = pathname || '/exec/inbox';
+              router.replace(newUrl, { scroll: false });
+            }
+          })
+          .catch(err => {
+            logger.error('Failed to fetch request:', err);
+          });
+      }
+    }
+  }, [searchParams, pendingItems, pathname, router, logger]);
 
   React.useEffect(() => {
     let isMounted = true;

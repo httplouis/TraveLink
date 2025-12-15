@@ -317,20 +317,71 @@ export async function POST(request: Request) {
 
       // Create notifications
       try {
-        if (nextApproverId && nextApproverRoleFinal === "hr") {
-          // Notify HR
-          const { createNotification } = await import("@/lib/notifications/helpers");
+        const { createNotification } = await import("@/lib/notifications/helpers");
+        
+        // 1. Notify requester about approval
+        if (request.requester_id) {
+          const nextRoleLabel = nextApproverRoleFinal === "hr" ? "HR" : nextApproverRoleFinal === "president" ? "President" : nextApproverRoleFinal.toUpperCase();
           await createNotification({
-            user_id: nextApproverId,
-            notification_type: "request_pending_signature",
-            title: "New Request from Comptroller",
-            message: `Comptroller has approved request ${request.request_number || ''} and forwarded it to you for HR review.`,
+            user_id: request.requester_id,
+            notification_type: "request_approved",
+            title: "Request Approved by Comptroller",
+            message: `Your travel order request ${request.request_number || ''} has been approved by Comptroller and is now with ${nextRoleLabel}.`,
             related_type: "request",
             related_id: requestId,
-            action_url: `/hr/inbox?view=${requestId}`,
-            action_label: "Review Request",
-            priority: "high",
+            action_url: `/user/submissions?view=${requestId}`,
+            action_label: "View Request",
+            priority: "normal",
           });
+        }
+        
+        // 2. Notify next approvers (HR or President)
+        if (nextApproverRoleFinal === "hr") {
+          // Notify all HR users
+          const { data: hrUsers } = await supabase
+            .from("users")
+            .select("id")
+            .eq("is_hr", true)
+            .eq("status", "active");
+          
+          if (hrUsers && hrUsers.length > 0) {
+            for (const hr of hrUsers) {
+              await createNotification({
+                user_id: hr.id,
+                notification_type: "request_pending_signature",
+                title: "New Request from Comptroller",
+                message: `Comptroller has approved request ${request.request_number || ''} and forwarded it to HR for review.`,
+                related_type: "request",
+                related_id: requestId,
+                action_url: `/hr/inbox?view=${requestId}`,
+                action_label: "Review Request",
+                priority: "high",
+              });
+            }
+          }
+        } else if (nextApproverRoleFinal === "president") {
+          // Notify all presidents (when skipping HR)
+          const { data: presidents } = await supabase
+            .from("users")
+            .select("id")
+            .eq("is_president", true)
+            .eq("status", "active");
+          
+          if (presidents && presidents.length > 0) {
+            for (const president of presidents) {
+              await createNotification({
+                user_id: president.id,
+                notification_type: "request_pending_signature",
+                title: "New Request from Comptroller",
+                message: `Comptroller has approved request ${request.request_number || ''} and forwarded it to you for final approval (HR skipped - VP already approved as head).`,
+                related_type: "request",
+                related_id: requestId,
+                action_url: `/president/inbox?view=${requestId}`,
+                action_label: "Review Request",
+                priority: "high",
+              });
+            }
+          }
         }
       } catch (notifError: any) {
         console.error("[Comptroller Approve] Failed to create notifications:", notifError);
@@ -352,6 +403,13 @@ export async function POST(request: Request) {
       });
 
     } else if (action === "reject") {
+      // Get request details for notification
+      const { data: request } = await supabase
+        .from("requests")
+        .select("requester_id, request_number")
+        .eq("id", requestId)
+        .single();
+
       // Reject and send back to user
       const { error: updateError } = await supabase
         .from("requests")
@@ -384,6 +442,26 @@ export async function POST(request: Request) {
         new_status: "rejected",
         comments: notes || "Rejected by comptroller",
       });
+
+      // Notify requester about rejection
+      try {
+        const { createNotification } = await import("@/lib/notifications/helpers");
+        if (request?.requester_id) {
+          await createNotification({
+            user_id: request.requester_id,
+            notification_type: "request_rejected",
+            title: "Request Rejected by Comptroller",
+            message: `Your travel order request ${request.request_number || ''} has been rejected by Comptroller.${notes ? ` Reason: ${notes}` : ""}`,
+            related_type: "request",
+            related_id: requestId,
+            action_url: `/user/submissions?view=${requestId}`,
+            action_label: "View Request",
+            priority: "high",
+          });
+        }
+      } catch (notifError: any) {
+        console.error("[Comptroller Reject] Failed to create notification:", notifError);
+      }
 
       console.log(`[Comptroller Reject] ❌ Request ${requestId} rejected, sent back to user`);
       

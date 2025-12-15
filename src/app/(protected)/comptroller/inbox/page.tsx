@@ -2,6 +2,7 @@
 "use client";
 
 import React from "react";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Search, Clock, User, Building2, MapPin, Calendar, FileText, CheckCircle, History } from "lucide-react";
 import ComptrollerReviewModal from "@/components/comptroller/ComptrollerReviewModal";
 import RequestCardEnhanced from "@/components/common/RequestCardEnhanced";
@@ -45,6 +46,9 @@ type Request = {
 };
 
 export default function ComptrollerInboxPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const [pendingRequests, setPendingRequests] = React.useState<Request[]>([]);
   const [approvedRequests, setApprovedRequests] = React.useState<Request[]>([]);
   const [historyRequests, setHistoryRequests] = React.useState<Request[]>([]);
@@ -56,11 +60,54 @@ export default function ComptrollerInboxPage() {
   const [activeTab, setActiveTab] = React.useState<"pending" | "approved" | "history">("pending");
 
   const logger = createLogger("ComptrollerInbox");
+  
+  // Track if we've already handled the view parameter
+  const viewParamHandledRef = React.useRef(false);
 
   // Set page title
   React.useEffect(() => {
     document.title = "TraviLink | Comptroller";
   }, []);
+  
+  // Handle ?view=requestId query parameter to auto-open a specific request
+  React.useEffect(() => {
+    const viewRequestId = searchParams?.get('view');
+    
+    // Only handle once per page load and if we have items loaded
+    if (viewRequestId && !viewParamHandledRef.current && pendingRequests.length > 0) {
+      viewParamHandledRef.current = true;
+      
+      // Find the request in pending items
+      const requestToView = pendingRequests.find(r => r.id === viewRequestId);
+      
+      if (requestToView) {
+        logger.info('Auto-opening request from URL:', viewRequestId);
+        setSelectedRequest(requestToView);
+        setShowModal(true);
+        
+        // Clear the view parameter from URL
+        const newUrl = pathname || '/comptroller/inbox';
+        router.replace(newUrl, { scroll: false });
+      } else {
+        // Request not in pending - try to fetch it directly
+        logger.info('Request not in pending list, fetching directly:', viewRequestId);
+        
+        fetch(`/api/requests/${viewRequestId}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.ok && data.data) {
+              setSelectedRequest(data.data);
+              setShowModal(true);
+              const newUrl = pathname || '/comptroller/inbox';
+              router.replace(newUrl, { scroll: false });
+            }
+          })
+          .catch(err => {
+            logger.error('Failed to fetch request:', err);
+          });
+      }
+    }
+  }, [searchParams, pendingRequests, pathname, router, logger]);
 
   // Load pending requests
   const loadPending = React.useCallback(async () => {

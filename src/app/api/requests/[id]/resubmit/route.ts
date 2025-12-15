@@ -195,11 +195,54 @@ export async function POST(
       },
     });
 
-    // Create notification for the next approver
+    // Create notifications
     try {
       const { createNotification } = await import("@/lib/notifications/helpers");
 
-      // Get all users with the target role
+      // 1. Notify the person who returned the request (the returner)
+      if (request.returned_by) {
+        // Get returner's role to determine correct inbox URL
+        const { data: returner } = await supabaseServiceRole
+          .from("users")
+          .select("id, is_head, is_admin, is_comptroller, is_hr, is_vp, is_president, is_executive, role")
+          .eq("id", request.returned_by)
+          .maybeSingle();
+
+        if (returner) {
+          // Determine the correct inbox URL based on returner's role
+          let inboxUrl = "/admin/inbox"; // Default
+          if (returner.is_comptroller || returner.role === "comptroller") {
+            inboxUrl = `/comptroller/inbox?view=${requestId}`;
+          } else if (returner.is_hr || returner.role === "hr") {
+            inboxUrl = `/hr/inbox?view=${requestId}`;
+          } else if (returner.is_admin || returner.role === "admin") {
+            inboxUrl = `/admin/inbox?view=${requestId}`;
+          } else if (returner.is_vp) {
+            inboxUrl = `/vp/inbox?view=${requestId}`;
+          } else if (returner.is_president) {
+            inboxUrl = `/president/inbox?view=${requestId}`;
+          } else if (returner.is_executive) {
+            inboxUrl = `/exec/inbox?view=${requestId}`;
+          } else if (returner.is_head) {
+            inboxUrl = `/head/inbox?view=${requestId}`;
+          }
+
+          await createNotification({
+            user_id: returner.id,
+            notification_type: "request_resubmitted",
+            title: "Returned Request Resubmitted",
+            message: `Request ${request.request_number || ""} that you returned has been revised and resubmitted for review.`,
+            related_type: "request",
+            related_id: requestId,
+            action_url: inboxUrl,
+            action_label: "Review Request",
+            priority: "high",
+          });
+          console.log("[Resubmit Request] ✅ Notification sent to returner:", returner.id);
+        }
+      }
+
+      // 2. Notify all users with the target role (next approvers)
       let roleFilter: any = {};
       if (nextApproverRole === "comptroller") {
         roleFilter = { is_comptroller: true };
@@ -222,6 +265,11 @@ export async function POST(
 
         if (approvers && approvers.length > 0) {
           for (const approver of approvers) {
+            // Skip if this approver is the same as the returner (already notified above)
+            if (request.returned_by && approver.id === request.returned_by) {
+              continue;
+            }
+            
             await createNotification({
               user_id: approver.id,
               notification_type: "request_resubmitted",
@@ -234,6 +282,7 @@ export async function POST(
               priority: "high",
             });
           }
+          console.log("[Resubmit Request] ✅ Notifications sent to", approvers.length, nextApproverRole, "approvers");
         }
       }
     } catch (notifError: any) {

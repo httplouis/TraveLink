@@ -42,6 +42,13 @@ export async function POST(request: Request) {
     }
 
     if (action === "approve") {
+      // Get full request details for notifications
+      const { data: fullRequest } = await supabase
+        .from("requests")
+        .select("*, requester:users!requester_id(id, name, email)")
+        .eq("id", requestId)
+        .single();
+
       // Determine update based on current status and user role
       const updateData: any = {
         status: "approved",
@@ -95,8 +102,66 @@ export async function POST(request: Request) {
         comments: notes || `Approved by ${execUser.is_president ? "President" : execUser.is_vp ? "VP" : "Executive"}`,
       });
 
+      // Create notifications
+      try {
+        const { createNotification } = await import("@/lib/notifications/helpers");
+        const approverRole = execUser.is_president ? "President" : execUser.is_vp ? "VP" : "Executive";
+        
+        // Notify requester
+        if (fullRequest?.requester_id) {
+          const isFinalApproval = newStatus === "approved";
+          await createNotification({
+            user_id: fullRequest.requester_id,
+            notification_type: isFinalApproval ? "request_approved" : "request_status_change",
+            title: isFinalApproval ? "Request Fully Approved" : `Request Approved by ${approverRole}`,
+            message: isFinalApproval 
+              ? `Your travel order request ${fullRequest.request_number || ""} has been fully approved! You may now proceed with your travel.`
+              : `Your travel order request ${fullRequest.request_number || ""} has been approved by ${approverRole} and is now with President for final approval.`,
+            related_type: "request",
+            related_id: requestId,
+            action_url: `/user/submissions?view=${requestId}`,
+            action_label: "View Request",
+            priority: isFinalApproval ? "high" : "normal",
+          });
+        }
+
+        // If VP approved and going to President, notify all presidents
+        if (newStatus === "pending_president") {
+          const { data: presidents } = await supabase
+            .from("users")
+            .select("id")
+            .eq("is_president", true)
+            .eq("status", "active");
+
+          if (presidents && presidents.length > 0) {
+            for (const president of presidents) {
+              await createNotification({
+                user_id: president.id,
+                notification_type: "request_pending_signature",
+                title: "New Request from VP",
+                message: `VP has approved request ${fullRequest?.request_number || ""} and forwarded it to you for final approval.`,
+                related_type: "request",
+                related_id: requestId,
+                action_url: `/president/inbox?view=${requestId}`,
+                action_label: "Review Request",
+                priority: "high",
+              });
+            }
+          }
+        }
+      } catch (notifError: any) {
+        console.error("[Exec Action] Failed to create notifications:", notifError);
+      }
+
       return NextResponse.json({ ok: true, message: "Request approved successfully" });
     } else if (action === "reject") {
+      // Get full request details for notifications
+      const { data: fullRequest } = await supabase
+        .from("requests")
+        .select("*, requester:users!requester_id(id, name, email)")
+        .eq("id", requestId)
+        .single();
+
       // Reject request
       const { error: updateError } = await supabase
         .from("requests")
@@ -125,6 +190,28 @@ export async function POST(request: Request) {
         new_status: "rejected",
         comments: notes || `Rejected by ${execUser.is_president ? "President" : execUser.is_vp ? "VP" : "Executive"}`,
       });
+
+      // Notify requester about rejection
+      try {
+        const { createNotification } = await import("@/lib/notifications/helpers");
+        const approverRole = execUser.is_president ? "President" : execUser.is_vp ? "VP" : "Executive";
+        
+        if (fullRequest?.requester_id) {
+          await createNotification({
+            user_id: fullRequest.requester_id,
+            notification_type: "request_rejected",
+            title: "Request Rejected",
+            message: `Your travel order request ${fullRequest.request_number || ""} has been rejected by ${approverRole}.${notes ? ` Reason: ${notes}` : ""}`,
+            related_type: "request",
+            related_id: requestId,
+            action_url: `/user/submissions?view=${requestId}`,
+            action_label: "View Request",
+            priority: "high",
+          });
+        }
+      } catch (notifError: any) {
+        console.error("[Exec Action] Failed to create rejection notification:", notifError);
+      }
 
       return NextResponse.json({ ok: true, message: "Request rejected successfully" });
     } else {
