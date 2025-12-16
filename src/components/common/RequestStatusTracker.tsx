@@ -1,572 +1,371 @@
 "use client";
 
-import React from "react";
-import { 
-  Check, 
-  Clock, 
-  X, 
-  User, 
-  Shield, 
-  Users, 
-  Award,
-  FileCheck,
-  AlertCircle,
-  Zap
+import { useState, useEffect } from "react";
+import { motion } from "framer-motion";
+import {
+  CheckCircle,
+  Clock,
+  XCircle,
+  User,
+  UserCheck,
+  Building2,
+  Wallet,
+  Shield,
+  Crown,
+  Truck,
+  ArrowRight,
 } from "lucide-react";
 
-type RequestStatus = 
-  | "draft"
-  | "pending_head"
-  | "pending_parent_head"
-  | "pending_admin"
-  | "pending_comptroller"
-  | "pending_hr"
-  | "pending_vp"
-  | "pending_president"
-  | "pending_exec"
-  | "approved"
-  | "rejected"
-  | "cancelled";
-
-interface ApprovalStage {
-  key: string;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  role: string;
-}
-
 interface RequestStatusTrackerProps {
-  status: RequestStatus;
-  requesterIsHead?: boolean;
-  hasBudget?: boolean;
-  hasParentHead?: boolean;
-  requiresPresidentApproval?: boolean;
-  bothVpsApproved?: boolean; // Whether both VPs need to approve
-  
-  // Skip flags
-  adminSkipped?: boolean;
-  comptrollerSkipped?: boolean;
-  adminSkipReason?: string | null;
-  comptrollerSkipReason?: string | null;
-  
-  // Approval timestamps and names
-  headApprovedAt?: string | null | undefined;
-  headApprovedBy?: string | null | undefined;
-  parentHeadApprovedAt?: string | null | undefined;
-  parentHeadApprovedBy?: string | null | undefined;
-  adminProcessedAt?: string | null | undefined;
-  adminProcessedBy?: string | null | undefined;
-  comptrollerApprovedAt?: string | null | undefined;
-  comptrollerApprovedBy?: string | null | undefined;
-  hrApprovedAt?: string | null | undefined;
-  hrApprovedBy?: string | null | undefined;
-  vpApprovedAt?: string | null | undefined;
-  vpApprovedBy?: string | null | undefined;
-  vp2ApprovedAt?: string | null | undefined;
-  vp2ApprovedBy?: string | null | undefined;
-  presidentApprovedAt?: string | null | undefined;
-  presidentApprovedBy?: string | null | undefined;
-  execApprovedAt?: string | null | undefined;
-  execApprovedBy?: string | null | undefined;
-  
-  rejectedAt?: string | null | undefined;
-  rejectedBy?: string | null | undefined;
-  rejectionStage?: string | null | undefined;
-  
-  // For processing time calculation
-  createdAt?: string | null | undefined;
-  
+  request: {
+    id: string;
+    status: string;
+    request_number?: string;
+    purpose?: string;
+    created_at?: string;
+    submitted_at?: string;
+    head_approved_at?: string;
+    admin_processed_at?: string;
+    comptroller_approved_at?: string;
+    hr_approved_at?: string;
+    vp_approved_at?: string;
+    president_approved_at?: string;
+    rejected_at?: string;
+    returned_at?: string;
+    vehicle_assigned_at?: string;
+    completed_at?: string;
+    requires_head_approval?: boolean;
+    requires_vp_approval?: boolean;
+    requires_president_approval?: boolean;
+  };
   compact?: boolean;
 }
 
-// Peso icon component
-const PesoIcon = ({ className }: { className?: string }) => (
-  <span className={`text-lg font-bold ${className || ""}`}>₱</span>
-);
+interface Step {
+  id: string;
+  label: string;
+  icon: React.ReactNode;
+  status: "completed" | "current" | "pending" | "skipped" | "rejected";
+  timestamp?: string;
+  description?: string;
+}
 
-const STAGES: ApprovalStage[] = [
-  { key: "head", label: "Department Head", icon: User, role: "Head" },
-  { key: "parent_head", label: "College Dean", icon: Award, role: "Dean" },
-  { key: "admin", label: "Transportation Coordinator", icon: Shield, role: "Transportation Coordinator" },
-  { key: "comptroller", label: "Comptroller", icon: PesoIcon, role: "Comptroller" },
-  { key: "hr", label: "Human Resources", icon: Users, role: "HR" },
-  { key: "vp", label: "Vice President", icon: Award, role: "VP" },
-  { key: "vp2", label: "Second Vice President", icon: Award, role: "VP2" },
-  { key: "president", label: "President", icon: FileCheck, role: "President" },
-];
+export default function RequestStatusTracker({ request, compact = false }: RequestStatusTrackerProps) {
+  const [steps, setSteps] = useState<Step[]>([]);
 
-export default function RequestStatusTracker({
-  status,
-  requesterIsHead = false,
-  hasBudget = false,
-  hasParentHead = false,
-  requiresPresidentApproval = false,
-  bothVpsApproved = false,
-  adminSkipped = false,
-  comptrollerSkipped = false,
-  adminSkipReason = null,
-  comptrollerSkipReason = null,
-  headApprovedAt,
-  headApprovedBy,
-  parentHeadApprovedAt,
-  parentHeadApprovedBy,
-  adminProcessedAt,
-  adminProcessedBy,
-  comptrollerApprovedAt,
-  comptrollerApprovedBy,
-  hrApprovedAt,
-  hrApprovedBy,
-  vpApprovedAt,
-  vpApprovedBy,
-  vp2ApprovedAt,
-  vp2ApprovedBy,
-  presidentApprovedAt,
-  presidentApprovedBy,
-  execApprovedAt,
-  execApprovedBy,
-  rejectedAt,
-  rejectedBy,
-  rejectionStage,
-  createdAt,
-  compact = false,
-}: RequestStatusTrackerProps) {
-  
-  // Debug logging
-  console.log("[RequestStatusTracker] Props received:", {
-    status,
-    headApprovedAt,
-    headApprovedBy,
-    adminProcessedAt,
-    adminProcessedBy,
-    comptrollerApprovedAt,
-    comptrollerApprovedBy,
-    hrApprovedAt,
-    hrApprovedBy,
-    execApprovedAt,
-    execApprovedBy,
-  });
-  
-  // Filter stages based on workflow
-  // Show skipped stages with visual indicators
-  const activeStages = STAGES.filter(stage => {
-    if (stage.key === "head" && requesterIsHead) return false;
-    if (stage.key === "parent_head" && !hasParentHead) return false;
-    // Show comptroller even if skipped (with skip indicator)
-    // if (stage.key === "comptroller" && !hasBudget && !comptrollerSkipped) return false;
-    // Hide VP2 if:
-    // 1. Requester is head (heads go directly to President after first VP)
-    // 2. Both VPs are not required (all requesters from same department)
-    if (stage.key === "vp2" && (!bothVpsApproved || requesterIsHead)) return false;
-    // Always show President if they've already approved, or if approval is required
-    if (stage.key === "president" && !requiresPresidentApproval && !presidentApprovedAt) return false;
-    return true;
-  });
+  useEffect(() => {
+    // Guard against undefined request
+    if (!request) return;
 
-  const getStageStatus = (stageKey: string): "completed" | "current" | "pending" | "rejected" | "skipped" => {
-    // Check for skipped stages first
-    if (stageKey === "admin" && adminSkipped) return "skipped";
-    if (stageKey === "comptroller" && comptrollerSkipped) return "skipped";
-    
-    if (status === "rejected" && rejectionStage === stageKey) return "rejected";
-    if (status === "cancelled") return "rejected";
-    
-    // If request is fully approved, all stages that have been completed should show as completed
-    // Check if we have approval timestamps first
-    if (status === "approved") {
-      switch (stageKey) {
-        case "head": return headApprovedAt ? "completed" : "pending";
-        case "parent_head": return parentHeadApprovedAt ? "completed" : "pending";
-        case "admin": return adminSkipped ? "skipped" : (adminProcessedAt ? "completed" : "pending");
-        case "comptroller": return comptrollerSkipped ? "skipped" : (comptrollerApprovedAt ? "completed" : "pending");
-        case "hr": return hrApprovedAt ? "completed" : "pending";
-        case "vp": return vpApprovedAt ? "completed" : "pending";
-        case "vp2": return vp2ApprovedAt ? "completed" : (bothVpsApproved ? "pending" : "pending");
-        case "president": return presidentApprovedAt ? "completed" : "pending";
-        case "exec": return execApprovedAt ? "completed" : "pending";
-        default: return "pending";
+    const buildSteps = () => {
+      const s: Step[] = [];
+      const status = request.status?.toLowerCase() || "";
+
+      // Step 1: Submitted
+      s.push({
+        id: "submitted",
+        label: "Submitted",
+        icon: <User className="h-4 w-4" />,
+        status: request.submitted_at ? "completed" : status === "draft" ? "current" : "pending",
+        timestamp: request.submitted_at,
+        description: "Request submitted for approval",
+      });
+
+      // Step 2: Head Endorsement (if required)
+      if (request.requires_head_approval !== false) {
+        s.push({
+          id: "head",
+          label: "Head Endorsed",
+          icon: <UserCheck className="h-4 w-4" />,
+          status: request.head_approved_at
+            ? "completed"
+            : status === "pending_head" || status === "submitted"
+            ? "current"
+            : status === "rejected" || status === "returned"
+            ? "rejected"
+            : "pending",
+          timestamp: request.head_approved_at,
+          description: "Department head endorsement",
+        });
       }
-    }
-    
-    switch (stageKey) {
-      case "head":
-        if (headApprovedAt) return "completed";
-        if (status === "pending_head") return "current";
-        // If we're past this stage or request is approved, mark as completed
-        if (status === "pending_admin" || status === "pending_comptroller" || status === "pending_hr" || status === "pending_vp" || status === "pending_president" || status === "pending_exec" || status === "approved") return "completed";
-        return "pending";
-      
-      case "parent_head":
-        if (parentHeadApprovedAt) return "completed";
-        if (status === "pending_parent_head") return "current";
-        if (status === "pending_admin" || status === "pending_comptroller" || status === "pending_hr" || status === "pending_vp" || status === "pending_president" || status === "pending_exec" || status === "approved") return "completed";
-        return "pending";
-      
-      case "admin":
-        if (adminSkipped) return "skipped";
-        if (adminProcessedAt) return "completed";
-        if (status === "pending_admin") return "current";
-        // If we're past admin stage or request is approved, mark as completed
-        if (status === "pending_comptroller" || status === "pending_hr" || status === "pending_vp" || status === "pending_president" || status === "pending_exec" || status === "approved") return "completed";
-        return "pending";
-      
-      case "comptroller":
-        if (comptrollerSkipped) return "skipped";
-        if (comptrollerApprovedAt) return "completed";
-        if (status === "pending_comptroller") return "current";
-        if (status === "pending_hr" || status === "pending_vp" || status === "pending_president" || status === "pending_exec" || status === "approved") return "completed";
-        return "pending";
-      
-      case "hr":
-        if (hrApprovedAt) return "completed";
-        if (status === "pending_hr") return "current";
-        if (status === "pending_vp" || status === "pending_president" || status === "pending_exec" || status === "approved") return "completed";
-        return "pending";
-      
-      case "vp":
-        if (vpApprovedAt) return "completed";
-        if (status === "pending_vp") return "current";
-        // If VP2 is needed and first VP approved, mark as completed
-        if (bothVpsApproved && vpApprovedAt && !vp2ApprovedAt) return "completed";
-        if (status === "pending_president" || status === "approved") return "completed";
-        return "pending";
-      
-      case "vp2":
-        if (vp2ApprovedAt) return "completed";
-        // Skip VP2 if requester is head (heads go directly to President)
-        if (requesterIsHead) return "skipped";
-        // If first VP approved but second hasn't, this is current (only if both VPs are required)
-        if (vpApprovedAt && !vp2ApprovedAt && bothVpsApproved) return "current";
-        // If we're past VP2 or request is approved, mark as completed
-        if (status === "pending_president" || status === "pending_exec" || status === "approved") {
-          // If status is pending_exec and next approver is president, skip VP2
-          if (status === "pending_exec") return "skipped";
-          return "completed";
+
+      // Step 3: Admin Processing
+      s.push({
+        id: "admin",
+        label: "Admin Processed",
+        icon: <Building2 className="h-4 w-4" />,
+        status: request.admin_processed_at
+          ? "completed"
+          : status === "pending_admin" || status === "head_approved"
+          ? "current"
+          : "pending",
+        timestamp: request.admin_processed_at,
+        description: "Admin verification & scheduling",
+      });
+
+      // Step 4: Comptroller Budget Review
+      s.push({
+        id: "comptroller",
+        label: "Budget Approved",
+        icon: <Wallet className="h-4 w-4" />,
+        status: request.comptroller_approved_at
+          ? "completed"
+          : status === "pending_comptroller" || status === "admin_processed"
+          ? "current"
+          : "pending",
+        timestamp: request.comptroller_approved_at,
+        description: "Budget review & approval",
+      });
+
+      // Step 5: HR Approval
+      s.push({
+        id: "hr",
+        label: "HR Approved",
+        icon: <Shield className="h-4 w-4" />,
+        status: request.hr_approved_at
+          ? "completed"
+          : status === "pending_hr" || status === "comptroller_approved"
+          ? "current"
+          : "pending",
+        timestamp: request.hr_approved_at,
+        description: "HR compliance check",
+      });
+
+      // Step 6: VP Approval (if required)
+      if (request.requires_vp_approval !== false) {
+        s.push({
+          id: "vp",
+          label: "VP Approved",
+          icon: <Crown className="h-4 w-4" />,
+          status: request.vp_approved_at
+            ? "completed"
+            : status === "pending_vp" || status === "hr_approved"
+            ? "current"
+            : "pending",
+          timestamp: request.vp_approved_at,
+          description: "Vice President approval",
+        });
+      }
+
+      // Step 7: President Approval (if required)
+      if (request.requires_president_approval) {
+        s.push({
+          id: "president",
+          label: "President Approved",
+          icon: <Crown className="h-4 w-4" />,
+          status: request.president_approved_at
+            ? "completed"
+            : status === "pending_president"
+            ? "current"
+            : "pending",
+          timestamp: request.president_approved_at,
+          description: "President final approval",
+        });
+      }
+
+      // Step 8: Vehicle Assigned
+      s.push({
+        id: "assigned",
+        label: "Vehicle Assigned",
+        icon: <Truck className="h-4 w-4" />,
+        status: request.vehicle_assigned_at
+          ? "completed"
+          : status === "approved" || status === "vp_approved" || status === "president_approved"
+          ? "current"
+          : "pending",
+        timestamp: request.vehicle_assigned_at,
+        description: "Vehicle & driver assigned",
+      });
+
+      // Step 9: Completed
+      s.push({
+        id: "completed",
+        label: "Completed",
+        icon: <CheckCircle className="h-4 w-4" />,
+        status: request.completed_at || status === "completed"
+          ? "completed"
+          : status === "assigned"
+          ? "current"
+          : "pending",
+        timestamp: request.completed_at,
+        description: "Trip completed",
+      });
+
+      // Handle rejected/returned status
+      if (status === "rejected" || status === "returned") {
+        const lastCompletedIndex = s.findLastIndex((step) => step.status === "completed");
+        if (lastCompletedIndex >= 0 && lastCompletedIndex < s.length - 1) {
+          s[lastCompletedIndex + 1].status = "rejected";
         }
-        // If both VPs not required (same department), skip VP2
-        if (!bothVpsApproved) return "skipped";
-        return "pending";
-      
-      case "president":
-        if (presidentApprovedAt) return "completed";
-        if (status === "pending_president") return "current";
-        // If request is approved, check if president approved
-        if (status === "approved") return presidentApprovedAt ? "completed" : "pending";
-        return "pending";
-      
-      case "exec":
-        if (execApprovedAt) return "completed";
-        if (status === "pending_exec") return "current";
-        if (status === "approved") return execApprovedAt ? "completed" : "pending";
-        return "pending";
-      
+      }
+
+      setSteps(s);
+    };
+
+    buildSteps();
+  }, [request]);
+
+  const getStatusColor = (status: Step["status"]) => {
+    switch (status) {
+      case "completed":
+        return "bg-green-500 text-white border-green-500";
+      case "current":
+        return "bg-blue-500 text-white border-blue-500 animate-pulse";
+      case "rejected":
+        return "bg-red-500 text-white border-red-500";
+      case "skipped":
+        return "bg-gray-300 text-gray-500 border-gray-300";
       default:
-        return "pending";
+        return "bg-white text-gray-400 border-gray-300";
     }
   };
 
-  const getApproverName = (stageKey: string): string | null | undefined => {
-    switch (stageKey) {
-      case "head": return headApprovedBy;
-      case "parent_head": return parentHeadApprovedBy;
-      case "admin": return adminProcessedBy;
-      case "comptroller": return comptrollerApprovedBy;
-      case "hr": return hrApprovedBy;
-      case "vp": return vpApprovedBy || execApprovedBy; // Fallback to exec for legacy
-      case "vp2": return vp2ApprovedBy;
-      case "president": return presidentApprovedBy || execApprovedBy; // Fallback to exec for legacy
-      case "exec": return execApprovedBy;
-      default: return null;
+  const getLineColor = (status: Step["status"]) => {
+    switch (status) {
+      case "completed":
+        return "bg-green-500";
+      case "current":
+        return "bg-blue-500";
+      case "rejected":
+        return "bg-red-500";
+      default:
+        return "bg-gray-200";
     }
   };
 
-  const getApprovedAt = (stageKey: string): string | null | undefined => {
-    switch (stageKey) {
-      case "head": return headApprovedAt;
-      case "parent_head": return parentHeadApprovedAt;
-      case "admin": return adminProcessedAt;
-      case "comptroller": return comptrollerApprovedAt;
-      case "hr": return hrApprovedAt;
-      case "vp": return vpApprovedAt || execApprovedAt; // Fallback to exec for legacy
-      case "vp2": return vp2ApprovedAt;
-      case "president": return presidentApprovedAt || execApprovedAt; // Fallback to exec for legacy
-      case "exec": return execApprovedAt;
-      default: return null;
-    }
-  };
-
-  const formatDate = (dateStr: string | null) => {
-    if (!dateStr) return { date: "", time: "" };
-    
-    // Ensure the date string is treated as UTC if no timezone specified
-    let isoString = dateStr;
-    if (!dateStr.endsWith('Z') && !dateStr.includes('+') && !dateStr.includes('-', 10)) {
-      isoString = dateStr + 'Z';
-    }
-    
-    const d = new Date(isoString);
-    const date = d.toLocaleDateString("en-US", { 
-      month: "short", 
-      day: "numeric", 
-      year: "numeric",
-      timeZone: "Asia/Manila"
-    });
-    const time = d.toLocaleTimeString("en-US", {
-      hour: "2-digit",
+  const formatTime = (timestamp?: string) => {
+    if (!timestamp) return null;
+    return new Date(timestamp).toLocaleString("en-PH", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
       minute: "2-digit",
-      hour12: true,
-      timeZone: "Asia/Manila"
     });
-    return { date, time };
   };
 
-  // Calculate processing time between stages
-  const calculateProcessingTime = (startTime: string | null | undefined, endTime: string | null | undefined): string | null => {
-    if (!startTime || !endTime) return null;
-    
-    try {
-      let startIso = startTime;
-      let endIso = endTime;
-      
-      // Ensure both dates have timezone info
-      if (!startTime.endsWith('Z') && !startTime.includes('+') && !startTime.includes('-', 10)) {
-        startIso = startTime + 'Z';
-      }
-      if (!endTime.endsWith('Z') && !endTime.includes('+') && !endTime.includes('-', 10)) {
-        endIso = endTime + 'Z';
-      }
-      
-      const start = new Date(startIso);
-      const end = new Date(endIso);
-      
-      if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
-      
-      const diffMs = end.getTime() - start.getTime();
-      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-      const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-      const diffDays = Math.floor(diffHours / 24);
-      
-      if (diffDays > 0) {
-        return `${diffDays}d ${diffHours % 24}h`;
-      } else if (diffHours > 0) {
-        return `${diffHours}h ${diffMinutes}m`;
-      } else if (diffMinutes > 0) {
-        return `${diffMinutes}m`;
-      } else {
-        return '< 1m';
-      }
-    } catch {
-      return null;
-    }
-  };
-
-  // Get previous stage approval time for processing time calculation
-  const getPreviousStageTime = (currentStageKey: string): string | null | undefined => {
-    const stageOrder = ["head", "parent_head", "admin", "comptroller", "hr", "vp", "vp2", "president", "exec"];
-    const currentIndex = stageOrder.indexOf(currentStageKey);
-    
-    if (currentIndex <= 0) return createdAt || null;
-    
-    // Find the most recent previous stage that was approved
-    for (let i = currentIndex - 1; i >= 0; i--) {
-      const prevStageKey = stageOrder[i];
-      const prevTime = getApprovedAt(prevStageKey);
-      if (prevTime) return prevTime;
-    }
-    
-    // If no previous stage, use created_at (submission time)
-    return createdAt || null;
-  };
+  // Guard against undefined request
+  if (!request) {
+    return null;
+  }
 
   if (compact) {
+    // Compact horizontal view
     return (
-      <div className="flex items-center gap-2">
-        {activeStages.map((stage, idx) => {
-          const stageStatus = getStageStatus(stage.key);
-          const Icon = stage.icon;
-          
-          return (
-            <React.Fragment key={stage.key}>
-              <div className="flex items-center gap-1.5">
-                <div className={`
-                  flex items-center justify-center w-6 h-6 rounded-full text-xs
-                  ${stageStatus === "completed" ? "bg-green-500 text-white" : ""}
-                  ${stageStatus === "current" ? "bg-blue-500 text-white animate-pulse" : ""}
-                  ${stageStatus === "pending" ? "bg-gray-200 text-gray-400" : ""}
-                  ${stageStatus === "rejected" ? "bg-red-500 text-white" : ""}
-                  ${stageStatus === "skipped" ? "bg-amber-500 text-white" : ""}
-                `}>
-                  {stageStatus === "completed" && <Check className="w-3 h-3" />}
-                  {stageStatus === "current" && <Clock className="w-3 h-3" />}
-                  {stageStatus === "rejected" && <X className="w-3 h-3" />}
-                  {stageStatus === "skipped" && <Zap className="w-3 h-3" />}
-                  {stageStatus === "pending" && <Icon className="w-3 h-3" />}
-                </div>
-              </div>
-              
-              {idx < activeStages.length - 1 && (
-                <div className={`h-0.5 w-8 ${
-                  stageStatus === "completed" ? "bg-green-500" : "bg-gray-200"
-                }`} />
+      <div className="flex items-center gap-1 overflow-x-auto py-2">
+        {steps.map((step, index) => (
+          <div key={step.id} className="flex items-center">
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ delay: index * 0.1 }}
+              className={`flex items-center justify-center h-6 w-6 rounded-full border-2 ${getStatusColor(step.status)}`}
+              title={`${step.label}${step.timestamp ? ` - ${formatTime(step.timestamp)}` : ""}`}
+            >
+              {step.status === "rejected" ? (
+                <XCircle className="h-3 w-3" />
+              ) : step.status === "completed" ? (
+                <CheckCircle className="h-3 w-3" />
+              ) : step.status === "current" ? (
+                <Clock className="h-3 w-3" />
+              ) : (
+                <span className="text-xs">{index + 1}</span>
               )}
-            </React.Fragment>
-          );
-        })}
+            </motion.div>
+            {index < steps.length - 1 && (
+              <div className={`h-0.5 w-4 ${getLineColor(step.status)}`} />
+            )}
+          </div>
+        ))}
       </div>
     );
   }
 
+  // Full vertical view
   return (
-    <div className="space-y-4">
-      {status === "rejected" && (
-        <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-lg">
-          <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
-          <div>
-            <p className="font-semibold text-red-900">Request Rejected</p>
-            <p className="text-sm text-red-700">
-              Rejected at {rejectionStage} stage
-              {rejectedBy && ` by ${rejectedBy}`}
-              {rejectedAt && (() => {
-                const { date, time } = formatDate(rejectedAt);
-                return ` on ${date} at ${time}`;
-              })()}
-            </p>
-          </div>
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+      <div className="flex items-center gap-2 mb-4">
+        <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
+          <ArrowRight className="h-4 w-4 text-white" />
         </div>
-      )}
-
-      {status === "approved" && (
-        <div className="flex items-start gap-3 p-4 bg-green-50 border border-green-200 rounded-lg">
-          <Check className="w-5 h-5 text-green-600 mt-0.5" />
-          <div>
-            <p className="font-semibold text-green-900">Request Approved</p>
-            <p className="text-sm text-green-700">
-              All approvals completed successfully
-            </p>
-          </div>
+        <div>
+          <h3 className="font-semibold text-gray-900">Request Progress</h3>
+          <p className="text-xs text-gray-500">{request.request_number || request.id.slice(0, 8)}</p>
         </div>
-      )}
+      </div>
 
-      <div className="space-y-3">
-        {activeStages.map((stage, idx) => {
-          const stageStatus = getStageStatus(stage.key);
-          const Icon = stage.icon;
-          const approverName = getApproverName(stage.key);
-          const approvedAt = getApprovedAt(stage.key);
-          const isLast = idx === activeStages.length - 1;
-          
-          return (
-            <div key={stage.key} className="flex gap-4">
-              {/* Icon and connector */}
-              <div className="flex flex-col items-center">
-                <div className={`
-                  flex items-center justify-center w-10 h-10 rounded-full transition-all
-                  ${stageStatus === "completed" ? "bg-green-500 text-white" : ""}
-                  ${stageStatus === "current" ? "bg-blue-500 text-white ring-4 ring-blue-100" : ""}
-                  ${stageStatus === "pending" ? "bg-gray-200 text-gray-400" : ""}
-                  ${stageStatus === "rejected" ? "bg-red-500 text-white" : ""}
-                  ${stageStatus === "skipped" ? "bg-amber-500 text-white ring-2 ring-amber-200" : ""}
-                `}>
-                  {stageStatus === "completed" && <Check className="w-5 h-5" />}
-                  {stageStatus === "current" && <Clock className="w-5 h-5 animate-pulse" />}
-                  {stageStatus === "rejected" && <X className="w-5 h-5" />}
-                  {stageStatus === "skipped" && <Zap className="w-5 h-5" />}
-                  {stageStatus === "pending" && <Icon className="w-5 h-5" />}
-                </div>
-                
-                {!isLast && (
-                  <div className={`w-0.5 h-12 ${
-                    stageStatus === "completed" ? "bg-green-500" : "bg-gray-200"
-                  }`} />
+      <div className="relative">
+        {steps.map((step, index) => (
+          <motion.div
+            key={step.id}
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: index * 0.1 }}
+            className="flex gap-3 pb-4 last:pb-0"
+          >
+            {/* Timeline */}
+            <div className="flex flex-col items-center">
+              <div
+                className={`flex items-center justify-center h-8 w-8 rounded-full border-2 ${getStatusColor(step.status)} transition-all`}
+              >
+                {step.status === "rejected" ? (
+                  <XCircle className="h-4 w-4" />
+                ) : step.status === "completed" ? (
+                  <CheckCircle className="h-4 w-4" />
+                ) : step.status === "current" ? (
+                  <Clock className="h-4 w-4" />
+                ) : (
+                  step.icon
                 )}
               </div>
-
-              {/* Content */}
-              <div className="flex-1 pb-8">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className={`font-semibold ${
-                      stageStatus === "current" ? "text-blue-600" : 
-                      stageStatus === "completed" ? "text-gray-900" : 
-                      "text-gray-400"
-                    }`}>
-                      {stage.label}
-                    </p>
-                    <p className="text-sm text-gray-500">{stage.role}</p>
-                  </div>
-                  
-                  <div className="text-right">
-                    {stageStatus === "completed" && (
-                      <div>
-                        {approverName || approvedAt ? (
-                          <>
-                            {approverName && (
-                              <p className="text-sm font-medium text-gray-900">{approverName}</p>
-                            )}
-                            {approvedAt ? (() => {
-                              const { date, time } = formatDate(approvedAt);
-                              const prevTime = getPreviousStageTime(stage.key);
-                              const processingTime = calculateProcessingTime(prevTime, approvedAt);
-                              return (
-                                <>
-                                  <p className="text-xs text-gray-600">{date}</p>
-                                  <p className="text-xs text-gray-500">{time}</p>
-                                  {processingTime && (
-                                    <p className="text-xs text-blue-600 font-medium mt-0.5">
-                                      ⏱️ {processingTime}
-                                    </p>
-                                  )}
-                                </>
-                              );
-                            })() : approverName ? (
-                              <p className="text-xs text-gray-500">Time not recorded</p>
-                            ) : null}
-                            {!approverName && !approvedAt && (
-                              <p className="text-sm font-medium text-green-600">✓ Approved</p>
-                            )}
-                          </>
-                        ) : (
-                          <>
-                            <p className="text-sm font-medium text-green-600">✓ Approved</p>
-                            <p className="text-xs text-gray-500">Details not recorded</p>
-                          </>
-                        )}
-                      </div>
-                    )}
-                    
-                    {stageStatus === "current" && (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
-                        <Clock className="w-3 h-3" />
-                        Pending
-                      </span>
-                    )}
-                    
-                    {stageStatus === "skipped" && (
-                      <div className="text-right">
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-100 text-amber-700 text-xs font-medium rounded-full">
-                          <Zap className="w-3 h-3" />
-                          Skipped
-                        </span>
-                        {(stage.key === "admin" && adminSkipReason) || (stage.key === "comptroller" && comptrollerSkipReason) ? (
-                          <p className="text-xs text-amber-600 mt-1 italic">
-                            {stage.key === "admin" ? adminSkipReason : comptrollerSkipReason}
-                          </p>
-                        ) : (
-                          <p className="text-xs text-amber-600 mt-1">
-                            {stage.key === "admin" ? "No vehicle needed" : "No budget required"}
-                          </p>
-                        )}
-                      </div>
-                    )}
-                    
-                    {stageStatus === "pending" && (
-                      <span className="text-xs text-gray-400">Waiting</span>
-                    )}
-                  </div>
-                </div>
-              </div>
+              {index < steps.length - 1 && (
+                <div className={`w-0.5 flex-1 min-h-[20px] ${getLineColor(step.status)}`} />
+              )}
             </div>
-          );
-        })}
+
+            {/* Content */}
+            <div className="flex-1 pb-2">
+              <div className="flex items-center justify-between">
+                <span
+                  className={`font-medium text-sm ${
+                    step.status === "completed"
+                      ? "text-green-700"
+                      : step.status === "current"
+                      ? "text-blue-700"
+                      : step.status === "rejected"
+                      ? "text-red-700"
+                      : "text-gray-400"
+                  }`}
+                >
+                  {step.label}
+                </span>
+                {step.timestamp && (
+                  <span className="text-xs text-gray-500">{formatTime(step.timestamp)}</span>
+                )}
+              </div>
+              <p className="text-xs text-gray-500 mt-0.5">{step.description}</p>
+            </div>
+          </motion.div>
+        ))}
+      </div>
+
+      {/* Status Badge */}
+      <div className="mt-4 pt-4 border-t border-gray-100">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-gray-500">Current Status</span>
+          <span
+            className={`px-2 py-1 rounded-full text-xs font-medium ${
+              request.status === "completed"
+                ? "bg-green-100 text-green-700"
+                : request.status === "rejected"
+                ? "bg-red-100 text-red-700"
+                : request.status === "returned"
+                ? "bg-amber-100 text-amber-700"
+                : "bg-blue-100 text-blue-700"
+            }`}
+          >
+            {request.status?.replace(/_/g, " ").toUpperCase() || "UNKNOWN"}
+          </span>
+        </div>
       </div>
     </div>
   );

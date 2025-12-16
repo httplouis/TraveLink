@@ -9,6 +9,7 @@ import PersonDisplay from "@/components/common/PersonDisplay";
 import RequestCardEnhanced from "@/components/common/RequestCardEnhanced";
 import RequestsTable from "@/components/common/RequestsTable";
 import ViewToggle, { useViewMode } from "@/components/common/ViewToggle";
+import AdvancedFilters, { FilterState, defaultFilters, applyFilters } from "@/components/common/AdvancedFilters";
 import { Eye, Clock, CheckCircle, History } from "lucide-react";
 import { createSupabaseClient } from "@/lib/supabase/client";
 import { createLogger } from "@/lib/debug";
@@ -27,6 +28,7 @@ export default function HRInboxContainer() {
   const [lastUpdate, setLastUpdate] = React.useState<Date>(new Date());
   const [viewMode, setViewMode] = useViewMode("hr_inbox_view", "cards");
   const [activeTab, setActiveTab] = React.useState<"pending" | "approved" | "history">("pending");
+  const [filters, setFilters] = React.useState<FilterState>(defaultFilters);
 
   const logger = createLogger("HRInbox");
   
@@ -119,40 +121,44 @@ export default function HRInboxContainer() {
   // Handle ?view=requestId query parameter to auto-open a specific request
   React.useEffect(() => {
     const viewRequestId = searchParams?.get('view');
+    const allItems = [...pendingItems, ...approvedItems, ...historyItems];
     
-    // Only handle once per page load and if we have items loaded
-    if (viewRequestId && !viewParamHandledRef.current && pendingItems.length > 0) {
-      viewParamHandledRef.current = true;
-      
-      // Find the request in pending items
-      const requestToView = pendingItems.find(r => r.id === viewRequestId);
-      
-      if (requestToView) {
-        logger.info('Auto-opening request from URL:', viewRequestId);
-        setSelected(requestToView);
+    // Only handle once per page load and if we have items loaded OR if we have a viewRequestId
+    if (viewRequestId && !viewParamHandledRef.current) {
+      // Check if we have any items loaded, or wait a bit for them to load
+      if (allItems.length > 0 || !loading) {
+        viewParamHandledRef.current = true;
         
-        // Clear the view parameter from URL
-        const newUrl = pathname || '/hr/inbox';
-        router.replace(newUrl, { scroll: false });
-      } else {
-        // Request not in pending - try to fetch it directly
-        logger.info('Request not in pending list, fetching directly:', viewRequestId);
+        // Find the request in any of the lists
+        const requestToView = allItems.find(r => r.id === viewRequestId);
         
-        fetch(`/api/requests/${viewRequestId}`)
-          .then(res => res.json())
-          .then(data => {
-            if (data.ok && data.data) {
-              setSelected(data.data);
-              const newUrl = pathname || '/hr/inbox';
-              router.replace(newUrl, { scroll: false });
-            }
-          })
-          .catch(err => {
-            logger.error('Failed to fetch request:', err);
-          });
+        if (requestToView) {
+          logger.info('Auto-opening request from URL:', viewRequestId);
+          setSelected(requestToView);
+          
+          // Clear the view parameter from URL
+          const newUrl = pathname || '/hr/inbox';
+          router.replace(newUrl, { scroll: false });
+        } else {
+          // Request not in any list - try to fetch it directly
+          logger.info('Request not in any list, fetching directly:', viewRequestId);
+          
+          fetch(`/api/requests/${viewRequestId}`)
+            .then(res => res.json())
+            .then(data => {
+              if (data.ok && data.data) {
+                setSelected(data.data);
+                const newUrl = pathname || '/hr/inbox';
+                router.replace(newUrl, { scroll: false });
+              }
+            })
+            .catch(err => {
+              logger.error('Failed to fetch request:', err);
+            });
+        }
       }
     }
-  }, [searchParams, pendingItems, pathname, router, logger]);
+  }, [searchParams, pendingItems, approvedItems, historyItems, loading, pathname, router, logger]);
 
   // Real-time updates using Supabase Realtime
   React.useEffect(() => {
@@ -187,6 +193,21 @@ export default function HRInboxContainer() {
 
   // Get current items based on active tab
   const items = activeTab === "pending" ? pendingItems : activeTab === "approved" ? approvedItems : historyItems;
+
+  // Extract unique departments for filter
+  const departments = React.useMemo(() => {
+    const depts = new Set<string>();
+    items.forEach(item => {
+      const deptName = item.department?.name || item.department?.code;
+      if (deptName) depts.add(deptName);
+    });
+    return Array.from(depts).sort();
+  }, [items]);
+
+  // Apply filters
+  const filteredItems = React.useMemo(() => {
+    return applyFilters(items, filters);
+  }, [items, filters]);
 
   function handleApproved(id: string) {
     setPendingItems(prev => prev.filter(x => x.id !== id));
@@ -281,6 +302,21 @@ export default function HRInboxContainer() {
         </button>
       </div>
 
+      {/* Advanced Filters */}
+      <div className="mb-6">
+        <AdvancedFilters
+          filters={filters}
+          onFiltersChange={setFilters}
+          departments={departments}
+          placeholder="Search by request number, requester, purpose, destination..."
+        />
+        {filteredItems.length !== items.length && (
+          <p className="text-sm text-gray-500 mt-2">
+            Showing {filteredItems.length} of {items.length} requests
+          </p>
+        )}
+      </div>
+
       {loading ? (
         <div className="space-y-3">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -289,7 +325,7 @@ export default function HRInboxContainer() {
         </div>
       ) : viewMode === "table" ? (
         <RequestsTable
-          requests={items.map(item => ({
+          requests={filteredItems.map(item => ({
             ...item,
             requester: {
               name: item.requester_name || item.requester?.name || "Unknown",
@@ -303,21 +339,23 @@ export default function HRInboxContainer() {
           showDepartment={true}
           emptyMessage="No requests pending HR review"
         />
-      ) : items.length === 0 ? (
+      ) : filteredItems.length === 0 ? (
         <div className="rounded-lg border-2 border-dashed border-slate-200 bg-white px-8 py-12 text-center">
           <svg className="mx-auto h-12 w-12 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
           <h3 className="mt-4 text-lg font-medium text-slate-900">
-            No requests pending
+            {filters.searchQuery || filters.department !== 'all' || filters.requestType !== 'all' ? "No matching requests" : "No requests pending"}
           </h3>
           <p className="mt-1 text-sm text-slate-500">
-            Requests approved by Comptroller will appear here for HR review.
+            {filters.searchQuery || filters.department !== 'all' || filters.requestType !== 'all' 
+              ? "Try adjusting your search or filter criteria."
+              : "Requests approved by Comptroller will appear here for HR review."}
           </p>
         </div>
       ) : (
         <div className="space-y-4">
-          {items.map((item, index) => {
+          {filteredItems.map((item, index) => {
             return (
               <RequestCardEnhanced
                 key={item.id}

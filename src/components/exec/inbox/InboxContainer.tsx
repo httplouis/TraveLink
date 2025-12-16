@@ -11,6 +11,7 @@ import PersonDisplay from "@/components/common/PersonDisplay";
 import RequestCardEnhanced from "@/components/common/RequestCardEnhanced";
 import RequestsTable from "@/components/common/RequestsTable";
 import ViewToggle, { useViewMode } from "@/components/common/ViewToggle";
+import AdvancedFilters, { FilterState, defaultFilters, applyFilters } from "@/components/common/AdvancedFilters";
 import { Eye, Search, FileText, Clock, CheckCircle, History } from "lucide-react";
 import { createSupabaseClient } from "@/lib/supabase/client";
 import { createLogger } from "@/lib/debug";
@@ -26,7 +27,7 @@ export default function ExecInboxContainer() {
   const [selected, setSelected] = React.useState<any | null>(null);
   const [trackingRequest, setTrackingRequest] = React.useState<any | null>(null);
   const [showTrackingModal, setShowTrackingModal] = React.useState(false);
-  const [searchQuery, setSearchQuery] = React.useState("");
+  const [filters, setFilters] = React.useState<FilterState>(defaultFilters);
   const [viewMode, setViewMode] = useViewMode("exec_inbox_view", "cards");
   const [activeTab, setActiveTab] = React.useState<"pending" | "approved" | "history">("pending");
 
@@ -95,40 +96,44 @@ export default function ExecInboxContainer() {
   // Handle ?view=requestId query parameter to auto-open a specific request
   React.useEffect(() => {
     const viewRequestId = searchParams?.get('view');
+    const allItems = [...pendingItems, ...approvedItems, ...historyItems];
     
-    // Only handle once per page load and if we have items loaded
-    if (viewRequestId && !viewParamHandledRef.current && pendingItems.length > 0) {
-      viewParamHandledRef.current = true;
-      
-      // Find the request in pending items
-      const requestToView = pendingItems.find(r => r.id === viewRequestId);
-      
-      if (requestToView) {
-        logger.info('Auto-opening request from URL:', viewRequestId);
-        setSelected(requestToView);
+    // Only handle once per page load
+    if (viewRequestId && !viewParamHandledRef.current) {
+      // Check if we have any items loaded, or wait a bit for them to load
+      if (allItems.length > 0 || !loading) {
+        viewParamHandledRef.current = true;
         
-        // Clear the view parameter from URL
-        const newUrl = pathname || '/exec/inbox';
-        router.replace(newUrl, { scroll: false });
-      } else {
-        // Request not in pending - try to fetch it directly
-        logger.info('Request not in pending list, fetching directly:', viewRequestId);
+        // Find the request in any of the lists
+        const requestToView = allItems.find(r => r.id === viewRequestId);
         
-        fetch(`/api/requests/${viewRequestId}`)
-          .then(res => res.json())
-          .then(data => {
-            if (data.ok && data.data) {
-              setSelected(data.data);
-              const newUrl = pathname || '/exec/inbox';
-              router.replace(newUrl, { scroll: false });
-            }
-          })
-          .catch(err => {
-            logger.error('Failed to fetch request:', err);
-          });
+        if (requestToView) {
+          logger.info('Auto-opening request from URL:', viewRequestId);
+          setSelected(requestToView);
+          
+          // Clear the view parameter from URL
+          const newUrl = pathname || '/exec/inbox';
+          router.replace(newUrl, { scroll: false });
+        } else {
+          // Request not in any list - try to fetch it directly
+          logger.info('Request not in any list, fetching directly:', viewRequestId);
+          
+          fetch(`/api/requests/${viewRequestId}`)
+            .then(res => res.json())
+            .then(data => {
+              if (data.ok && data.data) {
+                setSelected(data.data);
+                const newUrl = pathname || '/exec/inbox';
+                router.replace(newUrl, { scroll: false });
+              }
+            })
+            .catch(err => {
+              logger.error('Failed to fetch request:', err);
+            });
+        }
       }
     }
-  }, [searchParams, pendingItems, pathname, router, logger]);
+  }, [searchParams, pendingItems, approvedItems, historyItems, loading, pathname, router, logger]);
 
   React.useEffect(() => {
     let isMounted = true;
@@ -203,18 +208,20 @@ export default function ExecInboxContainer() {
     }, 500);
   };
 
-  const filteredItems = items.filter((item) => {
-    const query = searchQuery.toLowerCase();
-    return (
-      item.request_number?.toLowerCase().includes(query) ||
-      item.requester_name?.toLowerCase().includes(query) ||
-      item.requester?.name?.toLowerCase().includes(query) ||
-      item.submitted_by_name?.toLowerCase().includes(query) ||
-      item.submitted_by?.name?.toLowerCase().includes(query) ||
-      item.purpose?.toLowerCase().includes(query) ||
-      item.destination?.toLowerCase().includes(query)
-    );
-  });
+  // Extract unique departments for filter
+  const departments = React.useMemo(() => {
+    const depts = new Set<string>();
+    items.forEach(item => {
+      const deptName = item.department?.name || item.department?.code;
+      if (deptName) depts.add(deptName);
+    });
+    return Array.from(depts).sort();
+  }, [items]);
+
+  // Apply filters
+  const filteredItems = React.useMemo(() => {
+    return applyFilters(items, filters);
+  }, [items, filters]);
 
   if (loading) {
     return (
@@ -263,20 +270,23 @@ export default function ExecInboxContainer() {
         </button>
       </div>
 
-      {/* Search + View Toggle */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by request number, purpose, or destination..."
-            className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#7A0010] focus:border-transparent"
+      {/* Advanced Filters + View Toggle */}
+      <div className="flex items-start gap-3">
+        <div className="flex-1">
+          <AdvancedFilters
+            filters={filters}
+            onFiltersChange={setFilters}
+            departments={departments}
+            placeholder="Search by request number, requester, purpose, destination..."
           />
         </div>
         <ViewToggle view={viewMode} onChange={setViewMode} />
       </div>
+      {filteredItems.length !== items.length && (
+        <p className="text-sm text-gray-500">
+          Showing {filteredItems.length} of {items.length} requests
+        </p>
+      )}
 
       {/* Request List */}
       {viewMode === "table" ? (
@@ -293,17 +303,17 @@ export default function ExecInboxContainer() {
           onView={setSelected}
           showBudget={true}
           showDepartment={true}
-          emptyMessage={searchQuery ? "No results found" : "No pending requests"}
+          emptyMessage={filters.searchQuery || filters.department !== 'all' ? "No matching requests" : "No pending requests"}
         />
       ) : filteredItems.length === 0 ? (
         <div className="text-center py-16 bg-white rounded-xl border border-gray-200">
           <FileText className="h-16 w-16 text-gray-300 mx-auto mb-4" />
           <h3 className="text-lg font-semibold text-gray-900 mb-2">
-            {searchQuery ? "No results found" : "No pending requests"}
+            {filters.searchQuery || filters.department !== 'all' ? "No matching requests" : "No pending requests"}
           </h3>
           <p className="text-gray-500">
-            {searchQuery
-              ? "Try adjusting your search terms"
+            {filters.searchQuery || filters.department !== 'all'
+              ? "Try adjusting your search or filter criteria."
               : "Requests approved by HR will appear here for final executive approval"}
           </p>
         </div>

@@ -90,6 +90,9 @@ export async function POST(request: Request) {
         comptroller_edited_budget: editedBudget || null,
         updated_at: now,
       };
+      
+      // Initialize workflow_metadata early so it can be used throughout
+      const workflowMetadata: any = request.workflow_metadata || {};
 
       // Check if VP already approved AS A HEAD (parent_head or head) - if so, skip HR and go to President
       // IMPORTANT: Only skip HR if VP approved AS A HEAD, not if they approved as VP (executive level)
@@ -243,8 +246,6 @@ export async function POST(request: Request) {
       }
 
       // Update workflow_metadata with routing information
-      const workflowMetadata: any = request.workflow_metadata || {};
-      
       // IMPORTANT: For comptroller, hr, admin, and president - don't set next_approver_id
       // This allows ALL users in that role to see the request
       if (nextApproverRoleFinal === "comptroller" || nextApproverRoleFinal === "hr" || nextApproverRoleFinal === "admin" || nextApproverRoleFinal === "president") {

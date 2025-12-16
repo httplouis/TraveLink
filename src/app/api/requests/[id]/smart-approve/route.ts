@@ -277,6 +277,75 @@ export async function POST(
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    // 📧 SEND NOTIFICATIONS TO REQUESTER
+    // ═══════════════════════════════════════════════════════════════════
+    try {
+      const { createNotification, notifyRequestApproved } = await import("@/lib/notifications/helpers");
+      
+      // Get requester ID from the request
+      const requesterId = smartRequest.requester_id;
+      const requestNumber = (smartRequest as any).request_number || requestId;
+      
+      // Determine the approver role name for the notification
+      const roleNames: Record<string, string> = {
+        "pending_head": "Department Head",
+        "pending_admin": "Transportation Manager (Admin)",
+        "pending_comptroller": "Comptroller",
+        "pending_hr": "HR",
+        "pending_hr_ack": "HR",
+        "pending_exec": smartRequest.exec_level === "president" ? "President" : "Vice President"
+      };
+      const approverRoleName = roleNames[smartRequest.status] || smartRequest.status.replace("pending_", "").toUpperCase();
+      
+      if (requesterId) {
+        // Notify requester about the approval
+        if (nextStatus === "approved") {
+          // Final approval - request is fully approved
+          await createNotification({
+            user_id: requesterId,
+            notification_type: "request_approved",
+            title: "Request Fully Approved! 🎉",
+            message: `Your travel order request ${requestNumber} has been fully approved by ${approverRoleName}. Your trip is now confirmed!`,
+            related_type: "request",
+            related_id: requestId,
+            action_url: `/user/submissions`,
+            action_label: "View Request",
+            priority: "high",
+          });
+          console.log(`📧 [SMART APPROVE] Sent FINAL approval notification to requester ${requesterId}`);
+        } else {
+          // Intermediate approval - notify about progress
+          const nextRoleNames: Record<string, string> = {
+            "pending_admin": "Transportation Manager",
+            "pending_comptroller": "Comptroller",
+            "pending_hr": "HR",
+            "pending_hr_ack": "HR (Budget Acknowledgment)",
+            "pending_exec": "Executive (VP/President)"
+          };
+          const nextRoleName = nextRoleNames[nextStatus] || nextStatus.replace("pending_", "").toUpperCase();
+          
+          await createNotification({
+            user_id: requesterId,
+            notification_type: "request_status_change",
+            title: `Request Approved by ${approverRoleName}`,
+            message: `Your travel order request ${requestNumber} has been approved by ${approverRoleName} and forwarded to ${nextRoleName} for further processing.`,
+            related_type: "request",
+            related_id: requestId,
+            action_url: `/user/submissions`,
+            action_label: "Track Request",
+            priority: "normal",
+          });
+          console.log(`📧 [SMART APPROVE] Sent progress notification to requester ${requesterId} (approved by ${approverRoleName}, next: ${nextRoleName})`);
+        }
+      } else {
+        console.warn(`⚠️ [SMART APPROVE] No requester_id found for request ${requestId}, skipping notification`);
+      }
+    } catch (notifError: any) {
+      console.error("⚠️ [SMART APPROVE] Failed to send notification (non-fatal):", notifError);
+      // Don't fail the approval if notification fails
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     // 🎉 SUCCESS RESPONSE WITH ANALYTICS
     // ═══════════════════════════════════════════════════════════════════
 
@@ -419,6 +488,37 @@ export async function DELETE(
       reason: reason,
       stage: request.status
     });
+
+    // 📧 Send rejection notification to requester
+    try {
+      const { notifyRequestRejected } = await import("@/lib/notifications/helpers");
+      
+      const requesterId = request.requester_id;
+      const requestNumber = request.request_number || requestId;
+      
+      // Determine the approver role name
+      const roleNames: Record<string, string> = {
+        "pending_head": "Department Head",
+        "pending_admin": "Transportation Management",
+        "pending_comptroller": "Comptroller",
+        "pending_hr": "HR",
+        "pending_exec": "Executive"
+      };
+      const approverRoleName = roleNames[request.status] || request.status.replace("pending_", "").toUpperCase();
+      
+      if (requesterId) {
+        await notifyRequestRejected(
+          requestId,
+          requestNumber,
+          requesterId,
+          approverRoleName,
+          reason
+        );
+        console.log(`📧 [SMART REJECT] Sent rejection notification to requester ${requesterId}`);
+      }
+    } catch (notifError: any) {
+      console.error("⚠️ [SMART REJECT] Failed to send notification (non-fatal):", notifError);
+    }
 
     return NextResponse.json({
       ok: true,

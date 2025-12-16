@@ -244,7 +244,11 @@ function RequestCardEnhanced({
             size="sm"
             showEmail={false}
             position={request.requester?.position}
-            department={request.requester?.department || request.department?.name}
+            department={
+              typeof request.requester?.department === 'string' 
+                ? request.requester.department 
+                : (request.requester?.department as any)?.name || request.department?.name || request.department?.code
+            }
           />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 text-sm">

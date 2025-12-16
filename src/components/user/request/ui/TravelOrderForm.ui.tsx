@@ -163,6 +163,7 @@ export default function TravelOrderForm({
       onRequestersStatusChange={onRequestersStatusChange}
       onHeadEndorsementsStatusChange={onHeadEndorsementsStatusChange}
       onAutoSaveRequest={onAutoSaveRequest}
+      vehicleMode={vehicleMode}
       // No footerRight - submission handled by SubmitBar at bottom
     />
   );

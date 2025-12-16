@@ -80,6 +80,22 @@ type Trip = {
   department?: { code: string; name: string };
 };
 
+type PendingFeedbackItem = {
+  id: string;
+  request_number: string;
+  requester_id: string;
+  requester_name: string;
+  destination: string;
+  purpose: string;
+  travel_start_date: string;
+  travel_end_date: string;
+  status: string;
+  final_approved_at: string;
+  days_since_completion: number;
+  department?: { id: string; name: string; code: string };
+  requester?: { id: string; name: string; email: string; phone?: string };
+};
+
 type Analytics = {
   totalFeedback: number;
   averageRating: number;
@@ -95,9 +111,11 @@ type Analytics = {
 export default function FeedbackPage() {
   const [feedback, setFeedback] = React.useState<FeedbackItem[]>([]);
   const [completedTrips, setCompletedTrips] = React.useState<Trip[]>([]);
+  const [pendingFeedback, setPendingFeedback] = React.useState<PendingFeedbackItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [loadingTrips, setLoadingTrips] = React.useState(true);
-  const [activeTab, setActiveTab] = React.useState<"analytics" | "feedback" | "trips">("analytics");
+  const [loadingPending, setLoadingPending] = React.useState(true);
+  const [activeTab, setActiveTab] = React.useState<"analytics" | "feedback" | "pending" | "trips">("analytics");
   const [selectedFeedback, setSelectedFeedback] = React.useState<FeedbackItem | null>(null);
   const [showDetailModal, setShowDetailModal] = React.useState(false);
   const [showResponseModal, setShowResponseModal] = React.useState(false);
@@ -128,7 +146,129 @@ export default function FeedbackPage() {
   React.useEffect(() => {
     loadFeedback();
     loadCompletedTrips();
+    loadPendingFeedback();
   }, []);
+
+  const loadPendingFeedback = async () => {
+    setLoadingPending(true);
+    try {
+      const res = await fetch("/api/admin/pending-feedback");
+      const json = await res.json();
+      if (json.ok) {
+        setPendingFeedback(json.data || []);
+      }
+    } catch (err) {
+      console.error("Failed to load pending feedback:", err);
+    } finally {
+      setLoadingPending(false);
+    }
+  };
+
+  // PDF Export function
+  const exportToPDF = () => {
+    if (!feedback.length) return;
+    
+    // Create printable HTML content
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Feedback Report - ${new Date().toLocaleDateString()}</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
+          h1 { color: #7A0010; border-bottom: 2px solid #7A0010; padding-bottom: 10px; }
+          h2 { color: #555; margin-top: 30px; }
+          .summary { display: flex; gap: 20px; margin: 20px 0; flex-wrap: wrap; }
+          .stat-card { background: #f5f5f5; padding: 15px 25px; border-radius: 8px; text-align: center; }
+          .stat-value { font-size: 28px; font-weight: bold; color: #7A0010; }
+          .stat-label { font-size: 12px; color: #666; margin-top: 5px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+          th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+          th { background: #7A0010; color: white; }
+          tr:nth-child(even) { background: #f9f9f9; }
+          .rating { color: #f59e0b; font-weight: bold; }
+          .status-new { color: #f97316; }
+          .status-reviewed { color: #3b82f6; }
+          .status-resolved { color: #22c55e; }
+          .footer { margin-top: 30px; text-align: center; color: #999; font-size: 12px; }
+          @media print { body { padding: 0; } }
+        </style>
+      </head>
+      <body>
+        <h1>📊 Feedback Report</h1>
+        <p>Generated on: ${new Date().toLocaleString()}</p>
+        
+        <div class="summary">
+          <div class="stat-card">
+            <div class="stat-value">${analytics.totalFeedback}</div>
+            <div class="stat-label">Total Feedback</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${analytics.averageRating.toFixed(1)}/5</div>
+            <div class="stat-label">Average Rating</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${analytics.newCount}</div>
+            <div class="stat-label">Pending Review</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${analytics.resolvedCount}</div>
+            <div class="stat-label">Resolved</div>
+          </div>
+        </div>
+
+        <h2>Rating Distribution</h2>
+        <table>
+          <tr><th>Rating</th><th>Count</th><th>Percentage</th></tr>
+          ${analytics.ratingDistribution.map(r => `
+            <tr>
+              <td class="rating">${'★'.repeat(r.rating)}${'☆'.repeat(5-r.rating)}</td>
+              <td>${r.count}</td>
+              <td>${analytics.totalFeedback > 0 ? ((r.count / analytics.totalFeedback) * 100).toFixed(1) : 0}%</td>
+            </tr>
+          `).join('')}
+        </table>
+
+        <h2>All Feedback (${feedback.length} entries)</h2>
+        <table>
+          <tr>
+            <th>Date</th>
+            <th>User</th>
+            <th>Rating</th>
+            <th>Category</th>
+            <th>Message</th>
+            <th>Status</th>
+          </tr>
+          ${feedback.map(f => `
+            <tr>
+              <td>${new Date(f.created_at).toLocaleDateString()}</td>
+              <td>${f.user_name || 'Anonymous'}</td>
+              <td class="rating">${f.rating ? '★'.repeat(f.rating) + '☆'.repeat(5-f.rating) : 'N/A'}</td>
+              <td>${f.category || 'General'}</td>
+              <td>${f.message?.slice(0, 100) || ''}${f.message?.length > 100 ? '...' : ''}</td>
+              <td class="status-${f.status}">${f.status}</td>
+            </tr>
+          `).join('')}
+        </table>
+
+        <div class="footer">
+          <p>Travelink Transport Management System - Feedback Report</p>
+        </div>
+      </body>
+      </html>
+    `;
+
+    // Open print dialog
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(printContent);
+      printWindow.document.close();
+      printWindow.focus();
+      setTimeout(() => {
+        printWindow.print();
+      }, 250);
+    }
+  };
 
   const loadFeedback = async () => {
     setLoading(true);
@@ -319,22 +459,33 @@ export default function FeedbackPage() {
             View analytics, manage feedback, and generate QR codes for trip feedback
           </p>
         </div>
-        <button
-          onClick={loadFeedback}
-          className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium"
-        >
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={exportToPDF}
+            disabled={!feedback.length}
+            className="flex items-center gap-2 px-4 py-2 bg-[#7A0010] text-white rounded-lg hover:bg-[#5c000c] transition-colors text-sm font-medium disabled:opacity-50"
+          >
+            <Download className="h-4 w-4" />
+            Export PDF
+          </button>
+          <button
+            onClick={() => { loadFeedback(); loadPendingFeedback(); }}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
       <div className="border-b border-gray-200">
-        <div className="flex gap-1">
+        <div className="flex gap-1 overflow-x-auto">
           {[
             { id: "analytics", label: "Analytics", icon: BarChart3 },
             { id: "feedback", label: "Feedback", icon: MessageSquare, count: feedback.length },
-            { id: "trips", label: "Completed Trips", icon: QrCode, count: completedTrips.length },
+            { id: "pending", label: "Pending Feedback", icon: AlertCircle, count: pendingFeedback.length },
+            { id: "trips", label: "QR Codes", icon: QrCode, count: completedTrips.length },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -390,6 +541,13 @@ export default function FeedbackPage() {
             }}
             onDelete={handleDelete}
             onUpdateStatus={handleUpdateStatus}
+          />
+        )}
+        {activeTab === "pending" && (
+          <PendingFeedbackTab
+            key="pending"
+            data={pendingFeedback}
+            loading={loadingPending}
           />
         )}
         {activeTab === "trips" && (
@@ -1596,5 +1754,228 @@ function QRCodeModal({
         </div>
       </motion.div>
     </div>
+  );
+}
+
+
+// ============ Pending Feedback Tab ============
+function PendingFeedbackTab({
+  data,
+  loading,
+}: {
+  data: PendingFeedbackItem[];
+  loading: boolean;
+}) {
+  const [searchQuery, setSearchQuery] = React.useState("");
+
+  if (loading) {
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="flex items-center justify-center py-20"
+      >
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-10 w-10 border-4 border-[#7A0010] border-t-transparent"></div>
+          <p className="mt-4 text-gray-500">Loading pending feedback...</p>
+        </div>
+      </motion.div>
+    );
+  }
+
+  const filteredData = data.filter((item) => {
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      item.requester_name?.toLowerCase().includes(q) ||
+      item.request_number?.toLowerCase().includes(q) ||
+      item.destination?.toLowerCase().includes(q) ||
+      item.requester?.email?.toLowerCase().includes(q)
+    );
+  });
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      className="space-y-4"
+    >
+      {/* Stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-orange-50 rounded-lg">
+              <AlertCircle className="h-5 w-5 text-orange-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-gray-900">{data.length}</p>
+              <p className="text-xs text-gray-500">Awaiting Feedback</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-red-50 rounded-lg">
+              <Clock className="h-5 w-5 text-red-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-gray-900">
+                {data.filter((d) => d.days_since_completion > 7).length}
+              </p>
+              <p className="text-xs text-gray-500">Overdue (&gt;7 days)</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-amber-50 rounded-lg">
+              <Calendar className="h-5 w-5 text-amber-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-gray-900">
+                {data.filter((d) => d.days_since_completion <= 3).length}
+              </p>
+              <p className="text-xs text-gray-500">Recent (≤3 days)</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Search */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search by name, request number, destination..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#7A0010]/20 focus:border-[#7A0010] outline-none text-sm"
+          />
+        </div>
+      </div>
+
+      {/* List */}
+      {filteredData.length === 0 ? (
+        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+          <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-3" />
+          <h3 className="text-lg font-semibold text-gray-900">All Caught Up!</h3>
+          <p className="text-gray-500 mt-1">Everyone has submitted their feedback</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    Request
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    Requester
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    Trip Details
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    Completed
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    Days Waiting
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filteredData.map((item) => (
+                  <tr key={item.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-[#7A0010]">{item.request_number}</div>
+                      <div className="text-xs text-gray-500">{item.department?.code || "N/A"}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-gray-900">{item.requester_name}</div>
+                      {item.requester?.email && (
+                        <div className="text-xs text-gray-500 flex items-center gap-1">
+                          <Mail className="h-3 w-3" />
+                          {item.requester.email}
+                        </div>
+                      )}
+                      {item.requester?.phone && (
+                        <div className="text-xs text-gray-500 flex items-center gap-1">
+                          <Phone className="h-3 w-3" />
+                          {item.requester.phone}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="text-sm text-gray-900 flex items-center gap-1">
+                        <MapPin className="h-3 w-3 text-gray-400" />
+                        {item.destination}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {new Date(item.travel_start_date).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                        })}
+                        {item.travel_end_date !== item.travel_start_date && (
+                          <>
+                            {" - "}
+                            {new Date(item.travel_end_date).toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                            })}
+                          </>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="text-sm text-gray-900">
+                        {item.final_approved_at
+                          ? new Date(item.final_approved_at).toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                            })
+                          : "N/A"}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                          item.days_since_completion > 7
+                            ? "bg-red-100 text-red-700"
+                            : item.days_since_completion > 3
+                            ? "bg-amber-100 text-amber-700"
+                            : "bg-green-100 text-green-700"
+                        }`}
+                      >
+                        <Clock className="h-3 w-3" />
+                        {item.days_since_completion} days
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Info Note */}
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+        <div className="flex items-start gap-3">
+          <AlertCircle className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <h4 className="font-medium text-blue-900">About Pending Feedback</h4>
+            <p className="text-sm text-blue-700 mt-1">
+              This list shows completed trips where the requester hasn&apos;t submitted feedback yet.
+              Users are prompted to submit feedback after their trip is completed.
+              Consider following up with users who have pending feedback for more than 7 days.
+            </p>
+          </div>
+        </div>
+      </div>
+    </motion.div>
   );
 }

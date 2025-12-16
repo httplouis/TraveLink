@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Bell, CheckCircle, XCircle, AlertCircle, Clock } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createSupabaseClient } from "@/lib/supabase/client";
@@ -31,7 +31,7 @@ export default function HeadNotificationDropdown() {
   const loadNotifications = async () => {
     try {
       const [notificationsRes, inboxRes] = await Promise.all([
-        fetch("/api/notifications?limit=10", { 
+        fetch("/api/notifications?limit=50", { 
           cache: "no-store",
           credentials: "include",
           headers: { 'Cache-Control': 'no-cache' }
@@ -48,16 +48,20 @@ export default function HeadNotificationDropdown() {
       
       if (notificationsData.ok) {
         notificationsList = Array.isArray(notificationsData.data) ? notificationsData.data : [];
+        // Debug logging
+        console.log("[HeadNotificationDropdown] Received notifications:", notificationsList.length);
+        console.log("[HeadNotificationDropdown] Types:", notificationsList.slice(0, 10).map(n => n.notification_type));
       }
 
       const inboxItems = inboxData.ok && inboxData.data ? inboxData.data : [];
       const inboxRequestIds = new Set(inboxItems.map((item: any) => item.id));
       
+      // Only filter out pending_approval notifications that are in inbox (to avoid duplicates)
       const filteredNotifications = notificationsList.filter((notif) => {
         if (notif.notification_type === "request_pending_approval" && notif.related_id) {
           return !inboxRequestIds.has(notif.related_id);
         }
-        return true;
+        return true; // Keep ALL other notifications including approved, rejected, etc.
       });
       
       const inboxNotifications: Notification[] = inboxItems.map((item: any) => ({
@@ -71,12 +75,15 @@ export default function HeadNotificationDropdown() {
         action_label: "Review Request",
         priority: "high",
         is_read: false,
-        created_at: item.created_at || new Date().toISOString(),
+        created_at: item.updated_at || item.created_at || new Date().toISOString(),
       }));
 
       const allNotifications = [...filteredNotifications, ...inboxNotifications];
+      
+      // Deduplicate by notification ID only (not by related_id)
+      // This ensures we show ALL notifications for the same request (submitted, approved, etc.)
       const uniqueNotifications = Array.from(
-        new Map(allNotifications.map(n => [n.related_id || n.id, n])).values()
+        new Map(allNotifications.map(n => [n.id, n])).values()
       );
       
       uniqueNotifications.sort((a, b) => {

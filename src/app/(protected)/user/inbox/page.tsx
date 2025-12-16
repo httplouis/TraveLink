@@ -39,7 +39,7 @@ function UserInboxPageContent() {
   const searchParams = useSearchParams();
 
   React.useEffect(() => {
-    document.title = "My Inbox - Travelink";
+    document.title = "Pending Signatures - Travelink";
   }, []);
 
 
@@ -304,10 +304,10 @@ function UserInboxPageContent() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
               <Inbox className="h-6 w-6 text-[#7A0010]" />
-              My Inbox
+              Pending Signatures
             </h1>
             <p className="text-sm text-gray-600 mt-1">
-              Requests pending your signature
+              Requests submitted on your behalf that need your signature
             </p>
           </div>
         </div>
@@ -408,7 +408,6 @@ function UserInboxPageContent() {
                   }}
                   showActions={true}
                   onView={() => handleReviewClick(req)}
-                  onApprove={() => handleReviewClick(req)}
                 />
               ))}
           </div>

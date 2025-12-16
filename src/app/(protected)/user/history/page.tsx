@@ -193,7 +193,7 @@ export default function UserHistoryPage() {
             const actionDate = item.requester_signed_at;
 
             return (
-              <motion.button
+              <motion.div
                 key={item.id}
                 onClick={(e) => {
                   e.preventDefault();
@@ -285,7 +285,7 @@ export default function UserHistoryPage() {
                     PDF
                   </button>
                 </div>
-              </motion.button>
+              </motion.div>
             );
           })}
         </div>

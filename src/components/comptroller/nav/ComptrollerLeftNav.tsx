@@ -55,6 +55,7 @@ const NAV: NavItem[] = [
     ],
   },
   { type: "link", href: "/comptroller/history", label: "History", Icon: History },
+  { type: "link", href: "/comptroller/activity", label: "My Activity", Icon: FileClock },
   { type: "link", href: "/comptroller/reports", label: "Reports", Icon: FileText },
   { type: "link", href: "/comptroller/feedback", label: "Feedback", Icon: MessageSquare },
   { type: "link", href: "/comptroller/profile", label: "Profile", Icon: UserRound },

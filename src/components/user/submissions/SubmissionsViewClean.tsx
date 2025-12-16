@@ -89,62 +89,65 @@ export default function SubmissionsView() {
   React.useEffect(() => {
     const viewRequestId = searchParams?.get('view');
     
-    // Only handle once per page load and if we have requests loaded
-    if (viewRequestId && !viewParamHandledRef.current && requests.length > 0) {
-      viewParamHandledRef.current = true;
-      
-      // Find the request in the list
-      const requestToView = requests.find(r => r.id === viewRequestId);
-      
-      if (requestToView) {
-        console.log('[SubmissionsView] Auto-opening request from URL:', viewRequestId);
-        viewDetails(requestToView);
+    // Only handle once per page load
+    if (viewRequestId && !viewParamHandledRef.current) {
+      // Check if we have requests loaded, or wait a bit for them to load
+      if (requests.length > 0 || !loading) {
+        viewParamHandledRef.current = true;
         
-        // Clear the view parameter from URL to prevent re-opening on refresh
-        const newUrl = pathname || '/user/submissions';
-        router.replace(newUrl, { scroll: false });
-      } else {
-        // Request not in list - might need to fetch it directly
-        console.log('[SubmissionsView] Request not in list, fetching directly:', viewRequestId);
+        // Find the request in the list
+        const requestToView = requests.find(r => r.id === viewRequestId);
         
-        // Fetch the request directly and open it
-        fetch(`/api/requests/${viewRequestId}`)
-          .then(res => res.json())
-          .then(data => {
-            if (data.ok && data.data) {
-              const req = data.data;
-              // Transform to match Request type
-              const requestObj: Request = {
-                id: req.id,
-                request_number: req.request_number,
-                title: req.title || req.purpose,
-                purpose: req.purpose,
-                destination: req.destination,
-                travel_start_date: req.travel_start_date,
-                travel_end_date: req.travel_end_date,
-                status: req.status,
-                created_at: req.created_at,
-                requester_name: req.requester_name || req.requester?.name,
-                department: req.department,
-                total_budget: req.total_budget,
-                has_budget: req.has_budget,
-                request_type: req.request_type,
-                seminar_data: req.seminar_data,
-                attachments: req.attachments,
-              };
-              viewDetails(requestObj);
-              
-              // Clear the view parameter from URL
-              const newUrl = pathname || '/user/submissions';
-              router.replace(newUrl, { scroll: false });
-            }
-          })
-          .catch(err => {
-            console.error('[SubmissionsView] Failed to fetch request:', err);
-          });
+        if (requestToView) {
+          console.log('[SubmissionsView] Auto-opening request from URL:', viewRequestId);
+          viewDetails(requestToView);
+          
+          // Clear the view parameter from URL to prevent re-opening on refresh
+          const newUrl = pathname || '/user/submissions';
+          router.replace(newUrl, { scroll: false });
+        } else {
+          // Request not in list - might need to fetch it directly
+          console.log('[SubmissionsView] Request not in list, fetching directly:', viewRequestId);
+          
+          // Fetch the request directly and open it
+          fetch(`/api/requests/${viewRequestId}`)
+            .then(res => res.json())
+            .then(data => {
+              if (data.ok && data.data) {
+                const req = data.data;
+                // Transform to match Request type
+                const requestObj: Request = {
+                  id: req.id,
+                  request_number: req.request_number,
+                  title: req.title || req.purpose,
+                  purpose: req.purpose,
+                  destination: req.destination,
+                  travel_start_date: req.travel_start_date,
+                  travel_end_date: req.travel_end_date,
+                  status: req.status,
+                  created_at: req.created_at,
+                  requester_name: req.requester_name || req.requester?.name,
+                  department: req.department,
+                  total_budget: req.total_budget,
+                  has_budget: req.has_budget,
+                  request_type: req.request_type,
+                  seminar_data: req.seminar_data,
+                  attachments: req.attachments,
+                };
+                viewDetails(requestObj);
+                
+                // Clear the view parameter from URL
+                const newUrl = pathname || '/user/submissions';
+                router.replace(newUrl, { scroll: false });
+              }
+            })
+            .catch(err => {
+              console.error('[SubmissionsView] Failed to fetch request:', err);
+            });
+        }
       }
     }
-  }, [searchParams, requests, pathname, router]);
+  }, [searchParams, requests, loading, pathname, router]);
 
   async function fetchSubmissions() {
     const logger = createLogger("SubmissionsView");
@@ -196,10 +199,21 @@ export default function SubmissionsView() {
     } catch (err) {
       const logger = createLogger("SubmissionsView");
       logger.error("Failed to fetch submissions", err);
-      // Show user-friendly error (limit message length)
+      
+      // Don't show alert for abort errors or "Failed to fetch" (happens during logout/navigation)
       const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-      const cleanMsg = errorMsg.length > 200 ? errorMsg.substring(0, 200) + '...' : errorMsg;
-      alert(`Error loading submissions: ${cleanMsg}`);
+      const isAbortError = err instanceof Error && (
+        err.name === 'AbortError' || 
+        errorMsg.includes('Failed to fetch') ||
+        errorMsg.includes('aborted') ||
+        errorMsg.includes('network')
+      );
+      
+      if (!isAbortError) {
+        // Show user-friendly error (limit message length)
+        const cleanMsg = errorMsg.length > 200 ? errorMsg.substring(0, 200) + '...' : errorMsg;
+        alert(`Error loading submissions: ${cleanMsg}`);
+      }
     } finally {
       setLoading(false);
     }
@@ -297,7 +311,19 @@ export default function SubmissionsView() {
         setFullRequestData(json.data);
     } catch (err) {
       logger.error("Failed to fetch request details", err);
-      alert(`Error loading request details: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      
+      // Don't show alert for abort errors or "Failed to fetch" (happens during logout/navigation)
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+      const isAbortError = err instanceof Error && (
+        err.name === 'AbortError' || 
+        errorMsg.includes('Failed to fetch') ||
+        errorMsg.includes('aborted') ||
+        errorMsg.includes('network')
+      );
+      
+      if (!isAbortError) {
+        alert(`Error loading request details: ${errorMsg}`);
+      }
     } finally {
       setLoadingDetails(false);
     }
@@ -440,31 +466,27 @@ export default function SubmissionsView() {
               {/* Mini Progress Tracker */}
               <div className="px-2">
                 <RequestStatusTracker
-                  status={req.status as any}
-                  requesterIsHead={(req as any).requester_is_head || false}
-                  hasBudget={req.has_budget}
-                  hasParentHead={(req as any).has_parent_head || false}
-                  requiresPresidentApproval={(req as any).requester_is_head || req.total_budget > 50000}
-                  bothVpsApproved={(req as any).both_vps_approved || false}
-                  headApprovedAt={(req as any).head_approved_at}
-                  headApprovedBy={(req as any).head_approved_by}
-                  parentHeadApprovedAt={(req as any).parent_head_approved_at}
-                  parentHeadApprovedBy={(req as any).parent_head_approved_by}
-                  adminProcessedAt={(req as any).admin_processed_at}
-                  adminProcessedBy={(req as any).admin_processed_by}
-                  comptrollerApprovedAt={(req as any).comptroller_approved_at}
-                  comptrollerApprovedBy={(req as any).comptroller_approved_by}
-                  hrApprovedAt={(req as any).hr_approved_at}
-                  hrApprovedBy={(req as any).hr_approved_by}
-                  vpApprovedAt={(req as any).vp_approved_at}
-                  vpApprovedBy={(req as any).vp_approved_by}
-                  vp2ApprovedAt={(req as any).vp2_approved_at}
-                  vp2ApprovedBy={(req as any).vp2_approved_by}
-                  presidentApprovedAt={(req as any).president_approved_at}
-                  presidentApprovedBy={(req as any).president_approved_by}
-                  execApprovedAt={(req as any).exec_approved_at}
-                  execApprovedBy={(req as any).exec_approved_by}
-                  createdAt={(req as any).created_at}
+                  request={{
+                    id: req.id,
+                    status: req.status,
+                    request_number: req.request_number,
+                    purpose: req.purpose,
+                    created_at: (req as any).created_at,
+                    submitted_at: (req as any).submitted_at,
+                    head_approved_at: (req as any).head_approved_at,
+                    admin_processed_at: (req as any).admin_processed_at,
+                    comptroller_approved_at: (req as any).comptroller_approved_at,
+                    hr_approved_at: (req as any).hr_approved_at,
+                    vp_approved_at: (req as any).vp_approved_at,
+                    president_approved_at: (req as any).president_approved_at,
+                    rejected_at: (req as any).rejected_at,
+                    returned_at: (req as any).returned_at,
+                    vehicle_assigned_at: (req as any).vehicle_assigned_at,
+                    completed_at: (req as any).completed_at,
+                    requires_head_approval: !(req as any).requester_is_head,
+                    requires_vp_approval: true,
+                    requires_president_approval: (req as any).requester_is_head || req.total_budget > 50000,
+                  }}
                   compact={true}
                 />
               </div>
@@ -806,17 +828,17 @@ export default function SubmissionsView() {
               }
               // For head requesters: Skip head signature stage entirely (dual-signature logic)
               
-              // Admin - always required
+              // Transportation Management - always required
               signatures.push({
                 id: 'admin',
-                label: 'Administrator',
-                role: 'Admin',
+                label: 'Transportation Management',
+                role: 'Transportation Management',
                 status: fullRequestData?.admin_processed_at ? 'approved' : 'pending',
                 approver: fullRequestData?.admin_processed_at ? {
                   id: 'admin',
-                  name: fullRequestData?.admin_processed_by || 'Administrator',
-                  position: 'Administrative Officer',
-                  department: 'Administration'
+                  name: fullRequestData?.admin_processed_by || 'Transportation Management',
+                  position: 'Transportation Manager',
+                  department: 'Transportation Management'
                 } : undefined,
                 signature: fullRequestData?.admin_signature || null,
                 approved_at: fullRequestData?.admin_processed_at || null

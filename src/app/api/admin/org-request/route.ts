@@ -231,7 +231,7 @@ export async function POST(request: Request) {
           user_id: requesterId,
           notification_type: "request_created",
           title: "Travel Request Created",
-          message: `A travel order request ${requestNumber} has been created for you by Admin.`,
+          message: `A travel order request ${requestNumber} has been created for you by Transportation Management.`,
           related_type: "request",
           related_id: createdRequest.id,
           action_url: `/user/submissions?view=${createdRequest.id}`,

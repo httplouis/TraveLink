@@ -35,6 +35,8 @@ export default function SignatureStageRail({
   stages, 
   className = '' 
 }: SignatureStageRailProps) {
+  // Guard against undefined/null stages
+  const safeStages = stages || [];
   
   const getStageIcon = (stage: SignatureStage) => {
     switch (stage.status) {
@@ -76,7 +78,13 @@ export default function SignatureStageRail({
       <h3 className="text-lg font-semibold text-gray-900 mb-6">Approval Signatures</h3>
       
       <div className="space-y-6">
-        {stages.map((stage, index) => (
+        {safeStages.length === 0 && (
+          <div className="text-center py-8 text-gray-500">
+            <Clock className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+            <p className="text-sm">No signature stages available</p>
+          </div>
+        )}
+        {safeStages.map((stage, index) => (
           <motion.div
             key={stage.id}
             initial={{ opacity: 0, x: -20 }}
@@ -208,7 +216,7 @@ export default function SignatureStageRail({
             </div>
 
             {/* Connection Line */}
-            {index < stages.length - 1 && (
+            {index < safeStages.length - 1 && (
               <div className="absolute left-9 top-16 w-0.5 h-8 bg-gray-200"></div>
             )}
           </motion.div>
@@ -216,7 +224,7 @@ export default function SignatureStageRail({
       </div>
 
       {/* Next Steps Info */}
-      {stages.some(s => s.status === 'next') && (
+      {safeStages.some(s => s.status === 'next') && (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}

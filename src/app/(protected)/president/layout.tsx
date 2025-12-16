@@ -6,15 +6,17 @@ import PresidentLeftNav from "@/components/president/nav/PresidentLeftNav";
 import PageTitle from "@/components/common/PageTitle";
 import ChatbotWidget from "@/components/ai/ChatbotWidget";
 import HelpButton from "@/components/common/HelpButton";
+import KeyboardShortcuts from "@/components/common/KeyboardShortcuts";
 import FeedbackLockModal from "@/components/common/FeedbackLockModal";
 import { checkFeedbackLock } from "@/lib/feedback/lock";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import ToastProvider from "@/components/common/ui/ToastProvider.ui";
 import "leaflet/dist/leaflet.css";
 
 export default function PresidentLayout({ children }: { children: React.ReactNode }) {
   const topbarH = "56px";
   const pathname = usePathname();
+  const router = useRouter();
   const [feedbackLock, setFeedbackLock] = React.useState<{
     locked: boolean;
     requestId?: string;
@@ -63,6 +65,17 @@ export default function PresidentLayout({ children }: { children: React.ReactNod
 
         {/* Help Button */}
         <HelpButton role="president" />
+
+        {/* Keyboard Shortcuts */}
+        <KeyboardShortcuts
+          shortcuts={[
+            { key: "d", description: "Dashboard", action: () => router.push("/president/dashboard") },
+            { key: "i", description: "Inbox", action: () => router.push("/president/inbox") },
+            { key: "n", description: "New Request", action: () => router.push("/president/request") },
+            { key: "s", description: "Schedule", action: () => router.push("/president/schedule") },
+            { key: "a", description: "Analytics", action: () => router.push("/president/analytics") },
+          ]}
+        />
 
         {/* Feedback Lock Modal */}
         {feedbackLock.locked && feedbackLock.requestId && pathname && !pathname.startsWith("/user/feedback") && (

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Bell, CheckCircle, XCircle, AlertCircle, Clock } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createSupabaseClient } from "@/lib/supabase/client";
@@ -29,7 +29,7 @@ export default function HRNotificationDropdown() {
   const loadNotifications = async () => {
     try {
       const [notificationsRes, inboxRes] = await Promise.all([
-        fetch("/api/notifications?limit=10", { 
+        fetch("/api/notifications?limit=50", { 
           cache: "no-store",
           credentials: "include",
           headers: { 'Cache-Control': 'no-cache' }
@@ -69,12 +69,15 @@ export default function HRNotificationDropdown() {
         action_label: "Review Request",
         priority: "high",
         is_read: false,
-        created_at: item.created_at || new Date().toISOString(),
+        // Use comptroller_approved_at (when sent to HR) instead of created_at (when request was created)
+        created_at: item.comptroller_approved_at || item.updated_at || item.created_at || new Date().toISOString(),
       }));
 
       const allNotifications = [...filteredNotifications, ...inboxNotifications];
+      // Deduplicate by notification ID only (not by related_id)
+      // This ensures we show ALL notifications for the same request (submitted, approved, etc.)
       const uniqueNotifications = Array.from(
-        new Map(allNotifications.map(n => [n.related_id || n.id, n])).values()
+        new Map(allNotifications.map(n => [n.id, n])).values()
       );
       
       uniqueNotifications.sort((a, b) => {

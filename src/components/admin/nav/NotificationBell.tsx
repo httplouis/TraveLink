@@ -59,7 +59,7 @@ export default function NotificationBell({
   const btnBase =
     "relative inline-flex h-10 items-center justify-center rounded-xl px-3 transition focus:outline-none focus:ring-2";
   const btnTheme = isMaroon
-    ? "border border-white/20 bg-white/10 text-white hover:bg-white/15 focus:ring-white/40"
+    ? "bg-white/10 text-white hover:bg-white/20 focus:ring-white/40"
     : "border border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50 focus:ring-neutral-300";
 
   return (
@@ -86,8 +86,9 @@ export default function NotificationBell({
               <Bell className="h-5 w-5" />
               {badge > 0 && (
                 <span
-                  className="absolute -right-1 -top-1 flex h-5 min-w-[18px] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold leading-none text-white"
-                  style={{ background: BRAND }}
+                  className={`absolute -right-1 -top-1 flex h-5 min-w-[18px] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold leading-none ${
+                    isMaroon ? "bg-white text-[#7A0010]" : "bg-[#7A0010] text-white"
+                  }`}
                 >
                   {badge > 99 ? "99+" : badge}
                 </span>

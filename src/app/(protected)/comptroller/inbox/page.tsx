@@ -3,11 +3,12 @@
 
 import React, { Suspense } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { Search, Clock, User, Building2, MapPin, Calendar, FileText, CheckCircle, History, Loader2 } from "lucide-react";
+import { Clock, FileText, CheckCircle, History, Loader2 } from "lucide-react";
 import ComptrollerReviewModal from "@/components/comptroller/ComptrollerReviewModal";
 import RequestCardEnhanced from "@/components/common/RequestCardEnhanced";
 import RequestsTable from "@/components/common/RequestsTable";
 import ViewToggle, { useViewMode } from "@/components/common/ViewToggle";
+import AdvancedFilters, { FilterState, defaultFilters, applyFilters } from "@/components/common/AdvancedFilters";
 import { motion } from "framer-motion";
 import PageTitle from "@/components/common/PageTitle";
 import { createSupabaseClient } from "@/lib/supabase/client";
@@ -61,7 +62,7 @@ function ComptrollerInboxContent() {
   const [approvedRequests, setApprovedRequests] = React.useState<Request[]>([]);
   const [historyRequests, setHistoryRequests] = React.useState<Request[]>([]);
   const [loading, setLoading] = React.useState(true);
-  const [searchQuery, setSearchQuery] = React.useState("");
+  const [filters, setFilters] = React.useState<FilterState>(defaultFilters);
   const [selectedRequest, setSelectedRequest] = React.useState<Request | null>(null);
   const [showModal, setShowModal] = React.useState(false);
   const [viewMode, setViewMode] = useViewMode("comptroller_inbox_view", "table");
@@ -80,42 +81,46 @@ function ComptrollerInboxContent() {
   // Handle ?view=requestId query parameter to auto-open a specific request
   React.useEffect(() => {
     const viewRequestId = searchParams?.get('view');
+    const allItems = [...pendingRequests, ...approvedRequests, ...historyRequests];
     
-    // Only handle once per page load and if we have items loaded
-    if (viewRequestId && !viewParamHandledRef.current && pendingRequests.length > 0) {
-      viewParamHandledRef.current = true;
-      
-      // Find the request in pending items
-      const requestToView = pendingRequests.find(r => r.id === viewRequestId);
-      
-      if (requestToView) {
-        logger.info('Auto-opening request from URL:', viewRequestId);
-        setSelectedRequest(requestToView);
-        setShowModal(true);
+    // Only handle once per page load
+    if (viewRequestId && !viewParamHandledRef.current) {
+      // Check if we have any items loaded, or wait a bit for them to load
+      if (allItems.length > 0 || !loading) {
+        viewParamHandledRef.current = true;
         
-        // Clear the view parameter from URL
-        const newUrl = pathname || '/comptroller/inbox';
-        router.replace(newUrl, { scroll: false });
-      } else {
-        // Request not in pending - try to fetch it directly
-        logger.info('Request not in pending list, fetching directly:', viewRequestId);
+        // Find the request in any of the lists
+        const requestToView = allItems.find(r => r.id === viewRequestId);
         
-        fetch(`/api/requests/${viewRequestId}`)
-          .then(res => res.json())
-          .then(data => {
-            if (data.ok && data.data) {
-              setSelectedRequest(data.data);
-              setShowModal(true);
-              const newUrl = pathname || '/comptroller/inbox';
-              router.replace(newUrl, { scroll: false });
-            }
-          })
-          .catch(err => {
-            logger.error('Failed to fetch request:', err);
-          });
+        if (requestToView) {
+          logger.info('Auto-opening request from URL:', viewRequestId);
+          setSelectedRequest(requestToView);
+          setShowModal(true);
+          
+          // Clear the view parameter from URL
+          const newUrl = pathname || '/comptroller/inbox';
+          router.replace(newUrl, { scroll: false });
+        } else {
+          // Request not in any list - try to fetch it directly
+          logger.info('Request not in any list, fetching directly:', viewRequestId);
+          
+          fetch(`/api/requests/${viewRequestId}`)
+            .then(res => res.json())
+            .then(data => {
+              if (data.ok && data.data) {
+                setSelectedRequest(data.data);
+                setShowModal(true);
+                const newUrl = pathname || '/comptroller/inbox';
+                router.replace(newUrl, { scroll: false });
+              }
+            })
+            .catch(err => {
+              logger.error('Failed to fetch request:', err);
+            });
+        }
       }
     }
-  }, [searchParams, pendingRequests, pathname, router, logger]);
+  }, [searchParams, pendingRequests, approvedRequests, historyRequests, loading, pathname, router, logger]);
 
   // Load pending requests
   const loadPending = React.useCallback(async () => {
@@ -223,15 +228,20 @@ function ComptrollerInboxContent() {
   // Get current items based on active tab
   const currentItems = activeTab === "pending" ? pendingRequests : activeTab === "approved" ? approvedRequests : historyRequests;
 
+  // Extract unique departments for filter
+  const departments = React.useMemo(() => {
+    const depts = new Set<string>();
+    currentItems.forEach(item => {
+      const deptName = item.department?.name || item.department?.code;
+      if (deptName) depts.add(deptName);
+    });
+    return Array.from(depts).sort();
+  }, [currentItems]);
+
+  // Apply filters
   const filteredRequests = React.useMemo(() => {
-    const query = searchQuery.toLowerCase();
-    return currentItems.filter(req => 
-      req.request_number?.toLowerCase().includes(query) ||
-      req.requester?.name?.toLowerCase().includes(query) ||
-      req.department?.name?.toLowerCase().includes(query) ||
-      req.purpose?.toLowerCase().includes(query)
-    );
-  }, [currentItems, searchQuery]);
+    return applyFilters(currentItems, filters);
+  }, [currentItems, filters]);
 
   const handleReviewClick = (req: Request) => {
     setSelectedRequest(req);
@@ -354,21 +364,23 @@ function ComptrollerInboxContent() {
         </button>
       </div>
 
-      {/* Search */}
+      {/* Advanced Filters */}
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="relative"
       >
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-        <input
-          type="text"
-          placeholder="🔍 Search by request number, requester, department..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-12 pr-4 py-3.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#7A0010] focus:border-[#7A0010] shadow-sm text-sm"
+        <AdvancedFilters
+          filters={filters}
+          onFiltersChange={setFilters}
+          departments={departments}
+          placeholder="Search by request number, requester, department, purpose..."
         />
+        {filteredRequests.length !== currentItems.length && (
+          <p className="text-sm text-gray-500 mt-2">
+            Showing {filteredRequests.length} of {currentItems.length} requests
+          </p>
+        )}
       </motion.div>
 
       {/* Requests List */}

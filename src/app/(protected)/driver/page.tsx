@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { Calendar, MapPin, Clock, Car, ChevronRight, Star, CheckCircle2 } from "lucide-react";
+import TripChecklist from "@/components/common/TripChecklist";
 
 interface UpcomingTrip {
   id: string;
@@ -171,6 +172,14 @@ export default function DriverDashboard() {
           </div>
         )}
       </div>
+
+      {/* Trip Checklist - For next upcoming trip */}
+      {upcomingTrips.length > 0 && (
+        <TripChecklist 
+          tripId={upcomingTrips[0].id} 
+          type="pre_trip"
+        />
+      )}
 
       {/* Quick Actions */}
       <div className="grid grid-cols-2 gap-4">

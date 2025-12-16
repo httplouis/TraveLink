@@ -288,7 +288,7 @@ export async function POST(request: Request) {
                 message: `Travel order ${request.request_number || ''} has been fully approved and is ready for processing.`,
                 related_type: "request",
                 related_id: requestId,
-                action_url: `/admin/requests`,
+                action_url: `/admin/inbox`,
                 action_label: "View Requests",
                 priority: "high",
               });

@@ -232,10 +232,10 @@ export default function HeadRequestModal({
             email: a.email,
             profile_picture: a.profile_picture,
             phone: a.phone,
-            position: a.position || "Administrator",
+            position: a.position || "Transportation Manager",
             department: a.department,
             role: "admin",
-            roleLabel: "Administrator"
+            roleLabel: "Transportation Management"
           }));
           
           options.push(...adminOptions);
@@ -251,7 +251,7 @@ export default function HeadRequestModal({
           if (approversData.error) {
             toast.warning("Warning", `Could not fetch admin list: ${approversData.error}. You can still return the request to the requester.`);
           } else {
-            toast.warning("Warning", "No administrators found in the system. You can still return the request to the requester.");
+            toast.warning("Warning", "No Transportation Management staff found in the system. You can still return the request to the requester.");
           }
         }
         
@@ -333,10 +333,10 @@ export default function HeadRequestModal({
             setSuggestionReason(undefined);
             // Fallback to Ma'am TM if suggestion not found in options
             const maamTM = options.find((opt: any) => 
-              (opt.role === 'admin' || opt.roleLabel === 'Administrator') &&
+              (opt.role === 'admin' || opt.roleLabel === 'Transportation Management') &&
               opt.email === 'trizzia.casino@mseuf.edu.ph'
             ) || options.find((opt: any) => 
-              (opt.role === 'admin' || opt.roleLabel === 'Administrator') &&
+              (opt.role === 'admin' || opt.roleLabel === 'Transportation Management') &&
               (opt.name?.toLowerCase().includes('trizzia') || 
                opt.email?.toLowerCase().includes('trizzia') ||
                opt.name?.toLowerCase().includes('casino'))
@@ -345,7 +345,7 @@ export default function HeadRequestModal({
             if (maamTM) {
               setDefaultApproverId(maamTM.id);
               setDefaultApproverName(maamTM.name);
-              setSuggestionReason('Default admin for request processing');
+              setSuggestionReason('Default Transportation Management for request processing');
               console.log("[HeadRequestModal] ✅ Found Ma'am TM as fallback:", maamTM.name);
             } else {
               setDefaultApproverId(undefined);
@@ -356,10 +356,10 @@ export default function HeadRequestModal({
         } else {
           // No suggestion - try to find Ma'am TM as default
           const maamTM = options.find((opt: any) => 
-            (opt.role === 'admin' || opt.roleLabel === 'Administrator') &&
+            (opt.role === 'admin' || opt.roleLabel === 'Transportation Management') &&
             opt.email === 'trizzia.casino@mseuf.edu.ph'
           ) || options.find((opt: any) => 
-            (opt.role === 'admin' || opt.roleLabel === 'Administrator') &&
+            (opt.role === 'admin' || opt.roleLabel === 'Transportation Management') &&
             (opt.name?.toLowerCase().includes('trizzia') || 
              opt.email?.toLowerCase().includes('trizzia') ||
              opt.name?.toLowerCase().includes('casino'))

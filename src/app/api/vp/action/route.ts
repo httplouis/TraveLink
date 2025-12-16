@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 import { getPhilippineTimestamp } from "@/lib/datetime";
+import { createNotification } from "@/lib/notifications/helpers";
 
 export async function POST(request: Request) {
   try {
@@ -286,7 +287,7 @@ export async function POST(request: Request) {
                   newStatus = "pending_admin";
                   finalNextApproverRole = "admin";
                   // Don't set next_admin_id - allow all admins to see it (both Ma'am Cleofe and Ma'am TM)
-                  message = "VP approved. Request sent to Administrators.";
+                  message = "VP approved. Request sent to Transportation Management.";
                 } else if (approverUser.is_vp || approverUser.role === "exec") {
                   newStatus = "pending_exec";
                   finalNextApproverRole = "vp";
@@ -315,7 +316,7 @@ export async function POST(request: Request) {
                     newStatus = "pending_admin";
                     finalNextApproverRole = "admin";
                     // Don't set next_admin_id - allow all admins to see it (both Ma'am Cleofe and Ma'am TM)
-                    message = "VP approved. Request sent to Administrators.";
+                    message = "VP approved. Request sent to Transportation Management.";
                   } else {
                     // Default to president
                     newStatus = "pending_exec";
@@ -335,7 +336,7 @@ export async function POST(request: Request) {
                   newStatus = "pending_admin";
                   finalNextApproverRole = "admin";
                   // Don't set next_admin_id - allow all admins to see it (both Ma'am Cleofe and Ma'am TM)
-                  message = "VP approved. Request sent to Administrators.";
+                  message = "VP approved. Request sent to Transportation Management.";
                 } else {
                   newStatus = "pending_exec";
                   finalNextApproverRole = "president";
@@ -355,7 +356,7 @@ export async function POST(request: Request) {
                 newStatus = "pending_admin";
                 finalNextApproverRole = "admin";
                 // Don't set next_admin_id - allow all admins to see it (both Ma'am Cleofe and Ma'am TM)
-                message = "VP approved. Request sent to Administrators.";
+                message = "VP approved. Request sent to Transportation Management.";
               } else {
                 newStatus = "pending_exec";
                 finalNextApproverRole = "president";
@@ -520,7 +521,7 @@ export async function POST(request: Request) {
                 newStatus = "pending_admin";
                 finalNextApproverRole = "admin";
                 // Don't set next_admin_id - allow all admins to see it (both Ma'am Cleofe and Ma'am TM)
-                message = "Both VPs have approved. Request sent to Administrators.";
+                message = "Both VPs have approved. Request sent to Transportation Management.";
               } else if (approverUser.is_vp || approverUser.role === "exec") {
                 newStatus = "pending_exec";
                 finalNextApproverRole = "vp";
@@ -549,7 +550,7 @@ export async function POST(request: Request) {
                   newStatus = "pending_admin";
                   finalNextApproverRole = "admin";
                   // Store in workflow_metadata, not directly on updateData (column doesn't exist)
-                  message = "Both VPs have approved. Request sent to Administrator.";
+                  message = "Both VPs have approved. Request sent to Transportation Management.";
                 } else {
                   newStatus = "pending_exec";
                   finalNextApproverRole = "president";
@@ -568,7 +569,7 @@ export async function POST(request: Request) {
                 newStatus = "pending_admin";
                 finalNextApproverRole = "admin";
                 // Don't set next_admin_id - allow all admins to see it (both Ma'am Cleofe and Ma'am TM)
-                message = "Both VPs have approved. Request sent to Administrators.";
+                message = "Both VPs have approved. Request sent to Transportation Management.";
               } else {
                 newStatus = "pending_exec";
                 finalNextApproverRole = "president";
@@ -588,7 +589,7 @@ export async function POST(request: Request) {
               newStatus = "pending_admin";
               finalNextApproverRole = "admin";
               // Don't set next_admin_id - allow all admins to see it (both Ma'am Cleofe and Ma'am TM)
-              message = "Both VPs have approved. Request sent to Administrators.";
+              message = "Both VPs have approved. Request sent to Transportation Management.";
             } else {
               newStatus = "pending_exec";
               finalNextApproverRole = "president";
@@ -746,10 +747,10 @@ export async function POST(request: Request) {
               user_id: nextApproverId,
               notification_type: "request_pending_signature",
               title: "New Request from VP",
-              message: `VP has approved request ${finalRequest.request_number || ''} and forwarded it to you for Admin review.`,
+              message: `VP has approved request ${finalRequest.request_number || ''} and forwarded it to you for Transportation Management review.`,
               related_type: "request",
               related_id: requestId,
-              action_url: `/admin/requests?view=${requestId}`,
+              action_url: `/admin/inbox?view=${requestId}`,
               action_label: "Review Request",
               priority: "normal",
             });
@@ -771,6 +772,13 @@ export async function POST(request: Request) {
       });
 
     } else if (action === "reject") {
+      // Get request details for notification
+      const { data: rejectRequest } = await supabase
+        .from("requests")
+        .select("requester_id, submitted_by_user_id, request_number")
+        .eq("id", requestId)
+        .single();
+
       // Reject request
       const { error: updateError } = await supabase
         .from("requests")
@@ -799,6 +807,42 @@ export async function POST(request: Request) {
         new_status: "rejected",
         comments: notes || "Rejected by VP",
       });
+
+      // Create notifications for rejection
+      try {
+        // Notify requester
+        if (rejectRequest?.requester_id) {
+          await createNotification({
+            user_id: rejectRequest.requester_id,
+            notification_type: "request_rejected",
+            title: "Request Rejected by Vice President",
+            message: `Your travel order request ${rejectRequest.request_number || ''} has been rejected by the Vice President.${notes ? ` Reason: ${notes}` : ''}`,
+            related_type: "request",
+            related_id: requestId,
+            action_url: `/user/submissions?view=${requestId}`,
+            action_label: "View Request",
+            priority: "high",
+          });
+        }
+
+        // Notify submitter if different from requester
+        if (rejectRequest?.submitted_by_user_id && rejectRequest.submitted_by_user_id !== rejectRequest.requester_id) {
+          await createNotification({
+            user_id: rejectRequest.submitted_by_user_id,
+            notification_type: "request_rejected",
+            title: "Request Rejected by Vice President",
+            message: `The travel order request ${rejectRequest.request_number || ''} you submitted has been rejected by the Vice President.${notes ? ` Reason: ${notes}` : ''}`,
+            related_type: "request",
+            related_id: requestId,
+            action_url: `/user/submissions?view=${requestId}`,
+            action_label: "View Request",
+            priority: "high",
+          });
+        }
+      } catch (notifError: any) {
+        console.error("[VP Reject] Failed to create notifications:", notifError);
+        // Don't fail the request if notifications fail
+      }
 
       console.log(`[VP Reject] ❌ Request ${requestId} rejected`);
       

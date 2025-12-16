@@ -7,15 +7,17 @@ import HRLeftNav from "@/components/hr/nav/HRLeftNav";
 import PageTitle from "@/components/common/PageTitle";
 import ChatbotWidget from "@/components/ai/ChatbotWidget";
 import HelpButton from "@/components/common/HelpButton";
+import KeyboardShortcuts from "@/components/common/KeyboardShortcuts";
 import FeedbackLockModal from "@/components/common/FeedbackLockModal";
 import { checkFeedbackLock } from "@/lib/feedback/lock";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import ToastProvider from "@/components/common/ui/ToastProvider.ui";
 import "leaflet/dist/leaflet.css";
 
 export default function HRLayout({ children }: { children: React.ReactNode }) {
   const topbarH = "56px";
   const pathname = usePathname();
+  const router = useRouter();
   const [feedbackLock, setFeedbackLock] = React.useState<{
     locked: boolean;
     requestId?: string;
@@ -64,6 +66,17 @@ export default function HRLayout({ children }: { children: React.ReactNode }) {
 
       {/* Help Button */}
       <HelpButton role="hr" />
+
+      {/* Keyboard Shortcuts */}
+      <KeyboardShortcuts
+        shortcuts={[
+          { key: "d", description: "Dashboard", action: () => router.push("/hr/dashboard") },
+          { key: "i", description: "Inbox", action: () => router.push("/hr/inbox") },
+          { key: "n", description: "New Request", action: () => router.push("/hr/request") },
+          { key: "s", description: "Schedule", action: () => router.push("/hr/schedule") },
+          { key: "h", description: "History", action: () => router.push("/hr/history") },
+        ]}
+      />
 
       {/* Feedback Lock Modal */}
       {feedbackLock.locked && feedbackLock.requestId && pathname && !pathname.startsWith("/user/feedback") && (

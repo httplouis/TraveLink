@@ -59,6 +59,7 @@ const NAV: Item[] = [
 
   { type: "link", href: "/vp/inbox", label: "Inbox", Icon: Inbox },
   { type: "link", href: "/vp/history", label: "History", Icon: History },
+  { type: "link", href: "/vp/activity", label: "My Activity", Icon: FileClock },
 
   { type: "link", href: "/vp/vehicles", label: "Vehicles", Icon: Car },
   { type: "link", href: "/vp/drivers", label: "Drivers", Icon: IdCard },

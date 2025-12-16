@@ -48,8 +48,8 @@ export default function SubmitConfirmationDialog({
   const getApproverLabel = (role: string) => {
     const labels: Record<string, string> = {
       DEPT_HEAD: "Department Head",
-      TM: "Transportation Manager (Admin)",
-      ADMIN: "Administrator",
+      TM: "Transportation Management",
+      ADMIN: "Transportation Management",
       COMPTROLLER: "Comptroller",
       HRD: "Human Resources",
       VP: "Vice President",
@@ -57,7 +57,7 @@ export default function SubmitConfirmationDialog({
       "PRESIDENT/COO": "President / COO",
       PRESIDENT: "President",
       OSAS_ADMIN: "OSAS Admin",
-      "TM(close-out)": "Transportation Manager",
+      "TM(close-out)": "Transportation Management",
     };
     return labels[role] || role;
   };

@@ -43,7 +43,7 @@ export default function SuccessModal({
   return (
     <AnimatePresence>
       {open && (
-        <Dialog open={open} onClose={onClose} className="relative z-50">
+        <Dialog open={open} onClose={onClose} className="relative z-[100]">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: isVisible ? 1 : 0 }}

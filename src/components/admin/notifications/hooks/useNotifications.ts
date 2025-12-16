@@ -3,6 +3,7 @@
 
 import * as React from "react";
 import type { Notification } from "@/lib/admin/notifications/types";
+import { createSupabaseClient } from "@/lib/supabase/client";
 
 export type TabKey = "all" | "unread";
 
@@ -101,11 +102,65 @@ export function useNotifications() {
   }, [tab]);
 
   React.useEffect(() => {
+    let isMounted = true;
+    let channel: any = null;
+    
+    // Initial load
     refresh();
     
-    // Poll for updates every 10 seconds for real-time notifications
-    const interval = setInterval(refresh, 10000);
-    return () => clearInterval(interval);
+    // Set up real-time subscription for notifications
+    const setupRealtime = async () => {
+      const supabase = createSupabaseClient();
+      
+      // Get current user profile ID
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      
+      const { data: profile } = await supabase
+        .from("users")
+        .select("id")
+        .eq("auth_user_id", user.id)
+        .single();
+      
+      if (!profile) return;
+      const currentUserId = profile.id;
+      
+      // Subscribe to notifications table changes
+      channel = supabase
+        .channel("admin-notifications-realtime")
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "notifications",
+          },
+          (payload: any) => {
+            if (!isMounted) return;
+            const notificationUserId = payload.new?.user_id || payload.old?.user_id;
+            if (notificationUserId === currentUserId) {
+              refresh();
+            }
+          }
+        )
+        .subscribe();
+    };
+    
+    setupRealtime();
+    
+    // Fallback polling every 30 seconds (reduced from 10s since we have realtime)
+    const interval = setInterval(() => {
+      if (isMounted) refresh();
+    }, 30000);
+    
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      if (channel) {
+        const supabase = createSupabaseClient();
+        supabase.removeChannel(channel);
+      }
+    };
   }, [refresh]);
 
   const markOne = React.useCallback(async (id: string) => {

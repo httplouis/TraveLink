@@ -191,12 +191,12 @@ export async function POST(
       },
     });
 
-    // Create notification for requester - clickable, goes to submissions
+    // Create notification for requester - clickable, goes to drafts for editing
     try {
       const { createNotification } = await import("@/lib/notifications/helpers");
 
       if (request.requester_id) {
-        // Check if requester is a head to determine the correct submissions URL
+        // Check if requester is a head to determine the correct drafts URL
         const { data: requesterProfile } = await supabaseServiceRole
           .from("users")
           .select("is_head, role")
@@ -204,22 +204,38 @@ export async function POST(
           .maybeSingle();
         
         const isRequesterHead = requesterProfile?.is_head || requesterProfile?.role === "head";
-        const submissionsUrl = isRequesterHead 
-          ? `/head/submissions?view=${requestId}` 
-          : `/user/submissions?view=${requestId}`;
+        // Point to drafts page for editing, not submissions
+        const draftsUrl = isRequesterHead 
+          ? `/head/drafts?requestId=${requestId}` 
+          : `/user/drafts?requestId=${requestId}`;
+        
+        // Determine the approver role label for the message
+        const approverRoleLabel = profile.is_head
+          ? "Head"
+          : profile.is_admin || profile.role === "admin"
+          ? "Transportation Management"
+          : profile.is_comptroller || profile.role === "comptroller"
+          ? "Comptroller"
+          : profile.is_hr || profile.role === "hr"
+          ? "HR"
+          : profile.is_vp
+          ? "VP"
+          : profile.is_president
+          ? "President"
+          : "Approver";
         
         await createNotification({
           user_id: request.requester_id,
           notification_type: "request_returned",
           title: "Request Returned for Revision",
-          message: `Your request ${request.request_number || ""} has been returned for revision. Reason: ${return_reason}${comments ? ` - ${comments}` : ""}. Please edit and resubmit.`,
+          message: `Your request ${request.request_number || ""} has been returned for revision by ${approverRoleLabel}. Reason: ${return_reason}${comments ? ` - ${comments}` : ""}. Please edit and resubmit.`,
           related_type: "request",
           related_id: requestId,
-          action_url: submissionsUrl,
+          action_url: draftsUrl,
           action_label: "Edit & Resubmit",
           priority: "high",
         });
-        console.log("[Return Request] ✅ Notification created for requester:", request.requester_id, "URL:", submissionsUrl);
+        console.log("[Return Request] ✅ Notification created for requester:", request.requester_id, "URL:", draftsUrl);
       }
     } catch (notifError: any) {
       console.error("[Return Request] Failed to create notification:", notifError);

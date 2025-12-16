@@ -129,11 +129,11 @@ export function AdminCalendarDetailsModal({
                       onClick={(e) => {
                         e.stopPropagation();
                         // Use Next.js router to navigate without full page reload
-                        router.push(`/admin/requests?requestId=${req.id}`);
+                        router.push(`/admin/inbox?view=${req.id}`);
                       }}
                       className="p-2 hover:bg-gray-100 rounded-lg transition"
-                      aria-label="Edit request"
-                      title="View/Edit Request"
+                      aria-label="View request"
+                      title="View Request"
                     >
                       <Edit2 className="h-4 w-4 text-gray-500" />
                     </button>

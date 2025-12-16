@@ -35,7 +35,7 @@ export function pushMock(input: {
     read: false,
     actorName: "Travelink System",
     actorAvatarUrl: null,
-    href: input.href ?? "/admin/requests/REQ-2025-014",
+    href: input.href ?? "/admin/inbox?view=REQ-2025-014",
   };
   const items = [n, ...loadAll()];
   saveAll(items);
@@ -58,11 +58,11 @@ function seed(): Notification[] {
   return [
     mk(8,   { kind: "update",  title: "Trip started — TRIP-2025-108", body: "Driver: R. Cruz · Vehicle: VAN-12", href: "/admin/schedule/TRIP-2025-108" }),
     mk(20,  { kind: "update",  title: "Maintenance ticket created — MT-00231", body: "Vehicle: VAN-12 · Category: Preventive", href: "/admin/maintenance/MT-00231" }),
-    mk(45,  { kind: "update",  title: "New Travel Request submitted — REQ-2025-014", body: "Department: CCMS · Travel date: Oct 25, 9:00 AM", href: "/admin/requests/REQ-2025-014" }),
-    mk(90,  { kind: "update",  title: "Request moved to ‘For Approval’ — REQ-2025-009", body: "Requester: CBA · Vehicle: VAN-12", href: "/admin/requests/REQ-2025-009" }),
-    mk(180, { kind: "update",  title: "Driver assigned — REQ-2025-008", body: "Driver: D. Santos · Vehicle: VAN-03", href: "/admin/requests/REQ-2025-008" }),
+    mk(45,  { kind: "update",  title: "New Travel Request submitted — REQ-2025-014", body: "Department: CCMS · Travel date: Oct 25, 9:00 AM", href: "/admin/inbox?view=REQ-2025-014" }),
+    mk(90,  { kind: "update",  title: "Request moved to 'For Approval' — REQ-2025-009", body: "Requester: CBA · Vehicle: VAN-12", href: "/admin/inbox?view=REQ-2025-009" }),
+    mk(180, { kind: "update",  title: "Driver assigned — REQ-2025-008", body: "Driver: D. Santos · Vehicle: VAN-03", href: "/admin/inbox?view=REQ-2025-008" }),
     mk(300, { kind: "update",  title: "Schedule updated — TRIP-2025-102", body: "Pickup time changed to 2:30 PM", href: "/admin/schedule/TRIP-2025-102" }),
-    mk(1440,{ kind: "comment", title: "New note on REQ-2025-007", body: "Transport Office: “Please attach the signed memo.”", href: "/admin/requests/REQ-2025-007" }),
+    mk(1440,{ kind: "comment", title: "New note on REQ-2025-007", body: "Transport Office: Please attach the signed memo.", href: "/admin/inbox?view=REQ-2025-007" }),
     mk(2880,{ kind: "update",  title: "Vehicle status changed — VAN-03", body: "Status: Under Repair · ETA back: Oct 25, 10:00", href: "/admin/vehicles/VAN-03" }),
   ];
 }

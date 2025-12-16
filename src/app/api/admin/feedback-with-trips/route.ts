@@ -8,17 +8,19 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET(request: Request) {
   try {
-    const supabase = await createSupabaseServerClient(true);
-    
-    // Auth check - only admin can access
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    // Use regular client for auth check
+    const authSupabase = await createSupabaseServerClient(false);
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser();
     if (authError || !user) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
+    // Use service role for database operations
+    const supabase = await createSupabaseServerClient(true);
+
     const { data: profile } = await supabase
       .from("users")
-      .select("id, role, is_admin")
+      .select("id, email, role, is_admin")
       .eq("auth_user_id", user.id)
       .single();
 
@@ -26,7 +28,8 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: false, error: "Profile not found" }, { status: 404 });
     }
 
-    const isAdmin = profile.is_admin || profile.role === 'admin';
+    const adminEmails = ["admin@mseuf.edu.ph", "admin.cleofe@mseuf.edu.ph"];
+    const isAdmin = profile.is_admin || profile.role === 'admin' || adminEmails.includes(profile.email || "");
     if (!isAdmin) {
       return NextResponse.json({ ok: false, error: "Admin access required" }, { status: 403 });
     }

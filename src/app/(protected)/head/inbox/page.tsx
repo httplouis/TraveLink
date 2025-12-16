@@ -1,7 +1,8 @@
 // src/app/(protected)/head/inbox/page.tsx
 "use client";
 
-import React from "react";
+import React, { Suspense } from "react";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import HeadRequestModal from "@/components/head/HeadRequestModal";
 import { SkeletonRequestCard } from "@/components/common/SkeletonLoader";
 import StatusBadge from "@/components/common/StatusBadge";
@@ -12,7 +13,7 @@ import ViewToggle, { useViewMode } from "@/components/common/ViewToggle";
 import { createSupabaseClient } from "@/lib/supabase/client";
 import { createLogger } from "@/lib/debug";
 import { shouldShowPendingAlert, getAlertSeverity, getAlertMessage } from "@/lib/notifications/pending-alerts";
-import { AlertCircle, Clock, CheckCircle, History } from "lucide-react";
+import { AlertCircle, Clock, CheckCircle, History, Loader2 } from "lucide-react";
 
 // Format time ago helper
 function formatTimeAgo(date: Date): string {
@@ -30,6 +31,18 @@ function formatTimeAgo(date: Date): string {
 }
 
 export default function HeadInboxPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><Loader2 className="h-8 w-8 animate-spin text-[#7A0019]" /></div>}>
+      <HeadInboxContent />
+    </Suspense>
+  );
+}
+
+function HeadInboxContent() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  
   const [pendingItems, setPendingItems] = React.useState<any[]>([]);
   const [approvedItems, setApprovedItems] = React.useState<any[]>([]);
   const [historyItems, setHistoryItems] = React.useState<any[]>([]);
@@ -37,6 +50,9 @@ export default function HeadInboxPage() {
   const [loading, setLoading] = React.useState(true);
   const [lastUpdate, setLastUpdate] = React.useState<Date>(new Date());
   const [activeTab, setActiveTab] = React.useState<"pending" | "approved" | "history">("pending");
+  
+  // Track if we've already handled the view parameter
+  const viewParamHandledRef = React.useRef(false);
   
   // View mode toggle
   const [viewMode, setViewMode] = useViewMode("head_inbox_view", "cards");
@@ -174,6 +190,52 @@ export default function HeadInboxPage() {
     };
     loadAll();
   }, [loadPending, loadApproved, loadHistory]);
+
+  // Handle ?view=requestId query parameter to auto-open a specific request
+  React.useEffect(() => {
+    const viewRequestId = searchParams?.get('view');
+    const allItems = [...pendingItems, ...approvedItems, ...historyItems];
+    
+    // Only handle once per page load
+    if (viewRequestId && !viewParamHandledRef.current) {
+      // Check if we have any items loaded, or wait a bit for them to load
+      if (allItems.length > 0 || !loading) {
+        viewParamHandledRef.current = true;
+        
+        // Find the request in any of the lists
+        const requestToView = allItems.find(r => r.id === viewRequestId);
+        
+        if (requestToView) {
+          console.log('[HeadInbox] Auto-opening request from URL:', viewRequestId);
+          setSelected(requestToView);
+          markAsViewed(requestToView.id);
+          
+          // Clear the view parameter from URL
+          const newUrl = pathname || '/head/inbox';
+          router.replace(newUrl, { scroll: false });
+        } else {
+          // Request not in list - fetch it directly
+          console.log('[HeadInbox] Request not in list, fetching directly:', viewRequestId);
+          
+          fetch(`/api/requests/${viewRequestId}`)
+            .then(res => res.json())
+            .then(data => {
+              if (data.ok && data.data) {
+                setSelected(data.data);
+                markAsViewed(data.data.id);
+                
+                // Clear the view parameter from URL
+                const newUrl = pathname || '/head/inbox';
+                router.replace(newUrl, { scroll: false });
+              }
+            })
+            .catch(err => {
+              console.error('[HeadInbox] Failed to fetch request:', err);
+            });
+        }
+      }
+    }
+  }, [searchParams, pendingItems, approvedItems, historyItems, loading, pathname, router]);
 
   // Real-time updates using Supabase Realtime
   React.useEffect(() => {

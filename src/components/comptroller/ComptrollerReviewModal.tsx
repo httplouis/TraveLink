@@ -1558,14 +1558,14 @@ export default function ComptrollerReviewModal({ request, onClose, readOnly = fa
                     </div>
                     {t.admin_approved_by && (
                       <p className="text-xs text-slate-600">
-                        By: {t.admin_approver?.name || "Administrator"}
+                        By: {t.admin_approver?.name || "Transportation Management"}
                       </p>
                     )}
                     {t.admin_signature && (
                       <div className="mt-2 pt-2 border-t border-slate-100">
                         <img
                           src={t.admin_signature}
-                          alt="Admin signature"
+                          alt="Transportation Management signature"
                           className="h-16 w-full object-contain"
                         />
                       </div>

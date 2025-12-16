@@ -77,12 +77,27 @@ export async function POST(
       return NextResponse.json({ ok: false, error: "Only the requester can resubmit" }, { status: 403 });
     }
 
-    // Check if request is in returned status
-    if (request.status !== "returned") {
-      return NextResponse.json({ 
-        ok: false, 
-        error: "Only returned requests can be resubmitted" 
-      }, { status: 400 });
+    // Check if request is in returned or draft status (draft is allowed because returned requests may be saved as draft first)
+    // Also check if request was previously returned (has return history)
+    const validStatuses = ["returned", "draft"];
+    if (!validStatuses.includes(request.status)) {
+      // Check if this was a returned request that was saved as draft
+      const { data: returnHistory } = await supabaseServiceRole
+        .from("request_history")
+        .select("id")
+        .eq("request_id", requestId)
+        .eq("action", "returned")
+        .limit(1)
+        .maybeSingle();
+      
+      if (!returnHistory) {
+        return NextResponse.json({ 
+          ok: false, 
+          error: "Only returned requests can be resubmitted. Current status: " + request.status
+        }, { status: 400 });
+      }
+      // If there's return history, allow resubmit even if status changed
+      console.log("[Resubmit Request] Request has return history, allowing resubmit despite status:", request.status);
     }
 
     const now = new Date().toISOString();

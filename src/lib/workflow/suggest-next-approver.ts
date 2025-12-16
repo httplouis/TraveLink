@@ -60,22 +60,22 @@ export function suggestNextApprover(context: RequestContext): SuggestedApprover 
 
   // After Head Approval (pending_head → next)
   if (status === 'pending_head' && head_approved_at && requester_signature) {
-    // Head approved, requester signed → Suggest Admin (Ma'am TM)
+    // Head approved, requester signed → Suggest Transportation Management
     return {
       role: 'admin',
-      roleLabel: 'Administrator',
-      reason: 'Request has been signed by requester and approved by head. Next step: Admin processing.',
+      roleLabel: 'Transportation Management',
+      reason: 'Request has been signed by requester and approved by head. Next step: Transportation Management processing.',
       priority: 'high'
     };
   }
 
   // After Parent Head Approval (pending_parent_head → next)
   if (status === 'pending_parent_head' && parent_head_approved_at && requester_signature && head_approved_at) {
-    // Parent head approved → Suggest Admin
+    // Parent head approved → Suggest Transportation Management
     return {
       role: 'admin',
-      roleLabel: 'Administrator',
-      reason: 'Request approved by parent head. Next step: Admin processing.',
+      roleLabel: 'Transportation Management',
+      reason: 'Request approved by parent head. Next step: Transportation Management processing.',
       priority: 'high'
     };
   }
@@ -229,7 +229,7 @@ export function findSuggestedApprover(
     if (opt.roleLabel?.toLowerCase().includes(suggestedRole)) return true;
     
     // Special cases
-    if (suggestedRole === 'admin' && (optRole === 'admin' || opt.roleLabel?.toLowerCase().includes('administrator'))) return true;
+    if (suggestedRole === 'admin' && (optRole === 'admin' || opt.roleLabel?.toLowerCase().includes('administrator') || opt.roleLabel?.toLowerCase().includes('transportation'))) return true;
     if (suggestedRole === 'vp' && (optRole === 'vp' || opt.roleLabel?.toLowerCase().includes('vice president'))) return true;
     if (suggestedRole === 'president' && (optRole === 'president' || opt.roleLabel?.toLowerCase().includes('president'))) return true;
     if (suggestedRole === 'comptroller' && (optRole === 'comptroller' || opt.roleLabel?.toLowerCase().includes('comptroller'))) return true;

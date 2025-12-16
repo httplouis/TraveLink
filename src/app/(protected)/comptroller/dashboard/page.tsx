@@ -13,6 +13,9 @@ import {
   ArrowDownRight
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import ActivityHistory from "@/components/common/ActivityHistory";
+import BudgetOverview from "@/components/common/BudgetOverview";
+import PendingAgingIndicator from "@/components/common/PendingAgingIndicator";
 
 type StatCard = {
   title: string;
@@ -174,13 +177,31 @@ export default function ComptrollerDashboard() {
         ))}
       </div>
 
+      {/* Budget Overview & Pending Aging */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <motion.div
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.4 }}
+        >
+          <BudgetOverview />
+        </motion.div>
+        <motion.div
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.45 }}
+        >
+          <PendingAgingIndicator role="comptroller" maxItems={5} />
+        </motion.div>
+      </div>
+
       {/* Quick Actions & Recent Activity */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Quick Actions */}
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.4 }}
+          transition={{ delay: 0.5 }}
           className="bg-gradient-to-br from-[#7A0010] to-[#5A0010] rounded-2xl shadow-xl p-6 text-white"
         >
           <h3 className="text-xl font-bold mb-6">Quick Actions</h3>
@@ -264,6 +285,15 @@ export default function ComptrollerDashboard() {
           </div>
         </motion.div>
       </div>
+
+      {/* My Activity History */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.7 }}
+      >
+        <ActivityHistory showFilters={true} limit={15} compact={false} />
+      </motion.div>
     </div>
   );
 }

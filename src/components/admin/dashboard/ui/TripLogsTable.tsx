@@ -1,6 +1,17 @@
 import type { TripLogRow } from "@/lib/admin/types";
+import { Car } from "lucide-react";
 
 export default function TripLogsTable({ rows }: { rows: TripLogRow[] }) {
+  if (!rows || rows.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+        <Car className="h-12 w-12 text-gray-300 mb-3" />
+        <p className="text-sm">No recent trip logs</p>
+        <p className="text-xs text-gray-400 mt-1">Trip logs will appear here once trips are completed</p>
+      </div>
+    );
+  }
+
   return (
     <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">
       <table className="w-full text-sm text-neutral-700">
@@ -26,7 +37,7 @@ export default function TripLogsTable({ rows }: { rows: TripLogRow[] }) {
               <Td>{r.department}</Td>
               <Td className="tabular-nums text-neutral-600">{r.date}</Td>
               <Td className="tabular-nums text-right font-semibold text-neutral-800">
-                {r.distanceKm.toFixed(1)}
+                {typeof r.distanceKm === 'number' ? r.distanceKm.toFixed(1) : '0.0'}
               </Td>
             </tr>
           ))}

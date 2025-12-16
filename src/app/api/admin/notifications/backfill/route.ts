@@ -145,7 +145,7 @@ export async function POST(request: NextRequest) {
             message: `A travel order request ${req.request_number || ''} from ${requestingPersonName} requires your review.`,
             related_type: "request",
             related_id: req.id,
-            action_url: `/admin/requests?view=${req.id}`,
+            action_url: `/admin/inbox?view=${req.id}`,
             action_label: "Review Request",
             priority: "high",
           })

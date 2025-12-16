@@ -641,6 +641,17 @@ export async function POST(req: Request) {
       }
     }
     
+    // For owned vehicles, ensure at least food allowance is included (fixed rate)
+    // Food allowance is always applicable regardless of vehicle mode
+    if (vehicleMode === "owned") {
+      const FIXED_FOOD_ALLOWANCE = 500; // ₱500 per day food allowance
+      if (!costs.food || costs.food === 0) {
+        console.log("[/api/requests/submit] 💰 Auto-adding food allowance for owned vehicle");
+        costs.food = FIXED_FOOD_ALLOWANCE;
+        costs.foodDescription = costs.foodDescription || "Standard food allowance";
+      }
+    }
+    
     // Calculate budget - always try to build expense breakdown even if costs object seems empty
     // This handles cases where individual cost fields might have values
     console.log("[/api/requests/submit] 💰 Processing costs data:", JSON.stringify(costs, null, 2));
@@ -2358,7 +2369,7 @@ export async function POST(req: Request) {
               message: `A travel order request ${data.request_number || ''} from ${requestingPersonName || submitterName} requires your review.`,
               related_type: "request",
               related_id: data.id,
-              action_url: `/admin/requests?view=${data.id}`,
+              action_url: `/admin/inbox?view=${data.id}`,
               action_label: "Review Request",
               priority: "high",
             })

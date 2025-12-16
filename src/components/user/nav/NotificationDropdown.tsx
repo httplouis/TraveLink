@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Bell, CheckCircle, XCircle, AlertCircle, Clock } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createSupabaseClient } from "@/lib/supabase/client";
@@ -53,6 +53,16 @@ export default function NotificationDropdown() {
       
       if (notificationsData.ok) {
         notificationsList = Array.isArray(notificationsData.data) ? notificationsData.data : [];
+        // Debug: Log notification types received
+        console.log("[NotificationDropdown] Received notifications:", notificationsList.length);
+        console.log("[NotificationDropdown] Notification types:", notificationsList.map(n => n.notification_type));
+        console.log("[NotificationDropdown] First 5 notifications:", notificationsList.slice(0, 5).map(n => ({
+          type: n.notification_type,
+          title: n.title,
+          created_at: n.created_at
+        })));
+      } else {
+        console.error("[NotificationDropdown] API error:", notificationsData.error);
       }
 
       // Convert inbox items to notification format
@@ -80,13 +90,18 @@ export default function NotificationDropdown() {
         action_label: "Sign Request",
         priority: "high",
         is_read: false, // Inbox items are always unread
-        created_at: item.created_at || new Date().toISOString(),
+        // Use updated_at (when request was submitted) instead of created_at (when draft was created)
+        created_at: item.updated_at || item.created_at || new Date().toISOString(),
       }));
 
       // Combine filtered notifications and inbox items
       const allNotifications = [...filteredNotifications, ...inboxNotifications];
+      
+      // Deduplicate by notification ID only (not by related_id)
+      // This ensures we show all notifications for the same request (submitted, approved, etc.)
+      // Only deduplicate inbox items that have the same related_id as existing notifications
       const uniqueNotifications = Array.from(
-        new Map(allNotifications.map(n => [n.related_id || n.id, n])).values()
+        new Map(allNotifications.map(n => [n.id, n])).values()
       );
       
       // Sort by created_at descending
@@ -316,15 +331,25 @@ export default function NotificationDropdown() {
   const getNotificationIcon = (type: string) => {
     switch (type) {
       case "request_approved":
+      case "request_partially_approved":
         return <CheckCircle className="h-5 w-5 text-green-600" />;
       case "request_rejected":
         return <XCircle className="h-5 w-5 text-red-600" />;
       case "request_pending":
+      case "request_status_change":
         return <Clock className="h-5 w-5 text-yellow-600" />;
       case "request_returned":
         return <AlertCircle className="h-5 w-5 text-amber-600" />;
       case "request_pending_signature":
         return <AlertCircle className="h-5 w-5 text-purple-600" />;
+      case "request_submitted":
+        return <AlertCircle className="h-5 w-5 text-blue-600" />;
+      case "budget_modified":
+        return <AlertCircle className="h-5 w-5 text-orange-600" />;
+      case "request_cancelled":
+        return <XCircle className="h-5 w-5 text-gray-600" />;
+      case "assignment":
+        return <CheckCircle className="h-5 w-5 text-teal-600" />;
       default:
         return <AlertCircle className="h-5 w-5 text-blue-600" />;
     }

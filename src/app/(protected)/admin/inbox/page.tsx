@@ -12,10 +12,11 @@ import type { RequestData } from "@/components/common/RequestDetailsView";
 import { SkeletonRequestCard } from "@/components/common/SkeletonLoader";
 import { createLogger } from "@/lib/debug";
 import { shouldShowPendingAlert, getAlertSeverity, getAlertMessage } from "@/lib/notifications/pending-alerts";
-import { AlertCircle, X, CheckCircle2, Loader2, Mail, Clock } from "lucide-react";
+import { AlertCircle, X, CheckCircle2, Loader2, Mail, Clock, Edit3 } from "lucide-react";
 import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import { Dialog } from "@headlessui/react";
 import SuccessModal from "@/components/common/SuccessModal";
+import AdminEditModal from "@/components/admin/AdminEditModal";
 
 type Request = {
   id: string;
@@ -59,6 +60,7 @@ function AdminInboxContent() {
   const [showApprovalModal, setShowApprovalModal] = React.useState(false);
   const [approvingRequestId, setApprovingRequestId] = React.useState<string | null>(null);
   const [viewMode, setViewMode] = useViewMode("admin_inbox_view", "cards");
+  const [showEditModal, setShowEditModal] = React.useState(false);
 
   const logger = createLogger("AdminInbox");
   
@@ -235,50 +237,54 @@ function AdminInboxContent() {
   // Handle ?view=requestId query parameter to auto-open a specific request
   React.useEffect(() => {
     const viewRequestId = searchParams?.get('view');
+    const allItems = [...items, ...approvedItems, ...historyItems];
     
-    // Only handle once per page load and if we have items loaded
-    if (viewRequestId && !viewParamHandledRef.current && items.length > 0) {
-      viewParamHandledRef.current = true;
-      
-      // Find the request in pending items
-      const requestToView = items.find(r => r.id === viewRequestId);
-      
-      if (requestToView) {
-        logger.info('Auto-opening request from URL:', viewRequestId);
-        // Fetch full request details directly
-        fetch(`/api/requests/${viewRequestId}/tracking`)
-          .then(res => res.json())
-          .then(data => {
-            if (data.ok && data.data) {
-              setSelectedRequest(data.data);
-            }
-          })
-          .catch(err => {
-            logger.error('Failed to fetch request details:', err);
-          });
+    // Only handle once per page load
+    if (viewRequestId && !viewParamHandledRef.current) {
+      // Check if we have any items loaded, or wait a bit for them to load
+      if (allItems.length > 0 || !isLoading) {
+        viewParamHandledRef.current = true;
         
-        // Clear the view parameter from URL
-        const newUrl = pathname || '/admin/inbox';
-        router.replace(newUrl, { scroll: false });
-      } else {
-        // Request not in pending - try to fetch it directly
-        logger.info('Request not in pending list, fetching directly:', viewRequestId);
+        // Find the request in any of the lists
+        const requestToView = allItems.find(r => r.id === viewRequestId);
         
-        fetch(`/api/requests/${viewRequestId}`)
-          .then(res => res.json())
-          .then(data => {
-            if (data.ok && data.data) {
-              setSelectedRequest(data.data);
-              const newUrl = pathname || '/admin/inbox';
-              router.replace(newUrl, { scroll: false });
-            }
-          })
-          .catch(err => {
-            logger.error('Failed to fetch request:', err);
-          });
+        if (requestToView) {
+          logger.info('Auto-opening request from URL:', viewRequestId);
+          // Fetch full request details directly
+          fetch(`/api/requests/${viewRequestId}/tracking`)
+            .then(res => res.json())
+            .then(data => {
+              if (data.ok && data.data) {
+                setSelectedRequest(data.data);
+              }
+            })
+            .catch(err => {
+              logger.error('Failed to fetch request details:', err);
+            });
+          
+          // Clear the view parameter from URL
+          const newUrl = pathname || '/admin/inbox';
+          router.replace(newUrl, { scroll: false });
+        } else {
+          // Request not in any list - try to fetch it directly
+          logger.info('Request not in any list, fetching directly:', viewRequestId);
+          
+          fetch(`/api/requests/${viewRequestId}`)
+            .then(res => res.json())
+            .then(data => {
+              if (data.ok && data.data) {
+                setSelectedRequest(data.data);
+                const newUrl = pathname || '/admin/inbox';
+                router.replace(newUrl, { scroll: false });
+              }
+            })
+            .catch(err => {
+              logger.error('Failed to fetch request:', err);
+            });
+        }
       }
     }
-  }, [searchParams, items, pathname, router, logger]);
+  }, [searchParams, items, approvedItems, historyItems, isLoading, pathname, router, logger]);
 
   React.useEffect(() => {
     loadPending();
@@ -825,21 +831,32 @@ function AdminInboxContent() {
     return (
       <>
         <div className="p-4 md:p-6 pb-24">
-          <button
-            onClick={() => setSelectedRequest(null)}
-            className="group mb-6 inline-flex items-center gap-2.5 rounded-xl border-2 border-gray-200 bg-gradient-to-r from-white via-gray-50 to-white px-5 py-3 text-sm font-semibold text-gray-700 shadow-sm transition-all duration-200 hover:border-[#7A0010]/30 hover:from-[#7A0010]/5 hover:via-[#7A0010]/10 hover:to-[#7A0010]/5 hover:text-[#7A0010] hover:shadow-md active:scale-[0.98]"
-          >
-            <svg 
-              className="h-4 w-4 transition-transform duration-200 group-hover:-translate-x-1" 
-              fill="none" 
-              viewBox="0 0 24 24" 
-              stroke="currentColor" 
-              strokeWidth={2.5}
+          <div className="flex items-center justify-between mb-6">
+            <button
+              onClick={() => setSelectedRequest(null)}
+              className="group inline-flex items-center gap-2.5 rounded-xl border-2 border-gray-200 bg-gradient-to-r from-white via-gray-50 to-white px-5 py-3 text-sm font-semibold text-gray-700 shadow-sm transition-all duration-200 hover:border-[#7A0010]/30 hover:from-[#7A0010]/5 hover:via-[#7A0010]/10 hover:to-[#7A0010]/5 hover:text-[#7A0010] hover:shadow-md active:scale-[0.98]"
             >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
-            </svg>
-            <span>Back to Inbox</span>
-          </button>
+              <svg 
+                className="h-4 w-4 transition-transform duration-200 group-hover:-translate-x-1" 
+                fill="none" 
+                viewBox="0 0 24 24" 
+                stroke="currentColor" 
+                strokeWidth={2.5}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+              </svg>
+              <span>Back to Inbox</span>
+            </button>
+            
+            {/* Admin Edit Button */}
+            <button
+              onClick={() => setShowEditModal(true)}
+              className="group inline-flex items-center gap-2 rounded-xl border-2 border-amber-200 bg-gradient-to-r from-amber-50 via-amber-100 to-amber-50 px-5 py-3 text-sm font-semibold text-amber-700 shadow-sm transition-all duration-200 hover:border-amber-300 hover:from-amber-100 hover:via-amber-200 hover:to-amber-100 hover:shadow-md active:scale-[0.98]"
+            >
+              <Edit3 className="h-4 w-4" />
+              <span>Edit Request</span>
+            </button>
+          </div>
           <RequestDetailsView 
             request={selectedRequest} 
             canApprove={false}
@@ -885,6 +902,27 @@ function AdminInboxContent() {
             setApprovingRequestId(null);
             setSelectedRequest(null);
             loadPending();
+          }}
+        />
+        
+        {/* Admin Edit Modal */}
+        <AdminEditModal
+          isOpen={showEditModal}
+          onClose={() => setShowEditModal(false)}
+          request={selectedRequest}
+          onSaved={(updatedRequest) => {
+            // Update the selected request with new data
+            // Also update 'title' field since it's derived from 'purpose'
+            setSelectedRequest((prev: any) => ({ 
+              ...prev, 
+              ...updatedRequest,
+              // Sync title with purpose (title is used in display, purpose is the DB field)
+              title: updatedRequest.purpose || prev.title,
+            }));
+            // Reload the lists to update cards
+            loadPending();
+            loadApproved();
+            loadHistory();
           }}
         />
       </>

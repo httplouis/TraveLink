@@ -31,6 +31,7 @@ type ViewProps = {
   onRequestersStatusChange?: (allConfirmed: boolean) => void; // Callback when all requesters are confirmed
   onHeadEndorsementsStatusChange?: (allConfirmed: boolean) => void; // Callback when all head endorsements are confirmed
   onAutoSaveRequest?: () => Promise<string | null>; // Callback to auto-save draft and return requestId
+  vehicleMode?: "owned" | "institutional" | "rent"; // Vehicle mode to control cost fields visibility
 };
 
 export default function TravelOrderFormView({
@@ -52,6 +53,7 @@ export default function TravelOrderFormView({
   onRequestersStatusChange,
   onHeadEndorsementsStatusChange,
   onAutoSaveRequest,
+  vehicleMode,
 }: ViewProps) {
   const c = data?.costs || {};
 
@@ -444,6 +446,7 @@ export default function TravelOrderFormView({
         needsJustif={needsJustif}
         errors={errors}
         onChangeCosts={onChangeCosts}
+        vehicleMode={vehicleMode}
       />
 
       {/* File Attachments Section */}

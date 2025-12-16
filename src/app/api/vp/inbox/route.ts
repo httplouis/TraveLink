@@ -422,19 +422,19 @@ export async function GET(req: NextRequest) {
               position: hr?.position_title || "HR Manager"
             };
           } else if (req.admin_processed_at && req.admin_processed_by) {
-            // Sent by Admin
+            // Sent by Transportation Management
             const { data: admin } = await supabase
               .from("users")
               .select("name, position_title")
               .eq("id", req.admin_processed_by)
               .single();
             
-            sentBy = admin?.name || "Administrator";
-            routedFrom = "Administrator";
+            sentBy = admin?.name || "Transportation Management";
+            routedFrom = "Transportation Management";
             routingDetails = {
               type: "admin",
               name: admin?.name,
-              position: admin?.position_title || "Administrator"
+              position: admin?.position_title || "Transportation Manager"
             };
           }
 

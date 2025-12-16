@@ -10,7 +10,8 @@ export async function GET(request: Request) {
   try {
     const supabase = await createSupabaseServerClient();
     const { searchParams } = new URL(request.url);
-    const status = searchParams.get("status") || "available";
+    const status = searchParams.get("status");
+    const all = searchParams.get("all"); // If "true", fetch all vehicles regardless of status
     const type = searchParams.get("type"); // Optional filter by type
     const date = searchParams.get("date"); // Optional date filter for coding day
 
@@ -20,8 +21,12 @@ export async function GET(request: Request) {
       .order("type", { ascending: true })
       .order("vehicle_name", { ascending: true }); // Fixed: use vehicle_name not name
 
-    if (status) {
+    // Only filter by status if not fetching all and status is provided
+    if (all !== "true" && status) {
       query = query.eq("status", status);
+    } else if (all !== "true" && !status) {
+      // Default to available if no status specified and not fetching all
+      query = query.eq("status", "available");
     }
 
     if (type) {

@@ -1,7 +1,8 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { FilePlus2, CalendarDays, ListChecks, HelpCircle } from "lucide-react";
+import { FilePlus2, CalendarDays, ListChecks, HelpCircle, Copy } from "lucide-react";
+import QuickDuplicateRequest from "@/components/common/QuickDuplicateRequest";
 
 type Props = {
   onNewRequest?: () => void;
@@ -58,6 +59,11 @@ export default function QuickActions({ onNewRequest, onOpenSchedule }: Props) {
             title="Help / FAQ"
             color="orange"
           />
+        </div>
+        
+        {/* Quick Duplicate */}
+        <div className="mt-4 pt-4 border-t border-gray-100">
+          <QuickDuplicateRequest basePath="/user" />
         </div>
       </div>
     </motion.div>

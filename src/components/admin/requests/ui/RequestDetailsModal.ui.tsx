@@ -549,11 +549,11 @@ export default function RequestDetailsModalUI({
       });
     }
     
-    // 4. Admin Approved
+    // 4. Transportation Management Approved
     if (r.admin_approved_at || r.admin_processed_at) {
-      const adminName = r.admin_approver?.name || r.admin_approver?.email || "Administrator";
+      const adminName = r.admin_approver?.name || r.admin_approver?.email || "Transportation Management";
       entries.push({
-        action: "Administrator Approved",
+        action: "Transportation Management Approved",
         by: adminName,
         timestamp: r.admin_approved_at || r.admin_processed_at,
         icon: "approved" as const,
@@ -2312,7 +2312,7 @@ export default function RequestDetailsModalUI({
                 </h3>
                 <div className="space-y-4">
 
-                  {/* Administrator */}
+                  {/* Transportation Management */}
                   <div className="bg-white rounded-lg border border-emerald-200 p-4">
                     <h4 className="text-sm font-bold text-emerald-900 mb-3 flex items-center gap-2">
                       {hasAdminApproved ? (
@@ -2320,7 +2320,7 @@ export default function RequestDetailsModalUI({
                       ) : (
                         <Clock className="h-4 w-4 text-amber-600" />
                       )}
-                      Administrator
+                      Transportation Management
                     </h4>
                     <div className="flex flex-col items-center">
                       {hasAdminApproved ? (
@@ -2328,14 +2328,14 @@ export default function RequestDetailsModalUI({
                           {(() => {
                             const adminSig = (row as any).admin_signature || payload?.admin_signature;
                             return adminSig ? (
-                              <img src={adminSig} alt="Admin Signature" className="h-16 object-contain -mb-3" />
+                              <img src={adminSig} alt="Transportation Management Signature" className="h-16 object-contain -mb-3" />
                             ) : (
                               <div className="h-16" />
                             );
                           })()}
                           <div className="w-64 border-t border-neutral-500" />
                           <p className="mt-1 text-sm font-medium text-center">
-                            {(row as any).admin_approver?.name || "Administrator"}
+                            {(row as any).admin_approver?.name || "Transportation Management"}
                           </p>
                           {(() => {
                             const approvedAt = (row as any).admin_approved_at || payload?.admin_approved_at;

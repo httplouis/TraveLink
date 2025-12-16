@@ -777,9 +777,9 @@ export async function GET(req: NextRequest) {
           email: a.email,
           phone: a.phone_number,
           profile_picture: a.profile_picture,
-          position: a.position_title || "Administrator",
+          position: a.position_title || "Transportation Manager",
           role: "admin",
-          roleLabel: "Administrator"
+          roleLabel: "Transportation Management"
         }));
 
         console.log(`[GET /api/approvers] Final admin count: ${approvers.length}`);

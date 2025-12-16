@@ -15,6 +15,8 @@ type Props = {
   onChangeCosts: (patch: any) => void;
   /** If true, food and driver's allowance are fixed/read-only (for requesters) */
   isRequester?: boolean;
+  /** Vehicle mode - if "owned", hide driver/vehicle-related budget fields */
+  vehicleMode?: "owned" | "institutional" | "rent";
 };
 
 // Fixed amounts for showcase (in PHP)
@@ -72,7 +74,10 @@ export default function CostsSection({
   errors,
   onChangeCosts,
   isRequester = true, // Default to requester mode (fixed food/driver's allowance)
+  vehicleMode,
 }: Props) {
+  // If owned vehicle, hide driver's allowance, rent vehicles, and hired drivers
+  const isOwnedVehicle = vehicleMode === "owned";
   // Modal state for large amount confirmation
   const [showModal, setShowModal] = React.useState(false);
   const [pendingValidation, setPendingValidation] = React.useState<{
@@ -84,41 +89,66 @@ export default function CostsSection({
 
   // CRITICAL FIX: Initialize costs values on mount if they are undefined
   // This ensures that displayed default values are actually stored in the Zustand store
-  // For requesters: food and driver's allowance are fixed amounts
+  // For requesters: food and driver's allowance are fixed amounts (unless owned vehicle)
   const didInitRef = React.useRef(false);
+  const prevVehicleModeRef = React.useRef(vehicleMode);
+  
   React.useEffect(() => {
-    if (didInitRef.current) return;
-    didInitRef.current = true;
+    // Check if vehicle mode changed
+    const vehicleModeChanged = prevVehicleModeRef.current !== vehicleMode;
+    prevVehicleModeRef.current = vehicleMode;
     
-    // Initialize any undefined cost fields
-    const initialPatch: any = {};
-    
-    // For requesters, use fixed amounts for food and driver's allowance
-    if (isRequester) {
-      if (costs?.food === undefined || costs?.food === 0) {
-        initialPatch.food = FIXED_FOOD_ALLOWANCE;
-        initialPatch.foodDescription = "Standard food allowance";
+    // Initialize on first mount OR when vehicle mode changes
+    if (!didInitRef.current || vehicleModeChanged) {
+      didInitRef.current = true;
+      
+      // Initialize any undefined cost fields
+      const initialPatch: any = {};
+      
+      // For requesters, use fixed amounts for food (always) and driver's allowance (only if not owned vehicle)
+      if (isRequester) {
+        if (costs?.food === undefined || costs?.food === 0) {
+          initialPatch.food = FIXED_FOOD_ALLOWANCE;
+          initialPatch.foodDescription = "Standard food allowance";
+        }
+        
+        // Only set driver's allowance if NOT owned vehicle
+        if (!isOwnedVehicle) {
+          if (costs?.driversAllowance === undefined || costs?.driversAllowance === 0) {
+            initialPatch.driversAllowance = FIXED_DRIVERS_ALLOWANCE;
+            initialPatch.driversAllowanceDescription = "Standard driver's allowance";
+          }
+        } else {
+          // Clear driver-related costs when switching to owned vehicle
+          if (vehicleModeChanged && isOwnedVehicle) {
+            initialPatch.driversAllowance = 0;
+            initialPatch.driversAllowanceDescription = "";
+            initialPatch.rentVehicles = 0;
+            initialPatch.rentVehiclesDescription = "";
+            initialPatch.hiredDrivers = 0;
+            initialPatch.hiredDriversDescription = "";
+          }
+        }
+      } else {
+        // For comptroller/admin, initialize to 0 if undefined
+        if (costs?.food === undefined) initialPatch.food = 0;
+        if (!isOwnedVehicle && costs?.driversAllowance === undefined) initialPatch.driversAllowance = 0;
       }
-      if (costs?.driversAllowance === undefined || costs?.driversAllowance === 0) {
-        initialPatch.driversAllowance = FIXED_DRIVERS_ALLOWANCE;
-        initialPatch.driversAllowanceDescription = "Standard driver's allowance";
+      
+      // Only initialize rent/hired if not owned vehicle
+      if (!isOwnedVehicle) {
+        if (costs?.rentVehicles === undefined) initialPatch.rentVehicles = 0;
+        if (costs?.hiredDrivers === undefined) initialPatch.hiredDrivers = 0;
       }
-    } else {
-      // For comptroller/admin, initialize to 0 if undefined
-      if (costs?.food === undefined) initialPatch.food = 0;
-      if (costs?.driversAllowance === undefined) initialPatch.driversAllowance = 0;
+      if (costs?.accommodation === undefined) initialPatch.accommodation = 0;
+      
+      // Only patch if there are fields to update
+      if (Object.keys(initialPatch).length > 0) {
+        console.log('[CostsSection] 🔧 Initializing cost fields:', initialPatch, isRequester ? '(requester mode)' : '(admin mode)', isOwnedVehicle ? '(owned vehicle - no driver costs)' : '');
+        onChangeCosts(initialPatch);
+      }
     }
-    
-    if (costs?.rentVehicles === undefined) initialPatch.rentVehicles = 0;
-    if (costs?.hiredDrivers === undefined) initialPatch.hiredDrivers = 0;
-    if (costs?.accommodation === undefined) initialPatch.accommodation = 0;
-    
-    // Only patch if there are undefined fields
-    if (Object.keys(initialPatch).length > 0) {
-      console.log('[CostsSection] 🔧 Initializing cost fields:', initialPatch, isRequester ? '(requester mode - fixed allowances)' : '(admin mode)');
-      onChangeCosts(initialPatch);
-    }
-  }, [costs, onChangeCosts, isRequester]);
+  }, [costs, onChangeCosts, isRequester, vehicleMode, isOwnedVehicle]);
 
 
 
@@ -208,16 +238,22 @@ export default function CostsSection({
     setOtherItems(otherItems.map((row, idx) => (idx === i ? { ...row, ...patch } : row)));
   const removeOther = (i: number) => setOtherItems(otherItems.filter((_, idx) => idx !== i));
 
-  // Calculate total
+  // Calculate total - exclude driver/vehicle costs if owned vehicle
   const totalCost = React.useMemo(() => {
-    const base = (costs?.food || 0) + 
-                 (costs?.driversAllowance || 0) + 
-                 (costs?.rentVehicles || 0) + 
-                 (costs?.hiredDrivers || 0) + 
-                 (costs?.accommodation || 0);
+    const foodCost = costs?.food || 0;
+    const accommodationCost = costs?.accommodation || 0;
+    
+    // Only include driver/vehicle costs if NOT owned vehicle
+    const driverCosts = isOwnedVehicle ? 0 : (
+      (costs?.driversAllowance || 0) + 
+      (costs?.rentVehicles || 0) + 
+      (costs?.hiredDrivers || 0)
+    );
+    
+    const base = foodCost + driverCosts + accommodationCost;
     const otherTotal = otherItems.reduce((sum, item) => sum + (item.amount || 0), 0);
     return base + otherTotal;
-  }, [costs, otherItems]);
+  }, [costs, otherItems, isOwnedVehicle]);
 
   return (
     <div className="mt-8 rounded-xl border-2 border-gray-200 bg-gradient-to-br from-white via-gray-50/30 to-white p-6 shadow-lg">
@@ -234,6 +270,21 @@ export default function CostsSection({
           </div>
         )}
       </div>
+
+      {/* Notice for owned vehicle */}
+      {isOwnedVehicle && (
+        <div className="mb-4 rounded-lg border-2 border-green-200 bg-green-50 p-3 flex items-center gap-3">
+          <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+            <svg className="h-4 w-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-sm font-medium text-green-800">Using Personal Vehicle</p>
+            <p className="text-xs text-green-600">Driver's allowance, vehicle rental, and hired driver costs are not applicable.</p>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2">
         {/* Food */}
@@ -274,83 +325,89 @@ export default function CostsSection({
           />
         </div>
 
-        {/* Driver's Allowance */}
-        <div className="space-y-2">
-          <label className="text-sm font-semibold text-gray-700">
-            {TXT.driversAllowance}
-            {isRequester && (
-              <span className="ml-2 text-xs font-normal text-blue-600">(Fixed rate)</span>
-            )}
-          </label>
-          {isRequester ? (
-            // Fixed amount display for requesters
-            <div className="relative">
-              <div className="flex h-10 items-center rounded-lg border-2 border-blue-200 bg-blue-50/50 px-3 text-gray-700">
-                <span className="text-gray-500 mr-1">₱</span>
-                <span className="font-medium">{(costs?.driversAllowance ?? FIXED_DRIVERS_ALLOWANCE).toLocaleString()}</span>
+        {/* Driver's Allowance - Hidden if owned vehicle */}
+        {!isOwnedVehicle && (
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-gray-700">
+              {TXT.driversAllowance}
+              {isRequester && (
+                <span className="ml-2 text-xs font-normal text-blue-600">(Fixed rate)</span>
+              )}
+            </label>
+            {isRequester ? (
+              // Fixed amount display for requesters
+              <div className="relative">
+                <div className="flex h-10 items-center rounded-lg border-2 border-blue-200 bg-blue-50/50 px-3 text-gray-700">
+                  <span className="text-gray-500 mr-1">₱</span>
+                  <span className="font-medium">{(costs?.driversAllowance ?? FIXED_DRIVERS_ALLOWANCE).toLocaleString()}</span>
+                </div>
+                <p className="mt-1 text-xs text-blue-600">Standard driver's allowance (fixed)</p>
               </div>
-              <p className="mt-1 text-xs text-blue-600">Standard driver's allowance (fixed)</p>
-            </div>
-          ) : (
-            <CurrencyInput
+            ) : (
+              <CurrencyInput
+                label=""
+                placeholder={TXT.amountPh}
+                value={costs?.driversAllowance ?? 0}
+                onChange={(e) => {
+                  handleValidation(e.target.value, "Driver's Allowance", (validated) => {
+                    onChangeCosts({ driversAllowance: validated });
+                  });
+                }}
+              />
+            )}
+            <TextInput
               label=""
+              placeholder="e.g., Daily allowance for driver"
+              value={costs?.driversAllowanceDescription ?? ""}
+              onChange={(e) => onChangeCosts({ driversAllowanceDescription: e.target.value })}
+              disabled={isRequester}
+            />
+          </div>
+        )}
+
+        {/* Rent Vehicles - Hidden if owned vehicle */}
+        {!isOwnedVehicle && (
+          <div className="space-y-2">
+            <CurrencyInput
+              label={TXT.rentVehicles}
               placeholder={TXT.amountPh}
-              value={costs?.driversAllowance ?? 0}
+              value={costs?.rentVehicles ?? 0}
               onChange={(e) => {
-                handleValidation(e.target.value, "Driver's Allowance", (validated) => {
-                  onChangeCosts({ driversAllowance: validated });
+                handleValidation(e.target.value, "Rent Vehicles", (validated) => {
+                  onChangeCosts({ rentVehicles: validated });
                 });
               }}
             />
-          )}
-          <TextInput
-            label=""
-            placeholder="e.g., Daily allowance for driver"
-            value={costs?.driversAllowanceDescription ?? ""}
-            onChange={(e) => onChangeCosts({ driversAllowanceDescription: e.target.value })}
-            disabled={isRequester}
-          />
-        </div>
+            <TextInput
+              label=""
+              placeholder="e.g., Van rental for 3 days"
+              value={costs?.rentVehiclesDescription ?? ""}
+              onChange={(e) => onChangeCosts({ rentVehiclesDescription: e.target.value })}
+            />
+          </div>
+        )}
 
-        {/* Rent Vehicles */}
-        <div className="space-y-2">
-          <CurrencyInput
-            label={TXT.rentVehicles}
-            placeholder={TXT.amountPh}
-            value={costs?.rentVehicles ?? 0}
-            onChange={(e) => {
-              handleValidation(e.target.value, "Rent Vehicles", (validated) => {
-                onChangeCosts({ rentVehicles: validated });
-              });
-            }}
-          />
-          <TextInput
-            label=""
-            placeholder="e.g., Van rental for 3 days"
-            value={costs?.rentVehiclesDescription ?? ""}
-            onChange={(e) => onChangeCosts({ rentVehiclesDescription: e.target.value })}
-          />
-        </div>
-
-        {/* Hired Drivers */}
-        <div className="space-y-2">
-          <CurrencyInput
-            label={TXT.hiredDrivers}
-            placeholder={TXT.amountPh}
-            value={costs?.hiredDrivers ?? 0}
-            onChange={(e) => {
-              handleValidation(e.target.value, "Hired Drivers", (validated) => {
-                onChangeCosts({ hiredDrivers: validated });
-              });
-            }}
-          />
-          <TextInput
-            label=""
-            placeholder="e.g., Hired driver for long-distance travel"
-            value={costs?.hiredDriversDescription ?? ""}
-            onChange={(e) => onChangeCosts({ hiredDriversDescription: e.target.value })}
-          />
-        </div>
+        {/* Hired Drivers - Hidden if owned vehicle */}
+        {!isOwnedVehicle && (
+          <div className="space-y-2">
+            <CurrencyInput
+              label={TXT.hiredDrivers}
+              placeholder={TXT.amountPh}
+              value={costs?.hiredDrivers ?? 0}
+              onChange={(e) => {
+                handleValidation(e.target.value, "Hired Drivers", (validated) => {
+                  onChangeCosts({ hiredDrivers: validated });
+                });
+              }}
+            />
+            <TextInput
+              label=""
+              placeholder="e.g., Hired driver for long-distance travel"
+              value={costs?.hiredDriversDescription ?? ""}
+              onChange={(e) => onChangeCosts({ hiredDriversDescription: e.target.value })}
+            />
+          </div>
+        )}
 
         {/* Accommodation */}
         <div className="space-y-2">

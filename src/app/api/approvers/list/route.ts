@@ -291,10 +291,10 @@ export async function GET(req: NextRequest) {
           email: a.email,
           profile_picture: a.profile_picture,
           phone: a.phone_number,
-          position: a.position_title || "Administrator",
+          position: a.position_title || "Transportation Manager",
           department: a.department_id ? deptMap.get(a.department_id)?.name : null,
           role: "admin",
-          roleLabel: "Administrator"
+          roleLabel: "Transportation Management"
         })));
         
         console.log(`[GET /api/approvers/list] ✅ Found ${admins.length} admin(s):`, admins.map(a => a.name));

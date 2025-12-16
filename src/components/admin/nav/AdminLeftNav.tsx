@@ -21,6 +21,9 @@ import {
   X,
   Building2,
   Inbox,
+  Send,
+  ClipboardList,
+  FilePen,
 } from "lucide-react";
 import { useRequestsNavBadge } from "@/components/admin/requests/hooks/useRequestsBadge";
 import { motion } from "framer-motion";
@@ -39,12 +42,17 @@ const NAV: Item[] = [
   { href: "/admin/inbox", label: "Inbox", Icon: Inbox, section: "CORE" },
   { href: "/admin/org-request", label: "Org Request", Icon: Building2, section: "CORE" },
 
+  { href: "/admin/my-request", label: "My Request", Icon: Send, section: "MY TRAVEL" },
+  { href: "/admin/my-submissions", label: "My Submissions", Icon: ClipboardList, section: "MY TRAVEL" },
+  { href: "/admin/my-drafts", label: "My Drafts", Icon: FilePen, section: "MY TRAVEL" },
+
   { href: "/admin/schedule", label: "Schedule", Icon: CalendarDays, section: "MANAGEMENT" },
   { href: "/admin/drivers", label: "Drivers", Icon: Users, section: "MANAGEMENT" },
   { href: "/admin/vehicles", label: "Vehicles", Icon: Truck, section: "MANAGEMENT" },
   { href: "/admin/maintenance", label: "Maintenance", Icon: Wrench, section: "MANAGEMENT" },
 
   { href: "/admin/history", label: "History", Icon: History, section: "MONITORING" },
+  { href: "/admin/activity", label: "Activity Log", Icon: FileText, section: "MONITORING" },
 
   { href: "/admin/report", label: "Reports / Exports", Icon: FileBarChart, section: "ANALYTICS" },
   { href: "/admin/feedback", label: "Feedback", Icon: MessageSquare, section: "COMMUNICATION" },

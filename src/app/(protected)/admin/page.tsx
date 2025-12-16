@@ -3,24 +3,24 @@
 import React from "react";
 import { motion } from "framer-motion";
 import { 
-  ClipboardList, 
-  Clock, 
-  CheckCircle, 
-  XCircle,
-  TrendingUp,
   Users,
-  BusFront,
-  AlertCircle,
-  ArrowUpRight
+  ArrowUpRight,
+  Car,
+  Clock,
+  ClipboardList
 } from "lucide-react";
+import ActivityHistory from "@/components/common/ActivityHistory";
+import FleetStatus from "@/components/common/FleetStatus";
+import PendingAgingIndicator from "@/components/common/PendingAgingIndicator";
+import ExportButton from "@/components/common/ExportButton";
 import KpiRow from "@/components/admin/dashboard/containers/KpiRow";
 import RequestsTable from "@/components/admin/dashboard/ui/RequestsTable";
 import ChartCard from "@/components/admin/dashboard/ui/ChartCard";
-import DashboardActions from "@/components/admin/dashboard/ui/DashboardActions";
 import TripLogsTable from "@/components/admin/dashboard/ui/TripLogsTable";
 import DeptUsageChart from "@/components/admin/dashboard/ui/DeptUsageChart";
 import { getDashboardData } from "@/lib/admin/repo";
 import { cardVariants, staggerContainer } from "@/lib/animations";
+import Link from "next/link";
 
 export default function AdminDashboardPage() {
   const [data, setData] = React.useState<any>(null);
@@ -58,6 +58,16 @@ export default function AdminDashboardPage() {
     recentTrips = [],
   } = data || {};
 
+  // Prepare export columns for requests
+  const requestExportColumns = [
+    { key: "id", label: "ID" },
+    { key: "dept", label: "Department" },
+    { key: "purpose", label: "Purpose" },
+    { key: "date", label: "Date" },
+    { key: "status", label: "Status" },
+    { key: "requester", label: "Requester" },
+  ];
+
   return (
     <motion.section 
       variants={staggerContainer}
@@ -79,7 +89,13 @@ export default function AdminDashboardPage() {
 
       {/* Enhanced KPI Cards */}
       <motion.div variants={cardVariants}>
-        <KpiRow items={kpis.map(kpi => ({ ...kpi, value: String(kpi.value) }))} />
+        <KpiRow items={kpis.map((kpi: any) => ({ ...kpi, value: String(kpi.value) }))} />
+      </motion.div>
+
+      {/* Fleet Status & Pending Aging - Side by Side */}
+      <motion.div variants={cardVariants} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <FleetStatus showDetails={true} maxItems={5} />
+        <PendingAgingIndicator role="admin" maxItems={5} />
       </motion.div>
 
       {/* Analytics Row 1 with enhanced cards */}
@@ -105,26 +121,75 @@ export default function AdminDashboardPage() {
       {/* Enhanced Requests Section */}
       <motion.div variants={cardVariants} className="bg-white rounded-xl border border-gray-200 shadow-lg p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold text-gray-900">Recent Requests</h2>
-          <a href="/admin/requests" className="text-sm text-[#7a0019] hover:underline font-medium flex items-center gap-1">
-            View All <ArrowUpRight className="h-4 w-4" />
-          </a>
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white">
+              <ClipboardList className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">Recent Requests</h2>
+              <p className="text-sm text-gray-500">{recentRequests.length} requests shown</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <ExportButton 
+              data={recentRequests} 
+              filename="admin_requests" 
+              columns={requestExportColumns}
+              title="Recent Requests Export"
+            />
+            <Link 
+              href="/admin/requests" 
+              className="text-sm text-[#7a0019] hover:underline font-medium flex items-center gap-1"
+            >
+              View All <ArrowUpRight className="h-4 w-4" />
+            </Link>
+          </div>
         </div>
-        <DashboardActions rows={recentRequests} />
-        <div className="mt-4">
-          <RequestsTable rows={recentRequests} />
-        </div>
+        <RequestsTable rows={recentRequests} />
       </motion.div>
 
       {/* Enhanced Recent Trips */}
       <motion.div variants={cardVariants} className="bg-white rounded-xl border border-gray-200 shadow-lg p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold text-gray-900">Recent Trip Logs</h2>
-          <a href="/admin/schedule" className="text-sm text-[#7a0019] hover:underline font-medium flex items-center gap-1">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white">
+              <Car className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">Recent Trip Logs</h2>
+              <p className="text-sm text-gray-500">Latest completed trips</p>
+            </div>
+          </div>
+          <Link 
+            href="/admin/schedule" 
+            className="text-sm text-[#7a0019] hover:underline font-medium flex items-center gap-1"
+          >
             View Schedule <ArrowUpRight className="h-4 w-4" />
-          </a>
+          </Link>
         </div>
         <TripLogsTable rows={recentTrips.slice(0, 5)} />
+      </motion.div>
+
+      {/* My Activity History */}
+      <motion.div variants={cardVariants} className="bg-white rounded-xl border border-gray-200 shadow-lg p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-purple-500 to-violet-600 flex items-center justify-center text-white">
+              <Clock className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">My Recent Activity</h2>
+              <p className="text-sm text-gray-500">Your actions in the system</p>
+            </div>
+          </div>
+          <Link 
+            href="/admin/activity" 
+            className="text-sm text-[#7a0019] hover:underline font-medium flex items-center gap-1"
+          >
+            View All System Activity <ArrowUpRight className="h-4 w-4" />
+          </Link>
+        </div>
+        <ActivityHistory showFilters={false} limit={10} compact={false} hideHeader={true} />
       </motion.div>
     </motion.section>
   );

@@ -1,8 +1,7 @@
 // src/app/api/requests/[id]/duplicate/route.ts
 /**
  * POST /api/requests/[id]/duplicate
- * Duplicate a travel order/seminar application
- * Copies all fields except request_number, status, signatures
+ * Create a new draft request based on an existing request
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -17,10 +16,8 @@ export async function POST(
     const resolvedParams = params instanceof Promise ? await params : params;
     const requestId = resolvedParams.id;
 
-    // Validate request ID
-    if (!requestId || requestId === 'undefined' || requestId === 'null') {
-      console.error("[POST /api/requests/[id]/duplicate] Invalid request ID:", requestId);
-      return NextResponse.json({ ok: false, error: "Invalid or missing request ID" }, { status: 400 });
+    if (!requestId || requestId === "undefined") {
+      return NextResponse.json({ ok: false, error: "Invalid request ID" }, { status: 400 });
     }
 
     // Use service role for database operations
@@ -35,10 +32,10 @@ export async function POST(
       }
     );
 
-    const supabase = await createSupabaseServerClient(true);
-
-    // Get current user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    // Get authenticated user
+    const authSupabase = await createSupabaseServerClient(false);
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser();
+    
     if (authError || !user) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
@@ -46,15 +43,15 @@ export async function POST(
     // Get user profile
     const { data: profile } = await supabaseServiceRole
       .from("users")
-      .select("*")
+      .select("id, department_id")
       .eq("auth_user_id", user.id)
-      .maybeSingle();
+      .single();
 
     if (!profile) {
-      return NextResponse.json({ ok: false, error: "User profile not found" }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "Profile not found" }, { status: 404 });
     }
 
-    // Get original request
+    // Get the original request
     const { data: originalRequest, error: fetchError } = await supabaseServiceRole
       .from("requests")
       .select("*")
@@ -62,135 +59,77 @@ export async function POST(
       .single();
 
     if (fetchError || !originalRequest) {
-      return NextResponse.json(
-        { ok: false, error: "Request not found" },
-        { status: 404 }
-      );
+      return NextResponse.json({ ok: false, error: "Request not found" }, { status: 404 });
     }
 
-    // Check if user is the requester or admin
-    const isRequester = originalRequest.requester_id === profile.id;
-    const isAdmin = profile.is_admin;
-
-    if (!isRequester && !isAdmin) {
-      return NextResponse.json(
-        { ok: false, error: "You can only duplicate your own requests" },
-        { status: 403 }
-      );
-    }
-
-    // Create duplicate - copy all fields except:
-    // - id (new UUID will be generated)
-    // - request_number (will be generated on submission)
-    // - status (set to "draft")
-    // - All approval fields (signatures, approved_by, approved_at)
-    // - created_at, updated_at (will be set to now)
-    // - file_code (will be generated on submission)
-
-    const duplicateData: any = {
-      requester_id: originalRequest.requester_id,
-      department_id: originalRequest.department_id,
-      request_type: originalRequest.request_type,
+    // Create new draft with copied data
+    const now = new Date();
+    const newRequest = {
+      requester_id: profile.id,
+      department_id: profile.department_id || originalRequest.department_id,
+      status: "draft",
       purpose: originalRequest.purpose,
       destination: originalRequest.destination,
-      travel_start_date: originalRequest.travel_start_date,
-      travel_end_date: originalRequest.travel_end_date,
-      passengers: originalRequest.passengers,
-      total_budget: originalRequest.total_budget,
-      expense_breakdown: originalRequest.expense_breakdown,
-      cost_justification: originalRequest.cost_justification,
-      seminar_data: originalRequest.seminar_data,
-      attachments: originalRequest.attachments || [],
-      needs_vehicle: originalRequest.needs_vehicle,
-      needs_rental: originalRequest.needs_rental,
-      has_budget: originalRequest.has_budget,
-      vehicle_mode: originalRequest.vehicle_mode,
-      pickup_location: originalRequest.pickup_location,
-      pickup_time: originalRequest.pickup_time,
-      pickup_preference: originalRequest.pickup_preference,
-      preferred_driver_id: originalRequest.preferred_driver_id,
-      preferred_vehicle_id: originalRequest.preferred_vehicle_id,
-      is_international: originalRequest.is_international,
-      status: "draft", // Always start as draft
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      departure_date: null, // User needs to set new dates
+      return_date: null,
+      departure_time: originalRequest.departure_time,
+      return_time: originalRequest.return_time,
+      number_of_passengers: originalRequest.number_of_passengers,
+      passenger_names: originalRequest.passenger_names,
+      vehicle_type_requested: originalRequest.vehicle_type_requested,
+      special_requirements: originalRequest.special_requirements,
+      estimated_distance: originalRequest.estimated_distance,
+      total_estimated_cost: originalRequest.total_estimated_cost,
+      cost_breakdown: originalRequest.cost_breakdown,
+      requires_head_approval: originalRequest.requires_head_approval,
+      requires_vp_approval: originalRequest.requires_vp_approval,
+      requires_president_approval: originalRequest.requires_president_approval,
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+      // Clear all approval fields
+      submitted_at: null,
+      head_approved_at: null,
+      admin_processed_at: null,
+      comptroller_approved_at: null,
+      hr_approved_at: null,
+      vp_approved_at: null,
+      president_approved_at: null,
+      rejected_at: null,
+      returned_at: null,
+      completed_at: null,
     };
 
-    // Insert duplicate
-    const { data: duplicatedRequest, error: insertError } = await supabaseServiceRole
+    const { data: newDraft, error: insertError } = await supabaseServiceRole
       .from("requests")
-      .insert(duplicateData)
+      .insert(newRequest)
       .select()
       .single();
 
     if (insertError) {
-      console.error("[Duplicate Request] Insert error:", insertError);
-      return NextResponse.json(
-        { ok: false, error: insertError.message },
-        { status: 500 }
-      );
+      console.error("[POST /api/requests/[id]/duplicate] Insert error:", insertError);
+      return NextResponse.json({ ok: false, error: insertError.message }, { status: 500 });
     }
 
-    // Copy requester invitations if any
-    if (originalRequest.request_type === "travel_order") {
-      const { data: invitations } = await supabaseServiceRole
-        .from("requester_invitations")
-        .select("*")
-        .eq("request_id", requestId);
-
-      if (invitations && invitations.length > 0) {
-        const duplicateInvitations = invitations.map((inv) => ({
-          request_id: duplicatedRequest.id,
-          user_id: inv.user_id,
-          department_id: inv.department_id,
-          name: inv.name,
-          email: inv.email,
-          status: "pending", // Reset to pending
-          invited_at: new Date().toISOString(),
-        }));
-
-        await supabaseServiceRole
-          .from("requester_invitations")
-          .insert(duplicateInvitations);
-      }
-    }
-
-    // Copy participant invitations if seminar
-    if (originalRequest.request_type === "seminar") {
-      const { data: participants } = await supabaseServiceRole
-        .from("participant_invitations")
-        .select("*")
-        .eq("request_id", requestId);
-
-      if (participants && participants.length > 0) {
-        const duplicateParticipants = participants.map((part) => ({
-          request_id: duplicatedRequest.id,
-          user_id: part.user_id,
-          name: part.name,
-          email: part.email,
-          status: "pending", // Reset to pending
-          invited_at: new Date().toISOString(),
-        }));
-
-        await supabaseServiceRole
-          .from("participant_invitations")
-          .insert(duplicateParticipants);
-      }
-    }
+    // Log the duplication
+    await supabaseServiceRole.from("request_history").insert({
+      request_id: newDraft.id,
+      action: "created",
+      actor_id: profile.id,
+      actor_role: "requester",
+      comments: `Duplicated from request ${originalRequest.request_number || requestId}`,
+      metadata: {
+        source_request_id: requestId,
+        source_request_number: originalRequest.request_number,
+      },
+    });
 
     return NextResponse.json({
       ok: true,
-      data: {
-        id: duplicatedRequest.id,
-        message: "Request duplicated successfully",
-      },
+      data: newDraft,
+      message: "Request duplicated successfully",
     });
   } catch (error: any) {
-    console.error("[Duplicate Request] Error:", error);
-    return NextResponse.json(
-      { ok: false, error: error.message || "Failed to duplicate request" },
-      { status: 500 }
-    );
+    console.error("[POST /api/requests/[id]/duplicate] Error:", error);
+    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   }
 }
-

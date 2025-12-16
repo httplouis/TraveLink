@@ -541,10 +541,10 @@ export default function VPRequestModal({
                 email: a.email,
                 profile_picture: a.profile_picture,
                 phone: a.phone,
-                position: a.position || "Administrator",
+                position: a.position || "Transportation Manager",
                 department: a.department,
                 role: "admin",
-                roleLabel: "Administrator"
+                roleLabel: "Transportation Management"
               }));
               options.push(...adminOptions);
             }
@@ -1449,14 +1449,14 @@ export default function VPRequestModal({
                     </div>
                     {t.admin_approved_by && (
                       <p className="text-xs text-slate-600 mb-3">
-                        By: <span className="font-medium text-slate-700">{t.admin_approver?.name || "Administrator"}</span>
+                        By: <span className="font-medium text-slate-700">{t.admin_approver?.name || "Transportation Management"}</span>
                       </p>
                     )}
                     {t.admin_signature && (
                       <div className="mt-3 pt-3 border-t border-slate-200">
                         <img
                           src={t.admin_signature}
-                          alt="Admin signature"
+                          alt="Transportation Management signature"
                           className="h-20 w-full object-contain bg-slate-50 rounded p-2"
                         />
                       </div>

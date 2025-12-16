@@ -785,16 +785,31 @@ export default function RequestDetailsView({
               )}
             </div>
             <p className="text-white/95 text-xl font-semibold mb-5 leading-relaxed">{request.title}</p>
-            <div className="flex items-center gap-8 text-sm text-white/90">
+            <div className="flex items-center gap-4 text-sm text-white/90 flex-wrap">
+              {/* Date Filed - Prominent */}
+              {request.created_at && (
+                <div className="flex items-center gap-2.5 bg-amber-500/30 backdrop-blur-sm px-4 py-2 rounded-lg border border-amber-300/50">
+                  <Clock className="w-4 h-4 text-amber-200" />
+                  <div>
+                    <span className="text-[10px] uppercase tracking-wider text-amber-200 block">Date Filed</span>
+                    <span className="font-semibold text-white">{formatLongDateTime(request.created_at)}</span>
+                  </div>
+                </div>
+              )}
+              {/* Travel Dates */}
               <div className="flex items-center gap-2.5 bg-white/10 backdrop-blur-sm px-4 py-2 rounded-lg border border-white/20">
                 <Calendar className="w-4 h-4" />
-                <span className="font-medium">
-                  {formatDate(request.travel_start_date)}
-                  {request.travel_start_date !== request.travel_end_date && 
-                    ` - ${formatDate(request.travel_end_date)}`
-                  }
-                </span>
+                <div>
+                  <span className="text-[10px] uppercase tracking-wider text-white/70 block">Travel Dates</span>
+                  <span className="font-medium">
+                    {formatDate(request.travel_start_date)}
+                    {request.travel_start_date !== request.travel_end_date && 
+                      ` - ${formatDate(request.travel_end_date)}`
+                    }
+                  </span>
+                </div>
               </div>
+              {/* Destination */}
               <button
                 onClick={openGoogleMaps}
                 className="flex items-center gap-2.5 bg-white/10 backdrop-blur-sm px-4 py-2 rounded-lg border border-white/20 hover:bg-white/20 transition-colors cursor-pointer"

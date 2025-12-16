@@ -7,15 +7,17 @@ import HeadLeftNav from "@/components/head/nav/HeadLeftNav";
 import PageTitle from "@/components/common/PageTitle";
 import ChatbotWidget from "@/components/ai/ChatbotWidget";
 import HelpButton from "@/components/common/HelpButton";
+import KeyboardShortcuts from "@/components/common/KeyboardShortcuts";
 import FeedbackLockModal from "@/components/common/FeedbackLockModal";
 import { checkFeedbackLock } from "@/lib/feedback/lock";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import ToastProvider from "@/components/common/ui/ToastProvider.ui";
 import "leaflet/dist/leaflet.css";
 
 export default function HeadLayout({ children }: { children: React.ReactNode }) {
   const topbarH = "56px";
   const pathname = usePathname();
+  const router = useRouter();
   const [feedbackLock, setFeedbackLock] = React.useState<{
     locked: boolean;
     requestId?: string;
@@ -69,6 +71,17 @@ export default function HeadLayout({ children }: { children: React.ReactNode }) 
 
         {/* Help Button */}
         <HelpButton role="head" />
+
+        {/* Keyboard Shortcuts */}
+        <KeyboardShortcuts
+          shortcuts={[
+            { key: "d", description: "Dashboard", action: () => router.push("/head/dashboard") },
+            { key: "i", description: "Inbox", action: () => router.push("/head/inbox") },
+            { key: "n", description: "New Request", action: () => router.push("/head/request") },
+            { key: "s", description: "Schedule", action: () => router.push("/head/schedule") },
+            { key: "h", description: "History", action: () => router.push("/head/history") },
+          ]}
+        />
 
         {/* Feedback Lock Modal - Forces feedback before continuing */}
         {feedbackLock.locked &&

@@ -5,18 +5,21 @@ import "@/app/globals.css";
 import "@/app/styles/admin/admin.css";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import AdminLeftNav from "@/components/admin/nav/AdminLeftNav";
 import Breadcrumbs from "@/components/admin/nav/Breadcrumbs";
 import ProfileMenu from "@/components/admin/nav/ProfileMenu";
 import NotificationBell from "@/components/admin/nav/NotificationBell";
 import PageTitle from "@/components/common/PageTitle";
 import { LogoutConfirmDialog } from "@/components/common/LogoutConfirmDialog";
+import KeyboardShortcuts from "@/components/common/KeyboardShortcuts";
 import { Search, LogOut } from "lucide-react";
 import ProfileContainer from "@/components/admin/profile/containers/ProfileContainer";
 import ChatbotWidget from "@/components/ai/ChatbotWidget";
 import HelpButton from "@/components/common/HelpButton";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -151,6 +154,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       {/* Help Button */}
       <HelpButton role="admin" />
+
+      {/* Keyboard Shortcuts */}
+      <KeyboardShortcuts
+        shortcuts={[
+          { key: "d", description: "Dashboard", action: () => router.push("/admin") },
+          { key: "i", description: "Inbox", action: () => router.push("/admin/inbox") },
+          { key: "s", description: "Schedule", action: () => router.push("/admin/schedule") },
+          { key: "v", description: "Vehicles", action: () => router.push("/admin/vehicles") },
+          { key: "r", description: "Requests (Inbox)", action: () => router.push("/admin/inbox") },
+          { key: "u", description: "Users", action: () => router.push("/admin/users") },
+          { key: "a", description: "Activity Log", action: () => router.push("/admin/activity") },
+        ]}
+      />
     </div>
     </>
   );

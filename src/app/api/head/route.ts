@@ -744,7 +744,7 @@ export async function PATCH(req: Request) {
             message: `Department Head has endorsed request ${request.request_number || ''} and forwarded it to you for ${roleLabel} review.`,
             related_type: "request",
             related_id: id,
-            action_url: next_approver_role === "admin" ? `/admin/requests?view=${id}` : `/inbox?view=${id}`,
+            action_url: next_approver_role === "admin" ? `/admin/inbox?view=${id}` : `/inbox?view=${id}`,
             action_label: "Review Request",
             priority: "high",
           });
@@ -777,7 +777,7 @@ export async function PATCH(req: Request) {
                 message: `A travel order request ${request.request_number || ''} from ${requestingPersonName} requires your review.`,
                 related_type: "request",
                 related_id: id,
-                action_url: `/admin/requests?view=${id}`,
+                action_url: `/admin/inbox?view=${id}`,
                 action_label: "Review Request",
                 priority: "high",
               })

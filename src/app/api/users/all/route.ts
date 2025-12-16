@@ -103,7 +103,7 @@ export async function GET(req: NextRequest) {
       }
       
       if (u.is_admin) {
-        roles.push("Administrator");
+        roles.push("Transportation Management");
       }
       if (u.is_hr) {
         roles.push("HR");

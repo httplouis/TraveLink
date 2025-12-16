@@ -92,7 +92,11 @@ export async function POST(request: Request) {
     console.log("[POST /api/admin/approve] Request fetch result:", {
       found: !!req,
       error: fetchError?.message,
-      requestId
+      requestId,
+      requester_id: req?.requester_id,
+      requester_name: req?.requester_name,
+      request_number: req?.request_number,
+      status: req?.status
     });
     
     // Check vehicle/driver availability if assigned
@@ -457,23 +461,38 @@ export async function POST(request: Request) {
     });
 
     // Create notifications (only if sendNotifications is true)
+    console.log("[Admin Approve] 📧 sendNotifications flag:", sendNotifications);
     if (sendNotifications) {
       try {
         const { createNotification } = await import("@/lib/notifications/helpers");
         
+        console.log("[Admin Approve] 📧 Creating notifications...");
+        console.log("[Admin Approve] 📧 Request data:", {
+          requester_id: req.requester_id,
+          requester_name: req.requester_name,
+          request_number: req.request_number,
+          nextApproverId,
+          nextApproverRoleFinal,
+          requestId
+        });
+        
         // Notify requester
         if (req.requester_id) {
-          await createNotification({
+          console.log("[Admin Approve] 📧 Sending notification to requester:", req.requester_id);
+          const notifResult = await createNotification({
             user_id: req.requester_id,
             notification_type: "request_approved",
-            title: "Request Approved by Admin",
-            message: `Your travel order request ${req.request_number || ''} has been approved by Admin and is now with ${nextApproverRoleFinal === 'comptroller' ? 'Comptroller' : 'HR'}.`,
+            title: "Request Approved by Transportation Management",
+            message: `Your travel order request ${req.request_number || ''} has been approved by Transportation Management and is now with ${nextApproverRoleFinal === 'comptroller' ? 'Comptroller' : 'HR'}.`,
             related_type: "request",
             related_id: requestId,
             action_url: `/user/submissions?view=${requestId}`,
             action_label: "View Request",
             priority: "normal",
           });
+          console.log("[Admin Approve] 📧 Requester notification result:", notifResult);
+        } else {
+          console.warn("[Admin Approve] ⚠️ No requester_id found, skipping requester notification");
         }
 
         // Notify next approver (Comptroller or HR)
@@ -482,8 +501,8 @@ export async function POST(request: Request) {
           await createNotification({
             user_id: nextApproverId,
             notification_type: "request_pending_signature",
-            title: "New Request from Admin",
-            message: `Admin has processed request ${req.request_number || ''} and forwarded it to you for ${roleLabel} review.`,
+            title: "New Request from Transportation Management",
+            message: `Transportation Management has processed request ${req.request_number || ''} and forwarded it to you for ${roleLabel} review.`,
             related_type: "request",
             related_id: requestId,
             action_url: nextApproverRoleFinal === "comptroller" ? `/comptroller/inbox?view=${requestId}` : `/hr/inbox?view=${requestId}`,

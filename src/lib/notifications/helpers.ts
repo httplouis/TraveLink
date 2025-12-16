@@ -19,15 +19,17 @@ export interface NotificationData {
 
 /**
  * Create a notification for a user
+ * Handles both old schema (kind, body, link) and new schema (notification_type, message, action_url)
  */
 export async function createNotification(data: NotificationData): Promise<boolean> {
   try {
-    console.log("[createNotification] Creating notification:", {
+    console.log("[createNotification] 🔔 Creating notification:", {
       user_id: data.user_id,
       notification_type: data.notification_type,
       title: data.title,
-      message: data.message.substring(0, 50) + "...",
-      related_id: data.related_id
+      message: data.message.substring(0, 100) + (data.message.length > 100 ? "..." : ""),
+      related_id: data.related_id,
+      action_url: data.action_url
     });
     
     // Use createClient directly with service_role key to bypass RLS
@@ -47,7 +49,8 @@ export async function createNotification(data: NotificationData): Promise<boolea
       },
     });
     
-    const { data: insertedData, error } = await supabase
+    // Try new schema first (notification_type, message, action_url)
+    let insertResult = await supabase
       .from("notifications")
       .insert({
         user_id: data.user_id,
@@ -63,16 +66,39 @@ export async function createNotification(data: NotificationData): Promise<boolea
       .select()
       .single();
 
-    if (error) {
-      console.error("[createNotification] ❌ Error creating notification:", error);
-      console.error("[createNotification] Error details:", JSON.stringify(error, null, 2));
+    // If new schema fails with column error, try old schema (kind, body, link)
+    if (insertResult.error && 
+        (insertResult.error.message?.includes('column') || 
+         insertResult.error.code === '42703' ||
+         insertResult.error.message?.includes('notification_type') ||
+         insertResult.error.message?.includes('message'))) {
+      console.log("[createNotification] ⚠️ New schema failed, trying old schema (kind, body, link)...");
+      
+      insertResult = await supabase
+        .from("notifications")
+        .insert({
+          user_id: data.user_id,
+          kind: data.notification_type, // Old schema uses 'kind'
+          title: data.title,
+          body: data.message, // Old schema uses 'body'
+          link: data.action_url || null, // Old schema uses 'link'
+        })
+        .select()
+        .single();
+    }
+
+    if (insertResult.error) {
+      console.error("[createNotification] ❌ Error creating notification:", insertResult.error);
+      console.error("[createNotification] ❌ Error details:", JSON.stringify(insertResult.error, null, 2));
+      console.error("[createNotification] ❌ Input data was:", JSON.stringify(data, null, 2));
       return false;
     }
 
     console.log("[createNotification] ✅ Notification created successfully:", {
-      id: insertedData?.id,
-      user_id: insertedData?.user_id,
-      notification_type: insertedData?.notification_type
+      id: insertResult.data?.id,
+      user_id: insertResult.data?.user_id,
+      notification_type: insertResult.data?.notification_type || insertResult.data?.kind,
+      title: insertResult.data?.title
     });
     return true;
   } catch (err) {

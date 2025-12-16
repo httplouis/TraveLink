@@ -217,15 +217,15 @@ export default function RequestDetailsPage({ requestId }: RequestDetailsPageProp
           }] : []),
           {
             id: 'admin',
-            label: 'Admin Processing',
-            role: 'Admin',
+            label: 'Transportation Management',
+            role: 'Transportation Management',
             status: data.admin_signature || data.admin_processed_at ? 'approved' : 
                    data.status === 'pending_admin' ? 'next' : 'pending',
             approver: data.admin_processed_by && adminApprover.id ? {
               id: adminApprover.id,
-              name: adminApprover.name || 'Administrator',
+              name: adminApprover.name || 'Transportation Management',
               profile_picture: adminApprover.profile_picture,
-              position: adminApprover.position_title || 'Administrator',
+              position: adminApprover.position_title || 'Transportation Manager',
               email: adminApprover.email,
               phone: adminApprover.phone_number
             } : undefined,
@@ -389,17 +389,17 @@ export default function RequestDetailsPage({ requestId }: RequestDetailsPageProp
           ...(data.admin_processed_at && adminApprover.id ? [{
             id: 'admin-processed',
             type: 'approved',
-            title: 'Admin Processed',
-            description: data.admin_comments || data.admin_notes || 'Request processed by administrator',
+            title: 'Transportation Management Processed',
+            description: data.admin_comments || data.admin_notes || 'Request processed by Transportation Management',
             actor: {
               id: adminApprover.id,
-              name: adminApprover.name || 'Administrator',
+              name: adminApprover.name || 'Transportation Management',
               profile_picture: adminApprover.profile_picture,
-              position: adminApprover.position_title || 'Administrator'
+              position: adminApprover.position_title || 'Transportation Manager'
             },
             timestamp: data.admin_processed_at,
             metadata: {
-              stage: 'Admin Processing',
+              stage: 'Transportation Management Processing',
               comments: data.admin_comments || data.admin_notes
             }
           }] : []),

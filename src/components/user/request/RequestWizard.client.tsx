@@ -1753,7 +1753,7 @@ function RequestWizardContent() {
           options.push(...adminData.data.map((a: any) => ({
             ...a,
             role: 'admin',
-            roleLabel: 'Administrator'
+            roleLabel: 'Transportation Management'
           })));
           
           // Find Ma'am TM as default (prefer trizzia.casino@mseuf.edu.ph)
@@ -2245,7 +2245,7 @@ function RequestWizardContent() {
           }}
           onSelect={handleApproverSelected}
           title="Select Next Approver"
-          description={`Choose who to send this request to after you sign it. You can select your parent head (VP) or an administrator.`}
+          description={`Choose who to send this request to after you sign it. You can select your parent head (VP) or Transportation Management.`}
           options={approverOptions}
           currentRole="head"
           allowReturnToRequester={false}

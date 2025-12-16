@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { WorkflowEngine } from "@/lib/workflow/engine";
+import { createNotification } from "@/lib/notifications/helpers";
 
 export async function POST(
   req: Request,
@@ -111,6 +112,55 @@ export async function POST(
       comments: reason,
       metadata: { rejection_stage: request.status },
     });
+
+    // Determine role label for notification
+    const roleLabels: Record<string, string> = {
+      admin: "Transportation Management",
+      head: "Department Head",
+      comptroller: "Comptroller",
+      hr: "HR",
+      vp: "Vice President",
+      president: "President",
+      exec: "Executive",
+    };
+    const currentRole = request.current_approver_role || "approver";
+    const roleLabel = roleLabels[currentRole] || currentRole.charAt(0).toUpperCase() + currentRole.slice(1);
+
+    // Create notifications for rejection
+    try {
+      // Notify requester
+      if (request.requester_id) {
+        await createNotification({
+          user_id: request.requester_id,
+          notification_type: "request_rejected",
+          title: `Request Rejected by ${roleLabel}`,
+          message: `Your travel order request ${request.request_number || ''} has been rejected by ${roleLabel}. Reason: ${reason}`,
+          related_type: "request",
+          related_id: requestId,
+          action_url: `/user/submissions?view=${requestId}`,
+          action_label: "View Request",
+          priority: "high",
+        });
+      }
+
+      // Notify submitter if different from requester
+      if (request.submitted_by_user_id && request.submitted_by_user_id !== request.requester_id) {
+        await createNotification({
+          user_id: request.submitted_by_user_id,
+          notification_type: "request_rejected",
+          title: `Request Rejected by ${roleLabel}`,
+          message: `The travel order request ${request.request_number || ''} you submitted has been rejected by ${roleLabel}. Reason: ${reason}`,
+          related_type: "request",
+          related_id: requestId,
+          action_url: `/user/submissions?view=${requestId}`,
+          action_label: "View Request",
+          priority: "high",
+        });
+      }
+    } catch (notifError: any) {
+      console.error("[/api/requests/[id]/reject] Failed to create notifications:", notifError);
+      // Don't fail the request if notifications fail
+    }
 
     console.log("[/api/requests/[id]/reject] Request rejected:", requestId, "By:", profile.email);
 

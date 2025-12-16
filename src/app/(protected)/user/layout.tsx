@@ -8,8 +8,9 @@ import PageTitle from "@/components/common/PageTitle";
 import ChatbotWidget from "@/components/ai/ChatbotWidget";
 import HelpButton from "@/components/common/HelpButton";
 import FeedbackLockModal from "@/components/common/FeedbackLockModal";
+import KeyboardShortcuts from "@/components/common/KeyboardShortcuts";
 import { checkFeedbackLock } from "@/lib/feedback/lock";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import "leaflet/dist/leaflet.css";
 
 // Keep Toasts at this level
@@ -18,6 +19,7 @@ import ToastProvider from "@/components/common/ui/ToastProvider.ui";
 export default function UserLayout({ children }: { children: React.ReactNode }) {
   const topbarH = "56px";
   const pathname = usePathname();
+  const router = useRouter();
   const [feedbackLock, setFeedbackLock] = React.useState<{
     locked: boolean;
     requestId?: string;
@@ -110,6 +112,17 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
 
         {/* Help Button */}
         <HelpButton role="user" />
+
+        {/* Keyboard Shortcuts */}
+        <KeyboardShortcuts
+          shortcuts={[
+            { key: "n", description: "New Request", action: () => router.push("/user/request") },
+            { key: "s", description: "Open Schedule", action: () => router.push("/user/schedule") },
+            { key: "d", description: "Dashboard", action: () => router.push("/user") },
+            { key: "m", description: "My Submissions", action: () => router.push("/user/submissions") },
+            { key: "h", description: "History", action: () => router.push("/user/history") },
+          ]}
+        />
 
         {/* Feedback Lock Modal - Forces feedback before continuing */}
         {feedbackLock.locked &&

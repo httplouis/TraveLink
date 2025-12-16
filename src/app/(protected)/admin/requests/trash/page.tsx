@@ -71,11 +71,11 @@ export default function TrashPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Link
-            href="/admin/requests"
+            href="/admin/inbox"
             className="inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm"
           >
             <ArrowLeft className="h-4 w-4" />
-            Back to Requests
+            Back to Inbox
           </Link>
           <h1 className="text-lg font-semibold">Trash (kept for 30 days)</h1>
         </div>

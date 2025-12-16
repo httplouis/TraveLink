@@ -1080,6 +1080,7 @@ export async function PATCH(
       preferred_vehicle_note,
       destination_geo,
       workflow_metadata,
+      has_budget,
       // Allow updating other fields as needed
       ...otherFields
     } = body;
@@ -1249,6 +1250,82 @@ export async function PATCH(
         cancelled_by_requester: isCancellation && isRequester,
       }
     });
+
+    // 📧 Send notifications for significant updates
+    try {
+      const { createNotification, notifyRequestCancelled } = await import("@/lib/notifications/helpers");
+      
+      // Get full request data for notification
+      const { data: fullRequest } = await supabase
+        .from("requests")
+        .select("requester_id, request_number")
+        .eq("id", requestId)
+        .single();
+      
+      const requesterId = fullRequest?.requester_id || request.requester_id;
+      const requestNumber = fullRequest?.request_number || requestId;
+      
+      if (requesterId && requesterId !== profile.id) {
+        if (isCancellation) {
+          // Notify requester about cancellation
+          await notifyRequestCancelled(
+            requestId,
+            requestNumber,
+            requesterId,
+            isRequester ? "you" : "Admin",
+            body.cancellation_reason || "Request cancelled"
+          );
+          console.log(`📧 [PATCH /api/requests] Sent cancellation notification to requester ${requesterId}`);
+        } else if (isAdmin && (assigned_driver_id !== undefined || assigned_vehicle_id !== undefined)) {
+          // Notify requester about vehicle/driver assignment
+          const { notifyAssignment } = await import("@/lib/notifications/helpers");
+          
+          // Get driver and vehicle names
+          let driverName: string | undefined;
+          let vehicleName: string | undefined;
+          
+          if (assigned_driver_id) {
+            const { data: driver } = await supabase
+              .from("users")
+              .select("name")
+              .eq("id", assigned_driver_id)
+              .single();
+            driverName = driver?.name;
+          }
+          
+          if (assigned_vehicle_id) {
+            const { data: vehicle } = await supabase
+              .from("vehicles")
+              .select("vehicle_name, plate_number")
+              .eq("id", assigned_vehicle_id)
+              .single();
+            vehicleName = vehicle ? `${vehicle.vehicle_name} (${vehicle.plate_number})` : undefined;
+          }
+          
+          if (driverName || vehicleName) {
+            await notifyAssignment(requestId, requestNumber, requesterId, vehicleName, driverName);
+            console.log(`📧 [PATCH /api/requests] Sent assignment notification to requester ${requesterId}`);
+          }
+        } else if (isAdmin) {
+          // Notify requester about general admin update
+          await createNotification({
+            user_id: requesterId,
+            notification_type: "request_status_change",
+            title: "Request Updated by Transportation Management",
+            message: `Your travel order request ${requestNumber} has been updated by Transportation Management.`,
+            related_type: "request",
+            related_id: requestId,
+            action_url: `/user/submissions`,
+            action_label: "View Request",
+            priority: "normal",
+          });
+          console.log(`📧 [PATCH /api/requests] Sent update notification to requester ${requesterId}`);
+        }
+      }
+    } catch (notifError: any) {
+      console.error("⚠️ [PATCH /api/requests] Failed to send notification (non-fatal):", notifError);
+      // Don't fail the update if notification fails
+    }
 
     console.log("[PATCH /api/requests/[id]] Request updated:", requestId, "By:", profile.email);
 

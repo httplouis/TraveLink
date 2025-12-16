@@ -13,6 +13,7 @@ import VehicleShowcase from "@/components/user/dashboard/VehicleShowcase.ui";
 import AnalyticsChart from "@/components/user/dashboard/AnalyticsChart.ui";
 import AIInsights from "@/components/user/dashboard/AIInsights.ui";
 import DashboardSkeleton from "@/components/common/skeletons/DashboardSkeleton";
+import ActivityHistory from "@/components/common/ActivityHistory";
 import type { Trip } from "@/lib/user/schedule/types";
 import { ClipboardList, BusFront, Activity, Clock } from "lucide-react";
 import { motion } from "framer-motion";
@@ -228,6 +229,15 @@ export default function DashboardView({
               <ActivityTimeline items={recentActivity} />
             </motion.div>
           )}
+
+          {/* My Activity History - Shows user's own actions */}
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.9 }}
+          >
+            <ActivityHistory showFilters={true} limit={10} compact={false} />
+          </motion.div>
         </div>
       </div>
     </div>

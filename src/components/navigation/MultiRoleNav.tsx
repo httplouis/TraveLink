@@ -111,7 +111,7 @@ export default function MultiRoleNav({
         }
       ],
       admin: [
-        { icon: Inbox, label: 'Admin Inbox', href: '/admin/requests', badge: '5' },
+        { icon: Inbox, label: 'Admin Inbox', href: '/admin/inbox', badge: '5' },
         { 
           icon: FileText, 
           label: 'Requests', 
@@ -119,8 +119,7 @@ export default function MultiRoleNav({
           children: [
             { label: 'New Request', href: '/requests/new', icon: Plus },
             { label: 'My Submissions', href: '/requests/submissions' },
-            { label: 'Pending Assignment', href: '/admin/requests/pending' },
-            { label: 'Active Requests', href: '/admin/requests/active' },
+            { label: 'All Requests', href: '/admin/requests' },
             { label: 'Processing History', href: '/admin/history' }
           ]
         }

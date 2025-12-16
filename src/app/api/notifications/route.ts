@@ -89,7 +89,7 @@ export async function GET(request: Request) {
       console.log("[GET /api/notifications] All notifications:", data.map(n => ({
         id: n.id,
         title: n.title,
-        notification_type: n.notification_type,
+        notification_type: n.notification_type || n.kind, // Handle both schemas
         is_read: n.is_read,
         created_at: n.created_at
       })));
@@ -104,7 +104,16 @@ export async function GET(request: Request) {
       console.log("[GET /api/notifications] Debug - All notifications (no filters):", allData);
     }
     
-    return NextResponse.json({ ok: true, data: data || [] });
+    // Normalize data to handle both old and new schema
+    const normalizedData = (data || []).map(n => ({
+      ...n,
+      // Map old schema fields to new schema fields
+      notification_type: n.notification_type || n.kind || 'info',
+      message: n.message || n.body || '',
+      action_url: n.action_url || n.link || null,
+    }));
+    
+    return NextResponse.json({ ok: true, data: normalizedData });
   } catch (err: any) {
     console.error("[GET /api/notifications] Unexpected error:", err);
     return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
