@@ -12,6 +12,7 @@ import RequestDetailsView from "@/components/common/RequestDetailsView";
 import Modal from "@/components/common/Modal";
 import RequestStatusTracker from "@/components/common/RequestStatusTracker";
 import PaymentConfirmationButton from "./PaymentConfirmationButton";
+import AdvancedFilters, { FilterState, defaultFilters, applyFilters } from "@/components/common/AdvancedFilters";
 import { createLogger } from "@/lib/debug";
 
 type Request = {
@@ -73,9 +74,28 @@ export default function SubmissionsView() {
   const [showDetailsModal, setShowDetailsModal] = React.useState(false);
   const [loadingDetails, setLoadingDetails] = React.useState(false);
   const [lastUpdate, setLastUpdate] = React.useState(new Date());
+  const [filters, setFilters] = React.useState<FilterState>(defaultFilters);
   
   // Track if we've already handled the view parameter (to prevent re-opening on refresh)
   const viewParamHandledRef = React.useRef(false);
+  
+  // Extract unique departments for filter
+  const departments = React.useMemo(() => {
+    const depts = new Set<string>();
+    requests.forEach(item => {
+      const deptName = item.department?.name || item.department?.code;
+      if (deptName) depts.add(deptName);
+    });
+    return Array.from(depts).sort();
+  }, [requests]);
+  
+  // Apply filters to requests
+  const filteredRequests = React.useMemo(() => {
+    return applyFilters(requests, filters, {
+      searchFields: ['request_number', 'purpose', 'destination', 'requester_name'],
+      dateField: 'travel_start_date',
+    });
+  }, [requests, filters]);
 
   React.useEffect(() => {
     fetchSubmissions();
@@ -373,21 +393,48 @@ export default function SubmissionsView() {
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="mb-6 flex items-center justify-between p-4 bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-xl"
+        className="mb-4 flex items-center justify-between p-3 bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-xl"
       >
         <div className="flex items-center gap-3 text-sm text-green-700">
           <div className="h-3 w-3 bg-green-500 rounded-full animate-pulse"></div>
           <span className="font-semibold">Live Updates Active</span>
-          <span className="text-green-600">• Auto-refreshing every 3 seconds</span>
+          <span className="text-green-600 hidden sm:inline">• Auto-refreshing every 3 seconds</span>
         </div>
         <div className="text-xs text-green-600 font-medium">
           Last updated: {lastUpdate.toLocaleTimeString()}
         </div>
       </motion.div>
       
+      {/* Smart Filters */}
+      <div className="mb-6">
+        <AdvancedFilters
+          filters={filters}
+          onFiltersChange={setFilters}
+          departments={departments}
+          showRequestType={true}
+          showStatus={true}
+          placeholder="Search by request number, purpose, destination..."
+        />
+        {filteredRequests.length !== requests.length && (
+          <div className="mt-2 text-sm text-slate-500">
+            Showing {filteredRequests.length} of {requests.length} submissions
+          </div>
+        )}
+      </div>
+      
       {/* Enhanced Request Cards */}
       <div className="space-y-4">
-        {requests.map((req, index) => {
+        {filteredRequests.length === 0 ? (
+          <div className="text-center py-12 text-slate-500">
+            <p>No submissions match your filters</p>
+            <button
+              onClick={() => setFilters(defaultFilters)}
+              className="mt-2 text-[#7A0010] hover:underline text-sm"
+            >
+              Clear filters
+            </button>
+          </div>
+        ) : filteredRequests.map((req, index) => {
           const isApproved = req.status === 'approved';
           
           return (

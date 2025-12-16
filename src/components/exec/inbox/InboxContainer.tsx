@@ -340,6 +340,7 @@ export default function ExecInboxContainer() {
                     status: item.status,
                     created_at: item.created_at,
                     total_budget: item.total_budget,
+                    comptroller_edited_budget: (item as any).comptroller_edited_budget,
                     request_type: item.request_type,
                     requester_name: item.requester_name || item.requester?.name,
                     requester: {

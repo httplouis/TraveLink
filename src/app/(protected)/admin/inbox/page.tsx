@@ -17,6 +17,7 @@ import SignaturePad from "@/components/common/inputs/SignaturePad.ui";
 import { Dialog } from "@headlessui/react";
 import SuccessModal from "@/components/common/SuccessModal";
 import AdminEditModal from "@/components/admin/AdminEditModal";
+import AdvancedFilters, { FilterState, defaultFilters, applyFilters } from "@/components/common/AdvancedFilters";
 
 type Request = {
   id: string;
@@ -61,11 +62,33 @@ function AdminInboxContent() {
   const [approvingRequestId, setApprovingRequestId] = React.useState<string | null>(null);
   const [viewMode, setViewMode] = useViewMode("admin_inbox_view", "cards");
   const [showEditModal, setShowEditModal] = React.useState(false);
+  const [filters, setFilters] = React.useState<FilterState>(defaultFilters);
 
   const logger = createLogger("AdminInbox");
   
   // Track if we've already handled the view parameter
   const viewParamHandledRef = React.useRef(false);
+  
+  // Get current items based on active tab
+  const currentItems = activeTab === "pending" ? items : activeTab === "approved" ? approvedItems : historyItems;
+  
+  // Extract unique departments for filter
+  const departments = React.useMemo(() => {
+    const depts = new Set<string>();
+    currentItems.forEach(item => {
+      const deptName = item.department?.name || item.department?.code;
+      if (deptName) depts.add(deptName);
+    });
+    return Array.from(depts).sort();
+  }, [currentItems]);
+  
+  // Apply filters to current items
+  const filteredItems = React.useMemo(() => {
+    return applyFilters(currentItems, filters, {
+      searchFields: ['request_number', 'purpose', 'destination'],
+      dateField: 'travel_start_date',
+    });
+  }, [currentItems, filters]);
 
   // Load pending requests - Admin can see ALL pending requests
   const loadPending = React.useCallback(async () => {
@@ -992,6 +1015,22 @@ function AdminInboxContent() {
           </div>
         </div>
       </div>
+      
+      {/* Smart Filters */}
+      <div className="mb-6">
+        <AdvancedFilters
+          filters={filters}
+          onFiltersChange={setFilters}
+          departments={departments}
+          showRequestType={true}
+          placeholder="Search by request number, requester, purpose, destination..."
+        />
+        {filteredItems.length !== currentItems.length && (
+          <div className="mt-2 text-sm text-slate-500">
+            Showing {filteredItems.length} of {currentItems.length} requests
+          </div>
+        )}
+      </div>
 
       {isLoading ? (
         <div className="space-y-4">
@@ -999,11 +1038,23 @@ function AdminInboxContent() {
             <SkeletonRequestCard key={i} />
           ))}
         </div>
-      ) : currentItems.length === 0 ? (
-        <div className="text-center py-8 text-gray-500">No requests found</div>
+      ) : filteredItems.length === 0 ? (
+        <div className="text-center py-8 text-gray-500">
+          {currentItems.length === 0 ? "No requests found" : (
+            <div>
+              <p>No requests match your filters</p>
+              <button
+                onClick={() => setFilters(defaultFilters)}
+                className="mt-2 text-[#7A0010] hover:underline text-sm"
+              >
+                Clear filters
+              </button>
+            </div>
+          )}
+        </div>
       ) : viewMode === "table" ? (
         <RequestsTable
-          requests={currentItems.map(req => ({
+          requests={filteredItems.map(req => ({
             ...req,
             requester: {
               name: req.requester?.name || "Unknown",
@@ -1019,7 +1070,7 @@ function AdminInboxContent() {
         />
       ) : (
         <div className="space-y-4">
-          {currentItems.map((req) => {
+          {filteredItems.map((req) => {
             // Mini approval chain for Approved section
             const renderMiniChain = () => {
               if (activeTab !== "approved") return null;
@@ -1092,6 +1143,7 @@ function AdminInboxContent() {
                     head_approved_at: (req as any).head_approved_at,
                     admin_processed_at: (req as any).admin_processed_at,
                     total_budget: (req as any).total_budget,
+                    comptroller_edited_budget: (req as any).comptroller_edited_budget,
                     request_type: (req.request_type === "seminar" ? "seminar" : "travel_order") as "travel_order" | "seminar" | undefined,
                     requester_name: req.requester?.name,
                     requester: {

@@ -391,6 +391,7 @@ function UserInboxPageContent() {
                     status: req.status,
                     created_at: req.created_at,
                     total_budget: (req as any).total_budget,
+                    comptroller_edited_budget: (req as any).comptroller_edited_budget,
                     request_type: (req as any).request_type,
                     requester_name: (req as any).requester_name,
                     requester: {

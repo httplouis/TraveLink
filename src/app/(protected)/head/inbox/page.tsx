@@ -10,6 +10,7 @@ import PersonDisplay from "@/components/common/PersonDisplay";
 import RequestCardEnhanced from "@/components/common/RequestCardEnhanced";
 import RequestsTable from "@/components/common/RequestsTable";
 import ViewToggle, { useViewMode } from "@/components/common/ViewToggle";
+import AdvancedFilters, { FilterState, defaultFilters, applyFilters } from "@/components/common/AdvancedFilters";
 import { createSupabaseClient } from "@/lib/supabase/client";
 import { createLogger } from "@/lib/debug";
 import { shouldShowPendingAlert, getAlertSeverity, getAlertMessage } from "@/lib/notifications/pending-alerts";
@@ -57,17 +58,8 @@ function HeadInboxContent() {
   // View mode toggle
   const [viewMode, setViewMode] = useViewMode("head_inbox_view", "cards");
   
-  // Search and filter
-  const [searchQuery, setSearchQuery] = React.useState("");
-  const [filterStatus, setFilterStatus] = React.useState<string>("all");
-  
-  // Advanced filters
-  const [dateFrom, setDateFrom] = React.useState("");
-  const [dateTo, setDateTo] = React.useState("");
-  const [filterDepartment, setFilterDepartment] = React.useState<string>("all");
-  const [filterRequestType, setFilterRequestType] = React.useState<string>("all");
-  const [sortBy, setSortBy] = React.useState<string>("newest");
-  const [showFilters, setShowFilters] = React.useState(false);
+  // Smart filters using AdvancedFilters component
+  const [filters, setFilters] = React.useState<FilterState>(defaultFilters);
   
   // Track viewed requests (mark as read)
   const [viewedRequests, setViewedRequests] = React.useState<Set<string>>(new Set());
@@ -107,6 +99,14 @@ function HeadInboxContent() {
     });
     return Array.from(depts).sort();
   }, [items]);
+  
+  // Apply filters to items
+  const filteredItems = React.useMemo(() => {
+    return applyFilters(items, filters, {
+      searchFields: ['request_number', 'purpose', 'destination'],
+      dateField: 'travel_start_date',
+    });
+  }, [items, filters]);
 
   // Load pending requests
   const loadPending = React.useCallback(async () => {
@@ -298,77 +298,6 @@ function HeadInboxContent() {
     }, 500);
   }
 
-  // Filter and search logic
-  const filteredItems = React.useMemo(() => {
-    let filtered = items;
-    
-    // Apply department filter
-    if (filterDepartment !== "all") {
-      filtered = filtered.filter(item => {
-        const deptName = item.department?.name || item.department?.code;
-        return deptName === filterDepartment;
-      });
-    }
-    
-    // Apply request type filter
-    if (filterRequestType !== "all") {
-      filtered = filtered.filter(item => item.request_type === filterRequestType);
-    }
-    
-    // Apply date range filter
-    if (dateFrom) {
-      filtered = filtered.filter(item => {
-        const travelDate = item.travel_start_date ? new Date(item.travel_start_date) : null;
-        return travelDate && travelDate >= new Date(dateFrom);
-      });
-    }
-    if (dateTo) {
-      filtered = filtered.filter(item => {
-        const travelDate = item.travel_start_date ? new Date(item.travel_start_date) : null;
-        return travelDate && travelDate <= new Date(dateTo);
-      });
-    }
-
-    // Apply search
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(item => {
-        const requester = (item.requester?.name || item.requester_name || item.requester?.email || "").toLowerCase();
-        const department = (item.department?.name || item.department?.code || "").toLowerCase();
-        const purpose = (item.purpose || "").toLowerCase();
-        const requestNumber = (item.request_number || "").toLowerCase();
-        
-        return requester.includes(query) || 
-               department.includes(query) || 
-               purpose.includes(query) ||
-               requestNumber.includes(query);
-      });
-    }
-    
-    // Apply sorting
-    filtered = [...filtered].sort((a, b) => {
-      const dateA = new Date(a.created_at || 0);
-      const dateB = new Date(b.created_at || 0);
-      const travelA = new Date(a.travel_start_date || 0);
-      const travelB = new Date(b.travel_start_date || 0);
-      
-      switch (sortBy) {
-        case "newest":
-          return dateB.getTime() - dateA.getTime();
-        case "oldest":
-          return dateA.getTime() - dateB.getTime();
-        case "travel-soon":
-          return travelA.getTime() - travelB.getTime();
-        case "travel-later":
-          return travelB.getTime() - travelA.getTime();
-        default:
-          return 0;
-      }
-    });
-
-    return filtered;
-  }, [items, filterStatus, searchQuery, dateFrom, dateTo, filterDepartment, filterRequestType, sortBy]);
-
   return (
     <div className="min-h-screen">
       <div className="mb-6">
@@ -442,147 +371,18 @@ function HeadInboxContent() {
         </button>
       </div>
 
-      {/* Search and Filter Bar */}
-      <div className="mb-6 space-y-3">
-        {/* Search + Filter Toggle Row */}
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="flex-1 relative">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              type="text"
-              placeholder="Search by requester, department, purpose, or request number..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#7A0010] focus:border-transparent"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery("")}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-              >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            )}
-          </div>
-          
-          {/* Filter Toggle Button */}
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
-              showFilters || dateFrom || dateTo || filterDepartment !== 'all' || filterRequestType !== 'all'
-                ? 'bg-[#7A0010] text-white border-2 border-[#7A0010]'
-                : 'bg-white text-slate-600 border border-slate-200 hover:border-[#7A0010]/50'
-            }`}
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-            </svg>
-            Filters
-            {(dateFrom || dateTo || filterDepartment !== 'all' || filterRequestType !== 'all') && (
-              <span className="ml-1 px-1.5 py-0.5 bg-white/20 rounded text-xs font-bold">Active</span>
-            )}
-          </button>
-        </div>
-        
-        {/* Advanced Filters Panel (Collapsible) */}
-        {showFilters && (
-          <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-4 animate-fadeIn">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
-                <svg className="h-4 w-4 text-[#7A0010]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-                </svg>
-                Advanced Filters
-              </h3>
-              <button
-                onClick={() => {
-                  setDateFrom("");
-                  setDateTo("");
-                  setFilterDepartment("all");
-                  setFilterRequestType("all");
-                  setFilterStatus("all");
-                  setSortBy("newest");
-                }}
-                className="text-xs text-slate-500 hover:text-[#7A0010] font-medium"
-              >
-                Clear All
-              </button>
-            </div>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              {/* Date From */}
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">Travel Date From</label>
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#7A0010] focus:border-transparent bg-white"
-                />
-              </div>
-              
-              {/* Date To */}
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">Travel Date To</label>
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#7A0010] focus:border-transparent bg-white"
-                />
-              </div>
-              
-              {/* Department Filter */}
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">Department</label>
-                <select
-                  value={filterDepartment}
-                  onChange={(e) => setFilterDepartment(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#7A0010] focus:border-transparent bg-white"
-                >
-                  <option value="all">All Departments</option>
-                  {departments.map(dept => (
-                    <option key={dept} value={dept}>{dept}</option>
-                  ))}
-                </select>
-              </div>
-              
-              {/* Request Type Filter */}
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">Request Type</label>
-                <select
-                  value={filterRequestType}
-                  onChange={(e) => setFilterRequestType(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#7A0010] focus:border-transparent bg-white"
-                >
-                  <option value="all">All Types</option>
-                  <option value="travel_order">Travel Order</option>
-                  <option value="seminar">Seminar</option>
-                </select>
-              </div>
-            </div>
-            
-            {/* Sort Row */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200">
-              {/* Sort By */}
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">Sort By</label>
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#7A0010] focus:border-transparent bg-white"
-                >
-                  <option value="newest">Newest First (Submitted)</option>
-                  <option value="oldest">Oldest First (Submitted)</option>
-                  <option value="travel-soon">Travel Date (Soonest)</option>
-                  <option value="travel-later">Travel Date (Latest)</option>
-                </select>
-              </div>
-            </div>
+      {/* Smart Filters */}
+      <div className="mb-6">
+        <AdvancedFilters
+          filters={filters}
+          onFiltersChange={setFilters}
+          departments={departments}
+          showRequestType={true}
+          placeholder="Search by requester, department, purpose, or request number..."
+        />
+        {filteredItems.length !== items.length && (
+          <div className="mt-2 text-sm text-slate-500">
+            Showing {filteredItems.length} of {items.length} requests
           </div>
         )}
       </div>
@@ -610,7 +410,7 @@ function HeadInboxContent() {
           }}
           showBudget={true}
           showDepartment={true}
-          emptyMessage={searchQuery ? "No matching requests" : "No requests pending"}
+          emptyMessage={items.length === 0 ? "No requests pending" : "No matching requests"}
         />
       ) : filteredItems.length === 0 ? (
         <div className="rounded-lg border-2 border-dashed border-slate-200 bg-white px-8 py-12 text-center">
@@ -618,14 +418,22 @@ function HeadInboxContent() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
           <h3 className="mt-4 text-lg font-medium text-slate-900">
-            {searchQuery ? "No matching requests" : "No requests pending"}
+            {items.length === 0 ? "No requests pending" : "No matching requests"}
           </h3>
           <p className="mt-1 text-sm text-slate-500">
-            {searchQuery 
-              ? "Try adjusting your search or filter criteria."
-              : "When faculty submit requests, they will appear here for your approval."
+            {items.length === 0 
+              ? "When faculty submit requests, they will appear here for your approval."
+              : "Try adjusting your search or filter criteria."
             }
           </p>
+          {items.length > 0 && (
+            <button
+              onClick={() => setFilters(defaultFilters)}
+              className="mt-3 text-[#7A0010] hover:underline text-sm"
+            >
+              Clear filters
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-4">
@@ -653,6 +461,7 @@ function HeadInboxContent() {
                   head_approved_at: item.head_approved_at,
                   admin_processed_at: item.admin_processed_at,
                   total_budget: item.total_budget,
+                  comptroller_edited_budget: (item as any).comptroller_edited_budget,
                   request_type: item.request_type,
                   requester_name: item.requester?.name || item.requester_name,
                   requester: {

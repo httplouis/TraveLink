@@ -61,6 +61,8 @@ export async function GET(request: NextRequest) {
         current_approver_role,
         workflow_metadata,
         total_budget,
+        comptroller_edited_budget,
+        expense_breakdown,
         request_type,
         admin_processed_at,
         comptroller_approved_at,
@@ -279,6 +281,7 @@ export async function GET(request: NextRequest) {
       console.log("  - Requester:", firstReq.requester?.name || firstReq.requester?.email);
       console.log("  - Head:", firstReq.head_approver?.name || firstReq.head_approver?.email);
       console.log("  - Total budget:", firstReq.total_budget);
+      console.log("  - Comptroller edited budget:", firstReq.comptroller_edited_budget);
       console.log("  - Expense breakdown items:", firstReq.expense_breakdown?.length || 0);
     }
 

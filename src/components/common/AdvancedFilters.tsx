@@ -10,6 +10,7 @@ export interface FilterState {
   dateTo: string;
   department: string;
   requestType: string;
+  status: string;
   sortBy: string;
 }
 
@@ -18,6 +19,7 @@ interface AdvancedFiltersProps {
   onFiltersChange: (filters: FilterState) => void;
   departments?: string[];
   showRequestType?: boolean;
+  showStatus?: boolean;
   placeholder?: string;
 }
 
@@ -27,6 +29,7 @@ export const defaultFilters: FilterState = {
   dateTo: "",
   department: "all",
   requestType: "all",
+  status: "all",
   sortBy: "newest",
 };
 
@@ -35,6 +38,7 @@ export default function AdvancedFilters({
   onFiltersChange,
   departments = [],
   showRequestType = true,
+  showStatus = false,
   placeholder = "Search by request number, requester, purpose...",
 }: AdvancedFiltersProps) {
   const [showFilters, setShowFilters] = React.useState(false);
@@ -52,6 +56,7 @@ export default function AdvancedFilters({
     filters.dateTo,
     filters.department !== "all" ? filters.department : "",
     filters.requestType !== "all" ? filters.requestType : "",
+    filters.status !== "all" ? filters.status : "",
   ].filter(Boolean).length;
 
   return (
@@ -180,6 +185,27 @@ export default function AdvancedFilters({
                 </select>
               </div>
             )}
+            
+            {/* Status Filter */}
+            {showStatus && (
+              <div>
+                <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1.5">
+                  <Filter className="h-3.5 w-3.5" />
+                  Status
+                </label>
+                <select
+                  value={filters.status}
+                  onChange={(e) => updateFilter("status", e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#7A0010] focus:border-transparent bg-white"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                  <option value="returned">Returned</option>
+                </select>
+              </div>
+            )}
           </div>
           
           {/* Sort Row */}
@@ -253,6 +279,17 @@ export function applyFilters<T extends Record<string, any>>(
   // Apply request type filter
   if (filters.requestType !== 'all') {
     filtered = filtered.filter(item => item[requestTypeField] === filters.requestType);
+  }
+
+  // Apply status filter
+  if (filters.status !== 'all') {
+    filtered = filtered.filter(item => {
+      const status = item.status || '';
+      if (filters.status === 'pending') {
+        return status.startsWith('pending');
+      }
+      return status === filters.status;
+    });
   }
 
   // Apply date range filter

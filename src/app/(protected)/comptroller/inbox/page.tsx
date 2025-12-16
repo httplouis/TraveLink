@@ -437,6 +437,7 @@ function ComptrollerInboxContent() {
                     admin_processed_at: req.admin_processed_at,
                     comptroller_approved_at: req.comptroller_approved_at,
                     total_budget: req.total_budget,
+                    comptroller_edited_budget: req.comptroller_edited_budget,
                     request_type: req.request_type as "travel_order" | "seminar" | undefined,
                     requester_name: req.requester_name || req.requester?.name,
                     requester: {
