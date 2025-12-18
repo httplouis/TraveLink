@@ -790,9 +790,6 @@ function AdminInboxContent() {
     }
   };
 
-  const currentItems = activeTab === "pending" ? items : activeTab === "approved" ? approvedItems : historyItems;
-  const uniqueDepartments = Array.from(new Set(currentItems.map((r) => r.department?.name || "Unknown")));
-
   // Show loading skeleton while fetching details
   if (loadingDetails) {
     return (
